@@ -1,5 +1,6 @@
 import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import type { AuditLu } from "@/lib/audit-site/lecture";
+import type { Preuve } from "@/lib/audit-site/types";
 
 /**
  * « Et 11 autres améliorations possibles » — le décompte, jamais l'estimation.
@@ -92,12 +93,30 @@ export function autresAmeliorations(
 }
 
 /**
+ * La force d'une preuve en échec : ce qu'elle pèse × à quel point ce site la rate.
+ *
+ * LES DEUX FACTEURS SONT NÉCESSAIRES, et n'en prendre qu'un a produit un vrai
+ * défaut. Le tri se faisait sur le seul `poids`, qui dit combien un signal compte
+ * dans la note. Or `ttfb` est la preuve la plus lourde de son axe (35) : un
+ * serveur mesuré à 1,32 s pour un seuil à 0,8 s — donc « problème » de 120 ms —
+ * passait DEVANT un formulaire de contact totalement absent et un téléphone non
+ * cliquable. Le document ouvrait sur un quasi-succès et reléguait les vraies
+ * pertes de clients, sur tous les prospects à la fois.
+ *
+ * Sans gravité connue on retombe sur le poids seul : une preuve d'avant ce champ
+ * ne doit pas se retrouver classée dernière parce qu'elle est ancienne.
+ */
+export function forcePreuve(p: Preuve): number {
+  return p.poids * (p.gravite ?? 1);
+}
+
+/**
  * Ordonne des constats du plus fort au plus faible argument.
  *
- * Une fréquence n'est pas une priorité. Le critère est le POIDS de la preuve la
- * plus lourde qui a déclenché le constat : un serveur à 3,4 secondes face à un
- * seuil de 800 ms passe devant une méta-description trop courte, toujours. À
- * défaut de mesure, on garde l'ordre du catalogue — arbitraire, mais stable.
+ * Une fréquence n'est pas une priorité. Le critère est la FORCE de la preuve la
+ * plus lourde qui a déclenché le constat — son poids pondéré par l'ampleur de
+ * l'échec. À défaut de mesure, on garde l'ordre du catalogue : arbitraire, mais
+ * stable.
  */
 export function classerParForce(
   cles: readonly string[],
@@ -106,7 +125,7 @@ export function classerParForce(
   const poids = new Map<string, number>();
   for (const axe of audit?.axes ?? []) {
     for (const p of axe.preuves) {
-      if (p.verdict === "probleme") poids.set(p.cle, Math.max(poids.get(p.cle) ?? 0, p.poids));
+      if (p.verdict === "probleme") poids.set(p.cle, Math.max(poids.get(p.cle) ?? 0, forcePreuve(p)));
     }
   }
 

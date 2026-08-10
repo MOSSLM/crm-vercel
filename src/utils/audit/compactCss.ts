@@ -57,6 +57,16 @@ const NUIT = rgb(C.nuit);
 const AZUR = rgb(C.azur);
 const BRUME = rgb(C.brume);
 
+/**
+ * LE CADRAGE DE L'APERÇU, qui n'est pas un détail esthétique.
+ *
+ * La capture occupe toute la largeur et se coupe en HAUT (`object-position:top`)
+ * sur 136 px : on voit la barre de navigation et le début de la première
+ * section, pas la section entière. C'est ce qu'un aperçu doit montrer — la
+ * promesse d'un site à ouvrir, pas le site en réduction où plus rien n'est
+ * lisible. Le squelette d'attente occupe la même hauteur, pour que l'absence de
+ * capture ne redessine pas la page.
+ */
 export const CSS_COMPACT = String.raw`
 :root{--nuit:${C.nuit};--azur:${C.azur};--brume:${C.brume};--creme:${C.creme};--blanc:${C.blanc};--page-w:794px;--page-h:1123px}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -83,12 +93,12 @@ a{color:var(--azur);text-decoration:none}a:hover{color:#2C63AE}
 .cover-title{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:var(--f-cover,36px);line-height:1.08;color:var(--blanc);letter-spacing:-.01em}
 .cover-title em{font-style:italic;color:var(--brume)}
 .cover-subtitle{font-size:11.5px;line-height:1.75;color:rgba(${BRUME},.62);max-width:360px;font-weight:300;margin-top:16px}
-.cover-foot{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end}
+.cover-foot{display:flex;flex-direction:column;gap:12px}
 .cover-client{padding:16px 20px;border:1px solid rgba(${BRUME},.16);border-radius:4px;background:rgba(${AZUR},.07)}
 .cover-client-label{font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:rgba(${BRUME},.45);font-weight:500;margin-bottom:7px}
 .cover-client-name{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:300;color:var(--blanc);letter-spacing:.03em}
 .cover-client-meta{font-size:10px;color:rgba(${BRUME},.5);margin-top:3px}
-.demo-cta{display:block;width:258px;padding:11px 12px 10px;border:1px solid rgba(${AZUR},.4);border-radius:6px;background:rgba(${AZUR},.12)}
+.demo-cta{display:block;width:100%;padding:11px 12px 10px;border:1px solid rgba(${AZUR},.4);border-radius:6px;background:rgba(${AZUR},.12)}
 .demo-cta-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--brume);font-weight:500;margin-bottom:7px}
 .mockup{background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden;border:1px solid rgba(${BRUME},.12)}
 .mockup-chrome{background:rgba(255,255,255,.08);padding:4px 6px;display:flex;align-items:center;gap:5px}
@@ -96,7 +106,7 @@ a{color:var(--azur);text-decoration:none}a:hover{color:#2C63AE}
 .mockup-dots i{width:4px;height:4px;border-radius:50%;display:block}
 .mockup-url{flex:1;height:11px;background:rgba(255,255,255,.07);border-radius:2px;display:flex;align-items:center;gap:3px;padding-left:4px;font-size:6px;color:rgba(${BRUME},.5);overflow:hidden;white-space:nowrap}
 .mockup-url img{width:7px;height:7px}
-.mockup-screen{position:relative;height:86px;background:rgba(${NUIT},.6);overflow:hidden}
+.mockup-screen{position:relative;height:136px;background:rgba(${NUIT},.6);overflow:hidden}
 .mockup-screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
 .mockup-skeleton{position:absolute;inset:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
 .sk-hero{height:12px;width:68%;background:rgba(${AZUR},.2);border-radius:2px}

@@ -7,6 +7,7 @@ import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import { versOffreAudit, type OffreAudit } from "./offres-audit";
 import { nombresDe, type UniversDicible } from "./preparation";
 import { CATALOGUE_OBSERVATIONS, cleFondement, type ObservationValidee } from "./observations";
+import { forcePreuve } from "./autres-ameliorations";
 
 /**
  * Le dossier : tout ce qu'on a le droit de dire d'une entreprise, en un appel.
@@ -50,7 +51,15 @@ export interface DossierAudit {
     axes: Array<{
       id: string;
       note: number;
-      preuves: Array<{ cle: string; libelle: string; valeur: string | null; seuil: string | null; verdict: string }>;
+      preuves: Array<{
+        cle: string;
+        libelle: string;
+        valeur: string | null;
+        seuil: string | null;
+        verdict: string;
+        /** Poids du signal × ampleur de l'échec. Le plus fort porte le constat. */
+        force: number;
+      }>;
     }>;
     /** Constats émis par la mesure — les seules cartes légitimes. */
     constats: Array<{ cle: string; libelle: string; pilier: string }>;
@@ -131,6 +140,16 @@ export async function construireDossier(
       valeur: p.valeur,
       seuil: p.seuil,
       verdict: p.verdict,
+      /**
+       * Ce que cette preuve pèse × à quel point CE site la rate.
+       *
+       * Exposée pour que l'agent argumente sur la bonne jambe. Un constat comme
+       * « site lent » se déclenche sur deux preuves ; sans ce chiffre, il écrit
+       * la première venue — et peut fonder tout son constat sur un serveur qui
+       * ne dépasse son seuil que de 120 ms, alors que la page pèse trois fois
+       * trop lourd juste à côté.
+       */
+      force: Math.round(forcePreuve(p) * 10) / 10,
     })),
   }));
 

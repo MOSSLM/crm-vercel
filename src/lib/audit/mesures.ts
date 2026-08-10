@@ -1,6 +1,7 @@
 import type { AuditLu, AxePublieId } from "@/lib/audit-site/lecture";
 import type { ConstatGoogle, Preuve } from "@/lib/audit-site/types";
 import { cleFondement, type ObservationValidee } from "./observations";
+import { forcePreuve } from "./autres-ameliorations";
 
 /**
  * Ce que le document d'audit a le droit d'AFFICHER comme chiffre.
@@ -250,9 +251,14 @@ function valeurDominante(preuves: Preuve[], constats?: ConstatGoogle[]): string 
   const premier = constats?.[0];
   if (premier) return premier.valeur ?? premier.titre;
 
+  // Trié sur la FORCE, pas sur le poids. Le second endroit où la distinction
+  // comptait : la carte « Rapidité » d'un site mesuré à 1,3 s de serveur (poids
+  // 35, mais 0,33 de gravité) et 5,7 Mo de page (poids 25, gravité 0,93)
+  // affichait « 1,3 s ». Le prospect lisait donc une note de 10/100 justifiée
+  // par un chiffre qui lui paraît correct — et cessait de croire la note.
   const echecs = preuves
     .filter((p) => p.verdict === "probleme" && p.valeur !== null)
-    .sort((a, b) => b.poids - a.poids);
+    .sort((a, b) => forcePreuve(b) - forcePreuve(a));
   return echecs[0]?.valeur ?? null;
 }
 

@@ -52,6 +52,22 @@ export interface Preuve {
   /** Points que ce signal pèse dans son axe. */
   poids: number;
   verdict: Verdict;
+  /**
+   * À quel point CE site-ci rate CE signal — de 0 (au seuil) à 1 (rate tout).
+   *
+   * `poids` et `gravite` répondent à deux questions différentes, et les confondre
+   * produit un document qui ne s'adapte pas au prospect. Le poids dit combien le
+   * signal compte dans la note ; la gravité dit à quel point ce site-là le rate.
+   *
+   * Le cas qui a imposé ce champ : un serveur mesuré à 1,32 s pour un seuil à
+   * 0,8 s bascule en « problème » de 120 ms, mais `ttfb` est la preuve la plus
+   * lourde de son axe (35). Trié sur le seul poids, ce quasi-succès passait
+   * DEVANT un formulaire de contact totalement absent et un téléphone non
+   * cliquable — et faisait la une d'un audit dont ce n'était pas le sujet.
+   *
+   * Absent sur les preuves `ok` et `inconnu` : il n'y a rien à classer.
+   */
+  gravite?: number;
 }
 
 /**

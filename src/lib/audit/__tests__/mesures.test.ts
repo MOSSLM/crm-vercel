@@ -251,3 +251,28 @@ describe("mediane", () => {
     expect(mediane([])).toBeNull();
   });
 });
+
+describe("la valeur qui résume un axe", () => {
+  it("prend la preuve la plus FORTE, pas la plus lourde", () => {
+    // Le cas qui a imposé la distinction : une carte « Rapidité 10/100 » qui
+    // affichait « 1,3 s » — le serveur, poids 35 mais raté de 120 ms — alors
+    // que la page pesait 5,7 Mo pour un seuil à 2 Mo. Le prospect lisait une
+    // note sévère justifiée par un chiffre qui lui paraît correct, et cessait
+    // de croire la note.
+    const m = construireMesures({
+      ...BASE,
+      axes: [
+        {
+          id: "vitesse",
+          note: 10,
+          confiance: "haute",
+          preuves: [
+            { ...PREUVE, cle: "ttfb", libelle: "Serveur", valeur: "1,3 s", poids: 35, gravite: 0.33 },
+            { ...PREUVE, cle: "poids", libelle: "Poids", valeur: "5,7 Mo", poids: 25, gravite: 0.93 },
+          ],
+        },
+      ],
+    });
+    expect(m.axes[0].valeur).toBe("5,7 Mo");
+  });
+});

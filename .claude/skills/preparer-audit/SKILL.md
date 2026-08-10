@@ -118,6 +118,22 @@ c'est délibéré : un rang relevé une fois, non daté, non reproductible, est 
 ligne la plus contestable du document — le prospect tape la requête, voit un
 autre chiffre, et tout le rapport perd sa valeur.
 
+## Choisis la bonne preuve, pas la première
+
+Chaque preuve du dossier porte une **`force`** : ce que le signal pèse, multiplié
+par l'ampleur avec laquelle ce site-là le rate. Un constat peut se déclencher sur
+plusieurs preuves — « site lent » vient du serveur **et** du poids de la page.
+
+**Fonde ta carte sur la preuve la plus forte, et écris SA valeur dans `avant`.**
+Un serveur à 1,3 s pour un seuil de 0,8 s a une force faible : il ne rate que de
+120 ms. Une page à 5,7 Mo pour 2 Mo a une force élevée. Écrire « 1,3 s » ferait
+reposer tout le constat sur sa jambe la plus faible, et le prospect qui trouve
+son serveur correct rejetterait la ligne entière — avec le reste du document.
+
+Le classement final ne t'appartient pas : la route ordonne les lignes par force
+et met les pires en premier. Tu choisis **de quoi** parler, la mesure décide
+**dans quel ordre**.
+
 ## Comment écrire
 
 - **Des unités qu'un artisan lit sans traduction** : secondes, nombre de choses

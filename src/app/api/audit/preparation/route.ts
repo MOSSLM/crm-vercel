@@ -4,6 +4,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { construireDossier, universDe } from "@/lib/audit/dossier";
 import { validerPreparation, type CartePreparee } from "@/lib/audit/preparation";
 import { construirePage5 } from "@/lib/audit/offres-audit";
+import { classerParForce } from "@/lib/audit/autres-ameliorations";
+import { lireAudit, type AuditLu } from "@/lib/audit-site/lecture";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
 import { problemsFromKeys, AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import type { AuditAvantApres, AuditContent } from "@/types";
@@ -69,6 +71,11 @@ export async function POST(req: Request): Promise<Response> {
   const p = verdict.retenue;
   const cles = p.cartes.map((c) => c.cle);
 
+  // Relu pour ses PREUVES : le dossier ne porte pas les poids ni les gravités,
+  // et c'est d'elles que dépend l'ordre des lignes du tableau.
+  const lecture = await lireAudit(sb, entrepriseId);
+  const auditLu: AuditLu | null = lecture.disponible ? lecture.audit : null;
+
   // L'audit existant, ou un document neuf : préparer ne doit pas exiger qu'on
   // ait d'abord ouvert l'éditeur.
   const { data: existant } = await sb
@@ -104,7 +111,7 @@ export async function POST(req: Request): Promise<Response> {
       problems,
       section_intro: p.intro ?? base.page2.section_intro,
     },
-    page3: { ...base.page3, avant_apres: lignesAvantApres(p.cartes) },
+    page3: { ...base.page3, avant_apres: lignesAvantApres(p.cartes, auditLu) },
     page5: construirePage5(base.page5, dossier.offres, cles),
   };
 
@@ -147,17 +154,30 @@ export async function POST(req: Request): Promise<Response> {
  * détaille pas et le compte dans son bandeau « +N constats de plus ». Mieux vaut
  * un constat non détaillé qu'une promesse inventée pour remplir une case.
  */
-function lignesAvantApres(cartes: readonly CartePreparee[]): AuditAvantApres[] {
-  return cartes.map((c) => {
-    const apres = AUDIT_ISSUE_CATALOG.find((d) => d.key === c.cle)?.apres;
-    return {
-      cle: c.cle,
-      avant: c.avant,
-      precision: c.titre,
-      apres: apres?.valeur,
-      reponse: apres?.comment,
-    };
-  });
+function lignesAvantApres(
+  cartes: readonly CartePreparee[],
+  audit: AuditLu | null,
+): AuditAvantApres[] {
+  // L'ORDRE EST MESURÉ, PAS PROPOSÉ. L'agent choisit de quoi parler ; le
+  // classement décide dans quel ordre. Un serveur qui dépasse son seuil de
+  // 120 ms ne doit pas ouvrir un document où le formulaire de contact est
+  // absent — et espérer que le rédacteur y pense à chaque prospect serait le
+  // genre de discipline qui tient trois audits.
+  const rang = classerParForce(cartes.map((c) => c.cle), audit);
+  const place = new Map(rang.map((cle, i) => [cle, i]));
+
+  return [...cartes]
+    .sort((a, b) => (place.get(a.cle) ?? 99) - (place.get(b.cle) ?? 99))
+    .map((c) => {
+      const apres = AUDIT_ISSUE_CATALOG.find((d) => d.key === c.cle)?.apres;
+      return {
+        cle: c.cle,
+        avant: c.avant,
+        precision: c.titre,
+        apres: apres?.valeur,
+        reponse: apres?.comment,
+      };
+    });
 }
 
 /**
