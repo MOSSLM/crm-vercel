@@ -4,6 +4,13 @@ Ce document décrit la boucle qu'un agent local exécute, entreprise par
 entreprise, après avoir qualifié et enrichi. Elle tient en **quatre appels HTTP**
 et n'exige aucun secret côté agent.
 
+> **Pour l'agent lui-même, le point d'entrée est la skill**
+> `.claude/skills/preparer-audit/`, qui se charge toute seule dès qu'il s'agit de
+> préparer un audit. Elle tient en une page : la boucle, les règles, ce qu'il ne
+> remplit jamais, un exemple accepté et deux refusés. Ce document-ci est la
+> référence vers laquelle elle renvoie — le contrat champ par champ, la carte du
+> document, et les raisons derrière chaque règle.
+
 ---
 
 ## La question qui décide de tout : où vivent les données ?
@@ -104,6 +111,68 @@ POST /api/audit/preparation
 
 Trois cartes au plus, chacune fondée sur au moins une entrée du dossier.
 
+#### Le contrat, champ par champ
+
+| Champ | Obligatoire | Ce que c'est |
+|---|---|---|
+| `intro` | non | L'introduction du relevé. 20 à 600 caractères. |
+| `accroche` | non | Une phrase pour le message d'envoi. 10 à 200 caractères. |
+| `cartes` | **oui** | 1 à 3. Chacune devient une ligne du tableau avant/après. |
+| `offres` | non | Codes pris dans `univers.offresProposables`. 8 au plus. |
+| `observations` | non | Cases de `observationsPossibles`. 12 au plus. |
+
+Une carte :
+
+| Champ | Ce que c'est |
+|---|---|
+| `cle` | Clé du catalogue de constats (`src/data/auditIssues.ts`). |
+| `fonde_sur` | Au moins une clé de `univers.preuvesEnEchec`. |
+| `avant` | **La valeur mesurée, telle qu'elle s'affichera** : « 3,4 s », « 9 champs ». Colonne gauche du tableau. Soumise à la règle 3. |
+| `titre` | Le libellé de la ligne. 3 à 90 caractères. |
+| `texte` | La précision sous la valeur. 20 à 420 caractères. |
+
+**`apres` n'existe pas dans ce contrat, et le schéma le refuse explicitement.**
+La colonne droite vient de `AUDIT_ISSUE_CATALOG[cle].apres`, écrite une fois pour
+tous les prospects. On ne mesure jamais le site démo : c'est une décision, pas un
+manque. Sa colonne est donc la seule du document qui promette un résultat, et
+rien en base ne pourrait vérifier ce qu'un modèle y écrirait — deux prospects
+doivent recevoir la même promesse pour le même problème.
+
+Le refus est un **rejet nommé** et non un silence : sans cela, un agent qui
+soumettrait `apres` verrait sa préparation acceptée et croirait sa valeur
+retenue, alors qu'elle serait ignorée.
+
+Deux constats n'ont volontairement pas d'après — `no_site_or_unreachable` et
+`low_rating` — et un test échoue si on les complète. Un site qui n'existe pas
+n'a pas de valeur « avant » dans la même unité ; et une note Google basse ne se
+corrige pas en construisant un site, promettre « 3,2 → 4,6 » serait s'engager sur
+ce que les clients écriront. Une carte sans après sort sans côté droit et rejoint
+le décompte « +N constats de plus ».
+
+---
+
+## La carte du document — quel bloc affiche quoi
+
+Sans elle, impossible de savoir où atterrit ce qu'on écrit. Le document envoyé
+compte **trois feuilles A4, chacune coupée en deux demi-pages.**
+
+| Demi-page | Ce qui s'affiche | Qui l'écrit |
+|---|---|---|
+| Couverture | Nom, date, aperçu du site démo | contenu par défaut + `capture_url` |
+| 01 · Le relevé | Note, réglette à trois repères, cartes d'axes, méthode | **les mesures**, plus ton `intro` |
+| 02 · Constat → après | Le tableau avant/après, et le bandeau « +N » | **tes cartes**, après du catalogue |
+| 03 · Ce qui change | Les trois volets et ce qu'ils corrigent | contenu par défaut |
+| 04 · Investissement | Socle, hébergement, additions | la table `offres` |
+| 05 · Prochaines étapes | Étapes, lien démo, contact | contenu par défaut |
+
+**`page2.problems` n'est plus de l'affichage.** C'est devenu le **registre de
+sélection** : la liste à cocher de l'éditeur, `codesRetenus` et `construirePage5`
+lisent tous `page2.problems[].key` pour décider quelles offres proposer. La route
+continue donc de l'écrire. Le supprimer en le croyant mort ferait taire la page
+tarifs.
+
+**`page3.solutions` n'a plus aucun lecteur** et n'est plus écrit.
+
 ---
 
 ## Ce que l'agent peut relever lui-même
@@ -180,9 +249,10 @@ se contourne et ne laisse aucune trace quand il échoue :
    preuve en échec, ou un constat Google sous la forme
    `google:render-blocking-insight`.
 2. **Un code d'offre inconnu ou non proposable est rejeté.**
-3. **Tout nombre écrit doit figurer dans le dossier.** C'est la règle qui
-   empêche « vous perdez 40 % de vos visiteurs » quand rien ne mesure ce
-   pourcentage. Les chiffres de Google sont dans le dossier : ils sont donc
+3. **Tout nombre écrit doit figurer dans le dossier** — titre, texte **et
+   `avant`**. C'est la règle qui empêche « vous perdez 40 % de vos visiteurs »
+   quand rien ne mesure ce pourcentage, et c'est sur `avant` qu'elle compte le
+   plus : c'est la valeur que le prospect vérifiera sur son propre téléphone. Les chiffres de Google sont dans le dossier : ils sont donc
    citables, et ce sont les meilleurs — le prospect peut les revérifier en
    trente secondes sur `pagespeed.web.dev`.
 4. **Un rejet ne bloque jamais.** La réponse nomme chaque carte écartée et la
