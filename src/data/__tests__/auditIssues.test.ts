@@ -84,3 +84,26 @@ describe("la colonne « après » du catalogue", () => {
     }
   });
 });
+
+describe("l'« après » doit battre le seuil, pas seulement paraître bon", () => {
+  /**
+   * Une ligne du tableau n'apparaît QUE si sa preuve est en échec, donc au-delà
+   * du seuil. Une valeur promise meilleure que le seuil est donc meilleure que
+   * toutes les mesures capables de déclencher la ligne.
+   *
+   * La règle vient d'un cas réel : « Moins de 1,5 s » semblait raisonnable pour
+   * un serveur lent, jusqu'à ce qu'une entreprise mesurée à 1,3 s reçoive la
+   * ligne « 1,3 s → moins de 1,5 s ». Promesse nulle, et embarrassante.
+   */
+  const SEUILS: Array<{ key: string; seuil: number; unite: RegExp }> = [
+    { key: 'slow_site', seuil: 0.8, unite: /([\d,]+)\s*s\b/ }, // SEUILS.ttfbMs = 800 ms
+    { key: 'form_not_accessible', seuil: 4, unite: /(\d+)\s*champs/ },
+  ];
+
+  it.each(SEUILS)('$key promet mieux que son seuil', ({ key, seuil, unite }) => {
+    const valeur = AUDIT_ISSUE_CATALOG.find((d) => d.key === key)?.apres?.valeur ?? '';
+    const trouve = unite.exec(valeur);
+    expect(trouve).not.toBeNull();
+    expect(Number(trouve![1].replace(',', '.'))).toBeLessThan(seuil);
+  });
+});

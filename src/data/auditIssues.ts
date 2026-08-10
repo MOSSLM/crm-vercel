@@ -84,10 +84,17 @@ export interface AuditIssueDef {
    * pour le même problème — sinon la première comparaison entre deux devis nous
    * décrédibilise.
    *
-   * `valeur` porte LA MÊME UNITÉ que le constat : « 1,2 s » face à « 9,8 s »,
+   * `valeur` porte LA MÊME UNITÉ que le constat : « 0,5 s » face à « 1,3 s »,
    * « 3 champs » face à « 9 champs ». Une ligne qui change de grandeur entre ses
    * deux colonnes ne se lit pas d'un coup d'œil, et c'est exactement l'endroit
    * où un document de mesure redevient une plaquette.
+   *
+   * ET ELLE DOIT BATTRE LE SEUIL, pas seulement paraître bonne. La règle vient
+   * d'un cas réel : « Moins de 1,5 s » semblait raisonnable pour un serveur lent,
+   * jusqu'à ce qu'un prospect mesuré à 1,3 s reçoive la ligne « 1,3 s → moins de
+   * 1,5 s ». Une ligne n'apparaît QUE si sa preuve est en échec, c'est-à-dire
+   * au-delà du seuil ; une valeur meilleure que le seuil est donc meilleure que
+   * toutes les mesures qui déclenchent la ligne. Sous le seuil, jamais dessus.
    *
    * ABSENT VOLONTAIREMENT sur les constats qui ne se comparent pas. La ligne
    * existe alors sans son côté droit et rejoint le décompte « +N constats de
@@ -136,7 +143,7 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       tag: 'Performance',
     },
     apres: {
-      valeur: "Moins de 1,5 s",
+      valeur: "Moins de 0,5 s",
       comment: "Site reconstruit sur une base légère : plus rien à télécharger avant de voir la page.",
     },
     declencheurs: [{ preuves: ['ttfb', 'poids'], mode: 'une' }],
@@ -155,7 +162,7 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       tag: 'Conversion',
     },
     apres: {
-      valeur: "1 geste",
+      valeur: "Cliquable, 1 geste",
       comment: "Numéro cliquable et bouton d’appel visible sans faire défiler.",
     },
     declencheurs: [{ preuves: ['tel'], mode: 'une' }],
@@ -392,7 +399,7 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       tag: 'Design',
     },
     apres: {
-      valeur: "16 px minimum",
+      valeur: "Aucun texte trop petit",
       comment: "Texte lisible à bout de bras, sans lunettes.",
     },
     declencheurs: [{ preuves: ['polices'], mode: 'une' }],
