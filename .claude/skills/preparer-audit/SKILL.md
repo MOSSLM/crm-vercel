@@ -20,9 +20,9 @@ tentative de les écrire est refusée** :
 
 | Jamais toi | D'où ça vient |
 |---|---|
-| La note sur 100 | `note_globale`, calculée par l'analyseur |
-| Les notes par axe | l'analyseur, ou PageSpeed quand il a mesuré |
-| La médiane du parc | calculée sur les 430 sites analysés |
+| La note sur 100 | `note_globale`, plafonnée si le site est inaffichable |
+| Les notes par axe | PageSpeed, ou nous sur ce qu'il ne mesure pas |
+| La médiane du parc | calculée sur le parc mesuré |
 | **La colonne « Après »** | le catalogue, écrit une fois pour tous les prospects |
 | Les prix, les noms d'offres | la table `offres` |
 | Les étapes, les livrables | le contenu par défaut |
@@ -39,7 +39,17 @@ observations que tu as relevées toi-même.
 
 ## La boucle
 
-### 1. Mesurer avec Google — une fois par prospect
+### 0. Analyser le site d'abord
+
+```
+POST /api/audit-site/{entrepriseId}
+```
+
+Une seconde, gratuit. C'est cette analyse qui détermine l'URL réellement atteinte
+après redirections, sans quoi l'étape suivante répond `409`. Elle produit aussi la
+gravité de chaque preuve, dont dépend l'ordre des constats dans le document.
+
+### 1. Mesurer avec Google
 
 ```
 POST /api/audit-site/{entrepriseId}/pagespeed
@@ -48,9 +58,13 @@ POST /api/audit-site/{entrepriseId}/pagespeed
 Environ quarante secondes : Google fait tourner un vrai Chrome. **À ne lancer que
 sur une entreprise qu'on s'apprête à démarcher**, jamais en balayage de parc.
 
-L'analyse maison doit exister d'abord (`409` sinon) : c'est elle qui détermine
-l'URL réellement atteinte après redirections. Inutile de refaire une mesure de
-moins de trente jours.
+Inutile de refaire une mesure de moins de trente jours.
+
+**Sans elle, l'audit sort amputé** : la vitesse et le mobile ne sont plus publiés
+du tout — nos deux mesures les moins fiables — et il ne reste que le
+référencement, la prise de contact et la notoriété. Un audit à trois axes sûrs
+vaut mieux qu'un audit à cinq dont deux se discutent, mais la mesure Google reste
+ce qui rend le document complet.
 
 ### 2. Lire le dossier
 
@@ -83,6 +97,25 @@ au prospect.
 POST /api/audit/preparation
 { "opportunite_id": "…", "entreprise_id": 123, "preparation": { … } }
 ```
+
+## Tu choisis ce que tu mets dans les cartes
+
+**Le catalogue de constats n'est pas une liste imposée.** Ses 28 entrées sont des
+constats fréquents, pré-rédigés pour aller vite — pas le périmètre de ce que tu
+peux dire. Si le meilleur argument d'un site est un relevé de Google qu'aucune
+case ne nomme — un contraste illisible, un script qui bloque l'affichage pendant
+trois secondes, une accessibilité à 29/100 — **mets-le**. Tu écris alors la clé
+que tu veux dans `cle`, et tu fondes la carte sur le relevé : `google:color-contrast`,
+`google:render-blocking-insight`.
+
+La colonne « Après » reste la nôtre dans les deux cas : le catalogue si le
+constat y figure, sinon la promesse générique de son axe. Tu n'as jamais à
+l'écrire.
+
+**Trois cartes, et ce sont TES trois.** Ne prends pas les trois premières du
+catalogue parce qu'elles existent : prends les trois qui feront décrocher un
+téléphone à cet artisan-là. Un audit à moitié pré-rempli est un audit à moitié
+faux.
 
 ## Les quatre règles
 

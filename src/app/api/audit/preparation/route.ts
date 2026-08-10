@@ -7,7 +7,7 @@ import { construirePage5 } from "@/lib/audit/offres-audit";
 import { classerParForce } from "@/lib/audit/autres-ameliorations";
 import { lireAudit, type AuditLu } from "@/lib/audit-site/lecture";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
-import { problemsFromKeys, AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
+import { problemsFromKeys, AUDIT_ISSUE_CATALOG, APRES_PAR_AXE } from "@/data/auditIssues";
 import type { AuditAvantApres, AuditContent } from "@/types";
 
 /**
@@ -166,10 +166,27 @@ function lignesAvantApres(
   const rang = classerParForce(cartes.map((c) => c.cle), audit);
   const place = new Map(rang.map((cle, i) => [cle, i]));
 
+  // L'axe d'une preuve, pour retrouver la promesse générique quand le constat
+  // n'est pas au catalogue.
+  const axeDe = new Map<string, string>();
+  for (const axe of audit?.axes ?? []) {
+    for (const p of axe.preuves) axeDe.set(p.cle, axe.id);
+  }
+
   return [...cartes]
     .sort((a, b) => (place.get(a.cle) ?? 99) - (place.get(b.cle) ?? 99))
     .map((c) => {
-      const apres = AUDIT_ISSUE_CATALOG.find((d) => d.key === c.cle)?.apres;
+      // Le constat s'il est au catalogue ; sinon la promesse de son axe. Le
+      // rédacteur n'est pas tenu à nos 28 cases : sur un site donné, l'argument
+      // le plus fort est souvent un relevé de Google qu'aucune ne nomme. Sans ce
+      // repli, sa carte sortait sans colonne droite — donc non détaillée par le
+      // rendu, et comptée dans le bandeau « +N ». Le meilleur argument de
+      // l'audit devenait un nombre.
+      const apres =
+        AUDIT_ISSUE_CATALOG.find((d) => d.key === c.cle)?.apres ??
+        APRES_PAR_AXE[axeDe.get(c.fonde_sur[0]) ?? ""] ??
+        APRES_PAR_AXE[axeGoogleDe(c.fonde_sur[0]) ?? ""];
+
       return {
         cle: c.cle,
         avant: c.avant,
@@ -178,6 +195,23 @@ function lignesAvantApres(
         reponse: apres?.comment,
       };
     });
+}
+
+/**
+ * L'axe d'un fondement `google:<id>`, que nos preuves ne portent pas.
+ *
+ * Les constats Google vivent hors des axes maison — ils sont rangés par
+ * catégorie Lighthouse. Sans cette table, une carte fondée sur le meilleur
+ * relevé de Google resterait sans promesse, c'est-à-dire sans colonne droite.
+ */
+function axeGoogleDe(fondement: string): string | null {
+  if (!fondement?.startsWith("google:")) return null;
+  const id = fondement.slice("google:".length);
+  if (/contrast|alt|aria|label|tap|font-size/.test(id)) return "accessibilite";
+  if (/meta|title|crawl|robots|canonical|hreflang|structured/.test(id)) return "seo";
+  if (/https|deprecat|console|image-size|csp/.test(id)) return "bonnes_pratiques";
+  // Le reste de Lighthouse parle de vitesse : rendu bloqué, poids, cache, JS.
+  return "vitesse";
 }
 
 /**

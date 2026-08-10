@@ -109,6 +109,50 @@ export interface AuditIssueDef {
   declencheurs?: DeclencheurConstat[];
 }
 
+/**
+ * L'« après » d'un constat que le catalogue ne connaît pas.
+ *
+ * POURQUOI CE REPLI EXISTE. Le rédacteur n'est pas tenu aux 28 constats
+ * pré-écrits : sur un site donné, l'argument le plus fort est souvent un relevé
+ * de Google qu'aucune de nos cases ne nomme — un contraste illisible, un script
+ * qui bloque l'affichage. Sans repli, sa carte sortait sans colonne droite,
+ * n'était donc pas détaillée par le rendu, et finissait comptée dans le bandeau
+ * « +N » : le meilleur argument de l'audit devenait un nombre.
+ *
+ * La promesse reste la nôtre — elle est générique par axe, jamais écrite par
+ * l'agent —, mais elle cesse d'exiger qu'il ait choisi une case de la liste.
+ */
+export const APRES_PAR_AXE: Record<string, { valeur: string; comment: string }> = {
+  vitesse: {
+    valeur: "Moins de 0,5 s",
+    comment: "Site reconstruit sur une base légère : plus rien à télécharger avant de voir la page.",
+  },
+  seo: {
+    valeur: "Lisible par Google",
+    comment: "Titres, descriptions et fiche d\u2019entreprise renseignés dans le format que Google attend.",
+  },
+  mobile: {
+    valeur: "Lisible sans zoomer",
+    comment: "Mise en page pensée pour le téléphone d\u2019abord, puis l\u2019ordinateur.",
+  },
+  accessibilite: {
+    valeur: "Lisible par tous",
+    comment: "Contrastes, tailles de texte et zones tactiles conformes, y compris à bout de bras.",
+  },
+  bonnes_pratiques: {
+    valeur: "Aux standards du web",
+    comment: "Connexion sécurisée, images au bon format, rien qui déclenche un avertissement.",
+  },
+  conversion: {
+    valeur: "Vous joindre en un geste",
+    comment: "Numéro cliquable, formulaire court et bouton de contact visibles sur chaque écran.",
+  },
+  popularite: {
+    valeur: "Visible là où on vous cherche",
+    comment: "Fiche Google complétée, avis affichés, et une page par commune que vous couvrez.",
+  },
+};
+
 export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
   {
     key: 'no_reviews_on_site',

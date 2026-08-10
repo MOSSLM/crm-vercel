@@ -261,7 +261,26 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
       "bonnes_pratiques",
     );
   } else {
-    for (const id of ["vitesse", "seo", "mobile"] as const) publier(axeMaison(id), id);
+    /**
+     * SANS GOOGLE, ON NE PARLE PLUS NI DE VITESSE NI DE MOBILE.
+     *
+     * Nos deux mesures les plus fragiles, et on l'a vérifié sur le parc. `ttfb`
+     * chronomètre la réponse du serveur — le premier octet — pas l'affichage :
+     * un site que nous notions 70/100 mettait 18,6 secondes à afficher son
+     * contenu. Quant au mobile, il repose sur un comptage de règles CSS et de
+     * largeurs figées, l'heuristique la plus grossière de tout l'analyseur.
+     *
+     * Ces deux axes sont donc RETIRÉS, pas masqués faute de confiance : ils sont
+     * listés dans `axes_masques` pour que la page méthode les nomme, et le
+     * document dit franchement qu'ils n'ont pas été testés. Un audit à trois axes
+     * sûrs vaut mieux qu'un audit à cinq dont deux se discutent devant le
+     * prospect — et c'est ce qui rend la mesure Google indispensable avant envoi.
+     *
+     * Le référencement reste : ses preuves sont des faits binaires — balise
+     * présente ou absente, page indexable ou non — pas des seuils inventés.
+     */
+    publier(axeMaison("seo"), "seo");
+    masques.push("vitesse", "mobile");
   }
 
   // Ce que Google ne mesure pas et ne mesurera jamais : est-ce qu'on peut vous
@@ -269,7 +288,7 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   // dans tous les cas — ce sont aussi les deux qui se vendent le mieux.
   for (const id of ["conversion", "popularite"] as const) publier(axeMaison(id), id);
 
-  const noteGlobale = num(row.note_globale);
+  const noteGlobale = plafonnerSurLcp(num(row.note_globale), psiFraiche ? num(row.psi_lcp_ms) : null);
 
   return {
     entreprise_id: Number(row.entreprise_id),
@@ -306,6 +325,35 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
  * les reprendre plutôt que d'en inventer, c'est ce qui rend la ligne
  * vérifiable par le prospect s'il fait le test lui-même.
  */
+/**
+ * Un site qu'on n'arrive pas à afficher ne peut pas avoir la moyenne.
+ *
+ * LE CAS QUI A IMPOSÉ CETTE RÈGLE. Un site noté 70/100 par notre barème, mesuré
+ * par Google le même soir à 18,6 secondes pour afficher son contenu principal.
+ * Aucun visiteur n'attend dix-huit secondes : c'est éliminatoire, et le présenter
+ * comme au-dessus de la moyenne décrédibilise tout le reste du document.
+ *
+ * POURQUOI UN PLAFOND ET PAS UN AJUSTEMENT AU JUGÉ. L'autre option envisagée
+ * était de laisser l'agent rédacteur retirer des points quand la note lui semble
+ * trop généreuse. Deux prospects au même site auraient alors deux notes, sans que
+ * personne puisse dire pourquoi — et la médiane du parc, calculée sur un barème
+ * stable, cesserait de vouloir dire quelque chose. Une règle mesurée se rejoue,
+ * s'explique et se conteste ; un ajustement ne se fait ni l'un ni l'autre.
+ *
+ * UN SEUL SEUIL, ET VOLONTAIREMENT HAUT. Dix secondes ne se discutent pas. Les
+ * bandes usuelles de Google — bon sous 2,5 s, mauvais au-delà de 4 s — auraient
+ * plafonné cinq sites sur six de notre échantillon, dont un que Google note 74
+ * en performance : on aurait remplacé une contradiction par une autre. On ne
+ * traite donc que le cas que personne ne défendrait.
+ */
+export const LCP_ELIMINATOIRE_MS = 10_000;
+export const NOTE_MAX_SI_ELIMINATOIRE = 30;
+
+function plafonnerSurLcp(note: number | null, lcpMs: number | null): number | null {
+  if (note == null || lcpMs == null || lcpMs < LCP_ELIMINATOIRE_MS) return note;
+  return Math.min(note, NOTE_MAX_SI_ELIMINATOIRE);
+}
+
 function preuvesPsi(row: Record<string, unknown>): Preuve[] {
   const out: Preuve[] = [];
   const lcp = num(row.psi_lcp_ms);
