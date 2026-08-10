@@ -20,6 +20,7 @@ function univers(over: Partial<UniversDicible> = {}): UniversDicible {
 const CARTE_VALIDE = {
   cle: "slow_site",
   fonde_sur: ["ttfb"],
+  avant: "3,4 s",
   titre: "Votre serveur met 3,4 secondes à répondre",
   texte:
     "Au-delà de deux secondes, la moitié des visiteurs referment avant d'avoir vu votre offre. Votre serveur en met 3,4.",
@@ -104,5 +105,33 @@ describe("plafond de cartes", () => {
   it("refuse au-delà de trois — un audit qui accable dilue", () => {
     const quatre = Array.from({ length: 4 }, () => CARTE_VALIDE);
     expect(validerPreparation({ cartes: quatre }, univers()).retenue).toBeNull();
+  });
+});
+
+describe("la colonne « avant » et le refus de l'« après »", () => {
+  it("exige la valeur mesurée : sans elle il n'y a pas de comparaison", () => {
+    const { avant: _, ...sansAvant } = CARTE_VALIDE;
+    const v = validerPreparation({ cartes: [sansAvant] }, univers());
+    expect(v.retenue).toBeNull();
+  });
+
+  it("soumet « avant » à la règle du dossier comme le reste", () => {
+    // C'est le champ où ça compte le plus : la valeur que le prospect va
+    // vérifier lui-même sur son téléphone.
+    const v = validerPreparation({ cartes: [{ ...CARTE_VALIDE, avant: "9,8 s" }] }, univers());
+    expect(v.retenue).toBeNull();
+    expect(v.rejets.some((r) => r.regle === 3)).toBe(true);
+  });
+
+  it("REJETTE une soumission qui tente d'écrire l'après", () => {
+    // On ne mesure pas le site démo : sa colonne est la seule du document qui
+    // promette un résultat, et rien ne pourrait vérifier ce qu'un modèle y
+    // écrirait. L'ignorer en silence laisserait l'agent croire sa valeur
+    // retenue — mieux vaut un rejet nommé qu'un malentendu.
+    const v = validerPreparation(
+      { cartes: [{ ...CARTE_VALIDE, apres: "0,3 s garanties" }] },
+      univers(),
+    );
+    expect(v.retenue).toBeNull();
   });
 });

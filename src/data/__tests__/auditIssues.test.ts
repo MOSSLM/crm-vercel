@@ -58,3 +58,29 @@ describe('backfillSolutionKeys', () => {
     expect(backfillSolutionKeys(legacy)[0].key).toBe(sample.key);
   });
 });
+
+describe("la colonne « après » du catalogue", () => {
+  it("porte un commentaire partout où elle porte une valeur", () => {
+    for (const d of AUDIT_ISSUE_CATALOG) {
+      if (!d.apres) continue;
+      expect(d.apres.valeur.length).toBeGreaterThan(2);
+      expect(d.apres.comment.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("laisse sans après les deux constats qui ne se comparent pas", () => {
+    // Un site qui n'existe pas n'a pas de valeur « avant » dans la même unité,
+    // et une note Google basse ne se corrige pas en construisant un site :
+    // promettre « 3,2 → 4,6 » serait s'engager sur ce que les clients écriront.
+    const sansApres = AUDIT_ISSUE_CATALOG.filter((d) => !d.apres).map((d) => d.key);
+    expect(sansApres.sort()).toEqual(["low_rating", "no_site_or_unreachable"]);
+  });
+
+  it("n'annonce jamais un résultat en pourcentage", () => {
+    // Un pourcentage sur un seul site n'a pas de dénominateur vérifiable, et la
+    // règle éditoriale du document l'interdit partout ailleurs.
+    for (const d of AUDIT_ISSUE_CATALOG) {
+      expect(d.apres?.valeur ?? "").not.toMatch(/%/);
+    }
+  });
+});

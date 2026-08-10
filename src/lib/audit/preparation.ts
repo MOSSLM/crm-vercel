@@ -41,14 +41,34 @@ import {
  * observation refusée doit tomber avec elle.
  */
 
-export const CartePreparee = z.object({
-  /** Clé de constat du catalogue (`src/data/auditIssues.ts`). */
-  cle: z.string().min(1),
-  /** Clés de preuves du dossier qui fondent cette carte. Au moins une. */
-  fonde_sur: z.array(z.string().min(1)).min(1),
-  titre: z.string().min(3).max(90),
-  texte: z.string().min(20).max(420),
-});
+export const CartePreparee = z
+  .object({
+    /** Clé de constat du catalogue (`src/data/auditIssues.ts`). */
+    cle: z.string().min(1),
+    /** Clés de preuves du dossier qui fondent cette carte. Au moins une. */
+    fonde_sur: z.array(z.string().min(1)).min(1),
+    titre: z.string().min(3).max(90),
+    texte: z.string().min(20).max(420),
+    /**
+     * La valeur mesurée, telle qu'elle s'affichera : « 9,8 s », « 9 champs ».
+     *
+     * Colonne gauche du tableau avant/après. Soumise à la règle 3 comme le reste
+     * de la rédaction — un chiffre absent du dossier fait tomber la carte.
+     */
+    avant: z.string().min(1).max(60),
+  })
+  /**
+   * `.strict()` N'EST PAS DÉCORATIF ICI.
+   *
+   * Il ferme la porte au champ `apres`. La colonne droite du tableau vient du
+   * catalogue (`AUDIT_ISSUE_CATALOG[cle].apres`) et de nulle part ailleurs :
+   * c'est la seule du document qui promette un résultat, on ne mesure pas le
+   * site démo, et rien en base ne pourrait donc vérifier ce qu'un modèle y
+   * écrirait. Sans `.strict()`, un agent qui glisserait `apres` verrait sa
+   * soumission acceptée et croirait la valeur retenue — alors qu'elle serait
+   * silencieusement ignorée. Mieux vaut un rejet nommé qu'un malentendu.
+   */
+  .strict();
 
 export const PreparationAudit = z.object({
   /** Introduction de la page « Situation ». */
@@ -175,9 +195,14 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
     }
 
     // Règle 3 — tout chiffre affirmé doit venir du dossier.
-    const inventes = [...nombresDe(carte.titre), ...nombresDe(carte.texte)].filter(
-      (n) => !estNombreLibre(n) && !elargi.nombres.has(n),
-    );
+    //
+    // `avant` y passe comme le reste, et c'est le champ où ça compte le plus :
+    // c'est la valeur que le prospect va vérifier sur son propre téléphone.
+    const inventes = [
+      ...nombresDe(carte.titre),
+      ...nombresDe(carte.texte),
+      ...nombresDe(carte.avant),
+    ].filter((n) => !estNombreLibre(n) && !elargi.nombres.has(n));
     if (inventes.length > 0) {
       rejets.push({
         regle: 3,

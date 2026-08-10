@@ -124,6 +124,7 @@ describe("validerPreparation — l'observation élargit l'univers", () => {
   const carte = {
     cle: "form_not_accessible",
     fonde_sur: [cleFondement("champs_formulaire")],
+    avant: "9 champs",
     titre: "Votre formulaire demande 9 champs",
     texte:
       "Neuf cases à remplir au clavier d’un téléphone, dont plusieurs facultatives. Un formulaire court capte la demande au moment où l’envie est là.",

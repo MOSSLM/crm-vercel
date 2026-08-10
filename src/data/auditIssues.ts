@@ -75,6 +75,27 @@ export interface AuditIssueDef {
   problem: { title: string; desc: string };
   solution: { name: string; desc: string; tag: string };
   /**
+   * Ce que le site préparé obtient sur ce point — la colonne « Après ».
+   *
+   * ÉCRIT ICI, UNE FOIS, ET JAMAIS PAR L'AGENT QUI PRÉPARE. On ne mesure pas le
+   * site démo : c'est une décision, pas un manque. Sa colonne est donc la seule
+   * du document qui promette un résultat, et rien en base ne pourrait vérifier
+   * ce qu'un modèle y écrirait. Deux prospects doivent recevoir la même promesse
+   * pour le même problème — sinon la première comparaison entre deux devis nous
+   * décrédibilise.
+   *
+   * `valeur` porte LA MÊME UNITÉ que le constat : « 1,2 s » face à « 9,8 s »,
+   * « 3 champs » face à « 9 champs ». Une ligne qui change de grandeur entre ses
+   * deux colonnes ne se lit pas d'un coup d'œil, et c'est exactement l'endroit
+   * où un document de mesure redevient une plaquette.
+   *
+   * ABSENT VOLONTAIREMENT sur les constats qui ne se comparent pas. La ligne
+   * existe alors sans son côté droit et rejoint le décompte « +N constats de
+   * plus » : mieux vaut un constat non détaillé qu'une promesse inventée pour
+   * remplir une case.
+   */
+  apres?: { valeur: string; comment: string };
+  /**
    * Ce qui déclenche ce constat, en preuves mesurées. Plusieurs entrées = un
    * « ou » entre elles. Absent ⇒ le constat ne se coche qu'à la main.
    */
@@ -95,6 +116,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Vos meilleurs avis Google affichés directement sur le site, au bon endroit, pour rassurer et convaincre au moment décisif.",
       tag: 'Confiance',
     },
+    apres: {
+      valeur: "Affichés dès l’accueil",
+      comment: "Vos meilleurs avis Google repris sur la page, à l’endroit où le visiteur hésite.",
+    },
     declencheurs: [{ preuves: ['avis'], mode: 'une' }],
   },
   {
@@ -109,6 +134,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Performance et rapidité',
       desc: "Un site optimisé qui s'affiche en moins de 2 secondes, sur mobile comme sur ordinateur. Plus de visiteurs gardés, donc plus de contacts.",
       tag: 'Performance',
+    },
+    apres: {
+      valeur: "Moins de 1,5 s",
+      comment: "Site reconstruit sur une base légère : plus rien à télécharger avant de voir la page.",
     },
     declencheurs: [{ preuves: ['ttfb', 'poids'], mode: 'une' }],
   },
@@ -125,6 +154,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Numéro cliquable et bouton d'appel toujours visible : le visiteur vous joint instantanément depuis son téléphone.",
       tag: 'Conversion',
     },
+    apres: {
+      valeur: "1 geste",
+      comment: "Numéro cliquable et bouton d’appel visible sans faire défiler.",
+    },
     declencheurs: [{ preuves: ['tel'], mode: 'une' }],
   },
   {
@@ -139,6 +172,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Formulaire de devis express',
       desc: "Un formulaire court et bien placé, visible dès le premier écran, pour capter la demande au moment où l'envie est là.",
       tag: 'Conversion',
+    },
+    apres: {
+      valeur: "3 champs",
+      comment: "Nom, téléphone, besoin — visible dès le premier écran.",
     },
     declencheurs: [{ preuves: ['formulaire'], mode: 'une' }],
   },
@@ -155,12 +192,19 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Des appels à l'action visibles et répétés aux bons endroits, qui guident naturellement le visiteur vers la prise de contact.",
       tag: 'Conversion',
     },
+    apres: {
+      valeur: "Visible sur chaque écran",
+      comment: "Un bouton de contact qui suit le visiteur, sans qu’il ait à chercher.",
+    },
     declencheurs: [{ preuves: ['cta'], mode: 'une' }],
   },
   {
     // Le cas le plus fréquent et le plus vendable du parc — et il n'était
     // représentable par aucune carte. Émis quand l'entreprise n'a pas d'URL,
     // ou quand son site ne répond plus (DNS mort, 4xx/5xx persistant).
+    // PAS D'« APRÈS », ET IL NE FAUT PAS EN AJOUTER : un site qui n'existe pas
+    // n'a pas de valeur « avant » dans la même unité. La comparaison serait
+    // « rien → 1,2 s », ce qui ne mesure aucun progrès, ça énonce une évidence.
     key: 'no_site_or_unreachable',
     pilier: 'technique',
     label: 'Pas de site / site injoignable',
@@ -187,6 +231,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Un site moderne, pensé d'abord pour le mobile, qui inspire confiance dès les 3 premières secondes.",
       tag: 'Design',
     },
+    apres: {
+      valeur: "Lisible sans zoomer",
+      comment: "Mise en page pensée pour le téléphone d’abord, puis l’ordinateur.",
+    },
     // Sans `viewport` le site n'est pas adaptatif, point. Sinon il faut DEUX
     // symptômes concordants : un site en flexbox n'a parfois aucune media query
     // et s'adapte parfaitement, et une largeur figée isolée ne fait pas un site
@@ -210,6 +258,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Images recompressées au format moderne, chargement différé de ce qui n'est pas visible tout de suite. Même contenu, une fraction du poids.",
       tag: 'Performance',
     },
+    apres: {
+      valeur: "Moins de 500 Ko",
+      comment: "Photos recompressées et chargées seulement quand on arrive dessus.",
+    },
     declencheurs: [{ preuves: ['poids'], mode: 'une' }],
   },
   {
@@ -224,6 +276,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Certificat et connexion sécurisée',
       desc: "Le cadenas dans la barre d'adresse, inclus et renouvelé automatiquement. Plus aucun avertissement entre vous et vos clients.",
       tag: 'Confiance',
+    },
+    apres: {
+      valeur: "Cadenas affiché",
+      comment: "Certificat inclus et renouvelé automatiquement.",
     },
     declencheurs: [{ preuves: ['https'], mode: 'une' }],
   },
@@ -240,6 +296,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "La consigne est levée, le site est déclaré aux moteurs et son indexation vérifiée. Vos pages redeviennent trouvables.",
       tag: 'Visibilité',
     },
+    apres: {
+      valeur: "Pages ouvertes à Google",
+      comment: "Blocage levé : vos pages redeviennent trouvables.",
+    },
     declencheurs: [{ preuves: ['noindex'], mode: 'une' }],
   },
   {
@@ -254,6 +314,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Plan du site et Search Console',
       desc: "Plan du site généré automatiquement, déclaré à Google, et console de suivi configurée pour voir ce qui est indexé.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Plan du site déclaré",
+      comment: "Google reçoit la liste de vos pages au lieu de les deviner.",
     },
     declencheurs: [{ preuves: ['sitemap', 'robots_txt'], mode: 'toutes' }],
   },
@@ -270,6 +334,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Le contenu s'affiche d'abord, les scripts accessoires ensuite. La page paraît instantanée même quand tout n'est pas encore chargé.",
       tag: 'Performance',
     },
+    apres: {
+      valeur: "Rien ne bloque l’affichage",
+      comment: "Le texte s’affiche d’abord, le reste se charge ensuite.",
+    },
     declencheurs: [{ preuves: ['scripts_bloquants'], mode: 'une' }],
   },
   {
@@ -284,6 +352,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Hébergement optimisé',
       desc: "Compression et mise en cache activées, contenu servi depuis un réseau proche de vos visiteurs. Réglage inclus dans l'hébergement.",
       tag: 'Performance',
+    },
+    apres: {
+      valeur: "Compression activée",
+      comment: "Trois fois moins à télécharger, à contenu identique.",
     },
     declencheurs: [{ preuves: ['compression', 'cache'], mode: 'toutes' }],
   },
@@ -300,6 +372,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Zoom autorisé et tailles de texte pensées pour être lues à bout de bras, sans avoir à plisser les yeux.",
       tag: 'Accessibilité',
     },
+    apres: {
+      valeur: "Zoom autorisé",
+      comment: "Vos clients peuvent agrandir le texte quand ils en ont besoin.",
+    },
     declencheurs: [{ preuves: ['zoom'], mode: 'une' }],
   },
   {
@@ -314,6 +390,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Typographie mobile-first',
       desc: "Des tailles de texte qui s'adaptent à l'écran, lisibles d'emblée sur un téléphone tenu à distance normale.",
       tag: 'Design',
+    },
+    apres: {
+      valeur: "16 px minimum",
+      comment: "Texte lisible à bout de bras, sans lunettes.",
     },
     declencheurs: [{ preuves: ['polices'], mode: 'une' }],
   },
@@ -335,9 +415,16 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Une sollicitation régulière de vos clients — y compris les anciens — pour transformer un travail déjà fait en preuve visible. On met en place la demande ; les avis restent ceux de vos clients.",
       tag: 'Réputation',
     },
+    apres: {
+      valeur: "Relance après chaque chantier",
+      comment: "Vos clients satisfaits sont sollicités au bon moment.",
+    },
     declencheurs: [{ preuves: ['avis_nombre'], mode: 'une' }],
   },
   {
+    // PAS D'« APRÈS », ET IL NE FAUT PAS EN AJOUTER : une note Google basse ne se
+    // corrige pas en construisant un site. Promettre « 3,2 → 4,6 » serait
+    // s'engager sur ce que les clients écriront, ce qui ne nous appartient pas.
     key: 'low_rating',
     pilier: 'popularite',
     label: 'Note Google sous 4 étoiles',
@@ -365,6 +452,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Vos qualifications affichées avec leur logo et leur validité, là où elles décident : sur l'accueil et sur les pages de service concernées.",
       tag: 'Confiance',
     },
+    apres: {
+      valeur: "Affichées en page d’accueil",
+      comment: "Vos qualifications visibles là où elles rassurent, avec leur date de validité.",
+    },
     declencheurs: [{ preuves: ['rge_affiche'], mode: 'une' }],
   },
   {
@@ -379,6 +470,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Référencement local',
       desc: "Titres, contenus et fiche Google alignés sur votre métier et votre zone d'intervention réelle, commune par commune.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Une page par commune",
+      comment: "Chaque ville que vous couvrez a sa page, avec vos chantiers de ce secteur.",
     },
     declencheurs: [{ preuves: ['seo_local'], mode: 'une' }],
   },
@@ -397,6 +492,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Un titre par page, qui nomme votre métier et votre secteur — la formulation exacte que tapent vos clients.",
       tag: 'Visibilité',
     },
+    apres: {
+      valeur: "Métier + ville en tête",
+      comment: "Le titre dit ce que vous faites et où, dans les 60 premiers caractères.",
+    },
     declencheurs: [{ preuves: ['title'], mode: 'une' }],
   },
   {
@@ -411,6 +510,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Accroches rédigées',
       desc: "Une description écrite pour chaque page, qui donne envie de cliquer plutôt que de passer au concurrent suivant.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Résumé sous chaque résultat",
+      comment: "La phrase qui donne envie de cliquer plutôt qu’un extrait au hasard.",
     },
     declencheurs: [{ preuves: ['description'], mode: 'une' }],
   },
@@ -427,6 +530,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Un titre principal par page et une hiérarchie de sous-titres qui suit la lecture. Plus lisible pour vos clients, plus clair pour Google.",
       tag: 'Visibilité',
     },
+    apres: {
+      valeur: "Un titre par page",
+      comment: "Chaque page annonce son sujet en une ligne, à Google comme au visiteur.",
+    },
     declencheurs: [{ preuves: ['h1'], mode: 'une' }],
   },
   {
@@ -441,6 +548,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Photos décrites et indexées',
       desc: "Chaque réalisation décrite en une ligne : vos photos deviennent trouvables, et le site reste lisible pour les malvoyants.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Toutes décrites",
+      comment: "Chaque photo porte sa description : Google les comprend, et elles remontent.",
     },
     declencheurs: [{ preuves: ['images_alt'], mode: 'une' }],
   },
@@ -457,6 +568,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Métier, adresse, horaires et zone d'intervention déclarés dans le format attendu par Google — la base des affichages enrichis.",
       tag: 'Visibilité',
     },
+    apres: {
+      valeur: "Fiche lisible par Google",
+      comment: "Vos horaires, votre adresse et vos avis renseignés dans le format que Google attend.",
+    },
     declencheurs: [{ preuves: ['jsonld'], mode: 'une' }],
   },
   {
@@ -471,6 +586,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Coordonnées harmonisées',
       desc: "Vos coordonnées affichées partout de la même façon, alignées sur votre fiche Google et sur votre inscription officielle.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Identiques partout",
+      comment: "Même nom, même adresse, même numéro sur le site et sur la fiche Google.",
     },
     declencheurs: [{ preuves: ['nap'], mode: 'une' }],
   },
@@ -487,6 +606,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Mentions légales, politique de confidentialité et conditions, rédigées à partir de vos informations d'entreprise.",
       tag: 'Confiance',
     },
+    apres: {
+      valeur: "Aux normes",
+      comment: "Mentions légales et politique de confidentialité rédigées et à jour.",
+    },
     declencheurs: [{ preuves: ['mentions'], mode: 'une' }],
   },
   {
@@ -502,6 +625,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       desc: "Bandeau de consentement et mesure d'audience configurés dans les règles, sans gêner la lecture.",
       tag: 'Confiance',
     },
+    apres: {
+      valeur: "Conforme",
+      comment: "Bandeau de consentement conforme, sans gêner la lecture.",
+    },
     declencheurs: [{ preuves: ['cookies'], mode: 'une' }],
   },
   {
@@ -516,6 +643,10 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Présence reliée',
       desc: "Vos réseaux reliés au site dans les deux sens, pour que chaque publication travaille aussi pour votre référencement.",
       tag: 'Visibilité',
+    },
+    apres: {
+      valeur: "Liés au site",
+      comment: "Vos pages sociales accessibles depuis le site, et l’inverse.",
     },
     declencheurs: [{ preuves: ['reseaux'], mode: 'une' }],
   },

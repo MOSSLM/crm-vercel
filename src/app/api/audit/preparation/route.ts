@@ -2,11 +2,11 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { requireUser } from "@/app/api/_lib/auth";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { construireDossier, universDe } from "@/lib/audit/dossier";
-import { validerPreparation } from "@/lib/audit/preparation";
+import { validerPreparation, type CartePreparee } from "@/lib/audit/preparation";
 import { construirePage5 } from "@/lib/audit/offres-audit";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
-import { problemsFromKeys, solutionsFromKeys, renumberSolutions } from "@/data/auditIssues";
-import type { AuditContent } from "@/types";
+import { problemsFromKeys, AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
+import type { AuditAvantApres, AuditContent } from "@/types";
 
 /**
  * `POST /api/audit/preparation` — accepter une rédaction, sous contrat.
@@ -96,10 +96,15 @@ export async function POST(req: Request): Promise<Response> {
     ...base,
     page2: {
       ...base.page2,
+      // `problems` n'est PLUS de l'affichage — le document compact rend le relevé
+      // mesuré à cet endroit. C'est devenu le REGISTRE DE SÉLECTION : la liste à
+      // cocher de l'éditeur, `codesRetenus` et `construirePage5` lisent tous
+      // `page2.problems[].key` pour savoir quelles offres proposer. Le supprimer
+      // en le croyant mort ferait taire la page tarifs.
       problems,
       section_intro: p.intro ?? base.page2.section_intro,
     },
-    page3: { ...base.page3, solutions: renumberSolutions(solutionsFromKeys(cles)) },
+    page3: { ...base.page3, avant_apres: lignesAvantApres(p.cartes) },
     page5: construirePage5(base.page5, dossier.offres, cles),
   };
 
@@ -125,6 +130,33 @@ export async function POST(req: Request): Promise<Response> {
     // se remarque trois semaines plus tard, devant un prospect.
     rejets: verdict.rejets,
     observations: verdict.observations,
+  });
+}
+
+/**
+ * Le tableau avant/après : deux colonnes, deux origines qui ne se mélangent pas.
+ *
+ * À GAUCHE, ce que l'agent a écrit — mais seulement après être passé par les
+ * quatre règles : la valeur est mesurée, elle figure dans le dossier, et sa
+ * carte est adossée à une preuve en échec.
+ *
+ * À DROITE, le catalogue, et rien d'autre. On ne mesure pas le site démo ; sa
+ * colonne est donc la seule du document qui promette un résultat, et deux
+ * prospects doivent recevoir la même promesse pour le même problème. Un constat
+ * dont le catalogue ne dit rien sort simplement sans côté droit : le rendu ne le
+ * détaille pas et le compte dans son bandeau « +N constats de plus ». Mieux vaut
+ * un constat non détaillé qu'une promesse inventée pour remplir une case.
+ */
+function lignesAvantApres(cartes: readonly CartePreparee[]): AuditAvantApres[] {
+  return cartes.map((c) => {
+    const apres = AUDIT_ISSUE_CATALOG.find((d) => d.key === c.cle)?.apres;
+    return {
+      cle: c.cle,
+      avant: c.avant,
+      precision: c.titre,
+      apres: apres?.valeur,
+      reponse: apres?.comment,
+    };
   });
 }
 
