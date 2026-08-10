@@ -42,7 +42,7 @@ export function AuditPage5({ content, activeField, onFieldClick }: Props) {
           {/* Main pricing card */}
           <Zone field="page5.pricing" activeField={activeField} onFieldClick={onFieldClick}>
             <div style={{ background: C.nuit, borderRadius: 6, padding: '36px 40px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 300px 200px at 90% 0%, rgba(58,123,213,0.3) 0%, transparent 65%), radial-gradient(ellipse 200px 200px at 0% 100%, rgba(58,123,213,0.15) 0%, transparent 60%)', opacity: 0.6 }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 300px 200px at 90% 0%, rgba(47, 122, 224,0.3) 0%, transparent 65%), radial-gradient(ellipse 200px 200px at 0% 100%, rgba(47, 122, 224,0.15) 0%, transparent 60%)', opacity: 0.6 }} />
               {showGrain && <GrainOverlay globalStyle={content.global_style} />}
               <div style={{ position: 'relative', zIndex: 4 }}>
                 {enabledServices.map((svc, i) => (
@@ -72,19 +72,19 @@ export function AuditPage5({ content, activeField, onFieldClick }: Props) {
           {/* Secondary card — alternative offer (e.g. fully-custom site) */}
           {p.secondary_card && (
             <Zone field="page5.secondary_card" activeField={activeField} onFieldClick={onFieldClick} style={{ marginTop: 16 }}>
-              <div style={{ background: 'white', border: `1px solid rgba(58,123,213,0.18)`, borderRadius: 6, padding: '22px 28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24 }}>
+              <div style={{ background: 'white', border: `1px solid rgba(47, 122, 224,0.18)`, borderRadius: 6, padding: '22px 28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24 }}>
                 <div>
                   {p.secondary_card.subtitle && (
                     <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 6 }}>{p.secondary_card.subtitle}</div>
                   )}
                   <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 300, color: C.nuit, fontStyle: 'italic' }}>{p.secondary_card.title}</div>
                   {p.secondary_card.description && (
-                    <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.55)', marginTop: 6, lineHeight: 1.6, maxWidth: 380 }}>{p.secondary_card.description}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.55)', marginTop: 6, lineHeight: 1.6, maxWidth: 380 }}>{p.secondary_card.description}</div>
                   )}
                 </div>
                 <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {p.secondary_card.from && (
-                    <div style={{ fontSize: 10, color: 'rgba(11,29,58,0.5)' }}>À partir de</div>
+                    <div style={{ fontSize: 10, color: 'rgba(10, 27, 51,0.5)' }}>À partir de</div>
                   )}
                   <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 30, color: C.nuit }}>{fmtEur(p.secondary_card.amount)}</div>
                 </div>
@@ -102,28 +102,28 @@ export function AuditPage5({ content, activeField, onFieldClick }: Props) {
                   {p.addl_section_title || 'Services additionnels'}
                 </div>
               </Zone>
-              <span style={{ fontSize: 9, color: 'rgba(11,29,58,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>· Optionnel</span>
+              <span style={{ fontSize: 9, color: 'rgba(10, 27, 51,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>· Optionnel</span>
             </div>
             {p.addl_section_subtitle && (
               <Zone field="page5.addl_section_subtitle" activeField={activeField} onFieldClick={onFieldClick}>
-                <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)', marginBottom: 16, lineHeight: 1.6 }}>{p.addl_section_subtitle}</div>
+                <div style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.5)', marginBottom: 16, lineHeight: 1.6 }}>{p.addl_section_subtitle}</div>
               </Zone>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: p.addl_section_subtitle ? 0 : 14 }}>
               {p.additional_services.map((svc, i) => (
                 <Zone key={i} field={`page5.additional_services.${i}`} activeField={activeField} onFieldClick={onFieldClick}>
-                  <div style={{ padding: '18px 20px', background: 'white', border: `1px solid rgba(58,123,213,0.12)`, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ padding: '18px 20px', background: 'white', border: `1px solid rgba(47, 122, 224,0.12)`, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {svc.badge && (
-                      <div style={{ fontSize: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.azur, background: 'rgba(58,123,213,0.08)', padding: '3px 7px', borderRadius: 2, alignSelf: 'flex-start', fontWeight: 500 }}>
+                      <div style={{ fontSize: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.azur, background: 'rgba(47, 122, 224,0.08)', padding: '3px 7px', borderRadius: 2, alignSelf: 'flex-start', fontWeight: 500 }}>
                         {svc.badge}
                       </div>
                     )}
                     <div style={{ fontSize: 13, fontWeight: 500, color: C.nuit, marginTop: svc.badge ? 4 : 0 }}>{svc.label}</div>
                     {svc.description && (
-                      <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)', lineHeight: 1.6 }}>{svc.description}</div>
+                      <div style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.5)', lineHeight: 1.6 }}>{svc.description}</div>
                     )}
                     <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 22, color: C.nuit, marginTop: 6 }}>
-                      {fmtEur(svc.amount)}{svc.is_mrr ? <span style={{ fontSize: 13, color: 'rgba(11,29,58,0.5)' }}>/mois</span> : ''}
+                      {fmtEur(svc.amount)}{svc.is_mrr ? <span style={{ fontSize: 13, color: 'rgba(10, 27, 51,0.5)' }}>/mois</span> : ''}
                     </div>
                   </div>
                 </Zone>

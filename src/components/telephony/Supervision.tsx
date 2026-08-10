@@ -41,7 +41,7 @@ function num(c: LiveCall): string {
   return (c.direction === "outbound" ? c.from_e164 : c.to_e164) ?? "";
 }
 
-const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
+const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
 function colorOf(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;

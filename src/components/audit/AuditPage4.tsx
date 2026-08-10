@@ -11,7 +11,7 @@ interface Props {
 
 function CheckBadge() {
   return (
-    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(58,123,213,0.12)', border: `1px solid rgba(58,123,213,0.25)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(47, 122, 224,0.12)', border: `1px solid rgba(47, 122, 224,0.25)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
         <path d="M2 5L4.5 7.5L8 3" stroke={C.azur} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -44,7 +44,7 @@ export function AuditPage4({ content, activeField, onFieldClick }: Props) {
             </div>
           </Zone>
           <Zone field="page4.section_subtitle" activeField={activeField} onFieldClick={onFieldClick}>
-            <div style={{ fontSize: gs?.font_section_intro ?? 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
+            <div style={{ fontSize: gs?.font_section_intro ?? 14, lineHeight: 1.8, color: 'rgba(10, 27, 51,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
               {p.section_subtitle || 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.'}
             </div>
           </Zone>
@@ -52,15 +52,15 @@ export function AuditPage4({ content, activeField, onFieldClick }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {p.livrables.map((liv, i) => (
             <Zone key={i} field={`page4.livrables.${i}`} activeField={activeField} onFieldClick={onFieldClick}>
-              <div style={{ padding: 22, borderRadius: 4, background: 'white', border: `1px solid rgba(58,123,213,0.12)`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ padding: 22, borderRadius: 4, background: 'white', border: `1px solid rgba(47, 122, 224,0.12)`, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: C.nuit }}>{liv.title}</div>
                   <CheckBadge />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {liv.items.map((item, j) => (
-                    <div key={j} style={{ fontSize: 11, color: 'rgba(11,29,58,0.55)', lineHeight: 1.5, paddingLeft: 10, position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 0, color: 'rgba(58,123,213,0.4)', fontSize: 9, top: 2 }}>—</span>
+                    <div key={j} style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.55)', lineHeight: 1.5, paddingLeft: 10, position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 0, color: 'rgba(47, 122, 224,0.4)', fontSize: 9, top: 2 }}>—</span>
                       {item}
                     </div>
                   ))}

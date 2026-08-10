@@ -2,7 +2,7 @@ import type { AuditContent } from '@/types';
 import { esc, innerHeader, innerFooter } from './htmlShared';
 
 const checkSvg = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-  <path d="M2 5L4.5 7.5L8 3" stroke="#3A7BD5" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M2 5L4.5 7.5L8 3" stroke="#2F7AE0" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
 const checkBadge = `<div class="check-badge">${checkSvg}</div>`;

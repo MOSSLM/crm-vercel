@@ -45,6 +45,22 @@ marketing) · `.sb-skin` (site builder) · `[data-form-builder]` · `.da2`
 **Conséquence pratique :** modifier `globals.css` seul ne repeint pas le CRM.
 Toute évolution de la charte doit passer les onze blocs.
 
+## Lisibilité
+
+Trois couples méritent d'être connus, mesurés en ratio WCAG :
+
+- `--text` `#122844` sur `--bg` `#F7FAFD` : **14,2:1** — AAA.
+- `--muted-foreground` `#5F7396` sur blanc : **4,8:1** — AA. Ce jeton est un cran
+  plus sombre que `--text-3` **à dessein** : `text-muted-foreground` porte le
+  texte secondaire de tout le CRM, alors que `--text-3` `#8AA0C0` (2,7:1) est la
+  brume de l'identité, faite pour des étiquettes mono discrètes. Ne portez pas
+  de texte courant avec `--text-3`, et jamais rien de lisible avec `--text-4`
+  `#B3C4DE` (1,8:1), qui est décoratif.
+- Blanc sur `--primary` `#2F7AE0` : **4,2:1**. C'est la paire de l'identité
+  Sama ; elle passe le seuil des éléments d'interface (3:1) mais reste sous les
+  4,5:1 exigés pour du texte de moins de 18,66 px gras. Un bouton primaire sur
+  `--accent-2` `#1F5BC0` monterait à 6,3:1 si l'on veut la conformité stricte.
+
 ## Piège connu : `--accent` a deux sens
 
 Dans `:root`, `--accent` est un jeton **shadcn** : c'est une *surface* de survol
@@ -56,12 +72,16 @@ skin, `--accent` dedans.
 
 ## Ce qui n'a pas basculé, et pourquoi
 
-- **Les palettes catégorielles.** Couleurs de graphiques (`--chart-1…12`,
-  `src/utils/kpiApi.tsx`), couleurs d'étape de pipeline, teintes d'avatar :
-  leur travail est de **distinguer**, pas de représenter la marque. Les
-  repeindre en azur les rendrait illisibles. L'orange de marque y a été
-  remplacé par l'azur **seulement** là où aucune autre entrée n'était déjà
-  bleue.
+- **Les palettes de graphiques.** `--chart-1…12` et les teintes de KPI de
+  `src/utils/kpiApi.tsx` sont une gamme catégorielle générique : leur travail
+  est de **distinguer**, pas de représenter la marque.
+- **Les palettes catégorielles de l'application** (étapes de pipeline, rôles,
+  canaux, avatars) ont bien basculé, mais sous contrainte : chaque liste a été
+  vérifiée en ΔE2000 et aucune paire n'y descend sous **15** — l'orange de
+  marque devient l'azur *seulement* quand aucune autre entrée n'était déjà
+  bleue, sinon la liste reçoit une teinte franchement écartée. C'est pourquoi
+  `STAGE_PALETTE` n'a qu'un seul bleu, et pourquoi le canal Email est sarcelle :
+  LinkedIn y porte déjà sa couleur de marque, qui est à deux degrés de l'azur.
 - **Les couleurs nommées et persistées.** `CALENDAR_PALETTE` (« Orange »,
   « Bleu ») et `CARD_COLORS` des planches (`red`, `blue`) sont stockées en
   base avec leur nom : changer la valeur ferait mentir le libellé.
@@ -89,6 +109,8 @@ depuis ces maquettes doit traduire la palette au passage**.
 ## Nouvelles lignes en base
 
 `sql/20260810_charte_sama.sql` recale les `default` de couleur des tables
-(téléphonie, rendez-vous, calendrier, types de tâches) et met à jour les
-lignes restées à l'ancienne valeur par défaut. Les couleurs choisies à la main
-par un utilisateur ne sont pas touchées.
+(étiquettes d'appel, pages de rendez-vous, étiquettes CRM, types de tâches) et
+met à jour les seules lignes restées à l'ancienne valeur par défaut. Une
+couleur choisie à la main n'est jamais touchée, et le calendrier est exempté :
+sa palette est nommée, un défaut hors liste y afficherait une pastille sans
+nom.

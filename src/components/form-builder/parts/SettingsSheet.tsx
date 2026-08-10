@@ -16,7 +16,7 @@ interface SettingsSheetProps {
   onSave: (patch: Partial<Form>) => void;
 }
 
-const PRESET_COLORS = ['#2F7AE0', '#2B7FB8', '#1F8A5B', '#6B5BD9', '#C8881F'];
+const PRESET_COLORS = ['#2F7AE0', '#0E93A6', '#1F8A5B', '#6B5BD9', '#C8881F'];
 
 export function SettingsSheet({ open, form, onClose, onSave }: SettingsSheetProps) {
   const [name, setName] = useState('');

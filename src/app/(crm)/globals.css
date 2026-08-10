@@ -35,7 +35,10 @@
   --secondary: #EFF5FC;
   --secondary-foreground: #122844;
   --muted: #EFF5FC;
-  --muted-foreground: #8AA0C0;
+  /* Un cran plus sombre que --text-3 : ce jeton porte le texte courant
+     secondaire de tout le CRM et doit passer AA (4,8:1 sur blanc), là où
+     --text-3 reste la brume des étiquettes discrètes. */
+  --muted-foreground: #5F7396;
   --accent: #EFF5FC;
   --accent-foreground: #2F7AE0;
   --destructive: #B5322F;

@@ -35,7 +35,7 @@ export function AuditPage6({ content, activeField, onFieldClick }: Props) {
             </div>
           </Zone>
           <Zone field="page6.section_subtitle" activeField={activeField} onFieldClick={onFieldClick}>
-            <div style={{ fontSize: gs?.font_section_intro ?? 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
+            <div style={{ fontSize: gs?.font_section_intro ?? 14, lineHeight: 1.8, color: 'rgba(10, 27, 51,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
               {p.section_subtitle || "Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner."}
             </div>
           </Zone>
@@ -44,32 +44,32 @@ export function AuditPage6({ content, activeField, onFieldClick }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           {p.next_steps.map((step, i) => (
             <Zone key={i} field={`page6.next_steps.${i}`} activeField={activeField} onFieldClick={onFieldClick}>
-              <div style={{ padding: 22, border: `1px solid rgba(11,29,58,0.08)`, borderRadius: 4 }}>
-                <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 40, fontWeight: 300, color: 'rgba(58,123,213,0.15)', lineHeight: 1, marginBottom: 10 }}>{i + 1}</div>
+              <div style={{ padding: 22, border: `1px solid rgba(10, 27, 51,0.08)`, borderRadius: 4 }}>
+                <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 40, fontWeight: 300, color: 'rgba(47, 122, 224,0.15)', lineHeight: 1, marginBottom: 10 }}>{i + 1}</div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: C.nuit, marginBottom: 6 }}>{step.title}</div>
-                <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)', lineHeight: 1.6 }}>{step.desc}</div>
+                <div style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.5)', lineHeight: 1.6 }}>{step.desc}</div>
               </div>
             </Zone>
           ))}
         </div>
 
         <Zone field="page6.cta" activeField={activeField} onFieldClick={onFieldClick}>
-          <div style={{ background: 'rgba(58,123,213,0.05)', border: `1px solid rgba(58,123,213,0.15)`, borderRadius: 4, padding: '24px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ background: 'rgba(47, 122, 224,0.05)', border: `1px solid rgba(47, 122, 224,0.15)`, borderRadius: 4, padding: '24px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, fontWeight: 300, color: C.nuit, marginBottom: 4 }}>{p.cta_title}</div>
-              <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)' }}>{p.cta_sub}</div>
+              <div style={{ fontSize: 11, color: 'rgba(10, 27, 51,0.5)' }}>{p.cta_sub}</div>
             </div>
             <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {p.contact_phone && <div style={{ fontSize: 12, fontWeight: 500, color: C.azur }}>{p.contact_phone}</div>}
               {p.contact_email && <div style={{ fontSize: 12, fontWeight: 500, color: C.azur }}>{p.contact_email}</div>}
-              {p.contact_website && <div style={{ fontSize: 10, color: 'rgba(11,29,58,0.4)', marginTop: 4, letterSpacing: '0.08em' }}>{p.contact_website}</div>}
+              {p.contact_website && <div style={{ fontSize: 10, color: 'rgba(10, 27, 51,0.4)', marginTop: 4, letterSpacing: '0.08em' }}>{p.contact_website}</div>}
             </div>
           </div>
         </Zone>
 
-        <div style={{ marginTop: 'auto', paddingTop: 32, borderTop: `1px solid rgba(11,29,58,0.07)`, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ marginTop: 'auto', paddingTop: 32, borderTop: `1px solid rgba(10, 27, 51,0.07)`, display: 'flex', alignItems: 'center', gap: 16 }}>
           <SamaLogo size={20} color={C.azur} />
-          <div style={{ fontSize: 10, color: 'rgba(11,29,58,0.35)', lineHeight: 1.7, letterSpacing: '0.04em' }}>
+          <div style={{ fontSize: 10, color: 'rgba(10, 27, 51,0.35)', lineHeight: 1.7, letterSpacing: '0.04em' }}>
             SAMA · Agence digitale indépendante<br />
             Document confidentiel préparé exclusivement pour {content.page1.client_name || 'Entreprise Cliente'}
           </div>

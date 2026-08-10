@@ -1882,7 +1882,7 @@ h1.display, .display {
 .login-right {
   background:
     radial-gradient(ellipse at 70% 30%, rgba(47, 122, 224,.12), transparent 55%),
-    linear-gradient(150deg, #122844, #1d1a14);
+    linear-gradient(150deg, #122844, #0A1B33);
   color: var(--bg);
   padding: 40px;
   display: flex; flex-direction: column;

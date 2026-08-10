@@ -1,5 +1,5 @@
 /* rdv.css — module Rendez-vous (Cal.SAMA) · surcouche du design system CRM */
-:root{--ink:#122844;--ink-2:#1D1A14;--on-ink:#EFF5FC;--on-ink-2:rgba(231, 240, 251,.58);--on-ink-3:rgba(231, 240, 251,.34);--on-ink-line:rgba(231, 240, 251,.12)}
+:root{--ink:#122844;--ink-2:#0A1B33;--on-ink:#EFF5FC;--on-ink-2:rgba(231, 240, 251,.58);--on-ink-3:rgba(231, 240, 251,.34);--on-ink-line:rgba(231, 240, 251,.12)}
 a{color:var(--accent-2);text-decoration:none}a:hover{color:var(--accent)}
 .rv-app{display:grid;grid-template-columns:56px 220px 1fr;height:100vh;min-width:1200px;background:var(--bg)}
 .rv-app.no-rail{grid-template-columns:56px 1fr}

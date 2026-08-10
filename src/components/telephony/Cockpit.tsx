@@ -35,7 +35,7 @@ const SCRIPT_STEPS = [
   { title: "Closing RDV", body: "Je vous propose un point de 15 min cette semaine — plutôt mardi ou jeudi ?" },
 ];
 
-const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
+const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
 function colorOf(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;

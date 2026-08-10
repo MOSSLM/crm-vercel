@@ -43,15 +43,15 @@ export function page5Html(content: AuditContent, opts?: { forPdf?: boolean }) {
         </div>
       </div>
       ${p.secondary_card ? `
-      <div style="margin-top:16px;background:white;border:1px solid rgba(58,123,213,0.18);border-radius:6px;padding:22px 28px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+      <div style="margin-top:16px;background:white;border:1px solid rgba(47, 122, 224,0.18);border-radius:6px;padding:22px 28px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
         <div>
-          ${p.secondary_card.subtitle ? `<div style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#3A7BD5;font-weight:500;margin-bottom:6px">${esc(p.secondary_card.subtitle)}</div>` : ''}
-          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;color:#0B1D3A;font-style:italic">${esc(p.secondary_card.title)}</div>
-          ${p.secondary_card.description ? `<div style="font-size:11px;color:rgba(11,29,58,0.55);margin-top:6px;line-height:1.6;max-width:380px">${esc(p.secondary_card.description)}</div>` : ''}
+          ${p.secondary_card.subtitle ? `<div style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#2F7AE0;font-weight:500;margin-bottom:6px">${esc(p.secondary_card.subtitle)}</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;color:#0A1B33;font-style:italic">${esc(p.secondary_card.title)}</div>
+          ${p.secondary_card.description ? `<div style="font-size:11px;color:rgba(10, 27, 51,0.55);margin-top:6px;line-height:1.6;max-width:380px">${esc(p.secondary_card.description)}</div>` : ''}
         </div>
         <div style="text-align:right;white-space:nowrap">
-          ${p.secondary_card.from ? `<div style="font-size:10px;color:rgba(11,29,58,0.5)">À partir de</div>` : ''}
-          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:30px;color:#0B1D3A">${fmtEur(p.secondary_card.amount)}</div>
+          ${p.secondary_card.from ? `<div style="font-size:10px;color:rgba(10, 27, 51,0.5)">À partir de</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:30px;color:#0A1B33">${fmtEur(p.secondary_card.amount)}</div>
         </div>
       </div>` : ''}
     </div>
@@ -59,16 +59,16 @@ export function page5Html(content: AuditContent, opts?: { forPdf?: boolean }) {
     <div style="margin-top:32px">
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
         <div class="section-eyebrow" style="margin-bottom:0">${esc(p.addl_section_title || 'Services additionnels')}</div>
-        <span style="font-size:9px;color:rgba(11,29,58,0.35);letter-spacing:.1em;text-transform:uppercase">· Optionnel</span>
+        <span style="font-size:9px;color:rgba(10, 27, 51,0.35);letter-spacing:.1em;text-transform:uppercase">· Optionnel</span>
       </div>
-      ${p.addl_section_subtitle ? `<div style="font-size:11px;color:rgba(11,29,58,0.5);margin-bottom:16px;line-height:1.6">${esc(p.addl_section_subtitle)}</div>` : ''}
+      ${p.addl_section_subtitle ? `<div style="font-size:11px;color:rgba(10, 27, 51,0.5);margin-bottom:16px;line-height:1.6">${esc(p.addl_section_subtitle)}</div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:${p.addl_section_subtitle ? '0' : '14px'}">
         ${addlServices.map(svc => `
-        <div style="padding:18px 20px;background:white;border:1px solid rgba(58,123,213,0.12);border-radius:4px;display:flex;flex-direction:column;gap:6px">
-          ${svc.badge ? `<div style="font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#3A7BD5;background:rgba(58,123,213,0.08);padding:3px 7px;border-radius:2px;align-self:flex-start;font-weight:500">${esc(svc.badge)}</div>` : ''}
-          <div style="font-size:13px;font-weight:500;color:#0B1D3A;margin-top:${svc.badge ? '4px' : '0'}">${esc(svc.label)}</div>
-          ${svc.description ? `<div style="font-size:11px;color:rgba(11,29,58,0.5);line-height:1.6">${esc(svc.description)}</div>` : ''}
-          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:22px;color:#0B1D3A;margin-top:6px">${fmtEur(svc.amount)}${svc.is_mrr ? '<span style="font-size:13px;color:rgba(11,29,58,0.5)">/mois</span>' : ''}</div>
+        <div style="padding:18px 20px;background:white;border:1px solid rgba(47, 122, 224,0.12);border-radius:4px;display:flex;flex-direction:column;gap:6px">
+          ${svc.badge ? `<div style="font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#2F7AE0;background:rgba(47, 122, 224,0.08);padding:3px 7px;border-radius:2px;align-self:flex-start;font-weight:500">${esc(svc.badge)}</div>` : ''}
+          <div style="font-size:13px;font-weight:500;color:#0A1B33;margin-top:${svc.badge ? '4px' : '0'}">${esc(svc.label)}</div>
+          ${svc.description ? `<div style="font-size:11px;color:rgba(10, 27, 51,0.5);line-height:1.6">${esc(svc.description)}</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:22px;color:#0A1B33;margin-top:6px">${fmtEur(svc.amount)}${svc.is_mrr ? '<span style="font-size:13px;color:rgba(10, 27, 51,0.5)">/mois</span>' : ''}</div>
         </div>`).join('')}
       </div>
     </div>` : ''}

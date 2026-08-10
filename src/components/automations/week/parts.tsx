@@ -374,16 +374,16 @@ export function WaveDetail({
             onClick={() => onAction('shift', 1)}
           >
             <XI name="chevright" className="ico-sm" />
-            Décaler d’un jour
+            Décaler à {plan.days[wave.day + 1]?.name ?? 'la semaine suivante'}
           </button>
           <button
             type="button"
             className="btn outline sm"
-            disabled={busy || locked}
+            disabled={busy || locked || wave.day === 0}
             onClick={() => onAction('shift', -1)}
           >
             <XI name="chevleft" className="ico-sm" />
-            Avancer d’un jour
+            Avancer à {plan.days[wave.day - 1]?.name ?? 'la semaine passée'}
           </button>
           {sequence && (
             <button

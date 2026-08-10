@@ -24,10 +24,9 @@ alter table if exists public.scheduling_pages
   alter column brand_color set default '#2F7AE0';
 update public.scheduling_pages set brand_color = '#2F7AE0' where brand_color = '#2A6FDB';
 
--- ── Calendrier : catégories d'événements ─────────────────────────────────
-alter table if exists public.crm_calendar_categories
-  alter column color set default '#2F7AE0';
-update public.crm_calendar_categories set color = '#2F7AE0' where color = '#2A6FDB';
+-- Le calendrier n'est PAS recalé : sa palette est nommée (« Bleu », « Orange »)
+-- et exposée telle quelle dans le sélecteur de catégorie. Un défaut hors de
+-- cette liste afficherait une pastille sans nom.
 
 -- ── Étiquettes CRM : le défaut était le gris taupe de l'ancienne charte ──
 alter table if exists public.crm_tags

@@ -93,7 +93,11 @@ export const SEQUENCE_TINT = '#7A5AE0'
  * L'étape de reprise (rang 0) prend l'azur Sama ; le bleu acier, lui, recule
  * au rang 5 — voisin du rang 0, il n'aurait été qu'un second bleu.
  */
-const STAGE_PALETTE = ['#2F7AE0', '#0E93A6', '#A24E86', '#1F8A5B', '#C8881F', '#2B7FB8', '#B5322F', '#4A648C']
+// Huit teintes qui doivent rester distinctes À L'ŒIL sur un même Kanban :
+// écart minimum ΔE2000 = 17. Pas de second bleu (il se confondrait avec
+// l'azur de marque) ni de #4A648C (c'est la couleur du texte courant : une
+// pastille de cette teinte se lit comme un mot, pas comme une étape).
+const STAGE_PALETTE = ['#2F7AE0', '#0E93A6', '#A24E86', '#1F8A5B', '#C8881F', '#7A5AE0', '#B5322F', '#0A1B33']
 export const stageColor = (rank: number) => STAGE_PALETTE[rank % STAGE_PALETTE.length]
 
 /** CTA d'une étape de pipeline, deviné d'après son nom. */

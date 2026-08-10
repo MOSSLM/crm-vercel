@@ -127,7 +127,7 @@ function rgba(hex: string, a: number): string {
  * L'azur de marque n'en fait pas partie — le bleu acier occupe déjà sa teinte,
  * et un avatar ne se déguise pas en bouton.
  */
-const AGENT_COLORS = ["#A24E86", "#0E93A6", "#7A5AE0", "#1F8A5B", "#C8881F", "#B5322F", "#2B7FB8"];
+const AGENT_COLORS = ["#A24E86", "#0E93A6", "#7A5AE0", "#1F8A5B", "#C8881F", "#B5322F", "#0A1B33"];
 function colorForId(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
