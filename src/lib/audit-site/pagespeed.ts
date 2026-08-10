@@ -102,10 +102,38 @@ interface RawAudit {
   };
 }
 
+interface RawCategorie {
+  score?: number | null;
+  /** Les audits que cette catégorie agrège — c'est ce qui rattache un constat à un axe. */
+  auditRefs?: Array<{ id?: string }>;
+}
+
 interface RawLighthouse {
   lighthouseVersion?: string;
-  categories?: Record<string, { score?: number | null }>;
+  categories?: Record<string, RawCategorie>;
   audits?: Record<string, RawAudit>;
+}
+
+/**
+ * À quelle catégorie appartient chaque audit.
+ *
+ * Sans ce rattachement, les constats forment une liste indifférenciée et on ne
+ * peut pas dire « voilà ce qui pèse sur votre référencement » — seulement
+ * « voilà 31 choses ». L'ordre de priorité tranche les audits comptés dans
+ * plusieurs catégories : celle qui explique le mieux le constat gagne.
+ */
+const PRIORITE_CATEGORIES = ["performance", "seo", "accessibility", "best-practices"];
+
+function categoriesParAudit(lh: RawLighthouse): Map<string, string> {
+  const out = new Map<string, string>();
+  const cats = lh.categories ?? {};
+
+  for (const nom of [...PRIORITE_CATEGORIES, ...Object.keys(cats)]) {
+    for (const ref of cats[nom]?.auditRefs ?? []) {
+      if (ref?.id && !out.has(ref.id)) out.set(ref.id, nom);
+    }
+  }
+  return out;
 }
 
 /**
@@ -136,6 +164,7 @@ function entier(v: number | null | undefined): number | null {
  */
 export function constatsDe(lh: RawLighthouse): ConstatGoogle[] {
   const out: ConstatGoogle[] = [];
+  const categorie = categoriesParAudit(lh);
 
   for (const [id, a] of Object.entries(lh.audits ?? {})) {
     if (!a?.title) continue;
@@ -144,6 +173,7 @@ export function constatsDe(lh: RawLighthouse): ConstatGoogle[] {
 
     out.push({
       id,
+      categorie: categorie.get(id) ?? null,
       titre: a.title,
       valeur: a.displayValue?.trim() || null,
       gainMs: entier(a.details?.overallSavingsMs),

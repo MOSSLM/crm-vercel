@@ -137,3 +137,115 @@ describe("lireAudit — cohabitation des deux vitesses", () => {
     expect(res.audit.axes_masques).not.toContain("vitesse");
   });
 });
+
+/**
+ * La règle la plus lourde de conséquences du dispositif : dès que Google a
+ * mesuré, nos notes de site ne sont PLUS publiées. Si elle casse, on réaffiche
+ * des chiffres maison à côté de ceux de Google — exactement la contradiction
+ * qu'on passe ce chantier à éliminer, et elle ne se verrait qu'en rendez-vous.
+ */
+describe("lireAudit — quand Google a mesuré, nos notes de site s'effacent", () => {
+  const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+  const AVEC_GOOGLE = {
+    ...LIGNE_BASE,
+    confiance: { vitesse: "haute", seo: "haute", mobile: "haute", conversion: "haute" },
+    psi_performance: 47,
+    psi_seo: 92,
+    psi_accessibilite: 71,
+    psi_bonnes_pratiques: 79,
+    psi_recupere_le: hier,
+    psi_lcp_ms: 4200,
+    detail: {
+      ...LIGNE_BASE.detail,
+      google: [
+        {
+          id: "render-blocking-insight",
+          categorie: "performance",
+          titre: "Requêtes de blocage du rendu",
+          valeur: "Économies estimées : 3 650 ms",
+          gainMs: 3650,
+          gainOctets: null,
+          elements: 3,
+          verdict: "probleme",
+        },
+        {
+          id: "image-alt",
+          categorie: "accessibility",
+          titre: "Les éléments d'image possèdent des attributs `[alt]`",
+          valeur: null,
+          gainMs: null,
+          gainOctets: null,
+          elements: 4,
+          verdict: "probleme",
+        },
+      ],
+    },
+  };
+
+  it("publie les catégories de Google, et le référencement vient de lui", async () => {
+    const res = await lireAudit(client({ data: AVEC_GOOGLE, error: null }), 7);
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    const notes = Object.fromEntries(res.audit.axes.map((a) => [a.id, a.note]));
+    expect(notes.vitesse).toBe(47);
+    expect(notes.seo).toBe(92); // celle de Google, pas notre 71
+    expect(notes.accessibilite).toBe(71);
+    expect(notes.bonnes_pratiques).toBe(79);
+  });
+
+  it("fait disparaître l'axe mobile — remplacé, pas masqué", async () => {
+    const res = await lireAudit(client({ data: AVEC_GOOGLE, error: null }), 7);
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    expect(res.audit.axes.map((a) => a.id)).not.toContain("mobile");
+    // Le lister comme masqué ferait croire à une mesure retenue faute de
+    // confiance, alors que l'accessibilité de Google dit la même chose en mieux.
+    expect(res.audit.axes_masques).not.toContain("mobile");
+  });
+
+  it("garde nos axes sur ce que Google ne mesure pas", async () => {
+    const res = await lireAudit(client({ data: AVEC_GOOGLE, error: null }), 7);
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    const conversion = res.audit.axes.find((a) => a.id === "conversion");
+    expect(conversion?.note).toBe(58);
+    expect(conversion?.mesureGoogle).toBeUndefined();
+  });
+
+  it("range chaque constat sous son axe", async () => {
+    const res = await lireAudit(client({ data: AVEC_GOOGLE, error: null }), 7);
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    expect(res.audit.axes.find((a) => a.id === "vitesse")?.constats?.map((c) => c.id)).toEqual([
+      "render-blocking-insight",
+    ]);
+    expect(res.audit.axes.find((a) => a.id === "accessibilite")?.constats?.map((c) => c.id)).toEqual(
+      ["image-alt"],
+    );
+  });
+
+  it("garde notre note de référencement si Google n'a pas rendu la sienne", async () => {
+    const row = { ...AVEC_GOOGLE, psi_seo: null };
+    const res = await lireAudit(client({ data: row, error: null }), 7);
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    const seo = res.audit.axes.find((a) => a.id === "seo");
+    expect(seo?.note).toBe(71);
+    // Un seul chiffre à l'écran : celui-ci est le nôtre, il ne se réclame pas
+    // de Google.
+    expect(seo?.mesureGoogle).toBeUndefined();
+  });
+
+  it("n'expose aucun constat tant que la mesure Google est périmée", async () => {
+    const vieux = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+    const res = await lireAudit(
+      client({ data: { ...AVEC_GOOGLE, psi_recupere_le: vieux }, error: null }),
+      7,
+    );
+    if (!res.disponible || !res.audit) throw new Error("audit attendu");
+
+    expect(res.audit.constats_google).toEqual([]);
+    expect(res.audit.axes.find((a) => a.id === "vitesse")?.note).toBe(64); // la nôtre
+  });
+});

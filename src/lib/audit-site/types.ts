@@ -75,6 +75,13 @@ export interface Preuve {
 export interface ConstatGoogle {
   /** Identifiant Lighthouse — `render-blocking-insight`, `tap-targets`… */
   id: string;
+  /**
+   * La catégorie Google qui compte ce constat : `performance`, `seo`,
+   * `accessibility`, `best-practices`. C'est elle qui range le constat sous le
+   * bon axe — sans quoi on ne sait dire que « 31 choses », jamais « voilà ce qui
+   * pèse sur votre référencement ».
+   */
+  categorie: string | null;
   /** Intitulé français de Google : « Réduisez les ressources JavaScript inutilisées ». */
   titre: string;
   /** Sa valeur affichée : « Économies estimées : 3 650 ms ». `null` si l'audit n'en donne pas. */
