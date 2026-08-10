@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  ObservationSoumise,
+  cleFondement,
+  validerObservations,
+  type ObservationValidee,
+  type RejetObservation,
+} from "./observations";
 
 /**
  * Le contrat de rédaction : ce qu'un modèle a le droit d'écrire dans un audit.
@@ -23,6 +30,15 @@ import { z } from "zod";
  *   2. un code d'offre inconnu ou non proposable est rejeté ;
  *   3. tout nombre présent dans la rédaction doit se retrouver dans le dossier ;
  *   4. rejet ⇒ repli sur le texte du catalogue, jamais de blocage.
+ *
+ * CE QUE L'AGENT PEUT AJOUTER AU DOSSIER. L'analyseur ne mesure pas tout : il
+ * sait qu'un formulaire existe, pas qu'il demande neuf champs. L'agent, qui
+ * ouvre le site de toute façon, peut relever ces faits — mais seulement ceux du
+ * catalogue fermé de `observations.ts`, et seulement dans les unités qu'il
+ * déclare. Les observations sont donc validées AVANT les cartes, et celles qui
+ * passent élargissent l'univers : elles deviennent citables sous `obs:<cle>` et
+ * leurs nombres deviennent écrivables. L'ordre compte — une carte fondée sur une
+ * observation refusée doit tomber avec elle.
  */
 
 export const CartePreparee = z.object({
@@ -43,6 +59,13 @@ export const PreparationAudit = z.object({
   cartes: z.array(CartePreparee).min(1).max(3),
   /** Codes d'offres à proposer, pris dans le dossier. */
   offres: z.array(z.string().min(1)).max(8).default([]),
+  /**
+   * Ce que l'agent a relevé lui-même, dans le cadre de `observations.ts`.
+   *
+   * Plafonné à douze : au-delà, on n'observe plus, on remplit un formulaire —
+   * et le document n'a de la place que pour une poignée de constats.
+   */
+  observations: z.array(ObservationSoumise).max(12).default([]),
 });
 
 export type PreparationAudit = z.infer<typeof PreparationAudit>;
@@ -64,7 +87,8 @@ export interface UniversDicible {
 }
 
 export interface Rejet {
-  regle: 1 | 2 | 3;
+  /** 4 : observation hors du catalogue, ou valeur incompatible avec son unité. */
+  regle: 1 | 2 | 3 | 4;
   quoi: string;
   pourquoi: string;
 }
@@ -73,6 +97,13 @@ export interface Verdict {
   /** La préparation, débarrassée de ce qui ne passe pas. `null` si rien ne reste. */
   retenue: PreparationAudit | null;
   rejets: Rejet[];
+  /**
+   * Les observations acceptées, formatées et jugées.
+   *
+   * Renvoyées à part parce qu'elles survivent au rejet des cartes : un relevé
+   * juste reste affichable même si la phrase qu'on en avait tirée ne passe pas.
+   */
+  observations: ObservationValidee[];
 }
 
 /**
@@ -114,15 +145,26 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
     return {
       retenue: null,
       rejets: [{ regle: 1, quoi: "structure", pourquoi: parse.error.issues[0]?.message ?? "forme invalide" }],
+      observations: [],
     };
   }
 
   const p = parse.data;
   const rejets: Rejet[] = [];
 
+  // ── Les observations d'abord : elles élargissent l'univers ────────────────
+  //
+  // Une carte peut se fonder sur ce que l'agent a relevé lui-même. Il faut donc
+  // savoir ce qui est accepté AVANT de juger les cartes — sinon une carte
+  // parfaitement fondée sur « 9 champs à remplir » serait rejetée faute de
+  // trouver sa clé, et l'agent conclurait que le cadre ne marche pas.
+  const obs = validerObservations(p.observations);
+  for (const r of obs.rejets) rejets.push(rejetObservation(r));
+  const elargi = elargirUnivers(univers, obs.retenues);
+
   const cartes = p.cartes.filter((carte) => {
     // Règle 1 — un constat sans fondement mesuré n'existe pas.
-    const fondements = carte.fonde_sur.filter((f) => univers.preuvesEnEchec.has(f));
+    const fondements = carte.fonde_sur.filter((f) => elargi.preuvesEnEchec.has(f));
     if (fondements.length === 0) {
       rejets.push({
         regle: 1,
@@ -134,7 +176,7 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
 
     // Règle 3 — tout chiffre affirmé doit venir du dossier.
     const inventes = [...nombresDe(carte.titre), ...nombresDe(carte.texte)].filter(
-      (n) => !estNombreLibre(n) && !univers.nombres.has(n),
+      (n) => !estNombreLibre(n) && !elargi.nombres.has(n),
     );
     if (inventes.length > 0) {
       rejets.push({
@@ -150,7 +192,7 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
 
   // Règle 2 — un code d'offre inconnu ou non proposable ne passe pas.
   const offres = p.offres.filter((code) => {
-    if (univers.offresProposables.has(code)) return true;
+    if (elargi.offresProposables.has(code)) return true;
     rejets.push({ regle: 2, quoi: code, pourquoi: "offre inconnue ou non proposable en audit" });
     return false;
   });
@@ -159,7 +201,7 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
   const texteLibre = [p.intro, p.accroche].filter((t): t is string => Boolean(t));
   const inventesHorsCartes = texteLibre
     .flatMap(nombresDe)
-    .filter((n) => !estNombreLibre(n) && !univers.nombres.has(n));
+    .filter((n) => !estNombreLibre(n) && !elargi.nombres.has(n));
 
   const intro = inventesHorsCartes.length > 0 ? undefined : p.intro;
   const accroche = inventesHorsCartes.length > 0 ? undefined : p.accroche;
@@ -173,7 +215,54 @@ export function validerPreparation(brut: unknown, univers: UniversDicible): Verd
 
   // Règle 4 — plus aucune carte : on ne retient rien, et l'appelant retombe sur
   // le texte du catalogue. Un audit moins ajusté vaut mieux qu'un audit faux.
-  if (cartes.length === 0) return { retenue: null, rejets };
+  //
+  // Les observations survivent quand même : un relevé juste reste affichable
+  // même si la phrase qu'on en avait tirée ne passe pas. Les jeter avec la carte
+  // ferait perdre une mesure pour une faute de rédaction.
+  if (cartes.length === 0) return { retenue: null, rejets, observations: obs.retenues };
 
-  return { retenue: { ...p, cartes, offres, intro, accroche }, rejets };
+  return {
+    retenue: { ...p, cartes, offres, intro, accroche, observations: p.observations },
+    rejets,
+    observations: obs.retenues,
+  };
+}
+
+/**
+ * L'univers augmenté de ce que l'agent a relevé.
+ *
+ * Ne modifie PAS celui qu'on lui passe : le dossier est lu une fois et peut servir
+ * à plusieurs tentatives de rédaction. Une observation acceptée sur la première
+ * ne doit pas rester valable sur la seconde, où elle n'aurait pas été soumise.
+ *
+ * Seules les observations EN ÉCHEC deviennent des fondements — c'est la même
+ * règle que pour nos preuves. « Vos avis sont bien affichés » est une bonne
+ * nouvelle qu'on peut écrire, pas un constat sur lequel bâtir une carte.
+ * Les nombres, eux, entrent tous : un chiffre juste reste écrivable même quand
+ * il ne dénonce rien.
+ */
+function elargirUnivers(
+  univers: UniversDicible,
+  retenues: readonly ObservationValidee[],
+): UniversDicible {
+  const preuvesEnEchec = new Set(univers.preuvesEnEchec);
+  const nombres = new Set(univers.nombres);
+
+  for (const o of retenues) {
+    if (o.verdict === "probleme") preuvesEnEchec.add(cleFondement(o.cle));
+    for (const n of nombresDe(o.valeur)) nombres.add(n);
+    if (o.seuil) for (const n of nombresDe(o.seuil)) nombres.add(n);
+  }
+
+  return {
+    preuvesEnEchec,
+    constatsEmis: univers.constatsEmis,
+    offresProposables: univers.offresProposables,
+    nombres,
+  };
+}
+
+/** Un refus d'observation se dit comme les autres rejets : nommé et motivé. */
+function rejetObservation(r: RejetObservation): Rejet {
+  return { regle: 4, quoi: `obs:${r.cle}`, pourquoi: r.pourquoi };
 }

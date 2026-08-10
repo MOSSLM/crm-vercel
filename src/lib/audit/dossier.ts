@@ -6,6 +6,7 @@ import type { ConstatGoogle, ContextePsi } from "@/lib/audit-site/types";
 import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import { versOffreAudit, type OffreAudit } from "./offres-audit";
 import { nombresDe, type UniversDicible } from "./preparation";
+import { CATALOGUE_OBSERVATIONS, cleFondement, type ObservationValidee } from "./observations";
 
 /**
  * Le dossier : tout ce qu'on a le droit de dire d'une entreprise, en un appel.
@@ -68,6 +69,24 @@ export interface DossierAudit {
    * que lorsqu'elle veut nommer précisément ce qui cloche.
    */
   psi?: ContextePsi | null;
+  /**
+   * Ce que l'agent a le droit de relever lui-même, et sous quelle forme.
+   *
+   * Sans cette liste dans le dossier, le cadre serait inapplicable : l'agent
+   * devrait deviner le vocabulaire, se tromperait de clé, verrait ses
+   * observations refusées, et conclurait que le mécanisme ne marche pas. On lui
+   * donne donc les cases en même temps que les données — c'est le même
+   * aller-retour, et ça ne coûte que quelques centaines d'octets.
+   */
+  observationsPossibles: Array<{
+    cle: string;
+    libelle: string;
+    unite: string;
+    seuil: number | null;
+    verification: string;
+  }>;
+  /** Celles déjà relevées lors d'une préparation précédente. */
+  observationsFaites: ObservationValidee[];
   offres: OffreAudit[];
   /** Ce que le rédacteur peut réellement affirmer, prêt pour la validation. */
   univers: {
@@ -123,9 +142,18 @@ export async function construireDossier(
    * pagespeed.web.dev. Le préfixe `google:` empêche toute collision avec nos
    * clés et dit d'où vient l'affirmation.
    */
+  // Les observations d'une préparation précédente valent fondement comme les
+  // autres : sans ça, reprendre un audit ferait retomber des cartes qui étaient
+  // parfaitement fondées la veille.
+  const observationsFaites = (audit?.observations ?? []).filter(
+    (o): o is ObservationValidee =>
+      typeof o === "object" && o !== null && typeof (o as ObservationValidee).cle === "string",
+  );
+
   const preuvesEnEchec = [
     ...axes.flatMap((a) => a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle)),
     ...google.map((c) => `google:${c.id}`),
+    ...observationsFaites.filter((o) => o.verdict === "probleme").map((o) => cleFondement(o.cle)),
   ];
 
   const constats = (audit?.issue_keys ?? []).flatMap((cle) => {
@@ -151,6 +179,9 @@ export async function construireDossier(
       nombres.add(n);
     }
   }
+  for (const o of observationsFaites) {
+    for (const n of nombresDe(`${o.valeur} ${o.seuil ?? ""}`)) nombres.add(n);
+  }
   for (const n of nombresDe(`${e.nombre_avis ?? ""} ${e.note_moyenne ?? ""} ${mediane ?? ""}`)) {
     nombres.add(n);
   }
@@ -170,6 +201,14 @@ export async function construireDossier(
       medianeAvisCommune: mediane,
     },
     rge,
+    observationsPossibles: CATALOGUE_OBSERVATIONS.map((d) => ({
+      cle: d.cle,
+      libelle: d.libelle,
+      unite: d.unite,
+      seuil: d.seuil ?? null,
+      verification: d.verification,
+    })),
+    observationsFaites,
     analyse: {
       disponible: lecture.disponible && audit != null,
       noteGlobale: audit?.note_globale ?? null,

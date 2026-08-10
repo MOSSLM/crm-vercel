@@ -50,9 +50,20 @@ export async function POST(req: Request): Promise<Response> {
 
   const verdict = validerPreparation(body.preparation, universDe(dossier));
 
+  // Les observations sont enregistrées AVANT de juger du sort des cartes, et
+  // même si aucune ne survit : un relevé juste est une mesure acquise, payée par
+  // une visite du site. La perdre parce qu'une phrase ne passait pas obligerait
+  // à revisiter le site au prochain essai.
+  await enregistrerObservations(sb, entrepriseId, verdict.observations);
+
   // Rien n'a survécu : on le dit, on n'écrit pas, et l'audit garde le catalogue.
   if (!verdict.retenue) {
-    return json({ applique: false, motif: "aucune carte ne franchit le contrat", rejets: verdict.rejets });
+    return json({
+      applique: false,
+      motif: "aucune carte ne franchit le contrat",
+      rejets: verdict.rejets,
+      observations: verdict.observations,
+    });
   }
 
   const p = verdict.retenue;
@@ -113,5 +124,44 @@ export async function POST(req: Request): Promise<Response> {
     // Nommés même en cas de succès partiel : une carte silencieusement écartée
     // se remarque trois semaines plus tard, devant un prospect.
     rejets: verdict.rejets,
+    observations: verdict.observations,
   });
+}
+
+/**
+ * Range les observations avec la MESURE, pas avec la rédaction.
+ *
+ * `entreprises_audit_site.detail` et non `audits.content`, et c'est la frontière
+ * de tout le dispositif : le contenu est éditable à la main, les chiffres ne le
+ * sont par personne. Une observation posée dans le document deviendrait
+ * retouchable dans l'éditeur, et un relevé qu'on peut corriger à la main n'est
+ * plus un relevé.
+ *
+ * `analyserEntreprise` les reconduit à chaque ré-analyse — voir
+ * `chargerDetailConserve` — donc le cron ne les efface pas.
+ *
+ * Best-effort et silencieux : l'audit doit s'écrire même si cette ligne échoue.
+ * On lit avant d'écrire pour ne pas emporter `detail.google` au passage.
+ */
+async function enregistrerObservations(
+  sb: ReturnType<typeof getServiceClient>,
+  entrepriseId: number,
+  observations: unknown[],
+): Promise<void> {
+  if (observations.length === 0) return;
+
+  const { data, error } = await sb
+    .from("entreprises_audit_site")
+    .select("detail")
+    .eq("entreprise_id", entrepriseId)
+    .maybeSingle();
+
+  if (error) return;
+
+  const detail = {
+    ...(((data as { detail?: Record<string, unknown> } | null)?.detail) ?? {}),
+    observations,
+  };
+
+  await sb.from("entreprises_audit_site").update({ detail }).eq("entreprise_id", entrepriseId);
 }

@@ -68,6 +68,15 @@ export interface AuditLu {
    * discréditer le reste du rapport.
    */
   constats_google: ConstatGoogle[];
+  /**
+   * Ce que l'agent a relevé lui-même, dans le cadre de `lib/audit/observations`.
+   *
+   * Typé `unknown[]` ici et non `ObservationValidee[]` : `lecture` appartient à
+   * `audit-site`, qui ne doit pas dépendre de `audit`. La forme est garantie à
+   * l'écriture par `validerObservations` — c'est le seul chemin qui remplit
+   * cette clé — et retypée à la lecture par `construireMesures`.
+   */
+  observations: unknown[];
   alertes: string[];
   ttfb_ms: number | null;
   chargement_ms: number | null;
@@ -129,6 +138,7 @@ export async function lireAudits(
 function versAuditLu(row: Record<string, unknown>): AuditLu {
   const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
     google?: ConstatGoogle[];
+    observations?: unknown[];
   };
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
 
@@ -243,6 +253,10 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     axes_masques: masques,
     issue_keys: Array.isArray(row.issue_keys) ? (row.issue_keys as string[]) : [],
     constats_google: psiFraiche && Array.isArray(detail.google) ? detail.google : [],
+    // Pas de péremption ici, contrairement aux constats Google : une observation
+    // est datée par l'audit qui l'a produite, et c'est ce document-là qu'on
+    // renvoie. La périmer indépendamment viderait un audit déjà envoyé.
+    observations: Array.isArray(detail.observations) ? detail.observations : [],
     alertes: Array.isArray(row.alertes) ? (row.alertes as string[]) : [],
     ttfb_ms: num(row.ttfb_ms),
     chargement_ms: num(row.chargement_ms),

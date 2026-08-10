@@ -106,6 +106,71 @@ Trois cartes au plus, chacune fondée sur au moins une entrée du dossier.
 
 ---
 
+## Ce que l'agent peut relever lui-même
+
+L'analyseur ne mesure pas tout. Il sait qu'un formulaire existe, pas qu'il
+demande neuf champs ; qu'un numéro est cliquable, pas combien de gestes il faut
+pour l'atteindre. Or ce sont exactement les chiffres qui parlent à un artisan :
+« 9 champs à remplir » se vérifie sur son téléphone en dix secondes,
+« conversion faible » ne se vérifie pas du tout.
+
+L'agent ouvre déjà le site pour qualifier l'entreprise. Il peut donc relever ces
+faits — **dans un cadre fermé, et seulement lui**. La règle tient en une phrase :
+
+> Il remplit des cases qu'on a définies, il n'en crée pas.
+
+Le champ `observationsPossibles` du dossier liste les cases disponibles, avec
+leur unité, leur seuil et la phrase qui dit comment le prospect le vérifie
+lui-même. On les soumet dans la préparation :
+
+```json
+{
+  "cartes": [
+    {
+      "cle": "form_not_accessible",
+      "fonde_sur": ["obs:champs_formulaire"],
+      "titre": "Votre formulaire demande 9 champs",
+      "texte": "…"
+    }
+  ],
+  "observations": [
+    { "cle": "champs_formulaire", "valeur": 9 },
+    { "cle": "avis_affiches", "valeur": false }
+  ]
+}
+```
+
+**Ce qui est refusé, et pourquoi ça ne se négocie pas :** une clé absente du
+catalogue, une valeur qui ne correspond pas à l'unité déclarée, une valeur hors
+des bornes de plausibilité, un doublon. Un agent à qui l'on dit simplement
+« note ce que tu observes » invente des catégories, change d'unité d'un prospect
+à l'autre, et finit par écrire un pourcentage que personne ne pourra défendre en
+rendez-vous.
+
+**Les unités autorisées** sont celles de la règle éditoriale : les secondes, le
+oui/non, les comptages de choses visibles, les dates, la position dans la page.
+Pas de pourcentage — sur un seul site, il n'a pas de dénominateur vérifiable.
+Pas de Ko ni de Mo.
+
+**Une observation acceptée devient citable** sous la forme `obs:<cle>`, comme un
+constat Google, et ses nombres deviennent écrivables. Seules celles **en échec**
+peuvent fonder une carte : « vos avis sont bien affichés » est une bonne
+nouvelle qu'on peut écrire, pas un constat sur lequel bâtir un argument.
+
+**Les observations survivent au rejet des cartes.** Un relevé juste est une
+mesure acquise, payée par une visite du site ; on la garde même si la phrase
+qu'on en avait tirée ne passe pas. Elles sont rangées avec la mesure
+(`entreprises_audit_site.detail`) et non avec la rédaction : un chiffre posé
+dans le document deviendrait retouchable dans l'éditeur, et un relevé qu'on peut
+corriger à la main n'est plus un relevé.
+
+**Aucune case ne permet d'écrire une position dans les résultats Google.** Un
+rang relevé une fois, non daté et non reproductible, est la ligne la plus
+contestable qu'on puisse mettre devant un prospect : il tapera la requête
+lui-même, verra un autre chiffre, et c'est tout le rapport qui perd sa valeur.
+
+---
+
 ## Ce que la validation refuse, et pourquoi
 
 Quatre règles, appliquées à l'écriture — pas dans un prompt, parce qu'un prompt

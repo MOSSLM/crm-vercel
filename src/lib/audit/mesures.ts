@@ -1,5 +1,6 @@
 import type { AuditLu, AxePublieId } from "@/lib/audit-site/lecture";
 import type { ConstatGoogle, Preuve } from "@/lib/audit-site/types";
+import { cleFondement, type ObservationValidee } from "./observations";
 
 /**
  * Ce que le document d'audit a le droit d'AFFICHER comme chiffre.
@@ -103,6 +104,8 @@ export interface MesuresAudit {
   axesNonTestes: string[];
   /** Les preuves en échec, tous axes confondus, du plus lourd au plus léger. */
   constats: ConstatMesure[];
+  /** Ce que l'agent a relevé, validé et formaté. Vide s'il n'a rien soumis. */
+  observations: ObservationValidee[];
 }
 
 /** La médiane du parc, telle qu'une requête la rend. */
@@ -140,6 +143,7 @@ export function construireMesures(
   echantillon?: EchantillonMediane | null,
 ): MesuresAudit {
   const mesureParGoogle = audit.axes.some((a) => a.mesureGoogle === true);
+  const observations = observationsDe(audit);
 
   const axes: AxeMesure[] = audit.axes.map((a) => ({
     id: a.id,
@@ -167,8 +171,28 @@ export function construireMesures(
     },
     axes,
     axesNonTestes: audit.axes_masques.map((id) => NOM_AXE[id] ?? id),
-    constats: constatsDe(audit),
+    constats: constatsDe(audit, observations),
+    observations,
   };
+}
+
+/**
+ * Les observations stockées, retypées.
+ *
+ * `AuditLu.observations` est `unknown[]` pour que `audit-site` ne dépende pas de
+ * `audit`. La forme a été garantie à l'écriture par `validerObservations` — seul
+ * chemin qui remplit cette clé — mais on filtre quand même sur les deux champs
+ * dont l'affichage dépend : une ligne abîmée en base ne doit pas produire un
+ * constat vide dans un document envoyé.
+ */
+function observationsDe(audit: AuditLu): ObservationValidee[] {
+  return (audit.observations ?? []).filter(
+    (o): o is ObservationValidee =>
+      typeof o === "object" &&
+      o !== null &&
+      typeof (o as ObservationValidee).cle === "string" &&
+      typeof (o as ObservationValidee).valeur === "string",
+  );
 }
 
 /**
@@ -212,8 +236,21 @@ function valeurDominante(preuves: Preuve[], constats?: ConstatGoogle[]): string 
  * c'est sous cette forme exacte que `validerPreparation` les acceptera comme
  * fondement.
  */
-function constatsDe(audit: AuditLu): ConstatMesure[] {
+function constatsDe(audit: AuditLu, observations: readonly ObservationValidee[]): ConstatMesure[] {
   const out: ConstatMesure[] = [];
+
+  // Les observations de l'agent en tête : ce sont les seules lignes du document
+  // que le prospect peut vérifier sur son propre téléphone, devant nous, en dix
+  // secondes — c'est le critère qui les a fait entrer au catalogue.
+  for (const o of observations) {
+    if (o.verdict !== "probleme") continue;
+    out.push({
+      cle: cleFondement(o.cle),
+      libelle: o.libelle,
+      valeur: o.valeur,
+      seuil: o.seuil,
+    });
+  }
 
   for (const c of audit.constats_google) {
     out.push({
