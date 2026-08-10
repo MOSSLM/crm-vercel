@@ -249,3 +249,79 @@ describe("lireAudit — quand Google a mesuré, nos notes de site s'effacent", (
     expect(res.audit.axes.find((a) => a.id === "vitesse")?.note).toBe(64); // la nôtre
   });
 });
+
+describe("lireAudit — une catégorie Google absente n'emporte pas les autres", () => {
+  const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+  /**
+   * Cas rencontré sur une entreprise réelle : Lighthouse rend le référencement,
+   * l'accessibilité et les bonnes pratiques, mais échoue sur la performance —
+   * ce qui arrive d'autant plus que le site est lent, justement.
+   *
+   * La condition portait alors sur la seule performance : le document retombait
+   * sur nos cinq axes maison TOUT EN affichant les constats de Google. La page
+   * méthode annonçait « mesuré avec notre analyseur » au-dessus de constats
+   * venus d'ailleurs, et on perdait une accessibilité à 29/100 sur un site où
+   * nous ne voyions rien d'anormal.
+   */
+  const SANS_PERFORMANCE = {
+    ...LIGNE_BASE,
+    psi_performance: null,
+    psi_lcp_ms: null,
+    psi_seo: 82,
+    psi_accessibilite: 29,
+    psi_bonnes_pratiques: 74,
+    psi_recupere_le: hier,
+    detail: {
+      ...LIGNE_BASE.detail,
+      google: [
+        {
+          id: "color-contrast",
+          categorie: "accessibility",
+          titre: "Contraste insuffisant",
+          valeur: null,
+          gainMs: null,
+          gainOctets: null,
+          elements: 12,
+          verdict: "probleme",
+        },
+      ],
+    },
+  };
+
+  it("publie les catégories rendues par Google", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    const axes = res.disponible ? (res.audit?.axes ?? []) : [];
+
+    const a11y = axes.find((a) => a.id === "accessibilite");
+    expect(a11y?.note).toBe(29);
+    expect(a11y?.mesureGoogle).toBe(true);
+    expect(axes.find((a) => a.id === "seo")?.note).toBe(82);
+    expect(axes.find((a) => a.id === "bonnes_pratiques")?.note).toBe(74);
+  });
+
+  it("retombe sur NOTRE vitesse pour la seule catégorie manquante", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    const vitesse = (res.disponible ? (res.audit?.axes ?? []) : []).find((a) => a.id === "vitesse");
+
+    expect(vitesse?.note).toBe(64);
+    // Et surtout : elle ne se revendique pas mesurée par Google.
+    expect(vitesse?.mesureGoogle).toBeFalsy();
+  });
+
+  it("garde les constats Google, qui seraient sinon affichés sans leur axe", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    expect(res.disponible ? res.audit?.constats_google : []).toHaveLength(1);
+  });
+
+  it("garde notre axe mobile tant que l'accessibilité ne le remplace pas", async () => {
+    // L'accessibilité dit la même chose en mieux — cibles tactiles, contrastes,
+    // tailles de police — mais seulement quand elle est là.
+    const sansA11y = { ...SANS_PERFORMANCE, psi_accessibilite: null };
+    const axes = await lireAudit(client({ data: sansA11y, error: null }), 7).then((r) =>
+      r.disponible ? (r.audit?.axes ?? []) : [],
+    );
+    expect(axes.find((a) => a.id === "mobile")?.note).toBe(55);
+    expect(axes.find((a) => a.id === "accessibilite")).toBeUndefined();
+  });
+});
