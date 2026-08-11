@@ -25,6 +25,16 @@ export const CLAUDE_DESIGN_VARIABLES: Array<{ token: string; label: string; samp
   { token: "{{ entreprise.services }}", label: "Services", sample: "Climatisation, Chauffage" },
   { token: "{{ entreprise.note_moyenne }}", label: "Note moyenne", sample: "4,8" },
   { token: "{{ entreprise.nombre_avis }}", label: "Nombre d'avis", sample: "127" },
+  {
+    token: "{{ entreprise.avis_url }}",
+    label: "Lien « voir tous les avis »",
+    sample: "https://www.google.com/maps/place/Votre+Entreprise",
+  },
+  {
+    token: "{{ entreprise.google_url }}",
+    label: "Fiche Google Business",
+    sample: "https://www.google.com/maps/place/Votre+Entreprise",
+  },
   { token: "{{ entreprise.site_web_canonique }}", label: "Site web", sample: "https://entreprise.fr" },
   { token: "{{ entreprise.annee_experience }}", label: "Années d'expérience", sample: "15" },
   { token: "{{ entreprise.clients_count }}", label: "Clients", sample: "500" },

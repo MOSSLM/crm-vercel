@@ -80,6 +80,8 @@ type EntRow = {
   note_moyenne: number | string | null;
   nombre_avis: number | string | null;
   owner_id: string | null;
+  google_url: string | null;
+  google_maps_url: string | null;
 };
 
 /**
@@ -519,7 +521,7 @@ export async function buildBoard(
     supabase
       .from("entreprises")
       .select(
-        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, telephones, email, service_tags, note_moyenne, nombre_avis, owner_id",
+        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, telephones, email, service_tags, note_moyenne, nombre_avis, owner_id, google_url, google_maps_url",
       )
       .in("id", entIds),
     entIds.length > 0
@@ -752,6 +754,8 @@ export async function buildBoard(
       company_url: ent?.canonical_url ?? ent?.site_web_canonique ?? null,
       logo_url: ent?.logo_url ?? null,
       ville: ent?.ville ?? null,
+      google_url: ent?.google_url ?? null,
+      google_maps_url: ent?.google_maps_url ?? null,
       priorite: o.priorite ?? null,
       montant: o.montant ?? null,
       type: o.type ?? null,

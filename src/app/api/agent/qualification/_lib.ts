@@ -13,7 +13,7 @@ import { canonicalizeDomain, canonicalizeUrl } from "@/lib/url-canonical";
  */
 
 export const QUEUE_COLUMNS =
-  "id, name, ville, code_postal, adresse, telephone, email, canonical_url, site_web_canonique, note_moyenne, nombre_avis, service_tags, premiers_tags, logo_url, sources, created_at";
+  "id, name, ville, code_postal, adresse, telephone, email, canonical_url, site_web_canonique, note_moyenne, nombre_avis, service_tags, premiers_tags, logo_url, sources, created_at, google_url, google_maps_url";
 
 export type QueueCompany = {
   id: number;
@@ -32,6 +32,9 @@ export type QueueCompany = {
   logo_url: string | null;
   sources: string[] | null;
   created_at: string | null;
+  /** Fiche Google Business, quand l'enrichissement Maps l'a trouvée. */
+  google_url: string | null;
+  google_maps_url: string | null;
 };
 
 /** URL canonique d'une entreprise, `canonical_url` d'abord puis l'ancien champ. */

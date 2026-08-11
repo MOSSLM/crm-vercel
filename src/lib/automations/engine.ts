@@ -37,7 +37,7 @@ import { getAppUrl } from '@/lib/app-url'
 import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 import { aDesMesuresAudit, assurerJetonRapport } from '@/lib/audit-site/rapport'
-import { demoShareUrl } from '@/lib/site-builder/demo-share-url'
+import { choisirSiteMontrable, urlPubliqueDuSite } from '@/lib/site-builder/demo-share-url'
 
 const DAY_MS = 86_400_000
 
@@ -210,17 +210,9 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       .from('sites')
       .select('id,is_published,published_subdomain,published_domain,build_stage,is_template')
       .eq('enterprise_id', entrepriseId)
-    const candidates = (sites ?? []).filter((s) => s.is_template !== true)
     // Seul un site publié ou marqué « Prêt » est montrable à un prospect.
-    const site =
-      candidates.find((s) => s.is_published) ?? candidates.find((s) => s.build_stage === 'pret') ?? null
-    if (site) {
-      demoUrl = site.published_domain
-        ? site.published_domain.startsWith('http')
-          ? site.published_domain
-          : `https://${site.published_domain}`
-        : demoShareUrl({ id: site.id as string, published_subdomain: site.published_subdomain as string | null })
-    }
+    const site = choisirSiteMontrable(sites ?? [])
+    if (site) demoUrl = urlPubliqueDuSite(site)
 
     // Le rapport web PRIME sur le PDF quand un jeton actif existe.
     //

@@ -13,6 +13,9 @@ export interface BoardItem {
   company_url: string | null;
   logo_url: string | null;
   ville: string | null;
+  /** Fiche Google Business du prospect, quand l'enrichissement Maps l'a trouvée. */
+  google_url: string | null;
+  google_maps_url: string | null;
   priorite: string | null;
   montant: number | null;
   type: string | null;

@@ -7,6 +7,7 @@ import { ChevronRight, Home, Search, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TaskCenter } from "@/components/TaskCenter";
+import { CockpitRdvBouton } from "@/components/rdv/CockpitRdv";
 import { useAppData } from "@/components/AppDataContext";
 import { useAuth } from "@/components/AuthContext";
 import { getSpaceById, getSpaceFromPath } from "@/components/layout/spaces";
@@ -49,6 +50,7 @@ const TITLE_MAP: Record<string, string> = {
   "/sections-library": "Section builder",
   "/forms": "Form builder",
   "/media-library": "Médias",
+  "/mes-rdv": "Mes RDV",
   "/automations": "Automatisations",
   "/automations/sequences": "Séquences",
 };
@@ -123,6 +125,12 @@ export function StudioTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       </button>
 
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
+        {/*
+          Le cockpit est le premier élément du groupe de droite, et le seul en
+          couleur pleine : c'est le geste qu'on fait sous pression, quand un
+          prospect est déjà en ligne. Il doit se trouver sans être cherché.
+        */}
+        <CockpitRdvBouton />
         <NotificationCenter />
         <TaskCenter />
         {/*

@@ -173,6 +173,8 @@ const themeConfig: ThemeConfig = {
     "entreprise.site_web_canonique",
     "entreprise.note_moyenne",
     "entreprise.nombre_avis",
+    "entreprise.avis_url",
+    "entreprise.google_url",
     "entreprise.description",
     "entreprise.annee_creation",
   ],
