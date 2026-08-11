@@ -181,6 +181,59 @@ describe('corpsCompact — le tableau avant/après', () => {
   it('n’affiche aucun bandeau quand il ne reste rien à annoncer', () => {
     expect(corpsCompact(avec(2), mesuresVides())).not.toContain('plus-strip');
   });
+
+  it('compte les lignes non comparables au lieu de les perdre en route', () => {
+    // Elles sont écartées du DÉTAIL, pas du document : le commentaire du rendu
+    // le promettait déjà, le code les oubliait. Le bandeau affichait « +0 » —
+    // donc rien du tout — là où l'opérateur avait saisi deux constats de plus.
+    const contenu: AuditContent = {
+      ...CONTENU,
+      page3: {
+        ...CONTENU.page3,
+        avant_apres: [
+          { cle: 'vitesse', avant: '9,8 s d’attente', apres: '1,2 s' },
+          { cle: 'rang', avant: '9ᵉ sur « menuisier Antibes »' },
+          { cle: 'avis', avant: '2 avis Google' },
+        ],
+      },
+    };
+    const html = corpsCompact(contenu, mesuresVides());
+    expect(html.match(/class="ba-row"/g)).toHaveLength(1);
+    expect(html).toContain('plus-strip');
+    expect(html).toContain('+2');
+    expect(html).toContain('menuisier Antibes');
+  });
+});
+
+describe('corpsCompact — les cartes d’axes', () => {
+  it('détache la provenance de la mesure du nom de l’axe', () => {
+    // Elle sortait en `<u>` collé au nom : « RAPIDITÉMESURÉ PAR GOOGLE »,
+    // souligné, passait à la ligne et déformait la carte.
+    const html = corpsCompact(CONTENU, construireMesures(AUDIT));
+    expect(html).toContain('<span class="ax-src">mesuré par Google</span>');
+    expect(html).not.toContain('<u>');
+  });
+
+  it('range quatre axes en deux colonnes, pas en trois avec un orphelin', () => {
+    const quatre = construireMesures({
+      ...AUDIT,
+      axes: ['vitesse', 'seo', 'mobile', 'conversion'].map((id) => ({
+        id: id as AuditLu['axes'][number]['id'],
+        note: 40,
+        confiance: 'haute' as const,
+        preuves: [],
+      })),
+    });
+    expect(corpsCompact(CONTENU, quatre)).toContain('class="ax-grid ax-n4"');
+    expect(corpsCompact(CONTENU, construireMesures(AUDIT))).toContain('class="ax-grid"');
+  });
+});
+
+describe('corpsCompact — chaque demi-page est atteignable', () => {
+  it('porte un identifiant de défilement, sinon les onglets ne visent rien', () => {
+    const html = corpsCompact(CONTENU, construireMesures(AUDIT));
+    for (let n = 1; n <= 6; n++) expect(html).toContain(`id="audit-h${n}"`);
+  });
 });
 
 describe('corpsCompact — l’échappement', () => {

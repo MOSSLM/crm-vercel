@@ -1,7 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { AuditEditorPage } from '../AuditEditorPage';
-import type { Audit } from '@/types';
+import { AuditEditorPage, ongletDuChamp } from '../AuditEditorPage';
+import { corpsCompact } from '@/utils/audit/htmlCompact';
+import { mesuresVides } from '@/lib/audit/mesures';
+import { getDefaultAuditContent } from '@/lib/audit/default-content';
+import type { Audit, AuditContent } from '@/types';
 
 // jsdom does not implement ResizeObserver
 global.ResizeObserver = class ResizeObserver {
@@ -137,5 +140,52 @@ describe('AuditEditorPage — handleSave guard', () => {
     await waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(expect.stringContaining('Session expirée'));
     });
+  });
+});
+
+/**
+ * LE LIEN ENTRE L'APERÇU ET LE FORMULAIRE, qui s'était rompu en silence.
+ *
+ * Cliquer un bloc dans l'aperçu ouvre l'onglet qui le contient. La
+ * correspondance était une table écrite à la main, héritée du deck de six pages :
+ * les blocs introduits par le document compact — `page3.avant_apres.N` en tête,
+ * qui occupe une demi-page entière — n'y figuraient pas. Cliquer dessus
+ * n'ouvrait donc rien, et le bloc paraissait simplement non modifiable.
+ *
+ * Ce test part du rendu RÉEL : il relève tous les `data-field` que le document
+ * émet et exige que chacun mène quelque part. Un bloc ajouté demain sans onglet
+ * fera échouer la suite au lieu de se faire oublier.
+ */
+describe('ongletDuChamp — tout bloc cliquable ouvre un onglet', () => {
+  const champsDuDocument = (contenu: AuditContent): string[] => {
+    const html = corpsCompact(contenu, mesuresVides());
+    return [...html.matchAll(/data-field="([^"]+)"/g)].map(m => m[1]);
+  };
+
+  const contenu: AuditContent = {
+    ...getDefaultAuditContent({ entreprise_nom: 'Menuiserie Berthier', demo_url: 'https://x.fr' }),
+  };
+
+  it('le document émet bien des blocs éditables', () => {
+    expect(champsDuDocument(contenu).length).toBeGreaterThan(8);
+  });
+
+  it('chaque bloc éditable du document mène à un onglet existant', () => {
+    for (const champ of champsDuDocument(contenu)) {
+      expect(ongletDuChamp(champ)).not.toBeNull();
+    }
+  });
+
+  it('résout les blocs répétés, index compris', () => {
+    expect(ongletDuChamp('page3.avant_apres.0')).toBe(3);
+    expect(ongletDuChamp('page4.livrables.2')).toBe(4);
+    expect(ongletDuChamp('page5.additional_services.7')).toBe(5);
+    expect(ongletDuChamp('page6.next_steps.1')).toBe(6);
+  });
+
+  it('ne prétend pas router ce qui n’est pas un champ de page', () => {
+    expect(ongletDuChamp('global_style.grain')).toBeNull();
+    expect(ongletDuChamp('page9.inconnu')).toBeNull();
+    expect(ongletDuChamp('')).toBeNull();
   });
 });

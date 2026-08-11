@@ -21,9 +21,6 @@ export function Page6Editor({ data, onChange }: Props) {
     <div className="space-y-1">
       <div className="border-b border-border pb-4 mb-4">
         <p className={`${labelStyle} mb-3`}>Titres de section</p>
-        <FieldGroup label="Titre barre (dark header)">
-          <Input value={data.header_section || ''} onChange={e => onChange({ ...data, header_section: e.target.value })} placeholder="Prochaines étapes" />
-        </FieldGroup>
         <FieldGroup label="Label (petites caps)">
           <Input value={data.section_label || ''} onChange={e => onChange({ ...data, section_label: e.target.value })} placeholder="05 · Pour démarrer" />
         </FieldGroup>

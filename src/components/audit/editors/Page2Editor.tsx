@@ -71,9 +71,16 @@ export function Page2Editor({
               </Button>
             )}
           </div>
-          <p className={`text-xs mb-3 flex items-center gap-1 ${selectedCount < MIN_AUDIT_ISSUES ? 'text-amber-600' : 'text-muted-foreground'}`}>
+          <p className={`text-xs mb-1 flex items-center gap-1 ${selectedCount < MIN_AUDIT_ISSUES ? 'text-amber-600' : 'text-muted-foreground'}`}>
             {selectedCount < MIN_AUDIT_ISSUES && <AlertTriangle className="h-3 w-3" />}
             {selectedCount} coché{selectedCount > 1 ? 's' : ''} · au moins {MIN_AUDIT_ISSUES} recommandés
+          </p>
+          {/* Les cases ne dessinent plus rien sur l'A4, mais elles commandent
+              toujours les offres proposées page « Investissement » : le dire ici
+              évite de les croire décoratives et de les décocher pour faire propre. */}
+          <p className="text-[11px] text-muted-foreground mb-3 leading-snug">
+            Décide des offres proposées sur la page « Investissement », et de ce que la préparation
+            écrit dans l&apos;avant/après.
           </p>
           {/* Groupé par pilier : à plat, deux douzaines de cases ne se lisent
               plus. Le pilier dit aussi de quoi on parle au prospect — la
@@ -111,9 +118,6 @@ export function Page2Editor({
 
       <div className="border-b border-border pb-4 mb-4">
         <p className={`${labelStyle} mb-3`}>Titres de section</p>
-        <FieldGroup label="Titre barre (dark header)">
-          <Input value={data.header_section || ''} onChange={e => onChange({ ...data, header_section: e.target.value })} placeholder="Votre situation" />
-        </FieldGroup>
         <FieldGroup label="Label (petites caps)">
           <Input value={data.section_label || ''} onChange={e => onChange({ ...data, section_label: e.target.value })} placeholder="01 · Contexte" />
         </FieldGroup>
@@ -128,6 +132,14 @@ export function Page2Editor({
       <FieldGroup label="Intro de section">
         <Textarea value={data.section_intro} onChange={e => onChange({ ...data, section_intro: e.target.value })} rows={3} />
       </FieldGroup>
+
+      <div className="border-t border-border pt-4 mt-4">
+        <p className="text-[11px] text-muted-foreground leading-snug">
+          Ce qui suit ne sort <span className="font-medium text-foreground">que sur le rapport mobile</span>
+          {' '}(le lien public). Sur le document A4, cette demi-page affiche le relevé mesuré — la note,
+          les axes, la méthode — que personne ne peut retoucher à la main.
+        </p>
+      </div>
 
       <div className="flex items-center justify-between mt-4 mb-2">
         <p className={labelStyle}>
