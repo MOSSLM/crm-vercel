@@ -396,6 +396,8 @@ const BLOCKING_HOLDS = new Set([
   // Le message promet un audit que l'entreprise n'a pas. Se lève tout seul dès
   // que le site est mesuré : la relecture repasse toutes les deux heures.
   'lien_manquant',
+  // Idem pour la démo : le site n'est pas encore « Prêt à envoyer ».
+  'demo_manquante',
 ])
 
 /**

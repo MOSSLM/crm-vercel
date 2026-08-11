@@ -788,3 +788,134 @@ describe('le lien du rapport d’audit', () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Le lien de la démo — le même trou que l'audit, trois lignes plus bas.
+ *
+ * `resolveEntities` n'acceptait que `published_domain` / `published_subdomain`.
+ * Or aucun site du parc n'est publié : sur 114 entreprises qualifiées qui en
+ * ont un, zéro a de sous-domaine. `company.demo_url` s'interpolait donc en vide
+ * pour les 295 — alors qu'un site non publié a une URL d'aperçu qui marche, et
+ * que le rapport public l'envoie déjà.
+ */
+describe('le lien du site démo', () => {
+  let tables: Record<string, any>;
+
+  const wireDemo = (siteRows: unknown[], body = 'Votre démo : {{company.demo_url}}') => {
+    tables = {
+      automations: tableChain({
+        data: {
+          id: 'auto-1',
+          name: 'Artisans',
+          kind: 'sequence',
+          status: 'on',
+          definition: { steps: [{ id: 's1', kind: 'email', day: 0, template: 'tpl-1' }] },
+          settings: {},
+        },
+        error: null,
+      }),
+      contacts: tableChain({
+        data: { first_name: 'Jean', last_name: 'Test', email: 'jean@test.fr', tel: '0600', role_title: null, linkedin_url: null },
+        error: null,
+      }),
+      entreprises: tableChain({
+        data: { name: 'Clim Ouest', ville: 'Angers', site_web_canonique: null, owner_id: 'agent-1' },
+        error: null,
+      }),
+      opportunites: tableChain({ data: [], error: null }),
+      audits: tableChain({ data: [], error: null }),
+      sites: tableChain({ data: siteRows, error: null }),
+      email_templates: tableChain({ data: { subject: 'Objet', body }, error: null }),
+      whatsapp_templates: tableChain({ data: null, error: null }),
+      call_scripts: tableChain({ data: null, error: null }),
+      automation_connections: tableChain({ data: null, error: null }),
+      email_signature_settings: tableChain({ data: null, error: null }),
+      email_logs: tableChain(),
+      sequence_enrollments: tableChain(),
+      prospection_tasks: tableChain({ data: [], error: null }),
+      regulator_settings: tableChain({ data: { id: 'global' }, error: null }),
+      user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
+      agent_settings: tableChain({ data: [], error: null }),
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 5 } as any),
+      entreprises_rapport_public: tableChain({
+        data: { entreprise_id: 42, token: 'a1b2c3d4e5f6a7b8', actif: true, vues: 0, vu_le: null },
+        error: null,
+      }),
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+    mockSend.mockReset();
+    resetTestGuardCache();
+    process.env = { ...ORIGINAL_ENV, RESEND_API_KEY: 'test-key' };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('envoie l’aperçu d’un site « Prêt » même s’il n’est pas publié', async () => {
+    // Le cas de tout le parc : 0 site publié, mais l'aperçu `{id}.{domaine}`
+    // est routé par le middleware et marche.
+    wireDemo([
+      { id: 'site-uuid-1', is_published: false, published_subdomain: null, published_domain: null, build_stage: 'pret', is_template: false },
+    ]);
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const envoi = mockSend.mock.calls[0][0] as { text?: string; html?: string };
+    expect(`${envoi.text ?? ''}${envoi.html ?? ''}`).toContain('site-uuid-1.');
+  });
+
+  it('préfère le sous-domaine publié quand il existe', async () => {
+    wireDemo([
+      { id: 'site-uuid-1', is_published: true, published_subdomain: 'clim-ouest', published_domain: null, build_stage: 'pret', is_template: false },
+    ]);
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    const envoi = mockSend.mock.calls[0][0] as { text?: string; html?: string };
+    expect(`${envoi.text ?? ''}${envoi.html ?? ''}`).toContain('clim-ouest.');
+  });
+
+  it('gèle quand le seul site est encore « À faire » — donc pas commencé', async () => {
+    // 112 des 115 sites du parc sont dans cet état. « À faire » veut dire
+    // « Prêt à créer » au tableau du site-builder, pas « prêt à montrer ».
+    wireDemo([
+      { id: 'site-uuid-2', is_published: false, published_subdomain: null, published_domain: null, build_stage: 'a_faire', is_template: false },
+    ]);
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).not.toHaveBeenCalled();
+    const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+    expect(updates[0]).toEqual(expect.objectContaining({ hold_reason: 'demo_manquante', send_at: null }));
+  });
+
+  it('ignore un gabarit, qui n’est le site de personne', async () => {
+    wireDemo([
+      { id: 'tpl-uuid', is_published: true, published_subdomain: 'gabarit', published_domain: null, build_stage: 'pret', is_template: true },
+    ]);
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('ne gèle pas une étape dont le message ne parle pas de démo', async () => {
+    wireDemo([], 'Un mot rapide, sans lien.');
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+});
