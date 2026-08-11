@@ -133,6 +133,7 @@ interface Carte {
   nom?: { famille: string; prenom: string } | null
   titre?: string | null
   numeros: NumeroProspect[]
+  email?: string | null
   note?: string | null
 }
 
@@ -145,7 +146,6 @@ function rendreCarte(carte: Carte): string {
   // fusionner ou rejeter comme doublons. Il rend aussi le ré-import idempotent —
   // exporter deux fois ne crée plus deux carnets.
   lignes.push(`UID:${carte.uid}`)
-  lignes.push(`FN:${echapper(carte.fn)}`)
   // `N` est obligatoire en 3.0. Pour une entreprise, la partie « nom de famille »
   // porte la raison sociale et le reste est vide — c'est ce que font les
   // exports des annuaires, et les répertoires l'affichent correctement.
@@ -155,12 +155,17 @@ function rendreCarte(carte: Carte): string {
       ? `N:${echapper(n.famille)};${echapper(n.prenom)};;;`
       : `N:${echapper(carte.fn)};;;;`,
   )
+  lignes.push(`FN:${echapper(carte.fn)}`)
   lignes.push(`ORG:${echapper(carte.org)}`)
   if (carte.titre) lignes.push(`TITLE:${echapper(carte.titre)}`)
 
   for (const num of carte.numeros) {
     lignes.push(`TEL;TYPE=${typeTel(num)}:${num.e164}`)
   }
+
+  // L'adresse manquait. 254 des 295 entreprises qualifiées en ont une, et une
+  // fiche de répertoire sans e-mail oblige à revenir dans le CRM pour écrire.
+  if (carte.email) lignes.push(`EMAIL;TYPE=INTERNET:${echapper(carte.email)}`)
 
   if (carte.note) lignes.push(`NOTE:${echapper(carte.note)}`)
   lignes.push('END:VCARD')
@@ -190,6 +195,7 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
   // contact, et filtrer sur l'origine laisserait l'entreprise sans aucune fiche.
   const numerosEntreprise = numerosDuProspect({ entreprise: fiche.entreprise }, 'appel')
   const noteSequence = fiche.sequence ? `Séquence : ${fiche.sequence}` : null
+  const emailEntreprise = (fiche.entreprise.email ?? '').trim() || null
 
   /** Une même ligne ne doit pas apparaître deux fois sur une fiche. */
   const sansDoublon = (numeros: NumeroProspect[]): NumeroProspect[] => {
@@ -229,6 +235,10 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
         // Les siens d'abord, puis ceux de l'établissement : l'ordre du répertoire
         // suit celui-là, et c'est son portable qu'on veut composer en premier.
         numeros,
+        // La sienne d'abord, celle de la société en repli : c'est la règle du
+        // moteur (`resolveEntities`), et deux règles divergentes finiraient par
+        // écrire à deux adresses différentes pour le même prospect.
+        email: (c.email ?? '').trim() || emailEntreprise,
         note: [role, noteSequence].filter(Boolean).join(' · ') || null,
       }),
     )
@@ -251,6 +261,7 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
         fn: raisonSociale,
         org: raisonSociale,
         numeros: inedits,
+        email: emailEntreprise,
         note: noteSequence,
       }),
     )
@@ -260,6 +271,17 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
 }
 
 /**
+ * Ce qui sépare deux fiches dans le fichier : une ligne vide.
+ *
+ * `END:VCARD` puis `BEGIN:VCARD` collés suffisent à la lettre de la norme, et
+ * c'est ce qu'on écrivait. Mais la ligne vide est ce que produisent les exports
+ * de Google et d'iCloud, donc ce que les importeurs voient en pratique — et un
+ * fichier de trois cents fiches sans elle n'en faisait entrer qu'une dans
+ * l'iPhone. Le coût est d'un octet par fiche.
+ */
+const SEPARATEUR = '\r\n\r\n'
+
+/**
  * Le fichier `.vcf` complet.
  *
  * Terminé par un CRLF : certains lecteurs Android ignorent silencieusement la
@@ -267,7 +289,7 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
  */
 export function construireVCards(fiches: FicheProspect[]): string {
   const cartes = fiches.flatMap(cartesDuProspect)
-  return cartes.length ? `${cartes.join('\r\n')}\r\n` : ''
+  return cartes.length ? `${cartes.join(SEPARATEUR)}\r\n` : ''
 }
 
 /** Combien de fiches et de numéros cet export contiendra — annoncé avant le clic. */
@@ -321,7 +343,7 @@ export function construireLot(
   const index = Math.min(Math.max(1, lot), lots)
   const tranche = toutes.slice((index - 1) * taille, index * taille)
   return {
-    vcf: tranche.length ? `${tranche.join('\r\n')}\r\n` : '',
+    vcf: tranche.length ? `${tranche.join(SEPARATEUR)}\r\n` : '',
     cartes: tranche.length,
     lots,
   }
