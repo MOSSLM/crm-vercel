@@ -19,6 +19,7 @@ import { withAuth } from '@/app/api/_lib/with-auth'
 import {
   compterExport,
   construireLot,
+  construireVCards,
   nombreDeLots,
   TAILLE_LOT,
   type FicheProspect,
@@ -175,13 +176,26 @@ export const GET = withAuth<undefined, Record<string, never>>({}, async ({ req, 
 
   // Un lot par téléchargement : les répertoires mobiles n'enregistrent qu'une
   // fiche sur un fichier de plusieurs centaines, sans dire pourquoi.
-  const lot = Number(url.searchParams.get('lot') ?? '1')
-  const { vcf, lots } = construireLot(fiches, Number.isFinite(lot) ? lot : 1)
+  //
+  // `?lot=tout` rend le carnet entier en un seul fichier. C'est ce qu'il faut
+  // pour l'import par iCloud depuis un ordinateur, qui avale les trois cents
+  // fiches d'un coup et les synchronise ensuite vers le téléphone — le
+  // découpage ne sert qu'à contourner l'importeur d'iOS, pas celui d'iCloud.
+  const brut = url.searchParams.get('lot') ?? '1'
+  const entier = brut === 'tout'
+  const lot = Number(brut)
+  const { vcf, lots } = entier
+    ? { vcf: construireVCards(fiches), lots: 1 }
+    : construireLot(fiches, Number.isFinite(lot) ? lot : 1)
   if (!vcf) {
     return jsonError('rien_a_exporter', 404, { message: 'Aucun prospect avec un numéro exploitable.' }, cors)
   }
 
-  const nom = lots > 1 ? `prospects-${portee}-lot${lot}-sur-${lots}.vcf` : `prospects-${portee}.vcf`
+  const nom = entier
+    ? `prospects-${portee}-complet.vcf`
+    : lots > 1
+      ? `prospects-${portee}-lot${lot}-sur-${lots}.vcf`
+      : `prospects-${portee}.vcf`
   return new Response(vcf, {
     headers: {
       ...cors,

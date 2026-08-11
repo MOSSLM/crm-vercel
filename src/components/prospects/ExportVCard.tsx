@@ -77,11 +77,12 @@ export function ExportVCard() {
     }
   }, [portee])
 
-  const exporter = useCallback(async () => {
+  const exporter = useCallback(
+    async (cible: number | 'tout' = lot) => {
     setEnCours(true)
     setErreur(null)
     try {
-      const res = await authedFetch(`/api/prospects/vcard?portee=${portee}&lot=${lot}`)
+      const res = await authedFetch(`/api/prospects/vcard?portee=${portee}&lot=${cible}`)
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { message?: string }
         throw new Error(payload.message || 'Export impossible')
@@ -90,12 +91,13 @@ export function ExportVCard() {
       const url = URL.createObjectURL(blob)
       const lien = document.createElement('a')
       lien.href = url
-      lien.download = `prospects-${portee}-lot${lot}.vcf`
+      lien.download = cible === 'tout' ? `prospects-${portee}-complet.vcf` : `prospects-${portee}-lot${cible}.vcf`
       document.body.appendChild(lien)
       lien.click()
       document.body.removeChild(lien)
       URL.revokeObjectURL(url)
-      setFaits((f) => new Set(f).add(lot))
+      if (cible === 'tout') return
+      setFaits((f) => new Set(f).add(cible))
       // On avance tout seul : le geste suivant est le lot suivant, et
       // l'oubli d'un lot ne se voit pas dans le répertoire.
       setLot((n) => (compte && n < compte.lots ? n + 1 : n))
@@ -104,7 +106,9 @@ export function ExportVCard() {
     } finally {
       setEnCours(false)
     }
-  }, [portee, lot, compte])
+    },
+    [portee, lot, compte],
+  )
 
   const vide = compte != null && compte.cartes === 0
   const aide = PORTEES.find((p) => p.valeur === portee)?.aide
@@ -164,12 +168,31 @@ export function ExportVCard() {
       <Button
         variant="outline"
         className="flex w-full items-center gap-2"
-        onClick={exporter}
+        onClick={() => exporter(lot)}
         disabled={enCours || chargement || vide}
       >
         {enCours ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         {compte && compte.lots > 1 ? `Télécharger le lot ${lot} sur ${compte.lots}` : 'Exporter les contacts (vCard)'}
       </Button>
+
+      {compte && compte.lots > 1 ? (
+        <div className="space-y-1">
+          <Button
+            variant="ghost"
+            className="flex w-full items-center gap-2"
+            onClick={() => exporter('tout')}
+            disabled={enCours || chargement || vide}
+          >
+            <Download className="h-4 w-4" />
+            Tout en un fichier ({compte.cartes} fiches)
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Depuis un ordinateur : déposez ce fichier sur <b>icloud.com/contacts</b> — il avale les {compte.cartes}{' '}
+            fiches d’un coup et les synchronise ensuite vers l’iPhone. C’est l’importeur d’iOS qui cale sur les gros
+            fichiers, pas celui d’iCloud.
+          </p>
+        </div>
+      ) : null}
 
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {chargement
