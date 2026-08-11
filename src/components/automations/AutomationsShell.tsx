@@ -12,8 +12,8 @@ import { RefDataProvider } from './ref-data'
 import { createAutomation } from './automations-db'
 import { emptyWorkflow } from './workflow-graph'
 
-type TopTab = 'automations' | 'sequences' | 'semaine' | 'regulateur' | 'prospection' | 'connections'
-type View = 'list' | 'builder' | 'semaine' | 'regulateur' | 'prospection' | 'connections'
+type TopTab = 'automations' | 'sequences' | 'modeles' | 'semaine' | 'regulateur' | 'prospection' | 'connections'
+type View = 'list' | 'builder' | 'modeles' | 'semaine' | 'regulateur' | 'prospection' | 'connections'
 
 interface ShellCounts {
   workflows?: number
@@ -34,6 +34,7 @@ function resolveRoute(pathname: string): { tab: TopTab; view: View; inBuilder: b
     return segs.length > 1
       ? { tab: 'sequences', view: 'builder', inBuilder: true, automationId: segs[1] }
       : { tab: 'sequences', view: 'list', inBuilder: false, automationId: null }
+  if (segs[0] === 'modeles') return { tab: 'modeles', view: 'modeles', inBuilder: false, automationId: null }
   if (segs[0] === 'semaine') return { tab: 'semaine', view: 'semaine', inBuilder: false, automationId: null }
   if (segs[0] === 'regulateur') return { tab: 'regulateur', view: 'regulateur', inBuilder: false, automationId: null }
   if (segs[0] === 'prospection') return { tab: 'prospection', view: 'prospection', inBuilder: false, automationId: null }
@@ -45,6 +46,7 @@ function resolveRoute(pathname: string): { tab: TopTab; view: View; inBuilder: b
 const TAB_HREF: Record<TopTab, string> = {
   automations: '/automations',
   sequences: '/automations/sequences',
+  modeles: '/automations/modeles',
   semaine: '/automations/semaine',
   regulateur: '/automations/regulateur',
   prospection: '/automations/prospection',
@@ -208,6 +210,7 @@ function TopBar({
       <div className="tabs" role="tablist">
         <TabLink tab="automations" current={tab} icon="bolt" label="Workflows" count={counts.workflows} />
         <TabLink tab="sequences" current={tab} icon="flame" label="Séquences" count={counts.sequences} />
+        <TabLink tab="modeles" current={tab} icon="template" label="Modèles" />
         <TabLink tab="semaine" current={tab} icon="cal" label="La semaine" />
         <TabLink tab="regulateur" current={tab} icon="randomize" label="Régulateur" count={counts.queued} accentCount />
         <TabLink tab="prospection" current={tab} icon="inbox" label="Démarchage" count={counts.prospection} accentCount />

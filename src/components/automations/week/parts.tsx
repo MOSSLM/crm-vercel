@@ -4,6 +4,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { XI } from '../icons'
+import { authedFetch } from '@/utils/authedFetch'
 import type { SeqStepKind } from '../types'
 import { weekDuration, weekHM, type WeekPlan, type WeekWave } from '@/lib/automations/week'
 import type { WeekContactRow, WeekView } from './types'
@@ -20,6 +21,70 @@ export const KIND_META: Record<string, { icon: string; label: string; color: str
 }
 
 export const kindMeta = (kind: SeqStepKind | string) => KIND_META[kind] ?? KIND_META.task
+
+/**
+ * Ce que cette vague enverra vraiment, rendu sur un contact réel.
+ *
+ * La prévision disait « étape 2 · template a3f9-… » : un identifiant, à qui il
+ * faut faire confiance. On peut désormais LIRE le message avant qu'il parte à
+ * quarante entreprises — c'est le dernier moment où une coquille se rattrape.
+ *
+ * Charge à la demande : seule la vague ouverte est rendue, et l'appel passe par
+ * `renderStepMessage`, le même code que l'envoi.
+ */
+function WaveMessage({ wave, contact }: { wave: WeekWave; contact: WeekContactRow | undefined }) {
+  const [message, setMessage] = React.useState<{ subject: string | null; body: string; source: string | null } | null>(
+    null,
+  )
+  const [state, setState] = React.useState<'loading' | 'done' | 'error'>('loading')
+
+  React.useEffect(() => {
+    let vivant = true
+    setState('loading')
+    const params = new URLSearchParams({
+      automation_id: wave.automationId,
+      step_index: String(wave.stepIndex),
+    })
+    if (contact?.entrepriseId != null) params.set('entreprise_id', String(contact.entrepriseId))
+
+    authedFetch(`/api/automations/preview?${params}`)
+      .then((r) => r.json())
+      .then((payload: { message?: { subject: string | null; body: string; source: string | null } | null }) => {
+        if (!vivant) return
+        setMessage(payload.message ?? null)
+        setState('done')
+      })
+      .catch(() => vivant && setState('error'))
+    return () => {
+      vivant = false
+    }
+  }, [wave.automationId, wave.stepIndex, contact?.entrepriseId])
+
+  if (state === 'error') return null
+  if (state === 'loading') return <div className="wk-msg loading">Chargement du message…</div>
+  if (!message || (!message.body && !message.subject)) {
+    return (
+      <div className="wk-msg vide">
+        Aucun message préparé pour cette étape — elle partira vide si rien n’est écrit.
+      </div>
+    )
+  }
+
+  return (
+    <div className="wk-msg">
+      {message.source && <div className="src">{message.source}</div>}
+      {message.subject && <div className="subj">{message.subject}</div>}
+      <div className="body">{message.body}</div>
+      {contact && (
+        <div className="on">
+          rendu sur {contact.company || contact.name}
+          {/* Les autres contacts de la vague verront leurs propres valeurs. */}
+          {wave.count > 1 ? ` · ${wave.count - 1} autre${wave.count > 2 ? 's' : ''} suivra${wave.count > 2 ? 'ont' : ''}` : ''}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Teinte d'une couleur hex — les vagues sont des aplats très clairs de la couleur de leur séquence. */
 export function tint(hex: string, alpha: number): string {
@@ -247,8 +312,8 @@ export function WaveDetail({
         <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.4 }}>{wave.label}</div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>
           {kind.label}
-          {wave.template ? ` · template ${wave.template}` : ''}
         </div>
+        <WaveMessage wave={wave} contact={contacts[0]} />
       </div>
 
       <div className="wk-sec">

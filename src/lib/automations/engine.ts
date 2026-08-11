@@ -308,6 +308,68 @@ async function lireRapportUrl(sb: SupabaseClient, entrepriseId: number): Promise
   }
 }
 
+/** Le texte qu'une étape enverra, une fois ses variables remplies. */
+export interface RenderedStepMessage {
+  /** E-mail seulement. */
+  subject: string | null
+  body: string
+  /** Nom du modèle ou du script d'où vient le texte, quand il en vient un. */
+  source: string | null
+}
+
+/**
+ * Le message d'une étape, modèle résolu et variables remplies.
+ *
+ * PARTAGÉ ENTRE L'ENVOI ET L'APERÇU, et c'est tout l'intérêt : deux chemins
+ * distincts finiraient par diverger, et l'écart se découvrirait chez le
+ * prospect. Un modèle choisi prime sur le message écrit dans l'étape — même
+ * règle des deux côtés.
+ */
+export async function renderStepMessage(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  vars: VarBag,
+): Promise<RenderedStepMessage> {
+  if (step.kind === 'email') {
+    if (!step.template) return { subject: null, body: '', source: null }
+    const { data } = await sb
+      .from('email_templates')
+      .select('name,subject,body')
+      .eq('id', step.template)
+      .maybeSingle()
+    return {
+      subject: interpolate(data?.subject, vars),
+      body: interpolate(data?.body, vars),
+      source: (data?.name as string | null) ?? null,
+    }
+  }
+
+  if (step.kind === 'whatsapp' && step.template) {
+    const { data } = await sb.from('whatsapp_templates').select('name,body').eq('id', step.template).maybeSingle()
+    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+  }
+
+  if (step.kind === 'call' && step.script) {
+    const { data } = await sb.from('call_scripts').select('name,body').eq('id', step.script).maybeSingle()
+    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+  }
+
+  return { subject: null, body: interpolate(step.message, vars), source: null }
+}
+
+/**
+ * Le sac de variables d'un vrai prospect, pour l'aperçu des messages.
+ *
+ * Passe par `resolveEntities`, donc l'aperçu montre EXACTEMENT ce que l'envoi
+ * produira — y compris les liens du rapport et du site démo, et les variables
+ * qui resteront vides. Un aperçu calculé autrement mentirait tôt ou tard.
+ */
+export async function resolveMessageVars(ctx: RunContext): Promise<VarBag> {
+  const sb = getServiceClient()
+  const ent = await resolveEntities(sb, ctx)
+  return ent.vars
+}
+
 /**
  * Rendu d'un texte de message.
  *
@@ -903,13 +965,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
 
     let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
-      const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
-      if (tpl) {
-        const text = interpolate(tpl.body, ent.vars)
+      const tpl = await renderStepMessage(sb, step, ent.vars)
+      if (tpl.source !== null || tpl.body) {
+        const text = tpl.body
         const result = await sendEngineEmail(sb, {
           to: ent.contactEmail,
           toName: ent.contactName,
-          subject: interpolate(tpl.subject, ent.vars),
+          subject: tpl.subject ?? '',
           text,
           contactId: ent.contactId,
           entrepriseId: ent.entrepriseId,
@@ -969,17 +1031,14 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       .eq('id', enrollment.id)
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   } else if (stepIsManual(step)) {
-    let message = interpolate(step.message, ent.vars)
-    let scriptName: string | undefined
-    if (step.kind === 'whatsapp' && step.template) {
-      const { data: wt } = await sb.from('whatsapp_templates').select('body').eq('id', step.template).maybeSingle()
-      message = interpolate(wt?.body, ent.vars)
-    }
-    if (step.kind === 'call' && step.script) {
-      const { data: sc } = await sb.from('call_scripts').select('name,body').eq('id', step.script).maybeSingle()
-      scriptName = sc?.name
-      message = sc?.body ?? message
-    }
+    // Le corps d'un script d'appel ne passait PAS par `interpolate` : l'agent
+    // lisait « Bonjour, je suis bien avec {{company.name}} ? » à l'écran, en
+    // clair. `renderStepMessage` traite les trois canaux de la même façon, et
+    // c'est le même code que l'aperçu du builder — les deux ne peuvent plus
+    // diverger.
+    const rendu = await renderStepMessage(sb, step, ent.vars)
+    const message = rendu.body
+    const scriptName = rendu.source ?? undefined
     // À qui revient la tâche : propriétaire du contact, celui qui a lancé la
     // séquence, puis l'admin — selon la règle d'attribution du régulateur.
     const routing = await assignManualTask(sb, {

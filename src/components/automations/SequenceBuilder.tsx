@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { supabase } from '@/utils/supabase/client'
 import { XI } from './icons'
 import { Section, Field, ToggleRow, SegFull } from './atoms'
 import { SupaSelect } from './SupaSelect'
@@ -13,20 +14,13 @@ import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
 import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
 import { moveStep } from './sequence-steps'
+import { MessageEditor } from './MessageEditor'
 import { normalizeWindows } from '@/lib/automations/regulator'
+import { interpolateVars, sampleVars, VARIABLES, type VarBag } from '@/lib/automations/variables'
+import { CANAL_LABEL, CANAUX, type Canal } from '@/lib/prospects/canal'
+import { authedFetch } from '@/utils/authedFetch'
 import type { Automation, SequenceDefinition, SequenceStep, SeqStepKind, SequenceSettings } from './types'
 import './regulator.css'
-
-const VARIABLES = [
-  { v: '{{contact.first_name}}', desc: 'Prénom du contact' },
-  { v: '{{contact.last_name}}', desc: 'Nom' },
-  { v: '{{company.name}}', desc: 'Entreprise' },
-  { v: '{{contact.role}}', desc: 'Poste' },
-  { v: '{{owner.first_name}}', desc: 'Prénom du SDR' },
-  { v: '{{calendar_link}}', desc: 'Lien de réservation' },
-  { v: '{{company.audit_url}}', desc: "Lien du rapport (repli : PDF de l'audit)" },
-  { v: '{{company.demo_url}}', desc: 'Lien du site démo' },
-]
 
 export function SequenceBuilder({ id }: { id: string }) {
   const router = useRouter()
@@ -38,6 +32,8 @@ export function SequenceBuilder({ id }: { id: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [picker, setPicker] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [vars, setVars] = useState<VarBag>(() => sampleVars())
+  const [previewOn, setPreviewOn] = useState<string | null>(null)
   const dirty = useRef(false)
 
   useEffect(() => {
@@ -83,6 +79,29 @@ export function SequenceBuilder({ id }: { id: string }) {
     dirty.current = true
   }, [])
 
+  /**
+   * L'aperçu se calcule sur une VRAIE entreprise du public visé.
+   *
+   * C'est le seul moyen de voir qu'un lien de site démo manque ou qu'un rapport
+   * d'audit n'a pas encore de jeton : sur des valeurs inventées, tout est
+   * toujours rempli, et le trou se découvre à l'envoi.
+   */
+  const chargerApercu = useCallback(async (entrepriseId: string) => {
+    if (!entrepriseId) {
+      setVars(sampleVars())
+      setPreviewOn(null)
+      return
+    }
+    try {
+      const res = await authedFetch(`/api/automations/preview?entreprise_id=${entrepriseId}`)
+      const payload = (await res.json()) as { vars?: VarBag; company?: string | null }
+      setVars(payload.vars ?? sampleVars())
+      setPreviewOn(payload.company ?? null)
+    } catch {
+      toast.error('Aperçu indisponible — valeurs d’exemple conservées')
+    }
+  }, [])
+
   const updateStep = useCallback(
     (sid: string, patch: Partial<SequenceStep>) => {
       touch()
@@ -116,7 +135,7 @@ export function SequenceBuilder({ id }: { id: string }) {
   )
 
   const addStep = useCallback(
-    (kind: SeqStepKind) => {
+    (kind: SeqStepKind, preset?: Partial<SequenceStep>) => {
       touch()
       setSteps((prev) => {
         let i = prev.length + 1
@@ -129,6 +148,7 @@ export function SequenceBuilder({ id }: { id: string }) {
           day: prev.length === 0 ? 0 : lastDay + 2,
           // Pas de `sendAt` : l'heure d'un email appartient au régulateur.
           ...(kind === 'email' ? { trackOpens: true, trackClicks: true } : {}),
+          ...preset,
         }
         setSelectedId(step.id)
         return [...prev, step]
@@ -342,10 +362,35 @@ export function SequenceBuilder({ id }: { id: string }) {
             />
           </Section>
 
+          <PublicViseSection
+            settings={settings}
+            onChange={(p) => {
+              touch()
+              setSettings((s) => ({ ...s, ...p }))
+            }}
+          />
+
+          <Section label="Aperçu des messages" defaultOpen={false}>
+            <Field label="Entreprise d’essai" hint={previewOn ?? 'valeurs d’exemple'}>
+              <input
+                className="input mono"
+                placeholder="n° entreprise"
+                onBlur={(e) => chargerApercu(e.target.value.trim())}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') chargerApercu((e.target as HTMLInputElement).value.trim())
+                }}
+              />
+              <p className="rg-hint">
+                Les messages de chaque étape se rendent avec les données de cette entreprise — liens du rapport et du
+                site démo compris. Vide, l’aperçu se contente de valeurs d’exemple.
+              </p>
+            </Field>
+          </Section>
+
           <Section label="Variables disponibles" defaultOpen={false}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {VARIABLES.map((x) => (
-                <div key={x.v} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px' }}>
+                <div key={x.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px' }}>
                   <code
                     style={{
                       fontFamily: 'var(--font-mono)',
@@ -356,12 +401,15 @@ export function SequenceBuilder({ id }: { id: string }) {
                       borderRadius: 3,
                     }}
                   >
-                    {x.v}
+                    {`{{${x.key}}}`}
                   </code>
                   <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{x.desc}</span>
                 </div>
               ))}
             </div>
+            <p className="rg-hint">
+              Plus besoin de les recopier : les boutons au-dessus de chaque message les insèrent au curseur.
+            </p>
           </Section>
         </div>
       </div>
@@ -488,12 +536,92 @@ export function SequenceBuilder({ id }: { id: string }) {
         <SeqStepInspector
           step={selectedStep}
           settings={settings}
+          vars={vars}
+          previewOn={previewOn}
           onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)}
         />
       </div>
 
       {picker && <SeqStepPickerModal onClose={() => setPicker(false)} onPick={addStep} />}
     </>
+  )
+}
+
+/**
+ * Le public visé — à qui cette séquence s'adresse, exprimé en canaux.
+ *
+ * C'est ce qui permet au tableau de SUGGÉRER la bonne séquence pour chaque
+ * ligne, sans qu'aucun rapprochement ne soit codé en dur : une séquence créée
+ * demain avec ses propres cases entre dans la suggestion toute seule.
+ *
+ * Volontairement en canaux et jamais en préfixes : « il me faut un mobile », pas
+ * « 06 ou 07 ». La règle de numérotation vit dans `src/lib/prospects/canal.ts`.
+ */
+function PublicViseSection({
+  settings,
+  onChange,
+}: {
+  settings: SequenceSettings
+  onChange: (p: Partial<SequenceSettings>) => void
+}) {
+  const require = settings.requireCanaux ?? []
+  const exclude = settings.excludeCanaux ?? []
+
+  /**
+   * Bascule un canal. Un même canal ne peut pas être requis ET exclu : le
+   * cocher d'un côté le décoche de l'autre, sinon on déclarerait un public vide
+   * sans qu'aucun écran ne le signale.
+   */
+  const set = (canal: Canal, mode: 'require' | 'exclude') => {
+    const source = mode === 'require' ? require : exclude
+    const suivant = source.includes(canal) ? source.filter((c) => c !== canal) : [...source, canal]
+    onChange(
+      mode === 'require'
+        ? { requireCanaux: suivant, excludeCanaux: exclude.filter((c) => c !== canal) }
+        : { requireCanaux: require.filter((c) => c !== canal), excludeCanaux: suivant },
+    )
+  }
+
+  const rien = require.length === 0 && exclude.length === 0
+
+  return (
+    <Section label="Public visé" count={rien ? undefined : require.length + exclude.length}>
+      <Field label="Doit avoir" hint="tous ces canaux">
+        <div className="seq-canaux">
+          {CANAUX.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className="seq-canal"
+              aria-pressed={require.includes(c)}
+              onClick={() => set(c, 'require')}
+            >
+              {CANAL_LABEL[c]}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Ne doit pas avoir" hint="un seul suffit à écarter">
+        <div className="seq-canaux">
+          {CANAUX.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className="seq-canal danger"
+              aria-pressed={exclude.includes(c)}
+              onClick={() => set(c, 'exclude')}
+            >
+              {CANAL_LABEL[c]}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <p className="rg-hint">
+        {rien
+          ? 'Sans public déclaré, cette séquence ne sera jamais suggérée dans le tableau — elle restera choisissable à la main.'
+          : 'Le tableau proposera cette séquence aux entreprises qui correspondent. Rien n’est bloqué : on peut toujours inscrire une ligne hors public.'}
+      </p>
+    </Section>
   )
 }
 
@@ -556,7 +684,19 @@ function useStepMeta(step: SequenceStep): StepMeta {
     const sc = ref.call_scripts.find((s) => s.id === step.script)
     return { icon: 'phone', title: sc?.name || 'Appel à passer', subtitle: 'Action manuelle — file de démarchage' }
   }
-  if (step.kind === 'wait') return { icon: 'clock', title: 'Attendre', subtitle: 'Délai avant la prochaine étape' }
+  if (step.kind === 'wait') {
+    // Deux attentes très différentes ne doivent pas se ressembler dans le flux :
+    // l'une passe toute seule, l'autre exige un geste humain.
+    return step.waitMode === 'reply'
+      ? {
+          icon: 'user',
+          title: 'Attendre une réponse',
+          subtitle: step.replyTimeoutDays
+            ? `Relance automatique à J+${step.replyTimeoutDays} sans réponse`
+            : 'Reprend quand on clique « Il a répondu »',
+        }
+      : { icon: 'clock', title: 'Attendre', subtitle: 'Délai avant la prochaine étape' }
+  }
   return { icon: 'task', title: 'Tâche', subtitle: 'Action manuelle' }
 }
 
@@ -584,6 +724,7 @@ function SeqStep({
     <div
       className="seq-step"
       data-kind={step.kind}
+      data-reply={step.kind === 'wait' && step.waitMode === 'reply'}
       data-selected={selected}
       onClick={(e) => {
         e.stopPropagation()
@@ -647,10 +788,15 @@ function SeqStep({
 function SeqStepInspector({
   step,
   settings,
+  vars,
+  previewOn,
   onUpdate,
 }: {
   step: SequenceStep | undefined
   settings: SequenceSettings
+  /** Valeurs de l'entreprise d'essai, pour rendre les messages tels qu'ils partiront. */
+  vars: VarBag
+  previewOn: string | null
   onUpdate: (p: Partial<SequenceStep>) => void
 }) {
   if (!step) {
@@ -711,6 +857,7 @@ function SeqStepInspector({
             <Field label="Template" required>
               <SupaSelect table="email_templates" icon="template" value={step.template} onChange={(v) => onUpdate({ template: v as string })} />
             </Field>
+            <EmailTemplatePreview templateId={step.template ?? null} vars={vars} previewOn={previewOn} />
             <ToggleRow label="Tracker les ouvertures" checked={step.trackOpens !== false} onChange={(v) => onUpdate({ trackOpens: v })} accent />
             <ToggleRow label="Tracker les clics" checked={step.trackClicks !== false} onChange={(v) => onUpdate({ trackClicks: v })} accent />
             <ToggleRow
@@ -733,24 +880,31 @@ function SeqStepInspector({
         )}
         {step.kind === 'whatsapp' && (
           <Section label="WhatsApp manuel">
-            <Field label="Template" hint="vide = message ci-dessous">
+            <Field label="Modèle" hint="vide = message ci-dessous">
               <SupaSelect table="whatsapp_templates" icon="whatsapp" value={step.template} onChange={(v) => onUpdate({ template: v as string })} />
             </Field>
-            <Field label="Message pré-rédigé" hint="variables acceptées">
-              <textarea
-                className="textarea"
-                rows={4}
-                placeholder="Bonjour {{contact.first_name}}, je vous ai envoyé l'audit de {{company.name}} — vous avez pu y jeter un œil ?"
-                value={step.message || ''}
-                onChange={(e) => onUpdate({ message: e.target.value })}
-                disabled={!!step.template}
-              />
-              <p className="rg-hint">
-                {step.template
-                  ? 'Le template choisi prend le dessus : videz-le pour écrire un message propre à cette étape.'
-                  : 'WhatsApp n’est jamais envoyé par le CRM : le message est préparé, prêt à coller, dans la file de la bonne personne.'}
-              </p>
-            </Field>
+            {step.template ? (
+              <WhatsappTemplatePreview templateId={step.template} vars={vars} previewOn={previewOn} />
+            ) : (
+              <Field label="Message pré-rédigé">
+                <MessageEditor
+                  value={step.message || ''}
+                  onChange={(message) => onUpdate({ message })}
+                  vars={vars}
+                  rows={4}
+                  previewOn={previewOn ?? 'des valeurs d’exemple'}
+                  placeholder="Bonjour, je suis bien avec {{company.name}} ?"
+                />
+                <p className="rg-hint">
+                  WhatsApp n’est jamais envoyé par le CRM : le message est préparé, prêt à coller, dans la file de la
+                  bonne personne. Écrit ici, il ne sert qu’à cette étape — passez par les{' '}
+                  <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
+                    modèles
+                  </Link>{' '}
+                  pour le réutiliser ailleurs.
+                </p>
+              </Field>
+            )}
           </Section>
         )}
         {step.kind === 'linkedin' && (
@@ -766,13 +920,58 @@ function SeqStepInspector({
               />
             </Field>
             <Field label="Message de connexion" hint={`${(step.message || '').length}/300`}>
-              <textarea className="textarea" rows={4} value={step.message || ''} onChange={(e) => onUpdate({ message: e.target.value })} />
+              <MessageEditor
+                value={step.message || ''}
+                onChange={(message) => onUpdate({ message })}
+                vars={vars}
+                rows={4}
+                previewOn={previewOn ?? 'des valeurs d’exemple'}
+              />
             </Field>
           </Section>
         )}
         {step.kind === 'wait' && (
-          <Section label="Délai">
-            <div className="empty-row">Le délai est défini par le champ « Jour » ci-dessus.</div>
+          <Section label="Ce qu’on attend">
+            <Field label="Type d’attente">
+              <SegFull
+                value={step.waitMode === 'reply' ? 'reply' : 'days'}
+                onChange={(v) => onUpdate({ waitMode: v as 'days' | 'reply' })}
+                options={[
+                  { value: 'days', label: 'Un délai' },
+                  { value: 'reply', label: 'Une réponse' },
+                ]}
+              />
+            </Field>
+            {step.waitMode === 'reply' ? (
+              <>
+                <Field
+                  label="Relancer sans réponse au bout de"
+                  hint={step.replyTimeoutDays ? `${step.replyTimeoutDays} jours` : 'jamais'}
+                >
+                  <input
+                    className="input mono"
+                    type="number"
+                    min={0}
+                    value={step.replyTimeoutDays ?? 0}
+                    onChange={(e) => onUpdate({ replyTimeoutDays: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                  <p className="rg-hint">
+                    0 = on attend indéfiniment. Le prospect reste garé, visible dans « En attente de réponse », et rien
+                    ne part tant que personne n’a cliqué.
+                  </p>
+                </Field>
+                <div className="seq-regchip manual">
+                  <XI name="user" className="ico-sm" />
+                  <span>
+                    La séquence s’arrête ici jusqu’à ce qu’on clique sur <strong>« Il a répondu »</strong>, depuis la
+                    file de démarchage ou le pipeline commercial. Les jours des étapes suivantes se comptent à partir de
+                    ce clic.
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="empty-row">Le délai est défini par le champ « Jour » ci-dessus.</div>
+            )}
           </Section>
         )}
 
@@ -819,14 +1018,123 @@ function SeqStepInspector({
   )
 }
 
-function SeqStepPickerModal({ onClose, onPick }: { onClose: () => void; onPick: (kind: SeqStepKind) => void }) {
-  const cats: { label: string; cat: string; items: { kind: SeqStepKind; icon: string; name: string; desc: string }[] }[] = [
+/**
+ * Le rendu d'un modèle d'e-mail choisi dans une étape.
+ *
+ * Sans lui, la seule chose visible était le NOM du modèle : on ne savait ni ce
+ * que le prospect allait lire, ni si l'objet portait une variable qui partirait
+ * vide. Charge à la demande — l'inspecteur n'affiche qu'une étape à la fois.
+ */
+function EmailTemplatePreview({
+  templateId,
+  vars,
+  previewOn,
+}: {
+  templateId: string | null
+  vars: VarBag
+  previewOn: string | null
+}) {
+  const tpl = useTemplateBody('email_templates', 'subject,body', templateId)
+  if (!templateId) return null
+  if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
+  return (
+    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+      <div className="msg-ed-preview">
+        <strong>{interpolateVars(tpl.subject, vars) || '(sans objet)'}</strong>
+        {'\n\n'}
+        {interpolateVars(tpl.body, vars)}
+      </div>
+    </Field>
+  )
+}
+
+/** Même chose pour un modèle WhatsApp, qui n'a pas d'objet. */
+function WhatsappTemplatePreview({
+  templateId,
+  vars,
+  previewOn,
+}: {
+  templateId: string
+  vars: VarBag
+  previewOn: string | null
+}) {
+  const tpl = useTemplateBody('whatsapp_templates', 'body', templateId)
+  if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
+  return (
+    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+      <div className="msg-ed-preview">{interpolateVars(tpl.body, vars)}</div>
+      <p className="rg-hint">
+        Ce texte vient des{' '}
+        <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
+          modèles
+        </Link>{' '}
+        — le modifier là-bas le change dans toutes les séquences qui s’en servent.
+      </p>
+    </Field>
+  )
+}
+
+/** Charge le corps d'un modèle, quelle que soit la table. */
+function useTemplateBody(
+  table: string,
+  columns: string,
+  id: string | null,
+): { subject: string | null; body: string } | null {
+  const [row, setRow] = useState<{ subject: string | null; body: string } | null>(null)
+  useEffect(() => {
+    if (!id) {
+      setRow(null)
+      return
+    }
+    let vivant = true
+    supabase
+      .from(table)
+      .select(columns)
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!vivant) return
+        const d = data as { subject?: string | null; body?: string | null } | null
+        setRow({ subject: d?.subject ?? null, body: d?.body ?? '' })
+      })
+    return () => {
+      vivant = false
+    }
+  }, [table, columns, id])
+  return row
+}
+
+function SeqStepPickerModal({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void
+  onPick: (kind: SeqStepKind, preset?: Partial<SequenceStep>) => void
+}) {
+  const cats: {
+    label: string
+    cat: string
+    items: { kind: SeqStepKind; icon: string; name: string; desc: string; waitMode?: 'reply' }[]
+  }[] = [
     {
       label: 'Étapes automatiques',
       cat: 'action',
       items: [
         { kind: 'email', icon: 'mail', name: 'Email', desc: "Envoi automatique d'un template via Resend" },
-        { kind: 'wait', icon: 'clock', name: 'Attendre', desc: 'Pause avant la prochaine étape' },
+        { kind: 'wait', icon: 'clock', name: 'Attendre un délai', desc: 'Pause avant la prochaine étape' },
+      ],
+    },
+    {
+      label: 'Étapes qui attendent quelqu’un',
+      cat: 'manual',
+      items: [
+        {
+          kind: 'wait',
+          icon: 'user',
+          name: 'Attendre une réponse',
+          desc: 'Rien ne part tant qu’on n’a pas cliqué « Il a répondu »',
+          waitMode: 'reply' as const,
+        },
       ],
     },
     {
@@ -861,7 +1169,11 @@ function SeqStepPickerModal({ onClose, onPick }: { onClose: () => void; onPick: 
                 <div className="picker-section-label">{c.label}</div>
                 <div className="picker-grid">
                   {c.items.map((it) => (
-                    <div key={it.kind} className={`picker-card ${c.cat}`} onClick={() => onPick(it.kind)}>
+                    <div
+                      key={`${it.kind}-${it.waitMode ?? 'default'}`}
+                      className={`picker-card ${c.cat}`}
+                      onClick={() => onPick(it.kind, it.waitMode ? { waitMode: it.waitMode, replyTimeoutDays: 3 } : undefined)}
+                    >
                       <div className="top">
                         <span className="ic">
                           <XI name={it.icon} className="ico" />
