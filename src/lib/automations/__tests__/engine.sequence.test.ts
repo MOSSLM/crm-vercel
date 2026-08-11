@@ -12,7 +12,7 @@ jest.mock('@/app/api/_lib/service-client', () => ({
   getServiceClient: () => ({ from: (...args: unknown[]) => mockFrom(...args) }),
 }));
 
-import { advanceEnrollmentAfterTask, processSequenceEnrollment } from '../engine';
+import { advanceEnrollmentAfterTask, enrollInSequence, processSequenceEnrollment } from '../engine';
 import { resetTestGuardCache } from '@/lib/email/test-guard';
 import type { SequenceEnrollment } from '@/components/automations/types';
 
@@ -22,11 +22,14 @@ type ChainResult = { data: unknown; error?: unknown };
 const tableChain = (result: ChainResult = { data: null, error: null }) => {
   const captured: { updates: unknown[]; inserts: unknown[] } = { updates: [], inserts: [] };
   const c: any = { captured };
-  for (const m of ['select', 'eq', 'not', 'lte', 'gte', 'order']) {
+  // `in` est un FILTRE, pas un terminateur : comme dans PostgrestFilterBuilder,
+  // il rend la chaîne pour qu'on puisse enchaîner `.eq(…).maybeSingle()`
+  // derrière. Le faire résoudre directement cassait tout appel qui filtre sur
+  // un statut avant de conclure.
+  for (const m of ['select', 'eq', 'in', 'not', 'lte', 'gte', 'order']) {
     c[m] = jest.fn(() => c);
   }
   c.limit = jest.fn(() => Promise.resolve(result));
-  c.in = jest.fn(() => Promise.resolve(result));
   // Comme PostgrestBuilder, la chaîne est « thenable » : un `await` sans
   // terminateur explicite (`.select('email')` seul) doit rendre le résultat.
   c.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
@@ -39,7 +42,10 @@ const tableChain = (result: ChainResult = { data: null, error: null }) => {
   });
   c.insert = jest.fn((i: unknown) => {
     captured.inserts.push(i);
-    return Promise.resolve({ error: null });
+    // Comme le vrai client : un insert rend une chaîne, pour que
+    // `.select('id').single()` puisse récupérer la ligne créée. Résoudre tout
+    // de suite empêchait de tester une inscription.
+    return c;
   });
   return c;
 };
@@ -365,6 +371,77 @@ describe('processSequenceEnrollment', () => {
 
     const task = (tables.prospection_tasks.captured.inserts as Record<string, unknown>[])[0];
     expect(task).toEqual(expect.objectContaining({ assignee_id: 'admin-1' }));
+  });
+});
+
+/* ── Inscription : un canal suffit, une fiche contact n'est pas requise ──── */
+
+describe('enrollInSequence', () => {
+  let tables: Record<string, any>;
+
+  /** Le socle commun ; `over` ne change que ce que le cas teste. */
+  const wireEnroll = (over: Record<string, any> = {}) => {
+    tables = {
+      contacts: tableChain({ data: null, error: null }),
+      entreprises: tableChain({ data: { name: 'Clim Ouest' }, error: null }),
+      opportunites: tableChain({ data: [], error: null }),
+      audits: tableChain({ data: [], error: null }),
+      sites: tableChain({ data: [], error: null }),
+      entreprises_rapport_public: tableChain({ data: null, error: null }),
+      user_profiles: tableChain({ data: null, error: null }),
+      scheduling_pages: tableChain({ data: null, error: null }),
+      sequence_enrollments: tableChain({ data: null, error: null }),
+      ...over,
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  const automation = { id: 'auto-1', name: 'WhatsApp seul' } as any;
+
+  beforeEach(() => mockFrom.mockReset());
+
+  // Le cas qui bloquait 70 des 275 entreprises qualifiées : aucune ligne
+  // `contacts`, mais un mobile sur la fiche entreprise — soit exactement le
+  // segment de la séquence WhatsApp.
+  it('inscrit une entreprise sans fiche contact, sur son seul mobile', async () => {
+    wireEnroll({
+      entreprises: tableChain({
+        data: { name: 'Clim Ouest', telephone: '06 46 04 28 76', email: null },
+        error: null,
+      }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result.enrolled).toBe(true);
+    const insert = (tables.sequence_enrollments.captured.inserts as Record<string, unknown>[])[0];
+    expect(insert).toEqual(expect.objectContaining({ entreprise_id: 42, contact_id: null }));
+  });
+
+  it('refuse un prospect qu’on ne peut ni écrire ni appeler', async () => {
+    wireEnroll({
+      entreprises: tableChain({ data: { name: 'Clim Ouest', telephone: null, email: null }, error: null }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result.enrolled).toBe(false);
+    expect(tables.sequence_enrollments.captured.inserts).toHaveLength(0);
+  });
+
+  it('ne double pas l’inscription d’une entreprise sans contact', async () => {
+    // Sans dédoublonnage sur l'entreprise, un second clic enverrait tout deux fois.
+    wireEnroll({
+      entreprises: tableChain({ data: { name: 'Clim Ouest', telephone: '0646042876' }, error: null }),
+      sequence_enrollments: tableChain({ data: { id: 'deja-la' }, error: null }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result).toEqual({ enrolled: false, enrollmentId: 'deja-la' });
   });
 });
 

@@ -33,6 +33,8 @@ import type {
   TraceEntry,
 } from '@/components/automations/types'
 import { SITE_DOMAIN } from '@/lib/site-domain'
+import { getAppUrl } from '@/lib/app-url'
+import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 
 const DAY_MS = 86_400_000
@@ -95,12 +97,22 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   let contactPhone: string | null = null
   let contactLinkedin: string | null = null
 
+  type ContactRow = {
+    first_name: string | null
+    last_name: string | null
+    email: string | null
+    tel: string | null
+    role_title: string | null
+    linkedin_url: string | null
+  }
+  let c: ContactRow | null = null
   if (contactId) {
-    const { data: c } = await sb
+    const { data } = await sb
       .from('contacts')
       .select('first_name,last_name,email,tel,role_title,linkedin_url')
       .eq('id', contactId)
       .maybeSingle()
+    c = (data as ContactRow | null) ?? null
     if (c) {
       vars['contact.first_name'] = c.first_name ?? ''
       vars['contact.last_name'] = c.last_name ?? ''
@@ -114,10 +126,11 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   let auditUrl: string | null = null
   let auditPdfUrl: string | null = null
   let demoUrl: string | null = null
+  let ownerId: string | null = null
   if (entrepriseId) {
     const { data: e } = await sb
       .from('entreprises')
-      .select('name,ville,site_web_canonique,email')
+      .select('name,ville,site_web_canonique,email,telephone,telephones,owner_id')
       .eq('id', entrepriseId)
       .maybeSingle()
     if (e) {
@@ -126,6 +139,26 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       vars['company.website'] = e.site_web_canonique ?? ''
       companyEmail = cleanEmail(e.email)
       vars['company.email'] = companyEmail ?? ''
+      ownerId = (e.owner_id as string | null) ?? null
+
+      // Le téléphone du prospect, entreprise ET contacts confondus. Sans ce
+      // repli, une tâche WhatsApp posée sur une entreprise sans fiche contact
+      // partait sans numéro : l'agent voyait « aucun numéro » sur une fiche qui
+      // en portait un. 70 des 275 entreprises qualifiées sont dans ce cas.
+      const numeros = [
+        c?.tel,
+        e.telephone as string | null,
+        ...(Array.isArray(e.telephones) ? (e.telephones as string[]) : []),
+      ]
+      const canaux = collecterCanaux({
+        entrepriseEmail: e.email as string | null,
+        entrepriseTelephones: numeros,
+        contacts: c ? [{ email: c.email, tel: c.tel }] : [],
+      })
+      // Un mobile d'abord : c'est le seul numéro qui marche sur WhatsApp, et
+      // c'est celui d'une personne plutôt que d'un standard.
+      contactPhone = canaux.mobile ?? canaux.fixe ?? contactPhone
+      vars['company.phone'] = contactPhone ?? ''
     }
 
     // Audit + site démo : liens interpolables dans les messages des séquences.
@@ -187,6 +220,14 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     vars['company.audit_url'] = auditUrl ?? ''
     vars['company.demo_url'] = demoUrl ?? ''
   }
+
+  // `owner.first_name` et `calendar_link` étaient annoncés dans le builder
+  // depuis toujours mais n'ont jamais été remplis : ils s'interpolaient en
+  // blanc. Un message signé « — » ou invitant à réserver sur un lien vide part
+  // quand même, et personne ne le voit avant le prospect.
+  vars['owner.first_name'] = await lireOwnerPrenom(sb, ownerId)
+  vars['calendar_link'] = await lireCalendarLink(sb, ownerId)
+
   // Un contact sans adresse n'est pas une impasse : l'email saisi sur la fiche
   // entreprise (`entreprises.email`) sert de destinataire de repli, c'est là que
   // le pipeline commercial enregistre les adresses ajoutées à la main.
@@ -202,6 +243,46 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     auditPdfUrl,
     demoUrl,
     vars,
+  }
+}
+
+/**
+ * Le prénom de l'agent qui suit l'entreprise, pour signer les messages.
+ *
+ * Silencieuse en cas d'erreur, et vide quand personne ne suit le prospect : un
+ * message signé d'un blanc reste envoyable, une séquence qui s'interrompt pour
+ * ça ne l'est pas.
+ */
+async function lireOwnerPrenom(sb: SupabaseClient, ownerId: string | null): Promise<string> {
+  if (!ownerId) return ''
+  try {
+    const { data } = await sb.from('user_profiles').select('full_name').eq('id', ownerId).maybeSingle()
+    const full = (data?.full_name as string | null) ?? ''
+    return full.trim().split(/\s+/)[0] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Le lien de réservation de l'agent qui suit l'entreprise (`/rdv/{username}`).
+ *
+ * Vide quand la page n'existe pas ou est désactivée — plutôt qu'un lien mort :
+ * un prospect qui clique sur une page absente est perdu pour de bon.
+ */
+async function lireCalendarLink(sb: SupabaseClient, ownerId: string | null): Promise<string> {
+  if (!ownerId) return ''
+  try {
+    const { data } = await sb
+      .from('scheduling_pages')
+      .select('username,is_active')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    const page = data as { username: string | null; is_active: boolean | null } | null
+    if (!page?.username || page.is_active === false) return ''
+    return `${getAppUrl()}/rdv/${page.username}`
+  } catch {
+    return ''
   }
 }
 
@@ -699,15 +780,29 @@ export async function enrollInSequence(
 ): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
   const sb = getServiceClient()
   const ent = await resolveEntities(sb, ctx)
-  if (!ent.contactId) return { enrolled: false, enrollmentId: null }
-  // éviter les doublons actifs
-  const { data: existing } = await sb
+
+  // Ce qu'il faut pour démarcher, c'est un CANAL, pas une fiche contact.
+  //
+  // L'ancienne garde exigeait `contactId` : 70 des 275 entreprises qualifiées
+  // n'ont aucune ligne `contacts` et étaient donc inenrôlables en silence — or
+  // c'est précisément le segment « sans e-mail, un mobile sur la fiche
+  // entreprise », celui de la séquence WhatsApp. On refuse maintenant sur le
+  // seul critère qui compte : personne à qui écrire NI appeler.
+  if (!ent.contactEmail && !ent.contactPhone) return { enrolled: false, enrollmentId: null }
+  if (ent.entrepriseId == null && !ent.contactId) return { enrolled: false, enrollmentId: null }
+
+  // Éviter les doublons actifs. Sur une entreprise sans contact, l'unicité se
+  // joue sur l'entreprise — sinon un second clic ouvrirait une deuxième
+  // inscription et le prospect recevrait tout en double.
+  const dedupe = sb
     .from('sequence_enrollments')
     .select('id')
     .eq('automation_id', automation.id)
-    .eq('contact_id', ent.contactId)
     .in('status', ['active', 'paused'])
-    .maybeSingle()
+  const { data: existing } = await (ent.contactId
+    ? dedupe.eq('contact_id', ent.contactId)
+    : dedupe.eq('entreprise_id', ent.entrepriseId as number)
+  ).maybeSingle()
   if (existing) return { enrolled: false, enrollmentId: existing.id }
 
   const { data: inserted } = await sb
