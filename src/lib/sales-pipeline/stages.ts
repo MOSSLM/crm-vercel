@@ -14,6 +14,14 @@
 // par défaut). Le groupe séquence est encadré et teinté pour qu'on voie d'un
 // coup d'œil ce qui est piloté par l'automatisation.
 //
+// UNE SEULE SÉQUENCE À LA FOIS. Les étapes du milieu appartiennent à UNE
+// séquence : afficher côte à côte des prospects inscrits sur des séquences
+// différentes revient à les mesurer avec la règle du voisin — l'accroche
+// WhatsApp de l'une n'est pas la troisième relance de l'autre. Le tableau se
+// lit donc partie par partie (cf. `SequencePart`) : une séquence choisie, ou
+// bien la vue d'ensemble, qui remplace les étapes par une seule colonne « en
+// séquence » — le seul repère commun à tout le monde.
+//
 // Partagé serveur/client : l'API dérive l'état des cellules, l'interface s'en
 // sert pour le rendu. Une seule définition, donc pas de dérive entre les deux.
 
@@ -47,13 +55,42 @@ export interface SalesColumn {
   index: number
 }
 
+/* ── Quelle partie du tableau on regarde ─────────────────────────────────── */
+
+/**
+ * La partie affichée : une séquence (son identifiant), la vue d'ensemble, ou
+ * le stock de ceux qui n'ont encore été mis sur aucune séquence.
+ *
+ * Les deux valeurs réservées ne peuvent pas entrer en collision avec un
+ * identifiant de séquence : `automations.id` est un UUID.
+ */
+export const ALL_SEQUENCES = 'all'
+export const NO_SEQUENCE = 'none'
+export type SequencePart = string
+
+export const partKind = (part: string): 'all' | 'none' | 'one' =>
+  part === ALL_SEQUENCES ? 'all' : part === NO_SEQUENCE ? 'none' : 'one'
+
 /* ── Identifiants de colonne ─────────────────────────────────────────────── */
 
 /** La colonne d'entrée est unique : un seul stock, un seul identifiant. */
 export const ENTRY_COLUMN_ID = 'entry:start'
 
+/**
+ * La colonne « en séquence » de la vue d'ensemble.
+ *
+ * Elle n'appartient à aucune séquence : c'est le repère commun quand plusieurs
+ * séquences sont mélangées, là où on ne peut pas montrer d'étape sans mentir.
+ * Elle n'est jamais envoyée au serveur comme étape sautée — elle ne correspond
+ * à aucune étape réelle.
+ */
+export const SEQ_ANY_COLUMN_ID = 'seq:any'
+
 export const stepColumnId = (stepId: string) => `step:${stepId}`
 export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
+
+/** Une vraie étape de séquence, par opposition à la colonne d'ensemble. */
+export const isStepColumn = (id: string) => id.startsWith('step:')
 
 export function parseColumnId(id: string): { group: ColumnGroup; ref: string } | null {
   const i = id.indexOf(':')
@@ -62,7 +99,7 @@ export function parseColumnId(id: string): { group: ColumnGroup; ref: string } |
   const ref = id.slice(i + 1)
   if (!ref) return null
   if (prefix === 'entry') return { group: 'entry', ref }
-  if (prefix === 'step') return { group: 'sequence', ref }
+  if (prefix === 'step' || prefix === 'seq') return { group: 'sequence', ref }
   if (prefix === 'stage') return { group: 'pipeline', ref }
   return null
 }
@@ -136,12 +173,18 @@ export interface PipelineStageRef {
  * `handoffOrdre` est l'`ordre` de l'étape où la séquence rend la main. Les
  * étapes de pipeline situées avant sont traversées PENDANT la séquence — elles
  * n'ont pas leur propre colonne, elles s'affichent en badge sur la ligne.
+ *
+ * `overview` : aucune séquence n'est choisie, on regarde tout le monde en même
+ * temps. Les étapes disparaissent au profit d'une colonne unique « en
+ * séquence » — deux séquences n'ont pas les mêmes étapes, les aligner
+ * afficherait chaque prospect sous une colonne qui n'est pas la sienne.
  */
 export function buildColumns(opts: {
   steps: SequenceStepRef[]
   sequenceName: string | null
   stages: PipelineStageRef[]
   handoffOrdre: number
+  overview?: boolean
 }): SalesColumn[] {
   // Le stock de départ : tout ce qui n'a pas encore été mis en séquence. C'est
   // la colonne où se fait le geste le plus fréquent du tableau, et la seule qui
@@ -160,19 +203,36 @@ export function buildColumns(opts: {
     },
   ]
 
-  for (const step of opts.steps) {
-    const channel = channelOf(step.kind)
+  if (opts.overview) {
     columns.push({
-      id: stepColumnId(step.id),
+      id: SEQ_ANY_COLUMN_ID,
       group: 'sequence',
-      label: step.label?.trim() || channel.label,
-      hint: step.day > 0 ? `J+${step.day}` : 'immédiat',
-      mode: channel.mode,
-      color: channel.color,
-      kind: step.kind,
-      cta: channel.cta,
+      label: 'En séquence',
+      hint: null,
+      mode: 'auto',
+      color: SEQUENCE_TINT,
+      kind: null,
+      // Le geste attendu ici n'est pas d'agir sur l'étape — on ne sait pas
+      // laquelle — mais d'aller voir la séquence du prospect, où les étapes
+      // sont enfin comparables.
+      cta: 'Ouvrir sa séquence',
       index: columns.length,
     })
+  } else {
+    for (const step of opts.steps) {
+      const channel = channelOf(step.kind)
+      columns.push({
+        id: stepColumnId(step.id),
+        group: 'sequence',
+        label: step.label?.trim() || channel.label,
+        hint: step.day > 0 ? `J+${step.day}` : 'immédiat',
+        mode: channel.mode,
+        color: channel.color,
+        kind: step.kind,
+        cta: channel.cta,
+        index: columns.length,
+      })
+    }
   }
 
   const tail = opts.stages

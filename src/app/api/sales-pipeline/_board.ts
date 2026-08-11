@@ -17,18 +17,24 @@ import { getServiceClient } from '@/app/api/_lib/service-client'
 import { SITE_DOMAIN } from '@/lib/site-domain'
 import type { Automation, SequenceDefinition } from '@/components/automations/types'
 import {
+  ALL_SEQUENCES,
   EMPTY_STATE,
+  NO_SEQUENCE,
+  SEQ_ANY_COLUMN_ID,
   buildColumns,
   cellStatuses,
   defaultHandoffOrdre,
+  hasInterest,
   isLostStage,
   isPendingTask,
+  partKind,
   stageColumnId,
   stepColumnId,
   type CellStatus,
   type PipelineStageRef,
   type SalesColumn,
   type SalesStateRow,
+  type SequencePart,
 } from '@/lib/sales-pipeline/stages'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
 import { cleanEmail } from '@/lib/automations/regulator-db'
@@ -50,8 +56,12 @@ export interface SalesBoardQuery {
   perPage?: number
   /** Pipeline dont les colonnes de droite sont issues. */
   pipelineId?: string | null
-  /** Séquence dont les colonnes de gauche sont issues. */
-  automationId?: string | null
+  /**
+   * La partie regardée : l'identifiant de la séquence dont on veut voir les
+   * étapes, `all` (vue d'ensemble) ou `none` (le stock à démarcher).
+   * Un identifiant inconnu retombe sur la séquence qui travaille le plus.
+   */
+  automationId?: SequencePart | null
 }
 
 export interface SalesSequenceInfo {
@@ -162,7 +172,15 @@ export interface SalesBoardData {
   sequenceHasEmailStep: boolean
   pipelines: { id: string; nom: string; isDefault: boolean }[]
   selectedPipelineId: string | null
+  /** Non nul seulement quand une séquence précise est affichée. */
   selectedSequenceId: string | null
+  /** La partie affichée : identifiant de séquence, `all` ou `none`. */
+  selectedPart: SequencePart
+  /**
+   * Combien de prospects derrière chaque onglet, tous les autres filtres
+   * appliqués : c'est le nombre qu'on verra en cliquant dessus.
+   */
+  partCounts: { sequences: Record<string, number>; noSequence: number; all: number }
   agents: { id: string; name: string; isAdmin: boolean }[]
   sequences: {
     id: string
@@ -278,18 +296,22 @@ export function derivePosition(opts: {
   const { columns, sequence, steps, stageId } = opts
   if (columns.length === 0) return null
 
+  const stageColumn = stageId != null ? columns.find((c) => c.id === stageColumnId(stageId)) : undefined
+
   if (sequence && (sequence.status === 'active' || sequence.status === 'paused')) {
     const step = steps[sequence.currentStep - 1]
     if (step) {
       const id = stepColumnId(step.id)
       if (columns.some((c) => c.id === id)) return id
     }
+    // Vue d'ensemble : aucune étape n'est affichée, mais une inscription
+    // vivante se voit quand même — dans la colonne « en séquence », à moins que
+    // le prospect ne soit déjà passé en phase commerciale : cette étape-là le
+    // décrit mieux qu'un démarchage qui n'a plus la main.
+    if (columns.some((c) => c.id === SEQ_ANY_COLUMN_ID)) return stageColumn?.id ?? SEQ_ANY_COLUMN_ID
   }
 
-  if (stageId != null) {
-    const id = stageColumnId(stageId)
-    if (columns.some((c) => c.id === id)) return id
-  }
+  if (stageColumn) return stageColumn.id
 
   // Séquence terminée mais pas encore d'étape de pipeline atteinte : on pose la
   // ligne sur la première colonne du groupe pipeline, là où le commercial
@@ -302,6 +324,52 @@ export function derivePosition(opts: {
   // Rien de tout ça : le prospect n'a pas encore démarré. Il attend dans le
   // stock de départ, avec les autres à mettre en séquence.
   return columns[0].id
+}
+
+/* ── Quelle partie du tableau ? ──────────────────────────────────────────── */
+
+/**
+ * La partie demandée, ramenée à quelque chose d'affichable.
+ *
+ * `all` et `none` sont pris tels quels. Un identifiant de séquence n'est retenu
+ * que s'il existe encore — une séquence supprimée ou renommée ne doit pas
+ * ouvrir un tableau vide sans explication. À défaut : la séquence active qui
+ * travaille le plus, celle-là même sur laquelle il y a quelque chose à voir.
+ */
+export function resolveSequencePart(
+  requested: string | null | undefined,
+  sequences: { id: string; status: string }[],
+  activeByAutomation: Map<string, number>,
+): { part: SequencePart; sequenceId: string | null } {
+  const asked = (requested ?? '').trim()
+  if (asked === ALL_SEQUENCES || asked === NO_SEQUENCE) return { part: asked, sequenceId: null }
+
+  const known = sequences.find((s) => s.id === asked)
+  const fallback =
+    [...sequences]
+      .filter((s) => s.status === 'on')
+      .sort((a, b) => (activeByAutomation.get(b.id) ?? 0) - (activeByAutomation.get(a.id) ?? 0))[0] ??
+    sequences[0] ??
+    null
+  const sequence = known ?? fallback
+  // Aucune séquence configurée : il n'y a pas d'étapes à afficher, la vue
+  // d'ensemble est la seule qui ait un sens.
+  if (!sequence) return { part: ALL_SEQUENCES, sequenceId: null }
+  return { part: sequence.id, sequenceId: sequence.id }
+}
+
+/**
+ * Cette ligne appartient-elle à la partie affichée ?
+ *
+ * Une opportunité peut porter plusieurs inscriptions (une terminée, une en
+ * cours) : elle apparaît alors sous chacune des séquences concernées, chaque
+ * fois à l'étape qui la concerne. « Sans séquence » est le stock : jamais
+ * inscrit nulle part.
+ */
+export function matchesPart(part: SequencePart, automationIds: Set<string> | undefined): boolean {
+  if (part === ALL_SEQUENCES) return true
+  if (part === NO_SEQUENCE) return !automationIds || automationIds.size === 0
+  return automationIds?.has(part) ?? false
 }
 
 /**
@@ -391,21 +459,18 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     activeByAutomation.set(row.automation_id, (activeByAutomation.get(row.automation_id) ?? 0) + 1)
   }
 
-  const selectedSequence =
-    sequenceRows.find((s) => s.id === query.automationId) ??
-    // À défaut : la séquence active qui travaille le plus.
-    [...sequenceRows]
-      .filter((s) => s.status === 'on')
-      .sort((a, b) => (activeByAutomation.get(b.id) ?? 0) - (activeByAutomation.get(a.id) ?? 0))[0] ??
-    sequenceRows[0] ??
-    null
+  // Une partie à la fois : les étapes du milieu appartiennent à UNE séquence.
+  // Deux séquences côte à côte se liraient avec la règle du voisin.
+  const { part, sequenceId } = resolveSequencePart(query.automationId, sequenceRows, activeByAutomation)
+  const selectedSequence = sequenceId ? (sequenceRows.find((s) => s.id === sequenceId) ?? null) : null
 
-  const selectedSteps = (() => {
-    const def = (selectedSequence?.definition as SequenceDefinition) ?? { steps: [] }
+  const stepsOfSequence = (automation: Automation | null) => {
+    const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
     const steps = Array.isArray(def.steps) ? def.steps : []
     // Une étape « attente » n'a rien à montrer : elle n'occupe pas de colonne.
     return steps.filter((s) => s.kind !== 'wait')
-  })()
+  }
+  const selectedSteps = stepsOfSequence(selectedSequence)
 
   const settings = (selectedSequence?.settings ?? {}) as Record<string, unknown>
   const handoffStageId = settings.handoffStage != null ? Number(settings.handoffStage) : null
@@ -418,6 +483,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     sequenceName: selectedSequence?.name ?? null,
     stages,
     handoffOrdre,
+    // Vue d'ensemble : une seule colonne « en séquence » à la place des étapes.
+    // Le stock, lui, n'a par définition personne en séquence.
+    overview: partKind(part) === 'all',
   })
 
   // ── 3. Opportunités du pipeline choisi ───────────────────────────────────
@@ -572,10 +640,15 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     const byStatus = e.status === 'active' ? 0 : e.status === 'paused' ? 1 : 2
     return onSelected + byStatus
   }
+  /** Les séquences sur lesquelles chaque opportunité a été inscrite, un jour. */
+  const sequencesByOpp = new Map<string, Set<string>>()
   for (const e of enrollments) {
     if (!e.opportunite_id) continue
     const current = enrollByOpp.get(e.opportunite_id)
     if (!current || rank(e) < rank(current)) enrollByOpp.set(e.opportunite_id, e)
+    const seen = sequencesByOpp.get(e.opportunite_id) ?? new Set<string>()
+    seen.add(e.automation_id)
+    sequencesByOpp.set(e.opportunite_id, seen)
   }
 
   const automationById = new Map(sequenceRows.map((a) => [a.id, a]))
@@ -705,6 +778,14 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       stageId: opp.stage_id,
     })
     const cells = cellStatuses(columns, position, state)
+    const tasks = tasksByOpp.get(opp.id) ?? []
+    // En vue d'ensemble, aucune colonne manuelle n'est affichée : c'est la tâche
+    // en attente elle-même qui dit qu'il y a un geste à faire aujourd'hui.
+    // Sans ça, « à faire aujourd'hui » y tombait à zéro alors que les tâches
+    // existaient bel et bien.
+    const hasTodo =
+      columns.some((c) => isPendingTask(columns, position, state, c.id)) ||
+      (position === SEQ_ANY_COLUMN_ID && state.state === 'progress' && !hasInterest(state) && tasks.length > 0)
     const ownerId = opp.owner_id ?? ent?.owner_id ?? null
     const audit = auditByOpp.get(opp.id)
     // Même règle que le régulateur : l'adresse du contact d'abord, celle de la
@@ -744,7 +825,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       emailMissing,
       stageName: opp.stage_id != null ? (stageById.get(opp.stage_id)?.nom ?? null) : null,
       sequence,
-      tasks: tasksByOpp.get(opp.id) ?? [],
+      tasks,
       emailsSent: emailCount.get(opp.id) ?? 0,
       lastExchange: lastExchange.get(opp.id) ?? null,
       auditReady: audit?.statut === 'ready',
@@ -752,7 +833,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       state,
       position,
       cells,
-      hasTodo: columns.some((c) => isPendingTask(columns, position, state, c.id)),
+      hasTodo,
       archive: opp.archived_at
         ? {
             at: opp.archived_at,
@@ -768,7 +849,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const firstDealIndex = columns.findIndex((c) => c.group === 'pipeline')
   const needle = (query.q ?? '').trim().toLowerCase()
 
-  const filtered = rows.filter((row) => {
+  // Tous les filtres SAUF celui de la partie : c'est la base des compteurs
+  // d'onglets, qui doivent annoncer ce qu'on verra en cliquant dessus.
+  const preFiltered = rows.filter((row) => {
     if (needle) {
       const hay = `${row.companyName} ${row.name} ${row.ville ?? ''} ${row.sector ?? ''} ${row.contact?.name ?? ''}`
       if (!hay.toLowerCase().includes(needle)) return false
@@ -789,6 +872,18 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     return true
   })
 
+  const partCounts = { sequences: {} as Record<string, number>, noSequence: 0, all: preFiltered.length }
+  for (const row of preFiltered) {
+    const ids = sequencesByOpp.get(row.id)
+    if (!ids || ids.size === 0) {
+      partCounts.noSequence++
+      continue
+    }
+    for (const id of ids) partCounts.sequences[id] = (partCounts.sequences[id] ?? 0) + 1
+  }
+
+  const filtered = preFiltered.filter((row) => matchesPart(part, sequencesByOpp.get(row.id)))
+
   // ── 8. Compteurs et pagination ───────────────────────────────────────────
   const columnCounts: SalesBoardData['columnCounts'] = {}
   for (const column of columns) columnCounts[column.id] = { active: 0, done: 0 }
@@ -804,7 +899,16 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   // Elle porte sur TOUT le périmètre filtré, jamais sur la seule page : c'est
   // un compte qu'on veut voir tomber à zéro, pas un aperçu.
   const emailColumnIds = new Set(columns.filter((c) => c.kind === 'email').map((c) => c.id))
-  const sequenceHasEmailStep = emailColumnIds.size > 0
+  // Hors vue d'une séquence précise, aucune colonne email n'est affichée : c'est
+  // l'étape courante de l'inscription qui dit si la ligne est bloquée là.
+  const onEmailStep = (row: SalesBoardRow) =>
+    (row.position != null && emailColumnIds.has(row.position)) || row.sequence?.stepKind === 'email'
+  const sequenceHasEmailStep =
+    partKind(part) === 'one'
+      ? emailColumnIds.size > 0
+      : partKind(part) === 'all'
+        ? sequenceRows.some((a) => stepsOfSequence(a).some((s) => s.kind === 'email'))
+        : false
   const missingEmail: SalesMissingEmailRow[] = filtered
     .filter((row) => row.emailMissing && row.state.state === 'progress')
     .slice(0, 300)
@@ -815,15 +919,18 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       contactId: row.contact?.id ?? null,
       entrepriseId: row.entrepriseId,
       sequenceName: row.sequence?.name ?? null,
-      onEmailStep: row.position != null && emailColumnIds.has(row.position),
+      onEmailStep: onEmailStep(row),
     }))
 
-  const active = rows.filter((r) => r.state.state === 'progress')
+  // Les compteurs du bandeau parlent de la partie regardée, pas du CRM entier :
+  // sinon « 412 actifs » au-dessus de six lignes affichées.
+  const partRows = rows.filter((row) => matchesPart(part, sequencesByOpp.get(row.id)))
+  const active = partRows.filter((r) => r.state.state === 'progress')
   const counts: SalesBoardCounts = {
     actifs: active.length,
     rdvPlus: firstDealIndex >= 0 ? active.filter((r) => indexOf(r.position) >= firstDealIndex).length : 0,
-    won: rows.filter((r) => r.state.state === 'won').length,
-    todo: rows.filter((r) => r.hasTodo).length,
+    won: partRows.filter((r) => r.state.state === 'won').length,
+    todo: partRows.filter((r) => r.hasTodo).length,
     value: active.reduce((sum, r) => sum + (r.montant ?? 0), 0),
     missingEmail: filtered.filter((r) => r.emailMissing && r.state.state === 'progress').length,
   }
@@ -872,6 +979,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       pipelines,
       selectedPipelineId: selectedPipeline.id,
       selectedSequenceId: selectedSequence?.id ?? null,
+      selectedPart: part,
+      partCounts,
       agents,
       sequences,
       regulator: {
