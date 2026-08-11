@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Home, Search } from "lucide-react";
+import { ChevronRight, Home, Search, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TaskCenter } from "@/components/TaskCenter";
@@ -124,6 +125,20 @@ export function StudioTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
         <NotificationCenter />
         <TaskCenter />
+        {/*
+          Les Paramètres n'étaient atteignables par aucun chemin sur mobile : la
+          barre du bas n'a que cinq places et ne les compte pas. Cette roue est
+          donc le seul accès au doigt, d'où le `md:hidden` absent — elle reste
+          visible partout.
+        */}
+        <Link
+          href="/settings"
+          aria-label="Paramètres"
+          title="Paramètres"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--text-3)] transition-colors hover:bg-[var(--bg-2)] hover:text-foreground"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
         <ThemeToggle />
       </div>
     </header>
