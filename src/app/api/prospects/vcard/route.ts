@@ -37,6 +37,7 @@ const PORTEES: readonly Portee[] = ['mine', 'sequence', 'all']
 interface LigneEntreprise {
   id: number
   name: string | null
+  email: string | null
   telephone: string | null
   telephones: string[] | null
   owner_id: string | null
@@ -46,6 +47,7 @@ interface LigneEntreprise {
         first_name: string | null
         last_name: string | null
         tel: string | null
+        email: string | null
         role_title: string | null
         is_decision_maker: boolean | null
       }[]
@@ -91,8 +93,8 @@ async function chargerFiches(
   userId: string,
 ): Promise<FicheProspect[]> {
   const colonnes =
-    'id, name, telephone, telephones, owner_id, ' +
-    'contacts(id,first_name,last_name,tel,role_title,is_decision_maker)'
+    'id, name, email, telephone, telephones, owner_id, ' +
+    'contacts(id,first_name,last_name,tel,email,role_title,is_decision_maker)'
 
   // La séquence de chaque entreprise, pour l'écrire en NOTE sur les fiches.
   const sequenceParEntreprise = new Map<number, string>()
@@ -137,6 +139,7 @@ async function chargerFiches(
     entreprise: {
       id: e.id,
       name: e.name,
+      email: e.email,
       telephone: e.telephone,
       telephones: e.telephones,
     },

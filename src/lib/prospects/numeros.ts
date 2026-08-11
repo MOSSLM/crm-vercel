@@ -49,12 +49,14 @@ export interface ContactSource {
   first_name?: string | null
   last_name?: string | null
   tel?: string | null
+  email?: string | null
   role_title?: string | null
   is_decision_maker?: boolean | null
 }
 
 export interface EntrepriseSource {
   name?: string | null
+  email?: string | null
   telephone?: string | null
   telephones?: (string | null | undefined)[] | null
 }
