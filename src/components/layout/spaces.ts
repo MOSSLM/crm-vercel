@@ -115,6 +115,7 @@ export const SPACES: Space[] = [
       { title: "Offres", href: "/offres", icon: Tag },
       { title: "Messagerie", href: "/messagerie", icon: MessageSquare },
       { title: "Rendez-vous", href: "/rendez-vous", icon: CalendarClock },
+      { title: "Mes RDV", href: "/mes-rdv", icon: ClipboardList },
     ],
   },
   {
@@ -225,6 +226,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/offres", "relation"],
   ["/messagerie", "relation"],
   ["/rendez-vous", "relation"],
+  ["/mes-rdv", "relation"],
 
   ["/production", "production"],
   ["/planches", "production"],

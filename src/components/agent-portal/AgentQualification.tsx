@@ -24,6 +24,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authedFetch } from "@/utils/authedFetch";
 import { getCompanyDisplayName, ensureHttpsUrl } from "@/utils/displayHelpers";
+import { aUneFicheGoogle, lienGoogle } from "@/lib/prospects/lien-google";
 import { normalizeServiceTags } from "@/utils/serviceTags";
 
 /**
@@ -58,6 +59,8 @@ type QueueCompany = {
   logo_url: string | null;
   sources: string[] | null;
   created_at: string | null;
+  google_url: string | null;
+  google_maps_url: string | null;
 };
 
 type HistoryRow = {
@@ -122,11 +125,18 @@ const REVIEW_LABEL: Record<string, string> = {
 const formatDate = (dateString: string | null) =>
   dateString ? new Date(dateString).toLocaleDateString("fr-FR") : "—";
 
-/** Recherche Google sur le nom + la ville — pour vérifier l'entreprise vite fait. */
-const googleSearchUrl = (c: QueueCompany) =>
-  `https://www.google.com/search?q=${encodeURIComponent(
-    `${getCompanyDisplayName(c.name, c.canonical_url) || c.name || ""} ${c.ville ?? ""}`.trim(),
-  )}`;
+/**
+ * Sa fiche Google quand on la connaît, une recherche nom + ville sinon —
+ * pour vérifier l'entreprise vite fait sans avoir à la retrouver dans une page
+ * de résultats. Cf. `lien-google.ts`.
+ */
+const googleUrlPour = (c: QueueCompany) =>
+  lienGoogle({
+    name: getCompanyDisplayName(c.name, c.canonical_url) || c.name,
+    ville: c.ville,
+    google_url: c.google_url,
+    google_maps_url: c.google_maps_url,
+  });
 
 export default function AgentQualification() {
   const [tab, setTab] = useState<"queue" | "history">("queue");
@@ -359,8 +369,8 @@ export default function AgentQualification() {
         <button
           type="button"
           className="btn"
-          onClick={() => window.open(googleSearchUrl(company), "_blank")}
-          title="Chercher sur Google"
+          onClick={() => window.open(googleUrlPour(company), "_blank")}
+          title={aUneFicheGoogle(company) ? "Ouvrir sa fiche Google" : "Chercher sur Google"}
         >
           <Search className="ico-sm" />
         </button>

@@ -43,6 +43,7 @@ import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import { authedFetch } from "@/utils/authedFetch";
 import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
+import { aUneFicheGoogle, lienGoogle, lienMaps } from "@/lib/prospects/lien-google";
 import { AUTO_SEQUENCE } from "./types";
 import type {
   BoardItem,
@@ -383,11 +384,18 @@ function Avatar({ initials, color, size = 22 }: { initials: string; color?: stri
 /* ── Research shortcuts (enrichment / verification) ───────────────────── */
 function ResearchLinks({ item, compact }: { item: BoardItem; compact?: boolean }) {
   const name = displayName(item);
-  const q = encodeURIComponent(`${name} ${item.ville ?? ""}`.trim());
   const site = normalizeUrl(item.company_url);
+  // Sa fiche Google plutôt qu'une recherche à son nom : cf. `lien-google.ts`.
+  const prospect = { name, ville: item.ville, google_url: item.google_url, google_maps_url: item.google_maps_url };
+  const surFiche = aUneFicheGoogle(prospect);
   const links = [
-    { k: "google", label: "Google", href: `https://www.google.com/search?q=${q}`, icon: Search },
-    { k: "maps", label: "Maps", href: `https://www.google.com/maps/search/${q}`, icon: MapPin },
+    {
+      k: "google",
+      label: surFiche ? "Fiche Google" : "Rechercher sur Google",
+      href: lienGoogle(prospect),
+      icon: Search,
+    },
+    { k: "maps", label: surFiche ? "Fiche Maps" : "Rechercher sur Maps", href: lienMaps(prospect), icon: MapPin },
     ...(site ? [{ k: "site", label: "Site actuel", href: site, icon: Globe }] : []),
     { k: "pappers", label: "Pappers", href: `https://www.pappers.fr/recherche?q=${encodeURIComponent(name)}`, icon: Building2 },
   ];

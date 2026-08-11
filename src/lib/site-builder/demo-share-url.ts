@@ -26,6 +26,45 @@ export function demoShareUrl(demo: DemoLike): string {
     : `https://${demo.id}.${SITE_DOMAIN}`;
 }
 
+/** Une ligne `sites` avec de quoi décider si et comment on la montre. */
+export interface SiteMontrableLike extends DemoLike {
+  published_domain?: string | null;
+  is_published?: boolean | null;
+  build_stage?: string | null;
+  is_template?: boolean | null;
+}
+
+/**
+ * Le site qu'on peut montrer à ce prospect, parmi les siens.
+ *
+ * Un gabarit n'est jamais montrable, et un site encore en chantier non plus :
+ * seul un site publié — ou explicitement marqué « prêt » — part chez un
+ * prospect. À défaut, `null`, et l'appelant n'affiche pas de lien plutôt qu'un
+ * lien vers une page à moitié faite.
+ */
+export function choisirSiteMontrable<T extends SiteMontrableLike>(sites: T[]): T | null {
+  const candidats = (sites ?? []).filter((s) => s.is_template !== true);
+  return (
+    candidats.find((s) => s.is_published) ??
+    candidats.find((s) => s.build_stage === 'pret') ??
+    null
+  );
+}
+
+/**
+ * L'URL à ouvrir pour ce site : son domaine propre s'il en a un, sinon le lien
+ * de partage de la démo.
+ *
+ * Le domaine est stocké tantôt nu (`exemple.fr`), tantôt déjà préfixé — d'où la
+ * normalisation, sans laquelle un `href` sur `exemple.fr` part en relatif et
+ * atterrit sur une 404 du CRM.
+ */
+export function urlPubliqueDuSite(site: SiteMontrableLike): string {
+  const propre = site.published_domain?.trim();
+  if (propre) return propre.startsWith('http') ? propre : `https://${propre}`;
+  return demoShareUrl(site);
+}
+
 /**
  * Marqueur ajouté à l'URL donnée au service de capture.
  *
