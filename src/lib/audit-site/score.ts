@@ -24,6 +24,7 @@
  */
 
 import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
+import { noteParMalus, type NoteParMalus } from "./malus";
 import type {
   AxeId,
   Confiance,
@@ -674,23 +675,51 @@ export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatSc
     );
   }
 
-  // La note globale ne moyenne que les axes concluants : intégrer un axe en
-  // confiance faible reviendrait à publier indirectement ce qu'on refuse
-  // d'afficher directement.
-  const retenus = (Object.keys(axes) as AxeId[]).filter((id) => axes[id].confiance !== "faible");
-  const poidsTotal = retenus.reduce((a, id) => a + POIDS_AXES[id], 0);
-  const noteGlobale =
-    poidsTotal > 0
-      ? Math.round(retenus.reduce((a, id) => a + axes[id].note * POIDS_AXES[id], 0) / poidsTotal)
-      : 0;
+  /**
+   * LA NOTE GLOBALE SE CONSTRUIT PAR SOUSTRACTION, plus par moyenne pondérée.
+   *
+   * L'ancienne formule moyennait les axes concluants. Personne ne pouvait
+   * répondre à « pourquoi 63 ? », et elle produisait des résultats
+   * indéfendables — un site à 70/100 qui mettait 18,6 secondes à s'afficher,
+   * parce qu'elle ne regardait que le temps de réponse du serveur.
+   *
+   * Voir `malus.ts` : chaque point retiré porte son nom et se vérifie sur le
+   * téléphone du prospect. La note redevient DÉRIVABLE de ce qu'on lui montre,
+   * au lieu d'être un chiffre parallèle aux constats affichés.
+   *
+   * Les AXES gardent leur calcul : ils disent le détail d'un domaine, ce que la
+   * note globale ne fait pas. Ils ne s'additionnent simplement plus pour la
+   * produire.
+   *
+   * Le malus d'affichage a besoin du LCP, que seul PageSpeed rend et qui arrive
+   * après cette analyse. `recalculerAvecLcp` refait donc la note quand la mesure
+   * Google atterrit.
+   */
+  const malus = noteParMalus(s, ctx);
 
   return {
-    noteGlobale,
+    noteGlobale: malus.note,
+    malus: malus.lignes,
     axes,
-    libelle: libelleDeNote(noteGlobale),
+    libelle: libelleDeNote(malus.note),
     issueKeys: issueKeysDepuisAxes(axes, s),
     alertes,
   };
+}
+
+/**
+ * La note refaite quand le LCP de Google arrive, après l'analyse.
+ *
+ * Rejouée depuis les signaux stockés : aucune requête réseau, et le résultat est
+ * identique à ce qu'une analyse complète aurait produit si elle avait connu le
+ * LCP dès le départ.
+ */
+export function recalculerAvecLcp(
+  s: SignauxSite,
+  ctx: ContexteEntreprise,
+  lcpMs: number | null,
+): NoteParMalus {
+  return noteParMalus(s, ctx, lcpMs);
 }
 
 // ---------------------------------------------------------------------------

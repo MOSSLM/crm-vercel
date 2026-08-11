@@ -1,4 +1,4 @@
-import { lireAudit, UNDEFINED_TABLE, NOTE_MAX_SI_ELIMINATOIRE } from "../lecture";
+import { lireAudit, UNDEFINED_TABLE} from "../lecture";
 
 /**
  * Ces tests protègent trois règles qui, si elles cassent, produisent une page
@@ -341,46 +341,5 @@ describe("lireAudit — une catégorie Google absente n'emporte pas les autres",
     );
     expect(axes.find((a) => a.id === "mobile")?.note).toBe(55);
     expect(axes.find((a) => a.id === "accessibilite")).toBeUndefined();
-  });
-});
-
-describe("lireAudit — un site qu'on n'arrive pas à afficher n'a pas la moyenne", () => {
-  const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-
-  it("plafonne la note globale quand le LCP est éliminatoire", async () => {
-    // Cas réel : 70/100 chez nous, 18,6 secondes pour afficher le contenu
-    // principal selon Google. Personne n'attend dix-huit secondes.
-    const row = {
-      ...LIGNE_BASE,
-      note_globale: 70,
-      psi_performance: 58,
-      psi_lcp_ms: 18_560,
-      psi_recupere_le: hier,
-    };
-    const res = await lireAudit(client({ data: row, error: null }), 7);
-    expect(res.disponible ? res.audit?.note_globale : null).toBe(NOTE_MAX_SI_ELIMINATOIRE);
-  });
-
-  it("ne touche pas une note déjà basse", async () => {
-    // Le plafond plafonne, il ne remonte ni ne redescend au-delà.
-    const row = { ...LIGNE_BASE, note_globale: 18, psi_lcp_ms: 18_560, psi_recupere_le: hier };
-    const res = await lireAudit(client({ data: row, error: null }), 7);
-    expect(res.disponible ? res.audit?.note_globale : null).toBe(18);
-  });
-
-  it("laisse passer un site simplement lent", async () => {
-    // Seuil volontairement haut : les bandes usuelles de Google auraient
-    // plafonné cinq sites sur six de l'échantillon, dont un noté 74 en
-    // performance — on aurait remplacé une contradiction par une autre.
-    const row = { ...LIGNE_BASE, note_globale: 70, psi_lcp_ms: 7_100, psi_recupere_le: hier };
-    const res = await lireAudit(client({ data: row, error: null }), 7);
-    expect(res.disponible ? res.audit?.note_globale : null).toBe(70);
-  });
-
-  it("ne plafonne pas sur une mesure périmée", async () => {
-    const vieux = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-    const row = { ...LIGNE_BASE, note_globale: 70, psi_lcp_ms: 18_560, psi_recupere_le: vieux };
-    const res = await lireAudit(client({ data: row, error: null }), 7);
-    expect(res.disponible ? res.audit?.note_globale : null).toBe(70);
   });
 });
