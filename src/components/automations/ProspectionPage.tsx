@@ -20,6 +20,8 @@ import {
   type ProspectionTaskFull,
 } from './prospection-db'
 import { lienWhatsApp } from '@/lib/prospects/canal'
+import { NumeroPicker, sourceNumeros, useNumeros } from './NumeroPicker'
+import type { NumeroProspect, UsageNumero } from '@/lib/prospects/numeros'
 
 /**
  * L'onglet des séquences garées. Pas dans `TABS` : il ne filtre pas des tâches,
@@ -453,12 +455,25 @@ function ProsDetail({
 }) {
   const c = contactName(task)
   const overdue = new Date(task.due_at).getTime() < Date.now()
-  const phone = task.contacts?.tel ?? ''
   const message = task.payload?.message ?? ''
 
+  // Tous les numéros du prospect, pas seulement celui du contact lié à la tâche.
+  const usage: UsageNumero = task.kind === 'call' ? 'appel' : 'whatsapp'
+  const source = sourceNumeros(task)
+  const numeros = useNumeros(source, usage, task.payload?.phone ?? task.contacts?.tel ?? null)
+  const [choisi, setChoisi] = useState<string | null>(null)
+  // Le choix ne survit pas au changement de tâche : sans cette remise à zéro, le
+  // numéro sélectionné sur le prospect précédent resterait coché sur le suivant.
+  useEffect(() => setChoisi(null), [task.id])
+  const phone = choisi ?? numeros[0]?.e164 ?? ''
+
   function openWhatsApp() {
-    const digits = phone.replace(/\D/g, '')
-    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, '_blank')
+    const url = lienWhatsApp(phone, message)
+    if (!url) {
+      toast.error('Ce numéro n’est pas exploitable sur WhatsApp.')
+      return
+    }
+    window.open(url, '_blank')
   }
 
   return (
@@ -505,7 +520,15 @@ function ProsDetail({
         </button>
       </div>
 
-      {tab === 'action' && <ProsAction task={task} onOpenWhatsApp={openWhatsApp} />}
+      {tab === 'action' && (
+        <ProsAction
+          task={task}
+          onOpenWhatsApp={openWhatsApp}
+          numeros={numeros}
+          selection={phone || null}
+          onSelect={setChoisi}
+        />
+      )}
       {tab === 'context' && <ProsContext task={task} />}
       {tab === 'history' && (
         <div className="pros-section">
@@ -526,7 +549,7 @@ function ProsDetail({
         {task.kind === 'call' && phone && (
           <a className="btn outline" href={`tel:${phone}`}>
             <XI name="phoneOut" className="ico-sm" />
-            Composer {phone}
+            Composer {numeros.find((n) => n.e164 === phone)?.affichage ?? phone}
           </a>
         )}
         {task.kind === 'whatsapp' && (
@@ -565,7 +588,19 @@ function ProsDetail({
   )
 }
 
-function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpenWhatsApp: () => void }) {
+function ProsAction({
+  task,
+  onOpenWhatsApp,
+  numeros,
+  selection,
+  onSelect,
+}: {
+  task: ProspectionTaskFull
+  onOpenWhatsApp: () => void
+  numeros: NumeroProspect[]
+  selection: string | null
+  onSelect: (e164: string) => void
+}) {
   const c = contactName(task)
   if (task.kind === 'call') {
     return (
@@ -575,8 +610,13 @@ function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpe
             <XI name="phone" className="ico-sm" />
             Coordonnées
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <KeyVal label="Téléphone" value={task.contacts?.tel ?? '—'} icon="phoneOut" mono />
+          <NumeroPicker
+            numeros={numeros}
+            selection={selection}
+            onSelect={onSelect}
+            label="Numéro à composer"
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
             <KeyVal label="Email" value={task.contacts?.email ?? '—'} icon="mail" mono />
           </div>
         </div>
@@ -603,10 +643,13 @@ function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpe
           <div className="pros-msg-card">
             <div className="hd">
               <XI name="whatsapp" className="ico-sm" style={{ color: 'var(--ok)' }} />
-              <span className="grow">vers {task.contacts?.tel ?? '—'}</span>
+              <span className="grow">
+                vers {numeros.find((n) => n.e164 === selection)?.affichage ?? '—'}
+              </span>
             </div>
             <div className="body-msg">{task.payload?.message || 'Aucun message pré-rédigé.'}</div>
           </div>
+          <NumeroPicker numeros={numeros} selection={selection} onSelect={onSelect} label="Destinataire" />
         </div>
         <div className="pros-section">
           <h3>
@@ -667,7 +710,9 @@ function ProsContext({ task }: { task: ProspectionTaskFull }) {
         <KeyVal label="Nom" value={task.entreprises?.name ?? '—'} icon="company" />
         <KeyVal label="Site web" value={task.entreprises?.site_web_canonique ?? '—'} icon="globe" mono />
         <KeyVal label="Email contact" value={task.contacts?.email ?? '—'} icon="mail" mono />
-        <KeyVal label="Téléphone" value={task.contacts?.tel ?? '—'} icon="phone" mono />
+        {/* Le bloc s'intitule « Entreprise » : c'est sa ligne qu'on attend ici, pas
+            celle du contact — qui figure déjà dans l'onglet Action. */}
+        <KeyVal label="Téléphone entreprise" value={task.entreprises?.telephone ?? '—'} icon="phone" mono />
       </div>
     </div>
   )

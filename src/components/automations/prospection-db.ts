@@ -14,10 +14,23 @@ export interface ProspectionContact {
   linkedin_url: string | null
 }
 
+/** Un autre contact de la même entreprise — porteur d'un numéro que la tâche ignore. */
+export interface ProspectionAutreContact {
+  id: string
+  first_name: string | null
+  last_name: string | null
+  tel: string | null
+  role_title: string | null
+  is_decision_maker: boolean | null
+}
+
 export interface ProspectionEntreprise {
   id: number
   name: string | null
   site_web_canonique: string | null
+  telephone: string | null
+  telephones: string[] | null
+  contacts: ProspectionAutreContact[] | null
 }
 
 export interface ProspectionTaskFull extends ProspectionTask {
@@ -25,11 +38,21 @@ export interface ProspectionTaskFull extends ProspectionTask {
   entreprises: ProspectionEntreprise | null
 }
 
+/**
+ * Les tâches en attente, avec TOUS les numéros du prospect.
+ *
+ * On ne se contente pas du contact lié à la tâche : 47 entreprises du parc
+ * portent plusieurs numéros distincts, répartis entre `entreprises.telephone`,
+ * `telephones[]` et les autres fiches `contacts`. Sans eux, l'agent compose ce
+ * que le moteur a retenu sans jamais savoir qu'une autre ligne existe.
+ */
 export async function listProspectionTasks(): Promise<ProspectionTaskFull[]> {
   const { data, error } = await supabase
     .from('prospection_tasks')
     .select(
-      '*, contacts(id,first_name,last_name,email,tel,role_title,linkedin_url), entreprises(id,name,site_web_canonique)',
+      '*, contacts(id,first_name,last_name,email,tel,role_title,linkedin_url), ' +
+        'entreprises(id,name,site_web_canonique,telephone,telephones,' +
+        'contacts(id,first_name,last_name,tel,role_title,is_decision_maker))',
     )
     .in('status', ['pending', 'snoozed'])
     .order('due_at', { ascending: true })
