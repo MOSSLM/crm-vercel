@@ -100,6 +100,9 @@ export interface MesuresAudit {
   injoignable: boolean;
   httpStatus: number | null;
   noteGlobale: number | null;
+  /** La note de Google avant ajustement, et chaque point retiré avec sa raison. */
+  noteBase: number | null;
+  noteMalus: Array<{ libelle: string; points: number }>;
   libelle: string | null;
   reperes: Reperes;
   axes: AxeMesure[];
@@ -165,10 +168,14 @@ export function construireMesures(
     mesureParGoogle,
     injoignable: audit.injoignable,
     httpStatus: audit.http_status,
-    noteGlobale: audit.note_globale,
+    // La note du DOCUMENT, pas celle du tri. `null` tant que Google n'a pas
+    // mesuré : on ne publie pas au prospect un chiffre qu'on n'a pas mesuré.
+    noteGlobale: audit.note_document,
+    noteBase: audit.note_document_base,
+    noteMalus: audit.note_document_malus ?? [],
     libelle: audit.libelle,
     reperes: {
-      prospect: audit.note_globale,
+      prospect: audit.note_document,
       demo: NOTE_DEMO,
       mediane: medianeAffichable(echantillon),
       medianeN: echantillon?.effectif ?? null,
@@ -211,6 +218,8 @@ export function mesuresVides(): MesuresAudit {
   return {
     url: null,
     captureUrl: null,
+    noteBase: null,
+    noteMalus: [],
     mesureLe: null,
     mesureParGoogle: false,
     injoignable: false,
@@ -324,4 +333,21 @@ export function sousTitreNote(m: MesuresAudit): string {
   const n = m.reperes.medianeN;
   if (m.reperes.mediane == null || !n) return "Sur ce que la mesure a pu voir";
   return `Comparée à ${n.toLocaleString("fr-FR")} sites d’artisans mesurés`;
+}
+
+/**
+ * La soustraction, en toutes lettres : « 58 mesuré par Google, moins 7 ».
+ *
+ * C'est ce qui distingue cette note de celle qu'elle remplace. Une moyenne
+ * pondérée ne se raconte pas ; celle-ci se lit à voix haute en rendez-vous, et
+ * chaque point retiré porte une raison que le prospect peut vérifier sur son
+ * téléphone. Un malus caché serait plus opaque que la moyenne d'avant.
+ */
+export function detailNote(m: MesuresAudit): { base: number; retire: number; lignes: string[] } | null {
+  if (m.noteBase == null || m.noteMalus.length === 0) return null;
+  return {
+    base: m.noteBase,
+    retire: m.noteMalus.reduce((a, l) => a + l.points, 0),
+    lignes: m.noteMalus.map((l) => `${l.libelle} −${l.points}`),
+  };
 }

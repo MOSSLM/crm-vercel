@@ -1,15 +1,15 @@
-import { noteParMalus, NOTE_PLANCHER } from "../malus";
+import { noteDocument, NOTE_PLANCHER } from "../malus";
 import type { SignauxSite } from "../types";
 
 /**
  * Ces tests protègent la note que le prospect lit en gros sur la couverture.
  *
- * Deux d'entre eux viennent d'erreurs commises en écrivant ce barème, et
+ * Deux d'entre eux viennent d'erreurs commises en écrivant ce barème et
  * rattrapées par des tests plus anciens : un site absent mieux noté que tous
  * ceux qui existent, et la réputation entrée dans une note qui parle du site.
  */
 
-/** Un site correct : rien à retirer. */
+/** Un site correct : rien à retirer à la mesure de Google. */
 function siteImpeccable(): SignauxSite {
   return {
     joignable: true,
@@ -21,107 +21,98 @@ function siteImpeccable(): SignauxSite {
     avisDansLaPage: true,
     widgetAvis: null,
     mentionsLegales: true,
-    noindex: false,
     title: "Chauffagiste à Lyon — Dupont",
     metaDescription: "Installation et entretien de chaudières à Lyon depuis 1998.",
-    nbImagesSansAlt: 0,
     jsonLdLocalBusiness: true,
     villeDansTitre: true,
   } as unknown as SignauxSite;
 }
 
-describe("la note se construit par soustraction", () => {
-  it("laisse 100 à un site sans défaut", () => {
-    const r = noteParMalus(siteImpeccable());
-    expect(r.note).toBe(100);
+describe("la note part de PageSpeed, pas de nous", () => {
+  it("laisse la note de Google intacte quand rien ne manque", () => {
+    const r = noteDocument(74, siteImpeccable());
+    expect(r.note).toBe(74);
+    expect(r.base).toBe(74);
     expect(r.lignes).toEqual([]);
   });
 
-  it("nomme chaque point retiré — c'est la démonstration", () => {
-    const r = noteParMalus({ ...siteImpeccable(), formulaire: false, mailto: false });
-    expect(r.lignes).toEqual([{ libelle: "Aucun moyen de vous écrire en ligne", points: 10 }]);
-    expect(r.note).toBe(90);
+  it("ne publie AUCUNE note sans mesure Google", () => {
+    // Le pendant de la décision de ne plus publier nos axes vitesse et mobile
+    // sans lui : on ne montre pas au prospect un chiffre qu'on n'a pas mesuré.
+    expect(noteDocument(null, siteImpeccable()).note).toBeNull();
+    expect(noteDocument(undefined, siteImpeccable()).note).toBeNull();
   });
 
-  it("range les malus du plus lourd au plus léger", () => {
-    const r = noteParMalus(
-      { ...siteImpeccable(), telCliquable: false, jsonLdLocalBusiness: false },
-      {},
-      13_000,
-    );
-    expect(r.lignes.map((l) => l.points)).toEqual([35, 10, 2]);
+  it("ne note pas un site injoignable", () => {
+    expect(noteDocument(80, { ...siteImpeccable(), joignable: false }).note).toBeNull();
   });
 });
 
-describe("le temps d'affichage, seul malus que Google seul peut produire", () => {
-  const avec = (lcp: number | null) => noteParMalus(siteImpeccable(), {}, lcp);
-
-  it("suit les paliers", () => {
-    expect(avec(2_000).note).toBe(100);
-    expect(avec(4_000).note).toBe(95);
-    expect(avec(6_000).note).toBe(90);
-    expect(avec(9_000).note).toBe(82);
-    expect(avec(11_000).note).toBe(75);
-    // Le cas réel qui a motivé tout ceci : 18,6 s pour afficher la page.
-    expect(avec(18_560).note).toBe(65);
+describe("les malus n'ajoutent que ce que Google ne voit pas", () => {
+  it("retire des points nommés, et garde la base pour la soustraction", () => {
+    const r = noteDocument(58, { ...siteImpeccable(), telCliquable: false, nbCta: 0 });
+    expect(r.base).toBe(58);
+    expect(r.note).toBe(53);
+    expect(r.lignes).toEqual([
+      { libelle: "Votre numéro ne se compose pas en un clic", points: 3 },
+      { libelle: "Presque aucun bouton pour vous contacter", points: 2 },
+    ]);
   });
 
-  it("n'existe pas sans mesure Google, et c'est assumé", () => {
-    expect(avec(null).note).toBe(100);
-    expect(avec(null).lignes).toEqual([]);
+  it("reste petit : un ajustement, pas un second barème", () => {
+    // Sur les six sites réels mesurés, le total va de 7 à 18 points. Assez pour
+    // compter, pas assez pour écraser la mesure de Google.
+    const pire = noteDocument(58, {
+      ...siteImpeccable(),
+      https: false,
+      formulaire: false,
+      mailto: false,
+      telCliquable: false,
+      nbCta: 0,
+      avisDansLaPage: false,
+      mentionsLegales: false,
+      title: "",
+      metaDescription: "",
+      jsonLdLocalBusiness: false,
+    });
+    const total = pire.lignes.reduce((a, l) => a + l.points, 0);
+    expect(total).toBeLessThanOrEqual(20);
   });
 
-  it("dit la valeur mesurée, pas le palier", () => {
-    expect(avec(18_560).lignes[0].libelle).toContain("18,6 s");
+  it("ne compte PAS le temps d'affichage : il est déjà dans la note de Google", () => {
+    // La règle « un défaut, un malus ». Le LCP est le cœur de la performance
+    // Lighthouse ; l'y ajouter compterait deux fois la même chose.
+    const r = noteDocument(30, siteImpeccable());
+    expect(r.lignes.map((l) => l.libelle).join(" ")).not.toMatch(/affich|seconde|s’affiche/i);
   });
 });
 
 describe("les deux garde-fous", () => {
   it("ne descend pas sous le plancher : on humilie sans convaincre", () => {
-    const catastrophe = noteParMalus(
-      {
-        ...siteImpeccable(),
-        https: false,
-        formulaire: false,
-        mailto: false,
-        telCliquable: false,
-        nbCta: 0,
-        avisDansLaPage: false,
-        mentionsLegales: false,
-        noindex: true,
-        title: "",
-        metaDescription: "",
-        nbImagesSansAlt: 14,
-        jsonLdLocalBusiness: false,
-      },
-      {},
-      20_000,
-    );
-    expect(catastrophe.note).toBe(NOTE_PLANCHER);
-    expect(catastrophe.plancherAtteint).toBe(true);
+    const r = noteDocument(20, {
+      ...siteImpeccable(),
+      https: false,
+      formulaire: false,
+      mailto: false,
+      telCliquable: false,
+      nbCta: 0,
+      avisDansLaPage: false,
+      mentionsLegales: false,
+      title: "",
+      metaDescription: "",
+      jsonLdLocalBusiness: false,
+    });
+    expect(r.note).toBe(NOTE_PLANCHER);
+    expect(r.plancherAtteint).toBe(true);
     // Les constats restent tous là : le plancher borne la note, pas le diagnostic.
-    expect(catastrophe.lignes.length).toBeGreaterThan(8);
+    expect(r.lignes.length).toBeGreaterThan(7);
   });
 
-  it("ne donne pas une bonne note à un site absent", () => {
-    // Le piège du barème par soustraction : sans HTML à lire, presque aucun
-    // malus ne se déclenche, et le site injoignable ressortait à 90/100 — mieux
-    // noté que tous ceux qui existent.
-    expect(noteParMalus({ ...siteImpeccable(), joignable: false }).note).toBe(0);
-  });
-});
-
-describe("la note parle du SITE, pas de la réputation", () => {
-  it("ignore le nombre d'avis Google", () => {
-    // Règle ancienne que la réécriture a failli emporter : le nombre d'avis
-    // reçus ne se répare pas en achetant un site.
-    const sans = noteParMalus(siteImpeccable());
-    const avecPeuDAvis = noteParMalus(siteImpeccable(), { nombreAvis: 1, noteMoyenne: 2.4 });
+  it("ignore le nombre d'avis Google : la note parle du SITE", () => {
+    // Règle ancienne qu'une première version de ce barème avait emportée. Le
+    // nombre d'avis reçus ne se répare pas en achetant un site.
+    const sans = noteDocument(70, siteImpeccable());
+    const avecPeuDAvis = noteDocument(70, siteImpeccable(), { nombreAvis: 1, noteMoyenne: 2.4 });
     expect(avecPeuDAvis.note).toBe(sans.note);
-  });
-
-  it("compte en revanche la ville absente du titre, qui est bien le site", () => {
-    const r = noteParMalus({ ...siteImpeccable(), villeDansTitre: false }, { ville: "Lyon" });
-    expect(r.note).toBe(97);
   });
 });

@@ -165,14 +165,6 @@ export interface NoteAxe {
 
 export interface ResultatScore {
   noteGlobale: number;
-  /**
-   * Le détail de la note : chaque point retiré, avec sa raison.
-   *
-   * C'est la démonstration, pas une donnée de debug. Une note qu'on ne peut pas
-   * décomposer devant le prospect ne vaut pas mieux que celle qu'on vient de
-   * remplacer.
-   */
-  malus: Array<{ libelle: string; points: number }>;
   axes: Record<AxeId, NoteAxe>;
   /** Libellé court à 5 niveaux, pour les affichages qui n'ont qu'une ligne. */
   libelle: string;

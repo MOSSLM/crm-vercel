@@ -257,6 +257,9 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .score-val{display:flex;align-items:baseline;gap:6px;margin-top:5px}
 .score-val b{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:44px;line-height:.86;color:var(--nuit);letter-spacing:-.01em}
 .score-val s{text-decoration:none;font-size:11.5px;color:rgba(${NUIT},.4)}
+.score-calc{margin-top:6px;font-size:8px;line-height:1.5;color:rgba(${NUIT},.55)}
+.score-calc b{font-weight:600;color:rgba(${NUIT},.8)}
+.score-calc span{display:block;margin-top:2px;font-size:7.5px;color:rgba(${NUIT},.45)}
 .score-sub{font-size:8.5px;line-height:1.5;color:rgba(${NUIT},.38);margin-top:6px}
 .score-rail{padding:9px 18px 8px}
 .rail{position:relative;display:flex;gap:2px;height:17px}

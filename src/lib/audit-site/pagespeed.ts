@@ -1,6 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { noteParMalus } from "./malus";
-import type { SignauxSite } from "./types";
 import type {
   ConstatGoogle,
   ConstatGoogleDetaille,
@@ -403,46 +401,15 @@ export async function mesurerEtEnregistrer(
    * on n'écrit PAS `detail` du tout — mieux vaut se passer des constats que
    * remplacer les preuves existantes par un objet ne contenant qu'eux.
    */
-  const [{ data: ligne, error: erreurLecture }, { data: ent }] = await Promise.all([
-    sb
-      .from("entreprises_audit_site")
-      .select("detail, signaux")
-      .eq("entreprise_id", entrepriseId)
-      .maybeSingle(),
-    // Le contexte CRM est INDISPENSABLE au recalcul : deux malus en dépendent —
-    // le nombre d'avis Google et la ville dans le titre. Rejouer le barème sans
-    // lui produirait une note plus clémente que l'originale, et l'écart
-    // passerait pour un effet de la mesure Google.
-    sb.from("entreprises").select("ville, nombre_avis").eq("id", entrepriseId).maybeSingle(),
-  ]);
+  const { data: ligne, error: erreurLecture } = await sb
+    .from("entreprises_audit_site")
+    .select("detail")
+    .eq("entreprise_id", entrepriseId)
+    .maybeSingle();
 
   const detail = erreurLecture
     ? null
     : { ...((ligne?.detail as Record<string, unknown>) ?? {}), google: mesure.constats };
-
-  /**
-   * LA NOTE SE REFAIT ICI, parce que le temps d'affichage n'existe qu'ici.
-   *
-   * `scorer()` a noté ce site sans connaître son LCP — il ne dispose que du temps
-   * de réponse du serveur, qui ne dit rien de ce que le visiteur voit. C'est par
-   * ce trou qu'un site mettant 18,6 secondes à s'afficher obtenait 70/100.
-   *
-   * On rejoue donc le barème depuis les signaux STOCKÉS, en y ajoutant le LCP :
-   * aucune requête réseau, et le résultat est celui qu'une analyse aurait produit
-   * si elle avait connu le LCP dès le départ. Si les signaux manquent — ligne
-   * écrite avant qu'on les conserve — on n'y touche pas : une note ancienne vaut
-   * mieux qu'une note calculée sur du vide.
-   */
-  const signaux = ligne?.signaux as SignauxSite | null | undefined;
-  const e = ent as { ville?: string | null; nombre_avis?: number | null } | null;
-  const noteRefaite =
-    signaux && mesure.lcpMs != null
-      ? noteParMalus(
-          signaux,
-          { ville: e?.ville ?? null, nombreAvis: e?.nombre_avis ?? null },
-          mesure.lcpMs,
-        )
-      : null;
 
   const { error } = await sb
     .from("entreprises_audit_site")
@@ -457,7 +424,6 @@ export async function mesurerEtEnregistrer(
       psi_tbt_ms: mesure.tbtMs == null ? null : Math.round(mesure.tbtMs),
       psi_strategie: mesure.strategie,
       psi_recupere_le: new Date().toISOString(),
-      ...(noteRefaite ? { note_globale: noteRefaite.note } : {}),
     })
     .eq("entreprise_id", entrepriseId);
 

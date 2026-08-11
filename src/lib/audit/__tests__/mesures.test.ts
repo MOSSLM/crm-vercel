@@ -18,6 +18,9 @@ import type { AuditLu } from "@/lib/audit-site/lecture";
  */
 
 const BASE: AuditLu = {
+  note_document: 37,
+  note_document_base: 44,
+  note_document_malus: [{ libelle: "Votre numéro ne se compose pas en un clic", points: 3 }],
   entreprise_id: 7,
   url_analysee: "https://exemple.fr",
   url_finale: "https://exemple.fr",
@@ -64,7 +67,8 @@ describe("construireMesures — la note ne se recalcule pas", () => {
     const m = construireMesures(audit);
 
     // La moyenne des axes vaut 70 : si elle apparaissait, c'est qu'un troisième
-    // barème s'est glissé dans le rendu.
+    // barème s'est glissé dans le rendu. La note publiée est celle du DOCUMENT,
+    // calculée à partir de la mesure de Google — jamais recomposée ici.
     expect(m.noteGlobale).toBe(37);
     expect(m.reperes.prospect).toBe(37);
   });

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AxeId, Confiance, ConstatGoogle, Preuve } from "./types";
+import type { AxeId, Confiance, ConstatGoogle, Preuve, SignauxSite } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
+import { noteDocument } from "./malus";
 import { psiEstFraiche } from "./pagespeed";
 
 /**
@@ -54,7 +55,22 @@ export interface AuditLu {
   http_status: number | null;
   bloque: boolean;
   injoignable: boolean;
+  /**
+   * La note du TRI, la nôtre, sur tout le parc. Sert à classer, jamais à montrer.
+   */
   note_globale: number | null;
+  /**
+   * La note du DOCUMENT : celle de Google, moins ce que Google ne voit pas.
+   *
+   * `null` tant que PageSpeed n'a pas mesuré — et c'est le pendant de la
+   * décision de ne plus publier nos axes vitesse et mobile sans lui. On ne
+   * publie pas au prospect un chiffre qu'on n'a pas mesuré.
+   */
+  note_document: number | null;
+  /** La base Google avant ajustement, pour montrer la soustraction. */
+  note_document_base: number | null;
+  /** Chaque point retiré, avec sa raison. C'est la démonstration. */
+  note_document_malus: Array<{ libelle: string; points: number }>;
   libelle: string | null;
   /** Axes publiables — ceux en confiance faible en sont retirés. */
   axes: AxePublie[];
@@ -290,6 +306,26 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
 
   const noteGlobale = num(row.note_globale);
 
+  /**
+   * La note montrée au prospect se calcule ICI, à la lecture.
+   *
+   * Pas à l'analyse — elle a besoin de la performance de Google, qui arrive
+   * après. Pas à la mesure PageSpeed non plus : la recalculer à l'écriture
+   * obligerait à relire les signaux et le contexte CRM à ce moment-là, et une
+   * ligne écrite avant qu'on conserve les signaux resterait sans note pour
+   * toujours. À la lecture, tout est là.
+   */
+  const signaux = row.signaux as SignauxSite | null | undefined;
+  const doc =
+    signaux && psiFraiche
+      ? noteDocument(psiPerf, signaux, {
+          // La ville n'est pas dans cette table ; le seul malus qui en dépend
+          // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
+          // et l'ajouter demanderait une jointure sur chaque lecture de liste.
+          ville: null,
+        })
+      : { note: null, base: null, lignes: [], plancherAtteint: false };
+
   return {
     entreprise_id: Number(row.entreprise_id),
     url_analysee: str(row.url_analysee),
@@ -298,7 +334,10 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     bloque: row.bloque === true,
     injoignable: row.injoignable === true,
     note_globale: noteGlobale,
-    libelle: noteGlobale == null ? null : libelleDeNote(noteGlobale),
+    note_document: doc.note,
+    note_document_base: doc.base,
+    note_document_malus: doc.lignes,
+    libelle: doc.note != null ? libelleDeNote(doc.note) : noteGlobale == null ? null : libelleDeNote(noteGlobale),
     axes,
     axes_masques: masques,
     issue_keys: Array.isArray(row.issue_keys) ? (row.issue_keys as string[]) : [],
