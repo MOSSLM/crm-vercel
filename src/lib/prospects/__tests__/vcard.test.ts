@@ -1,8 +1,10 @@
 import {
   cartesDuProspect,
   compterExport,
+  construireLot,
   construireVCards,
   echapper,
+  nombreDeLots,
   plier,
   poidsOctets,
 } from '../vcard'
@@ -77,21 +79,42 @@ describe('cartesDuProspect', () => {
     expect(premiere).toContain('ORG:AMI ELEC')
   })
 
-  it('émet une fiche par contact joignable, plus celle de l’entreprise', () => {
+  it('émet une fiche par contact joignable, sans fiche entreprise redondante', () => {
+    // Les deux fiches nominatives portent déjà le numéro de la société : une
+    // troisième carte le répéterait, et un répertoire qui reçoit deux fois la
+    // même ligne sous deux noms proches fusionne ou refuse au hasard.
     const cartes = cartesDuProspect(AMI_ELEC)
-    expect(cartes).toHaveLength(3)
-    expect(cartes[cartes.length - 1]).toContain('FN:AMI ELEC\r\n')
+    expect(cartes).toHaveLength(2)
+    expect(cartes.every((c) => c.includes('+33646434315'))).toBe(true)
   })
 
-  it('garde la fiche entreprise même quand le gérant porte le même numéro', () => {
+  it('n’émet pas de fiche entreprise quand le gérant porte déjà ce numéro', () => {
     // 60 fiches du parc sont dans ce cas : `contacts.tel` recopie
-    // `entreprises.telephone`.
+    // `entreprises.telephone`. Deux cartes pour une ligne, c'est un doublon.
     const cartes = cartesDuProspect({
       entreprise: { id: 2, name: 'Acticlimat', telephone: '06 42 82 69 63' },
       contacts: [{ id: 20, first_name: 'Florian', last_name: 'PERRET', tel: '+33642826963' }],
     })
-    expect(cartes).toHaveLength(2)
-    expect(cartes.some((c) => c.includes('FN:Acticlimat\r\n'))).toBe(true)
+    expect(cartes).toHaveLength(1)
+    expect(cartes[0]).toContain('FN:Acticlimat — Florian')
+  })
+
+  it('émet la fiche entreprise quand elle apporte une ligne que personne ne porte', () => {
+    const cartes = cartesDuProspect({
+      entreprise: { id: 5, name: 'Deux Lignes', telephone: '05 46 52 19 23' },
+      contacts: [{ id: 50, first_name: 'Jérôme', last_name: 'Morandini', tel: '06 61 48 03 42' }],
+    })
+    // La fiche nominative porte les deux ; l'entreprise n'a rien d'inédit.
+    expect(cartes).toHaveLength(1)
+    expect(cartes[0]).toContain('+33546521923')
+    expect(cartes[0]).toContain('+33661480342')
+  })
+
+  it('donne un UID stable à chaque fiche', () => {
+    // Sans UID, un répertoire n'a que le nom pour distinguer deux cartes.
+    const cartes = cartesDuProspect(AMI_ELEC)
+    expect(cartes[0]).toContain('UID:sama-1-c10')
+    expect(cartes[1]).toContain('UID:sama-1-c11')
   })
 
   it('n’écrit pas deux fois la même ligne sur une fiche', () => {
@@ -109,7 +132,10 @@ describe('cartesDuProspect', () => {
       contacts: [{ id: 30, first_name: 'Julien', last_name: 'Martin', tel: null, role_title: 'Gérant' }],
     })
     expect(cartes).toHaveLength(1)
-    expect(cartes[0]).toContain('TEL;TYPE=WORK,VOICE:+33546521923')
+    // Une seule valeur de TYPE : la virgule non échappée dans un paramètre est
+    // ce que la 4.0 interdit, et les répertoires modernes lisent en 4.0.
+    expect(cartes[0]).toContain('TEL;TYPE=WORK:+33546521923')
+    expect(cartes[0]).toContain('UID:sama-3-org')
   })
 
   it('ne rend rien sans raison sociale ni sans numéro', () => {
@@ -128,7 +154,7 @@ describe('construireVCards', () => {
     const out = construireVCards([AMI_ELEC])
     expect(out.startsWith('BEGIN:VCARD\r\nVERSION:3.0')).toBe(true)
     expect(out.endsWith('END:VCARD\r\n')).toBe(true)
-    expect(out.match(/BEGIN:VCARD/g)).toHaveLength(3)
+    expect(out.match(/BEGIN:VCARD/g)).toHaveLength(2)
   })
 
   it('rend une chaîne vide plutôt qu’un fichier sans fiche', () => {
@@ -139,7 +165,7 @@ describe('construireVCards', () => {
 
 describe('compterExport', () => {
   it('annonce les fiches et les numéros distincts', () => {
-    expect(compterExport([AMI_ELEC])).toEqual({ cartes: 3, numeros: 3 })
+    expect(compterExport([AMI_ELEC])).toEqual({ cartes: 2, numeros: 3 })
   })
 
   it('ne compte qu’une fois une ligne écrite dans deux formats', () => {
@@ -150,5 +176,39 @@ describe('compterExport', () => {
       },
     ])
     expect(numeros).toBe(1)
+  })
+})
+
+describe('découpage en lots', () => {
+  // Un `.vcf` de plusieurs centaines de fiches se télécharge et s'ouvre sans
+  // erreur, mais le répertoire n'en enregistre qu'une : l'aperçu n'affiche que
+  // la première carte et « Ajouter tous les contacts » ne fait rien.
+  const parc = Array.from({ length: 120 }, (_, i) => ({
+    entreprise: { id: i + 1, name: `Entreprise ${i + 1}`, telephone: `06 00 00 ${String(i).padStart(2, '0')} 01` },
+  }))
+
+  it('compte les lots qu’il faudra télécharger', () => {
+    expect(nombreDeLots(parc)).toBe(3) // 120 fiches / 50
+    expect(nombreDeLots([])).toBe(1)
+  })
+
+  it('rend un fichier complet et autonome par lot', () => {
+    const l1 = construireLot(parc, 1)
+    expect(l1.cartes).toBe(50)
+    expect(l1.lots).toBe(3)
+    expect(l1.vcf.match(/BEGIN:VCARD/g)).toHaveLength(50)
+    expect(l1.vcf.match(/END:VCARD/g)).toHaveLength(50)
+    expect(l1.vcf.endsWith('END:VCARD\r\n')).toBe(true)
+  })
+
+  it('ne perd et ne duplique aucune fiche d’un lot à l’autre', () => {
+    const tout = [1, 2, 3].flatMap((n) => construireLot(parc, n).vcf.match(/UID:[^\r]+/g) ?? [])
+    expect(tout).toHaveLength(120)
+    expect(new Set(tout).size).toBe(120)
+  })
+
+  it('ramène un numéro de lot hors bornes dans le domaine', () => {
+    expect(construireLot(parc, 0).cartes).toBe(50)
+    expect(construireLot(parc, 99).cartes).toBe(20) // le dernier lot
   })
 })

@@ -109,14 +109,25 @@ export function plier(ligne: string): string {
   return morceaux.map((m, i) => (i === 0 ? m : ` ${m}`)).join('\r\n')
 }
 
+/**
+ * Le `TYPE` d'un numéro — UNE seule valeur, jamais une liste.
+ *
+ * `TYPE=WORK,VOICE` est pourtant licite en vCard 3.0. Mais la virgule non
+ * échappée dans un paramètre est ce que la 4.0 interdit (elle veut
+ * `TYPE="work,voice"`), et les répertoires modernes lisent souvent en 4.0 même
+ * face à un fichier 3.0. Une valeur unique est comprise partout, sans rien
+ * perdre : `VOICE` n'ajoutait aucune information à `WORK`.
+ */
 function typeTel(n: NumeroProspect): string {
   if (n.type === 'mobile') return 'CELL'
-  if (n.type === 'fixe') return 'WORK,VOICE'
+  if (n.type === 'fixe') return 'WORK'
   return 'VOICE'
 }
 
 /** Une fiche du carnet, avant mise en forme vCard. */
 interface Carte {
+  /** Stable et unique — cf. `rendreCarte`. */
+  uid: string
   fn: string
   org: string
   nom?: { famille: string; prenom: string } | null
@@ -128,6 +139,12 @@ interface Carte {
 function rendreCarte(carte: Carte): string {
   const lignes: string[] = ['BEGIN:VCARD', 'VERSION:3.0']
 
+  // Un identifiant stable par fiche. Sans `UID`, un répertoire n'a que le nom
+  // pour distinguer deux cartes : les 60 entreprises dont le gérant porte le
+  // numéro de la société produisent deux fiches très proches, que l'import peut
+  // fusionner ou rejeter comme doublons. Il rend aussi le ré-import idempotent —
+  // exporter deux fois ne crée plus deux carnets.
+  lignes.push(`UID:${carte.uid}`)
   lignes.push(`FN:${echapper(carte.fn)}`)
   // `N` est obligatoire en 3.0. Pour une entreprise, la partie « nom de famille »
   // porte la raison sociale et le reste est vide — c'est ce que font les
@@ -181,6 +198,9 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
   }
 
   const cartes: string[] = []
+  const base = `sama-${fiche.entreprise.id ?? raisonSociale.replace(/[^a-z0-9]/gi, '').slice(0, 24)}`
+  /** Numéros déjà portés par une fiche nominative. */
+  const dejaPortes = new Set<string>()
 
   // Une fiche par contact qui a un numéro à lui.
   const contacts = (fiche.contacts ?? []).filter(Boolean) as ContactSource[]
@@ -196,28 +216,41 @@ export function cartesDuProspect(fiche: FicheProspect): string[] {
     const role = (c.role_title ?? '').trim() || null
     const prenom = (c.first_name ?? '').trim()
     const famille = (c.last_name ?? '').trim()
+    const numeros = sansDoublon([...siens, ...numerosEntreprise])
+    for (const n of numeros) dejaPortes.add(n.e164)
 
     cartes.push(
       rendreCarte({
+        uid: `${base}-c${c.id ?? cartes.length}`,
         fn: `${raisonSociale} — ${prenom || nom}`,
         org: raisonSociale,
         nom: { famille: famille || raisonSociale, prenom },
         titre: role,
         // Les siens d'abord, puis ceux de l'établissement : l'ordre du répertoire
         // suit celui-là, et c'est son portable qu'on veut composer en premier.
-        numeros: sansDoublon([...siens, ...numerosEntreprise]),
+        numeros,
         note: [role, noteSequence].filter(Boolean).join(' · ') || null,
       }),
     )
   }
 
-  // Et la fiche de l'entreprise, qui existe même sans aucun contact joignable.
-  if (numerosEntreprise.length > 0) {
+  // La fiche de l'entreprise, SEULEMENT si elle apporte un numéro qu'aucune
+  // fiche nominative ne porte déjà.
+  //
+  // Elle était émise systématiquement, ce qui créait deux entrées pour la même
+  // ligne dès qu'un contact reprenait le numéro de sa société — 60 fiches du
+  // parc sont dans ce cas. Un carnet qui reçoit deux fois le même numéro sous
+  // deux noms proches, c'est exactement ce qu'un import mobile refuse ou
+  // fusionne au hasard. Les 218 entreprises sans contact joignable gardent la
+  // leur, puisque rien d'autre ne porte leur numéro.
+  const inedits = numerosEntreprise.filter((n) => !dejaPortes.has(n.e164))
+  if (inedits.length > 0) {
     cartes.push(
       rendreCarte({
+        uid: `${base}-org`,
         fn: raisonSociale,
         org: raisonSociale,
-        numeros: numerosEntreprise,
+        numeros: inedits,
         note: noteSequence,
       }),
     )
@@ -247,4 +280,49 @@ export function compterExport(fiches: FicheProspect[]): { cartes: number; numero
     for (const n of numerosDuProspect(f)) numeros.add(n.e164)
   }
   return { cartes, numeros: numeros.size }
+}
+
+/**
+ * Taille d'un lot d'export.
+ *
+ * POURQUOI ON DÉCOUPE
+ * Un `.vcf` de trois cents fiches se télécharge et s'ouvre sans erreur, mais
+ * les répertoires mobiles n'en enregistrent qu'une : l'aperçu n'affiche que la
+ * première carte et « Ajouter tous les contacts » ne fait rien. Le fichier est
+ * pourtant conforme — c'est l'importeur qui renonce au-delà de quelques dizaines
+ * de cartes, sans message.
+ *
+ * Cinquante est la taille que les importeurs avalent sans broncher, et elle
+ * garde un nombre de lots gérable à la main (six pour le parc actuel).
+ */
+export const TAILLE_LOT = 50
+
+/** Le nombre de lots nécessaires pour ces fiches. */
+export function nombreDeLots(fiches: FicheProspect[], taille = TAILLE_LOT): number {
+  const total = fiches.reduce((n, f) => n + cartesDuProspect(f).length, 0)
+  return Math.max(1, Math.ceil(total / taille))
+}
+
+/**
+ * Le fichier d'un lot donné (1-based), découpé À LA CARTE et non à l'entreprise.
+ *
+ * Découper par entreprise ferait des lots de tailles très inégales — certaines
+ * en produisent trois, la plupart une seule — et on retomberait sur des lots
+ * trop gros. Un contact peut donc se retrouver dans un lot différent de sa
+ * société ; sans importance, chaque fiche est complète en elle-même.
+ */
+export function construireLot(
+  fiches: FicheProspect[],
+  lot: number,
+  taille = TAILLE_LOT,
+): { vcf: string; cartes: number; lots: number } {
+  const toutes = fiches.flatMap(cartesDuProspect)
+  const lots = Math.max(1, Math.ceil(toutes.length / taille))
+  const index = Math.min(Math.max(1, lot), lots)
+  const tranche = toutes.slice((index - 1) * taille, index * taille)
+  return {
+    vcf: tranche.length ? `${tranche.join('\r\n')}\r\n` : '',
+    cartes: tranche.length,
+    lots,
+  }
 }

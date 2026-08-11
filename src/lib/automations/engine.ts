@@ -37,6 +37,7 @@ import { getAppUrl } from '@/lib/app-url'
 import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 import { aDesMesuresAudit, assurerJetonRapport } from '@/lib/audit-site/rapport'
+import { demoShareUrl } from '@/lib/site-builder/demo-share-url'
 
 const DAY_MS = 86_400_000
 
@@ -187,23 +188,38 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       }
     }
 
-    // Le site publié via le site-builder fait foi sur le lien démo de l'audit.
+    // Le site du site-builder fait foi sur le lien démo de l'audit.
+    //
+    // DEUX DÉFAUTS CORRIGÉS ICI, ET C'ÉTAIT LE MÊME QUE POUR L'AUDIT.
+    //
+    // 1. On n'acceptait que `published_domain` ou `published_subdomain`. Or
+    //    AUCUN site du parc n'est publié : sur 114 entreprises qualifiées qui
+    //    en ont un, zéro a de sous-domaine. `company.demo_url` s'interpolait
+    //    donc en vide pour les 295, comme le lien d'audit avant lui.
+    //    Un site non publié a pourtant une URL qui marche —
+    //    `https://{id}.{SITE_DOMAIN}`, que le middleware route vers l'aperçu —
+    //    et c'est déjà ce que le rapport public envoie. Le moteur était le seul
+    //    à l'ignorer, faute de lire `id`.
+    //
+    // 2. Le repli `candidates[0]` prenait n'importe quel site, y compris un
+    //    `a_faire`. Le tableau du site-builder est pourtant explicite :
+    //    « À faire » veut dire « Prêt à créer », et seul « Prêt » veut dire
+    //    « Prêt à envoyer ». Envoyer l'aperçu d'une démo pas commencée est pire
+    //    que de ne rien envoyer.
     const { data: sites } = await sb
       .from('sites')
-      .select('is_published,published_subdomain,published_domain,build_stage,is_template')
+      .select('id,is_published,published_subdomain,published_domain,build_stage,is_template')
       .eq('enterprise_id', entrepriseId)
     const candidates = (sites ?? []).filter((s) => s.is_template !== true)
+    // Seul un site publié ou marqué « Prêt » est montrable à un prospect.
     const site =
-      candidates.find((s) => s.is_published) ??
-      candidates.find((s) => s.build_stage === 'pret') ??
-      candidates[0] ??
-      null
+      candidates.find((s) => s.is_published) ?? candidates.find((s) => s.build_stage === 'pret') ?? null
     if (site) {
-      if (site.published_domain) {
-        demoUrl = site.published_domain.startsWith('http') ? site.published_domain : `https://${site.published_domain}`
-      } else if (site.published_subdomain) {
-        demoUrl = `https://${site.published_subdomain}.${SITE_DOMAIN}`
-      }
+      demoUrl = site.published_domain
+        ? site.published_domain.startsWith('http')
+          ? site.published_domain
+          : `https://${site.published_domain}`
+        : demoShareUrl({ id: site.id as string, published_subdomain: site.published_subdomain as string | null })
     }
 
     // Le rapport web PRIME sur le PDF quand un jeton actif existe.
@@ -412,6 +428,28 @@ export async function etapePromettUnAuditAbsent(
   const texte = await stepRawText(sb, step)
   if (!usedVariables(texte).includes('company.audit_url')) return false
   return !(await aDesMesuresAudit(sb, entrepriseId))
+}
+
+/**
+ * Cette étape promet-elle une démo que l'entreprise n'a pas ?
+ *
+ * Le pendant exact du garde-fou de l'audit, et pour la même raison : le lien
+ * est fabriqué à partir du site, donc son absence ne se voit pas dans le texte
+ * interpolé — il ne reste qu'un trou.
+ *
+ * « Montrable » veut dire publié, ou marqué « Prêt » au tableau du
+ * site-builder, dont l'intitulé est « Prêt à envoyer ». Un site resté en « À
+ * faire » — « Prêt à créer » — n'a pas été travaillé : envoyer son aperçu à un
+ * prospect vend contre soi.
+ */
+export async function etapePromettUneDemoAbsente(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  demoUrl: string | null,
+): Promise<boolean> {
+  if (demoUrl) return false
+  const texte = await stepRawText(sb, step)
+  return usedVariables(texte).includes('company.demo_url')
 }
 
 /**
@@ -1010,6 +1048,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
     return
   }
 
+  // Même règle pour la démo : `company.demo_url` s'interpolait en vide pour les
+  // 295 entreprises, aucun site du parc n'étant publié.
+  if (await etapePromettUneDemoAbsente(sb, step, ent.vars['company.demo_url'] || null)) {
+    await holdForMissingDemo(sb, enrollment.id)
+    return
+  }
+
   if (step.kind === 'email') {
     // Aucun destinataire : l'étape ne s'exécute PAS et la séquence n'avance pas.
     // Avant, l'inscription franchissait l'étape email en silence — le prospect
@@ -1248,6 +1293,23 @@ export async function holdForMissingAuditLink(sb: SupabaseClient, enrollmentId: 
     .update({
       send_at: null,
       hold_reason: 'lien_manquant',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape dont le message promet une démo que l'entreprise n'a pas.
+ *
+ * Se lève dès que le site passe en « Prêt » au tableau du site-builder — la
+ * relecture repasse toutes les deux heures, personne n'a à revenir dégeler.
+ */
+export async function holdForMissingDemo(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'demo_manquante',
       next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
     })
     .eq('id', enrollmentId)
