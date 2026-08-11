@@ -132,16 +132,39 @@ export function ExportVCard() {
         {aide ? <p className="text-xs text-muted-foreground">{aide}</p> : null}
       </div>
 
+      {/*
+        LE FICHIER UNIQUE EST L'ACTION PRINCIPALE.
+        Il a longtemps été relégué derrière les lots, parce qu'on croyait que
+        les importeurs calaient sur le nombre de fiches. La vraie cause était
+        ailleurs : il manquait la ligne vide entre les cartes. Une fois
+        corrigée, un fichier de 324 fiches s'importe d'un coup. Les lots ne
+        sont plus qu'un recours.
+      */}
+      <Button
+        variant="outline"
+        className="flex w-full items-center gap-2"
+        onClick={() => exporter('tout')}
+        disabled={enCours || chargement || vide}
+      >
+        {enCours ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        {compte ? `Exporter les ${compte.cartes} fiches (vCard)` : 'Exporter les contacts (vCard)'}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Depuis un ordinateur, déposez le fichier sur <b>icloud.com/contacts</b> : tout entre d’un coup et se
+        synchronise ensuite vers l’iPhone. Chaque fiche porte le numéro de la personne, celui de son entreprise, son
+        rôle et son e-mail.
+      </p>
+
       {compte && compte.lots > 1 ? (
-        <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-xs font-medium">
-            {compte.lots} fichiers de {compte.tailleLot} fiches
+        <details className="rounded-md border border-border bg-muted/40 p-3">
+          <summary className="cursor-pointer text-xs font-medium">
+            Télécharger par lots de {compte.tailleLot} ({compte.lots} fichiers)
+          </summary>
+          <p className="pt-2 text-xs text-muted-foreground">
+            À n’utiliser que si l’import direct depuis le téléphone refuse le fichier entier — sans ordinateur sous la
+            main, par exemple. Les lots déjà pris sont barrés.
           </p>
-          <p className="text-xs text-muted-foreground">
-            Les répertoires de téléphone n’enregistrent qu’une fiche sur un fichier de plusieurs centaines — sans dire
-            pourquoi. Téléchargez et ouvrez les lots un par un.
-          </p>
-          <div className="flex flex-wrap gap-1 pt-1">
+          <div className="flex flex-wrap gap-1 pt-2">
             {Array.from({ length: compte.lots }, (_, i) => i + 1).map((n) => (
               <button
                 key={n}
@@ -162,36 +185,16 @@ export function ExportVCard() {
               </button>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      <Button
-        variant="outline"
-        className="flex w-full items-center gap-2"
-        onClick={() => exporter(lot)}
-        disabled={enCours || chargement || vide}
-      >
-        {enCours ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        {compte && compte.lots > 1 ? `Télécharger le lot ${lot} sur ${compte.lots}` : 'Exporter les contacts (vCard)'}
-      </Button>
-
-      {compte && compte.lots > 1 ? (
-        <div className="space-y-1">
           <Button
             variant="ghost"
-            className="flex w-full items-center gap-2"
-            onClick={() => exporter('tout')}
+            className="mt-2 flex w-full items-center gap-2"
+            onClick={() => exporter(lot)}
             disabled={enCours || chargement || vide}
           >
             <Download className="h-4 w-4" />
-            Tout en un fichier ({compte.cartes} fiches)
+            Télécharger le lot {lot} sur {compte.lots}
           </Button>
-          <p className="text-xs text-muted-foreground">
-            Depuis un ordinateur : déposez ce fichier sur <b>icloud.com/contacts</b> — il avale les {compte.cartes}{' '}
-            fiches d’un coup et les synchronise ensuite vers l’iPhone. C’est l’importeur d’iOS qui cale sur les gros
-            fichiers, pas celui d’iCloud.
-          </p>
-        </div>
+        </details>
       ) : null}
 
       <p className="text-xs text-muted-foreground" aria-live="polite">
@@ -206,8 +209,7 @@ export function ExportVCard() {
                 : 'Décompte indisponible — l’export reste possible.'}
       </p>
       <p className="text-xs text-muted-foreground">
-        Chaque fiche porte le numéro de la personne et celui de son entreprise, avec son rôle. Ouvrez le fichier depuis
-        le téléphone pour l’ajouter au répertoire — WhatsApp affichera alors le nom de l’entreprise au lieu du numéro.
+        WhatsApp affichera alors le nom de l’entreprise au lieu d’un numéro nu.
       </p>
     </div>
   )
