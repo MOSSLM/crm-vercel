@@ -9,6 +9,7 @@ import { authedFetch } from "@/utils/authedFetch";
 import { useTelephonyOptional } from "./CallProvider";
 import { CallJournal } from "./CallJournal";
 import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
+import { LeadMagnetsPanel } from "./LeadMagnetsPanel";
 
 interface QueueItem {
   oppId: string;
@@ -17,6 +18,8 @@ interface QueueItem {
   org: string | null;
   ville: string | null;
   phone: string | null;
+  /** Alimente l'envoi d'email du panneau lead magnets. */
+  email: string | null;
 }
 
 const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
@@ -63,7 +66,7 @@ export function Cockpit() {
     (async () => {
       const { data } = await supabase
         .from("opportunites")
-        .select("id, name, entreprise:entreprises(id, name, ville, telephone)")
+        .select("id, name, entreprise:entreprises(id, name, ville, telephone, email)")
         .eq("owner_id", user.id)
         .limit(60);
       const items: QueueItem[] = (data ?? [])
@@ -76,6 +79,7 @@ export function Cockpit() {
             org: (ent?.name as string | null) ?? null,
             ville: (ent?.ville as string | null) ?? null,
             phone: (ent?.telephone as string | null) ?? null,
+            email: (ent?.email as string | null) ?? null,
           };
         })
         .filter((i) => i.phone);
@@ -302,6 +306,19 @@ export function Cockpit() {
 
         {/* RIGHT — contexte prospect */}
         <aside className="pros-right">
+          {/* Les lead magnets d'abord : c'est ce qu'on envoie PENDANT l'appel,
+              alors que le RDV se cale en fin de conversation et que
+              l'historique ne se consulte qu'avant de décrocher. */}
+          {current ? (
+            <LeadMagnetsPanel
+              entrepriseId={current.entrepriseId}
+              opportuniteId={current.oppId}
+              nom={current.org ?? current.name}
+              telephone={current.phone}
+              email={current.email}
+            />
+          ) : null}
+
           {current ? (
             <BookingLinkPanel
               prospectName={current.name}

@@ -25,6 +25,7 @@ import {
   Monitor,
   History,
   Share2,
+  ClipboardList,
 } from "lucide-react";
 import { formatPrice } from "@/components/agent-portal/format";
 import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHistory";
@@ -318,6 +319,16 @@ export default function AgentEntrepriseDetailPage() {
                 onCheckedChange={togglePaywall}
               />
             </div>
+
+            {/* Le brief se remplit pendant l'appel, mais on y revient depuis la
+                fiche pour compléter ce qui manquait — d'où une entrée ici en
+                plus de celles du cockpit et du kanban. */}
+            <Button asChild size="sm" variant="outline" className="w-full gap-1">
+              <Link href={`/espace-agent/brief/${site.id}`}>
+                <ClipboardList className="h-4 w-4" />
+                Brief de reprise
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}

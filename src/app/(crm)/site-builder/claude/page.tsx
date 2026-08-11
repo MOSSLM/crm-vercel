@@ -43,27 +43,33 @@ export default function ClaudeDesignHubPage() {
     <AppLayout>
       <div className="cd-scope" style={{ background: "var(--bg)", minHeight: "100%" }}>
         <ClaudeDesignTheme />
-        <div style={{ padding: "30px 40px 60px" }}>
-          {/* Hero head */}
-          <div className="cd-hub-head">
-            <div>
-              <div className="cd-hub-kicker">Designs importés depuis Claude</div>
-              <h1 className="cd-serif" style={{ fontSize: 42, margin: 0, lineHeight: 1, letterSpacing: "-.01em" }}>
-                Vos designs <em style={{ fontStyle: "italic", color: "var(--cd-accent)" }}>importés</em>
-              </h1>
-              <p style={{ fontSize: 13.5, color: "var(--text-3)", margin: "12px 0 0", maxWidth: 460, lineHeight: 1.55 }}>
-                Importez un <code style={{ background: "var(--bg-2)", padding: "1px 6px", borderRadius: 4, fontSize: 11.5, color: "var(--text-2)" }}>.zip</code> généré par Claude,
-                liez ses zones à vos variables CRM, et enregistrez autant de templates que de cibles.
-              </p>
+        <div style={{ padding: tab === "projets" ? "16px 24px 0" : "30px 40px 60px" }}>
+          {/* Hero head — réservé à l'onglet Templates.
+              Il occupait presque toute la hauteur d'écran AVANT le kanban : on
+              arrivait sur « Projets » et il fallait scroller un plein écran pour
+              voir la première colonne. Un titre de 42 px qui invite à importer
+              un .zip n'a rien à faire au-dessus d'un tableau de suivi. */}
+          {tab === "templates" && (
+            <div className="cd-hub-head">
+              <div>
+                <div className="cd-hub-kicker">Designs importés depuis Claude</div>
+                <h1 className="cd-serif" style={{ fontSize: 42, margin: 0, lineHeight: 1, letterSpacing: "-.01em" }}>
+                  Vos designs <em style={{ fontStyle: "italic", color: "var(--cd-accent)" }}>importés</em>
+                </h1>
+                <p style={{ fontSize: 13.5, color: "var(--text-3)", margin: "12px 0 0", maxWidth: 460, lineHeight: 1.55 }}>
+                  Importez un <code style={{ background: "var(--bg-2)", padding: "1px 6px", borderRadius: 4, fontSize: 11.5, color: "var(--text-2)" }}>.zip</code> généré par Claude,
+                  liez ses zones à vos variables CRM, et enregistrez autant de templates que de cibles.
+                </p>
+              </div>
+              <button className="cd-import-tile" onClick={() => setImportOpen(true)}>
+                <span className="cd-import-tile-ic"><Upload className="ico-lg" /></span>
+                <b>Importer un .zip</b><span>Glissez votre export Claude</span>
+              </button>
             </div>
-            <button className="cd-import-tile" onClick={() => setImportOpen(true)}>
-              <span className="cd-import-tile-ic"><Upload className="ico-lg" /></span>
-              <b>Importer un .zip</b><span>Glissez votre export Claude</span>
-            </button>
-          </div>
+          )}
 
           {/* Toolbar: tabs + actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px 0 22px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: tab === "projets" ? "0 0 4px" : "26px 0 22px" }}>
             <div className="cd-seg" style={{ width: "fit-content" }}>
               {(["templates", "projets"] as Tab[]).map((t) => (
                 <button key={t} className={"cd-seg-b" + (tab === t ? " on" : "")} style={{ padding: "0 14px", display: "inline-flex", alignItems: "center", gap: 6, height: 28 }} onClick={() => setTab(t)}>
@@ -128,7 +134,7 @@ export default function ClaudeDesignHubPage() {
       </div>
 
       {/* Projets board rendered outside .cd-scope to keep its shadcn styling intact */}
-      {tab === "projets" ? <div className="p-6"><SiteKanban /></div> : null}
+      {tab === "projets" ? <div className="px-6 pb-6 pt-2"><SiteKanban /></div> : null}
 
       <MultiPageImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={loadTemplates} />
       <CreateDemoSiteDialog

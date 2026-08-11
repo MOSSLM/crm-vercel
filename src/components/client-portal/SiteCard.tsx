@@ -11,6 +11,8 @@ export type SiteRow = {
   published_domain: string | null;
   published_subdomain: string | null;
   is_published: boolean;
+  /** Étape de production, affichée au client par `SuiviSiteCard`. */
+  build_stage?: string | null;
 };
 
 function buildUrl(site: SiteRow): string | null {
