@@ -393,6 +393,9 @@ const BLOCKING_HOLDS = new Set([
   // Une attente de réponse retient bien la séquence, et la semaine doit le dire
   // — mais c'est le fonctionnement normal d'une étape, pas un incident.
   'awaiting_reply',
+  // Le message promet un audit que l'entreprise n'a pas. Se lève tout seul dès
+  // que le site est mesuré : la relecture repasse toutes les deux heures.
+  'lien_manquant',
 ])
 
 /**
