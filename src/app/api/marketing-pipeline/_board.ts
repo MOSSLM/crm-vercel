@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
 import { lireAudits } from "@/lib/audit-site/lecture";
+import { collecterCanaux, type Canal } from "@/lib/prospects/canal";
 import type { BoardItem } from "@/components/marketing-pipeline/types";
 import { noteSummaries } from "./_notes";
 
@@ -73,6 +74,8 @@ type EntRow = {
   ville: string | null;
   code_postal: string | null;
   telephone: string | null;
+  telephones: string[] | null;
+  email: string | null;
   service_tags: string[] | string | null;
   note_moyenne: number | string | null;
   nombre_avis: number | string | null;
@@ -228,6 +231,32 @@ type AuditRow = {
 };
 
 type AgentRow = { id: string; full_name: string | null; email: string | null };
+
+/** Ce qu'on lit d'un contact pour décider des canaux joignables. */
+type ContactCanalRow = {
+  entreprise_id: number | null;
+  email: string | null;
+  tel: string | null;
+  is_decision_maker: boolean | null;
+};
+
+/** Une séquence, réduite à ce dont le tableau a besoin pour la proposer. */
+type SequenceCanalRow = {
+  id: string;
+  name: string | null;
+  status: string | null;
+  settings: { requireCanaux?: Canal[]; excludeCanaux?: Canal[] } | null;
+};
+
+type EnrollmentCanalRow = {
+  id: string;
+  automation_id: string;
+  opportunite_id: string | null;
+  entreprise_id: number | null;
+  current_step: number;
+  status: string;
+  hold_reason: string | null;
+};
 
 /**
  * Statuts d'`automated_enrichment` (ancien pipeline Production ›
@@ -485,11 +514,12 @@ export async function buildBoard(
   // PostgREST plafonne une réponse à 1 000 lignes : avec assez de démos, un
   // « select all » finissait par tronquer la liste des templates (le template
   // choisi disparaissait du menu) et par perdre des sites d'entreprises.
-  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes] = await Promise.all([
+  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes] =
+    await Promise.all([
     supabase
       .from("entreprises")
       .select(
-        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, service_tags, note_moyenne, nombre_avis, owner_id",
+        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, telephones, email, service_tags, note_moyenne, nombre_avis, owner_id",
       )
       .in("id", entIds),
     entIds.length > 0
@@ -509,6 +539,22 @@ export async function buildBoard(
       : Promise.resolve({ data: [] as AuditRow[], error: null }),
     supabase.from("user_profiles").select("id, full_name, email").eq("role", "freelance"),
     supabase.from("pipelines").select("id, nom, ordre, is_default").order("ordre", { ascending: true }),
+    // Les contacts servent au CANAL : un gérant peut porter le seul mobile de
+    // l'entreprise, et c'est lui qui décide si la séquence WhatsApp s'applique.
+    entIds.length > 0
+      ? supabase.from("contacts").select("entreprise_id, email, tel, is_decision_maker").in("entreprise_id", entIds)
+      : Promise.resolve({ data: [] as ContactCanalRow[], error: null }),
+    supabase
+      .from("automations")
+      .select("id, name, status, settings")
+      .eq("kind", "sequence")
+      .neq("status", "error"),
+    oppIds.length > 0
+      ? supabase
+          .from("sequence_enrollments")
+          .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason")
+          .in("status", ["active", "paused"])
+      : Promise.resolve({ data: [] as EnrollmentCanalRow[], error: null }),
   ]);
 
   if (entsRes.error) return { ok: false, error: entsRes.error.message, status: 500 };
@@ -612,6 +658,53 @@ export async function buildBoard(
     if (!cur || (isReady && cur.statut !== "ready")) auditByOpp.set(a.opportunite_id, a);
   }
 
+  // ── Canaux joignables, par entreprise ─────────────────────────────────────
+  // Volontairement calculé sur le prospect ENTIER : le gérant peut porter le
+  // seul mobile, et sans lui l'entreprise serait classée « fixe seul », donc
+  // privée de la séquence WhatsApp alors qu'on a de quoi la joindre.
+  const contactsByEnt = new Map<number, ContactCanalRow[]>();
+  for (const c of (contactsRes.data ?? []) as ContactCanalRow[]) {
+    if (c.entreprise_id == null) continue;
+    const list = contactsByEnt.get(c.entreprise_id);
+    if (list) list.push(c);
+    else contactsByEnt.set(c.entreprise_id, [c]);
+  }
+
+  const canauxByEnt = new Map<number, ReturnType<typeof collecterCanaux>>();
+  for (const e of (entsRes.data ?? []) as EntRow[]) {
+    canauxByEnt.set(
+      e.id,
+      collecterCanaux({
+        entrepriseEmail: e.email,
+        entrepriseTelephones: [e.telephone, ...(Array.isArray(e.telephones) ? e.telephones : [])],
+        contacts: (contactsByEnt.get(e.id) ?? []).map((c) => ({
+          email: c.email,
+          tel: c.tel,
+          isDecisionMaker: c.is_decision_maker,
+        })),
+      }),
+    );
+  }
+
+  // ── Séquences et inscriptions en cours ────────────────────────────────────
+  const sequences = ((sequencesRes.data ?? []) as SequenceCanalRow[]).map((s) => ({
+    id: s.id,
+    name: s.name ?? "Séquence",
+    status: s.status ?? "draft",
+    requireCanaux: s.settings?.requireCanaux ?? [],
+    excludeCanaux: s.settings?.excludeCanaux ?? [],
+  }));
+  const sequenceById = new Map(sequences.map((s) => [s.id, s]));
+
+  // Une inscription se rattache à l'opportunité quand elle en a une, à
+  // l'entreprise sinon — le segment « sans fiche contact » n'a que la seconde.
+  const enrollByOpp = new Map<string, EnrollmentCanalRow>();
+  const enrollByEnt = new Map<number, EnrollmentCanalRow>();
+  for (const e of (enrollmentsRes.data ?? []) as EnrollmentCanalRow[]) {
+    if (e.opportunite_id) enrollByOpp.set(e.opportunite_id, e);
+    if (e.entreprise_id != null && !enrollByEnt.has(e.entreprise_id)) enrollByEnt.set(e.entreprise_id, e);
+  }
+
   const agents = ((agentsRes.data ?? []) as AgentRow[]).map((a) => ({
     id: a.id,
     name: a.full_name?.trim() || a.email || "Agent",
@@ -711,6 +804,19 @@ export async function buildBoard(
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
       note_site: noteSiteDe(notesSite, o.entreprise_id),
       agent: owner ? { id: owner.id, name: owner.name } : null,
+      canaux: o.entreprise_id != null ? [...(canauxByEnt.get(o.entreprise_id)?.canaux ?? [])] : [],
+      sequence: (() => {
+        const enr = enrollByOpp.get(o.id) ?? (o.entreprise_id != null ? enrollByEnt.get(o.entreprise_id) : undefined);
+        if (!enr) return null;
+        const seq = sequenceById.get(enr.automation_id);
+        return {
+          enrollmentId: enr.id,
+          automationId: enr.automation_id,
+          name: seq?.name ?? "Séquence",
+          status: enr.status,
+          holdReason: enr.hold_reason,
+        };
+      })(),
       missing_for_site: missing,
       notes: notesByOpp.get(o.id) ?? { open: 0, total: 0, open_subjects: [] },
       column,
@@ -760,6 +866,10 @@ export async function buildBoard(
       templates,
       // Le board agent n'attribue pas : la liste des agents ne lui sert à rien.
       agents: opts.ownerId ? [] : agents,
+      // Les séquences activables, avec leur public visé : c'est le tableau qui
+      // calcule la suggestion, à partir de ce que chaque séquence déclare.
+      // Rien n'est codé en dur, donc une séquence créée demain y entre seule.
+      sequences,
       pipelines,
       has_validated_column: hasValidatedColumn,
       has_archivage: hasArchivage,

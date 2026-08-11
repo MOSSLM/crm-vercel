@@ -168,6 +168,14 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Toutes les entreprises</SelectItem>
+              {/* Les trois segments qui décident de la séquence. « Avec
+                  téléphone » ne distingue pas un standard d'un portable — or
+                  c'est cette distinction, et elle seule, qui dit si WhatsApp
+                  est jouable. */}
+              <SelectItem value="canal-mobile-sans-email">Sans email + mobile</SelectItem>
+              <SelectItem value="canal-email-fixe">Email + fixe</SelectItem>
+              <SelectItem value="canal-email-mobile">Email + mobile</SelectItem>
+              <SelectItem value="canal-injoignable">Injoignable</SelectItem>
               <SelectItem value="has-email">Avec email</SelectItem>
               <SelectItem value="has-phone">Avec téléphone</SelectItem>
               <SelectItem value="has-both">Email + téléphone</SelectItem>

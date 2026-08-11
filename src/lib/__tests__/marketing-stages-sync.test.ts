@@ -25,10 +25,12 @@ describe('étapes du pipeline marketing', () => {
     }
   })
 
-  it('couvrent toutes les colonnes de la matrice sauf l’attribution', () => {
-    // `attribution` est une colonne de la matrice, pas une étape d'avancement :
-    // elle mesure qui prend l'entreprise, pas ce qui a été produit.
-    const matrixIds = STAGES.map((s) => s.id).filter((id) => id !== 'attribution')
+  it('couvrent toutes les colonnes de la matrice sauf la mise en séquence', () => {
+    // `sequence` est une colonne de la matrice, pas une étape d'avancement :
+    // elle dit que le démarchage a commencé, pas ce qui a été PRODUIT pour
+    // l'entreprise. (Elle a remplacé `attribution`, qui mesurait de la même
+    // façon un geste et non un livrable.)
+    const matrixIds = STAGES.map((s) => s.id).filter((id) => id !== 'sequence')
     expect(MARKETING_STAGES.map((s) => s.id)).toEqual(matrixIds)
   })
 })
