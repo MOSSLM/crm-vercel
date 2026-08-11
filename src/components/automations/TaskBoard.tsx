@@ -12,6 +12,7 @@ import React from 'react'
 import { toast } from 'sonner'
 import { XI } from './icons'
 import { Avatar } from './regulator/parts'
+import { lienWhatsApp } from '@/lib/prospects/canal'
 import type { ProspectionTaskFull } from './prospection-db'
 import type { UserRef } from './types'
 
@@ -166,17 +167,22 @@ function TaskCard({
 }) {
   const overdue = new Date(task.due_at).getTime() < Date.now()
   const message = task.payload?.message ?? ''
-  const phone = task.contacts?.tel ?? ''
+  // Le numéro préparé par le moteur fait foi : sur une entreprise sans fiche
+  // contact, il vient de `entreprises.telephone` et `task.contacts` est vide.
+  const phone = task.payload?.phone ?? task.contacts?.tel ?? ''
 
   /** Ce que « ouvrir » veut dire pour ce canal — le CRM n'envoie jamais à votre place. */
   function open() {
     if (task.kind === 'whatsapp') {
-      const digits = phone.replace(/\D/g, '')
-      if (!digits) {
-        toast.error('Aucun numéro sur ce contact')
+      // `wa.me` veut l'international sans `+` : un `06…` recopié tel quel
+      // donnait `wa.me/0646…`, que WhatsApp ne résout pas — la tâche ouvrait
+      // une page d'erreur et l'agent croyait à une panne.
+      const url = lienWhatsApp(phone, message)
+      if (!url) {
+        toast.error('Aucun numéro exploitable sur cette fiche')
         return
       }
-      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, '_blank')
+      window.open(url, '_blank')
       return
     }
     if (task.kind === 'call') {

@@ -66,7 +66,7 @@ export interface WeekEnrollmentInput {
   /** Index de l'étape à exécuter ensuite (0-based). */
   currentStep: number
   status: string
-  /** ISO — c'est de là que partent tous les J+n de la séquence. */
+  /** ISO — origine des J+n tant qu'aucune ancre n'a été posée. */
   enteredAt: string
   /** ISO, ou null. Fait foi pour l'étape courante. */
   nextRunAt: string | null
@@ -78,6 +78,46 @@ export interface WeekEnrollmentInput {
   skippedSteps: number[]
   /** Décalages en jours posés à la main, par index d'étape. */
   stepShifts: Record<string, number>
+  /** ISO de la dernière reprise réelle, ou null (cf. `stepStartMs`). */
+  anchorAt?: string | null
+  /** Étape où l'ancre a été posée, ou null. */
+  anchorStep?: number | null
+}
+
+/** D'où se comptent les J+n d'une inscription. */
+export interface StepAnchor {
+  /** `entered_at` en ms — l'origine par défaut. */
+  enteredMs: number
+  /** `anchor_at` en ms, ou null quand l'inscription n'a jamais repris. */
+  anchorMs: number | null
+  /** `anchor_step`, ou null. Le `day` de cette étape devient le zéro. */
+  anchorStep: number | null
+}
+
+/**
+ * Quand une étape doit partir, en ms.
+ *
+ * PARTAGÉ ENTRE LE MOTEUR ET LA PRÉVISION, et c'est tout l'intérêt : le moteur
+ * (`scheduleNextStep`) décide, cette vue projette. Deux formules séparées
+ * dériveraient, et la semaine annoncerait des envois aux mauvais jours.
+ *
+ * Les J+n restent ceux du builder. Ce qui change, c'est leur origine : après une
+ * tâche manuelle faite en retard ou une attente de réponse, l'inscription pose
+ * une ancre, et les étapes suivantes se comptent à partir d'elle. Sans ça, une
+ * accroche WhatsApp répondue au bout d'une semaine ferait partir la démo dans
+ * la seconde, tous ses J+n étant déjà dans le passé.
+ */
+export function stepStartMs(
+  steps: SequenceStep[],
+  stepIndex: number,
+  anchor: StepAnchor,
+  shift = 0,
+): number {
+  const baseMs = anchor.anchorMs ?? anchor.enteredMs
+  // Le `day` de l'étape d'ancrage est le nouveau zéro : sans cette soustraction,
+  // une ancre posée à l'étape J+5 rejouerait cinq jours d'attente déjà écoulés.
+  const baseDay = anchor.anchorStep != null ? (steps[anchor.anchorStep]?.day ?? 0) : 0
+  return baseMs + ((steps[stepIndex]?.day ?? 0) - baseDay + shift) * DAY_MS
 }
 
 export interface WeekInput {
@@ -350,6 +390,9 @@ const BLOCKING_HOLDS = new Set([
   'test_hold',
   'sequence_paused',
   'global_pause',
+  // Une attente de réponse retient bien la séquence, et la semaine doit le dire
+  // — mais c'est le fonctionnement normal d'une étape, pas un incident.
+  'awaiting_reply',
 ])
 
 /**
@@ -423,6 +466,12 @@ export function buildWeekPlan(input: WeekInput): WeekPlan {
     if (!Number.isFinite(entered)) continue
     const nextRun = enrollment.nextRunAt ? Date.parse(enrollment.nextRunAt) : NaN
     const stopped = enrollment.status !== 'active' && enrollment.status !== 'paused'
+    const anchorParsed = enrollment.anchorAt ? Date.parse(enrollment.anchorAt) : NaN
+    const anchor: StepAnchor = {
+      enteredMs: entered,
+      anchorMs: Number.isFinite(anchorParsed) ? anchorParsed : null,
+      anchorStep: enrollment.anchorStep ?? null,
+    }
 
     for (let j = 0; j < steps.length; j++) {
       const step = steps[j]
@@ -438,7 +487,7 @@ export function buildWeekPlan(input: WeekInput): WeekPlan {
       const at =
         !done && j === enrollment.currentStep && Number.isFinite(nextRun)
           ? nextRun
-          : entered + ((step.day ?? 0) + shift) * DAY_MS
+          : stepStartMs(steps, j, anchor, shift)
 
       const key = localClock(at, tz).dayKey
       const dayIndex = dayIndexOf.get(key)
@@ -741,6 +790,25 @@ export function readStepShifts(vars: unknown): Record<string, number> {
     const days = Number(v)
     if (!Number.isInteger(Number(k)) || !Number.isFinite(days) || days === 0) continue
     out[k] = Math.max(-30, Math.min(30, Math.round(days)))
+  }
+  return out
+}
+
+/**
+ * Réponses déclarées à la main, par index d'étape d'attente (`{"2": "2026-08-13T…"}`).
+ *
+ * Vit dans `vars` pour la même raison que les deux lectures ci-dessus : c'est
+ * une décision portée par une inscription, pas un objet du domaine. La valeur
+ * est l'instant du clic — utile pour dire « répondu il y a 3 jours » sans
+ * ajouter une table.
+ */
+export function readReplies(vars: unknown): Record<string, string> {
+  const raw = (vars as Record<string, unknown> | null)?.replies
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Number.isInteger(Number(k)) || typeof v !== 'string' || !v) continue
+    out[k] = v
   }
   return out
 }

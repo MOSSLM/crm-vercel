@@ -7,7 +7,14 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
-import { readSkippedSteps, readStepShifts } from '@/lib/automations/week'
+import {
+  readReplies,
+  readSkippedSteps,
+  readStepShifts,
+  stepStartMs,
+  type StepAnchor,
+} from '@/lib/automations/week'
+import { interpolateVars, type VarBag } from '@/lib/automations/variables'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
 import {
@@ -28,6 +35,8 @@ import type {
 import { SITE_DOMAIN } from '@/lib/site-domain'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 
+const DAY_MS = 86_400_000
+
 export interface RunContext {
   opportunite_id?: string | null
   contact_id?: string | null
@@ -38,7 +47,6 @@ export interface RunContext {
   event?: string
 }
 
-type VarBag = Record<string, string>
 type ResolvedEntities = {
   contactId: string | null
   entrepriseId: number | null
@@ -219,8 +227,16 @@ async function lireRapportUrl(sb: SupabaseClient, entrepriseId: number): Promise
   }
 }
 
+/**
+ * Rendu d'un texte de message.
+ *
+ * Délègue à `interpolateVars`, qui résout d'abord les anciennes écritures
+ * (`{{company_name}}`, `{{prénom}}`…) vers leur clé canonique. Sans ce
+ * détour, un modèle rédigé dans la messagerie et choisi dans une étape de
+ * séquence partait au prospect avec ses variables vidées.
+ */
 export function interpolate(text: string | null | undefined, vars: VarBag): string {
-  return (text ?? '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => vars[k] ?? '')
+  return interpolateVars(text, vars)
 }
 
 /** Signature du CRM (mono-équipe) : la plus récemment mise à jour. */
@@ -754,6 +770,16 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   }
 
   const step = steps[idx]
+
+  // Une étape d'attente ne s'adresse à personne : elle n'a besoin ni du contact,
+  // ni de l'audit, ni du site démo. La traiter en premier évite une demi-douzaine
+  // de requêtes par tick — et depuis que les séquences WhatsApp comptent deux
+  // attentes chacune, ce n'est plus un cas marginal.
+  if (step.kind === 'wait') {
+    await processWaitStep(sb, enrollment, steps, idx, step)
+    return
+  }
+
   const ctx: RunContext = {
     contact_id: enrollment.contact_id,
     opportunite_id: enrollment.opportunite_id,
@@ -847,8 +873,6 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       .update({ send_at: null, hold_reason: null, ...(sentAt ? { last_email_at: sentAt } : {}) })
       .eq('id', enrollment.id)
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
-  } else if (step.kind === 'wait') {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
   } else if (stepIsManual(step)) {
     let message = interpolate(step.message, ent.vars)
     let scriptName: string | undefined
@@ -897,6 +921,52 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   } else {
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   }
+}
+
+/**
+ * Étape d'attente : soit on laisse courir les jours, soit on attend un humain.
+ *
+ * LE MODE `reply` EST LE CŒUR D'UNE SÉQUENCE WHATSAPP
+ * Le premier message ne fait que vérifier qu'on parle bien à la bonne
+ * entreprise. Envoyer le site sans avoir eu de réponse, c'est écrire deux fois
+ * dans le vide — et sur WhatsApp, deux messages sans réponse mènent au blocage.
+ * L'inscription se gare donc jusqu'à ce que quelqu'un déclare la réponse.
+ */
+async function processWaitStep(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  steps: SequenceStep[],
+  idx: number,
+  step: SequenceStep,
+): Promise<void> {
+  if (step.waitMode !== 'reply') {
+    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    return
+  }
+
+  const timeoutDays = Number(step.replyTimeoutDays) || 0
+  const dejaRepondu = Boolean(readReplies(enrollment.vars)[String(idx)])
+  // Déjà garée et pourtant réveillée par le ticker : le délai de relance est
+  // échu et personne n'a répondu. On avance quand même — c'est exactement ce
+  // que « relancer au bout de n jours » veut dire.
+  const relanceEchue = enrollment.hold_reason === 'awaiting_reply' && timeoutDays > 0
+
+  if (dejaRepondu || relanceEchue) {
+    await scheduleNextStep(sb, enrollment, steps, idx + 1, { reanchor: true })
+    return
+  }
+
+  // Sans délai de relance, `next_run_at` reste nul : l'inscription sort de la
+  // file du ticker au lieu d'y revenir chaque minute pour ne rien faire, ce qui
+  // affamerait les inscriptions réellement envoyables.
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'awaiting_reply',
+      next_run_at: timeoutDays > 0 ? new Date(Date.now() + timeoutDays * DAY_MS).toISOString() : null,
+    })
+    .eq('id', enrollment.id)
 }
 
 /**
@@ -1005,11 +1075,22 @@ export async function cancelEnrollmentWork(
   return { jobs: (jobs ?? []).length, tasks: (tasks ?? []).length }
 }
 
+/**
+ * Fait avancer une inscription à l'étape `nextIdx` et calcule sa date.
+ *
+ * `reanchor` remet le compteur des J+n à MAINTENANT, sur l'étape qu'on vient de
+ * franchir. À poser chaque fois que l'inscription a attendu un humain — tâche
+ * manuelle faite, réponse déclarée : sans ça, une accroche WhatsApp répondue au
+ * bout d'une semaine ferait partir la démo dans la seconde, tous ses J+n étant
+ * déjà dans le passé. Un envoi automatique, lui, ne réancre pas : il est parti
+ * à l'heure prévue, la séquence garde son rythme.
+ */
 async function scheduleNextStep(
   sb: SupabaseClient,
   enrollment: SequenceEnrollment,
   steps: SequenceStep[],
   nextIdx: number,
+  opts: { reanchor?: boolean } = {},
 ): Promise<void> {
   if (nextIdx >= steps.length) {
     await sb
@@ -1025,22 +1106,42 @@ async function scheduleNextStep(
       .eq('id', enrollment.id)
     return
   }
-  const next = steps[nextIdx]
-  const entered = new Date(enrollment.entered_at).getTime()
+  const now = Date.now()
+  const anchorMs = enrollment.anchor_at ? new Date(enrollment.anchor_at).getTime() : null
+  const anchor: StepAnchor = opts.reanchor
+    ? { enteredMs: now, anchorMs: now, anchorStep: Math.max(0, nextIdx - 1) }
+    : {
+        enteredMs: new Date(enrollment.entered_at).getTime(),
+        anchorMs: Number.isFinite(anchorMs) ? anchorMs : null,
+        anchorStep: enrollment.anchor_step ?? null,
+      }
   // Décalage posé à la main depuis la vue semaine : « cette relance, pas demain,
   // après-demain ». Il s'applique à l'étape, pas à toute la suite.
   const shift = readStepShifts(enrollment.vars)[String(nextIdx)] ?? 0
-  let runAt = entered + ((next.day ?? 0) + shift) * 86400000
-  if (runAt < Date.now()) runAt = Date.now()
+  let runAt = stepStartMs(steps, nextIdx, anchor, shift)
+  if (runAt < now) runAt = now
   // `next_run_at` reste « pas avant cette date » ; le créneau exact d'un email
   // sera reposé par le régulateur au tick suivant.
   await sb
     .from('sequence_enrollments')
-    .update({ current_step: nextIdx, next_run_at: new Date(runAt).toISOString(), send_at: null, hold_reason: null })
+    .update({
+      current_step: nextIdx,
+      next_run_at: new Date(runAt).toISOString(),
+      send_at: null,
+      hold_reason: null,
+      ...(opts.reanchor
+        ? { anchor_at: new Date(now).toISOString(), anchor_step: anchor.anchorStep }
+        : {}),
+    })
     .eq('id', enrollment.id)
 }
 
-/** Appelé quand une tâche de démarchage liée à une séquence est complétée. */
+/**
+ * Appelé quand une tâche de démarchage liée à une séquence est complétée.
+ *
+ * Réancre : le WhatsApp est parti maintenant, pas au jour où le builder l'avait
+ * prévu. L'étape suivante compte ses jours depuis ce geste.
+ */
 export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<void> {
   const sb = getServiceClient()
   const { data: enr } = await sb.from('sequence_enrollments').select('*').eq('id', enrollmentId).maybeSingle()
@@ -1049,5 +1150,16 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
   const { data: autoRow } = await sb.from('automations').select('definition').eq('id', enrollment.automation_id).maybeSingle()
   const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
   const steps = Array.isArray(def.steps) ? def.steps : []
-  await scheduleNextStep(sb, enrollment, steps, enrollment.current_step + 1)
+  await scheduleNextStep(sb, enrollment, steps, enrollment.current_step + 1, { reanchor: true })
+}
+
+/**
+ * Libère une inscription garée sur une attente-réponse (cf. `declarerReponse`).
+ *
+ * Identique à l'avancement après tâche — même réancrage, pour la même raison :
+ * la suite se compte depuis le geste, pas depuis l'inscription. Séparée pour
+ * que `reply.ts` n'ait pas à connaître la mécanique des étapes.
+ */
+export async function advanceEnrollmentAfterReply(enrollmentId: string): Promise<void> {
+  await advanceEnrollmentAfterTask(enrollmentId)
 }

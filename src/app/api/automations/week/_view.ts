@@ -92,10 +92,14 @@ export async function buildWeekView(offset: number, now = Date.now()): Promise<W
       .lte('entered_at', new Date(weekEnd).toISOString())
       .limit(20000)
 
-  // `hold_reason` vient d'une migration (sql/20260801…). Sur une base qui ne l'a
-  // pas encore jouée, la semaine doit rester lisible : on relit sans la colonne
-  // plutôt que d'afficher une semaine vide.
-  let enrollRes = await selectEnrollments(`${BASE_COLUMNS}, hold_reason`)
+  // `hold_reason` (sql/20260801…) et l'ancre (sql/20260813…) viennent de
+  // migrations. Sur une base qui ne les a pas encore jouées, la semaine doit
+  // rester lisible : on retire les colonnes une strate à la fois plutôt que
+  // d'afficher une semaine vide.
+  let enrollRes = await selectEnrollments(`${BASE_COLUMNS}, hold_reason, anchor_at, anchor_step`)
+  if (enrollRes.error && isSchemaGap(enrollRes.error)) {
+    enrollRes = await selectEnrollments(`${BASE_COLUMNS}, hold_reason`)
+  }
   if (enrollRes.error && isSchemaGap(enrollRes.error)) enrollRes = await selectEnrollments(BASE_COLUMNS)
   const enrollRows = enrollRes.data
 
@@ -109,6 +113,8 @@ export async function buildWeekView(offset: number, now = Date.now()): Promise<W
     next_run_at: string | null
     hold_reason?: string | null
     entered_at: string
+    anchor_at?: string | null
+    anchor_step?: number | null
     vars: Record<string, unknown> | null
   }
   const rows = (enrollRows ?? []) as unknown as Row[]
@@ -125,6 +131,8 @@ export async function buildWeekView(offset: number, now = Date.now()): Promise<W
     holdReason: r.hold_reason ?? null,
     skippedSteps: readSkippedSteps(r.vars),
     stepShifts: readStepShifts(r.vars),
+    anchorAt: r.anchor_at ?? null,
+    anchorStep: r.anchor_step ?? null,
   }))
 
   const activeBySeq = new Map<string, number>()

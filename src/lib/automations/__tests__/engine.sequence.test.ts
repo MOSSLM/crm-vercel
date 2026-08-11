@@ -12,7 +12,7 @@ jest.mock('@/app/api/_lib/service-client', () => ({
   getServiceClient: () => ({ from: (...args: unknown[]) => mockFrom(...args) }),
 }));
 
-import { processSequenceEnrollment } from '../engine';
+import { advanceEnrollmentAfterTask, processSequenceEnrollment } from '../engine';
 import { resetTestGuardCache } from '@/lib/email/test-guard';
 import type { SequenceEnrollment } from '@/components/automations/types';
 
@@ -365,5 +365,212 @@ describe('processSequenceEnrollment', () => {
 
     const task = (tables.prospection_tasks.captured.inserts as Record<string, unknown>[])[0];
     expect(task).toEqual(expect.objectContaining({ assignee_id: 'admin-1' }));
+  });
+});
+
+/* ── Attente d'une réponse ───────────────────────────────────────────────── */
+
+describe('étape « attendre une réponse »', () => {
+  const DAY = 86_400_000;
+  let tables: Record<string, any>;
+
+  /** Accroche WhatsApp, puis attente, puis démo. */
+  const withWait = (waitStep: Record<string, unknown>) => ({
+    id: 'auto-1',
+    name: 'WhatsApp seul',
+    kind: 'sequence',
+    status: 'on',
+    definition: {
+      steps: [
+        { id: 's1', kind: 'whatsapp', day: 0 },
+        { id: 's2', kind: 'wait', day: 0, ...waitStep },
+        { id: 's3', kind: 'whatsapp', day: 3 },
+      ],
+    },
+    settings: {},
+  });
+
+  const wireWait = (automationRow: Record<string, unknown>) => {
+    tables = {
+      automations: tableChain({ data: automationRow, error: null }),
+      sequence_enrollments: tableChain(),
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  const updates = () => tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+  const onWait = (over: Partial<SequenceEnrollment> = {}): SequenceEnrollment => ({
+    ...enrollment,
+    current_step: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+  });
+
+  it('gare l’inscription au lieu d’enchaîner tout seul', async () => {
+    wireWait(withWait({ waitMode: 'reply' }));
+
+    await processSequenceEnrollment(onWait());
+
+    // Sans délai de relance, `next_run_at` est nul : l'inscription sort de la
+    // file du ticker plutôt que d'y revenir chaque minute pour ne rien faire.
+    expect(updates()[0]).toEqual(
+      expect.objectContaining({ hold_reason: 'awaiting_reply', next_run_at: null }),
+    );
+    // Surtout : elle n'a PAS avancé.
+    expect(updates()[0]).not.toHaveProperty('current_step');
+  });
+
+  it('programme la relance quand un délai est fixé', async () => {
+    const now = Date.now();
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }));
+
+    await processSequenceEnrollment(onWait());
+
+    const update = updates()[0];
+    expect(update.hold_reason).toBe('awaiting_reply');
+    const runAt = Date.parse(update.next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(runAt - now).toBeLessThan(3.1 * DAY);
+  });
+
+  it('relance quand même à l’échéance, personne n’ayant répondu', async () => {
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }));
+
+    // Le ticker nous réveille sur une inscription déjà garée.
+    await processSequenceEnrollment(onWait({ hold_reason: 'awaiting_reply' }));
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  it('avance dès qu’une réponse a été déclarée', async () => {
+    const now = Date.now();
+    wireWait(withWait({ waitMode: 'reply' }));
+
+    await processSequenceEnrollment(
+      onWait({
+        hold_reason: 'awaiting_reply',
+        vars: { replies: { '1': new Date().toISOString() } },
+        entered_at: new Date(now - 10 * DAY).toISOString(),
+      }),
+    );
+
+    const update = updates()[0];
+    expect(update.current_step).toBe(2);
+    // Réancré : la démo part trois jours après la réponse, pas dans la seconde
+    // — les J+n de l'inscription sont pourtant tous dans le passé.
+    const runAt = Date.parse(update.next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(update.anchor_step).toBe(1);
+  });
+
+  it('laisse une attente en jours se comporter comme avant', async () => {
+    wireWait(withWait({}));
+
+    await processSequenceEnrollment(onWait());
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+    expect(updates()[0].hold_reason).toBeNull();
+  });
+});
+
+/* ── Ancrage des délais ──────────────────────────────────────────────────── */
+
+describe('advanceEnrollmentAfterTask', () => {
+  const DAY = 86_400_000;
+  let enrollments: any;
+
+  /**
+   * Une séquence WhatsApp réaliste : accroche à J+1, démo trois jours après.
+   * C'est l'écart J+4 − J+1 qui doit être respecté, pas le J+4 absolu.
+   */
+  const STEPS = [
+    { id: 's1', kind: 'email', day: 0 },
+    { id: 's2', kind: 'whatsapp', day: 1 },
+    { id: 's3', kind: 'whatsapp', day: 4 },
+  ];
+
+  const wireAdvance = (enr: Partial<SequenceEnrollment>) => {
+    enrollments = tableChain({
+      data: { ...enrollment, current_step: 1, ...enr },
+      error: null,
+    });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'sequence_enrollments') return enrollments;
+      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      throw new Error(`unexpected table: ${table}`);
+    });
+  };
+
+  const lastUpdate = () => {
+    const updates = enrollments.captured.updates as Record<string, unknown>[];
+    return updates[updates.length - 1];
+  };
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+  });
+
+  // La régression qui a motivé l'ancre : une accroche WhatsApp prévue à J+1 mais
+  // faite au bout d'une semaine laissait J+4 dans le passé, donc la démo partait
+  // dans la seconde — juste après l'accroche, ce qui grille le prospect.
+  it('ne fait pas partir l’étape suivante immédiatement quand la tâche a traîné', async () => {
+    const now = Date.now();
+    wireAdvance({ entered_at: new Date(now - 8 * DAY).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const update = lastUpdate();
+    const runAt = Date.parse(update.next_run_at as string);
+    // Trois jours après le geste (J+4 − J+1), pas « maintenant ».
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(runAt - now).toBeLessThan(3.1 * DAY);
+  });
+
+  it('pose l’ancre sur l’étape qu’on vient de franchir', async () => {
+    wireAdvance({ entered_at: new Date(Date.now() - 8 * DAY).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const update = lastUpdate();
+    expect(update.anchor_step).toBe(1);
+    expect(Date.parse(update.anchor_at as string)).toBeCloseTo(Date.now(), -4);
+    expect(update.current_step).toBe(2);
+  });
+
+  it('respecte l’écart même sur une inscription toute fraîche', async () => {
+    const now = Date.now();
+    wireAdvance({ entered_at: new Date(now).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const runAt = Date.parse(lastUpdate().next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+  });
+
+  it('termine la séquence quand l’étape franchie était la dernière', async () => {
+    enrollments = tableChain({ data: { ...enrollment, current_step: 2 }, error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'sequence_enrollments') return enrollments;
+      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      throw new Error(`unexpected table: ${table}`);
+    });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    expect(lastUpdate()).toEqual(expect.objectContaining({ status: 'finished', next_run_at: null }));
+  });
+
+  it('ne touche pas à une inscription qui n’est plus active', async () => {
+    wireAdvance({ status: 'exited' });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    expect(enrollments.captured.updates).toHaveLength(0);
   });
 });
