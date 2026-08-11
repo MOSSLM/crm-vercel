@@ -16,6 +16,7 @@ import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime"
 import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { corrigerLiensAvis } from "@/lib/site-builder/claude-design/corriger-liens-avis";
 import {
   etatBadgesDepuisVariables,
   etatRegionsDepuisVariables,
@@ -539,6 +540,10 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     if (variables) {
       body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
       body = hydrateReviews(body, variables["__reviews"]);
+      // Même passage que le rendu publié : l'aperçu doit montrer le vrai lien
+      // vers la fiche Google du client, pas la recherche générique que portent
+      // les designs déjà générés.
+      body = corrigerLiensAvis(body, variables["entreprise.avis_url"]);
       body = hydrateStats(body, variables["__stats"]);
       // Certifications : contrairement aux stats, l'absence SUPPRIME le bloc.
       // Un logo RGE est une allégation, pas une décoration.

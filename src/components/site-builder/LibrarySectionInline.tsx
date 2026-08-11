@@ -16,6 +16,7 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
 import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { corrigerLiensAvis } from "@/lib/site-builder/claude-design/corriger-liens-avis";
 import {
   etatBadgesDepuisVariables,
   etatRegionsDepuisVariables,
@@ -176,6 +177,12 @@ export async function LibrarySectionInline({
   if (html.includes("data-reviews")) {
     html = hydrateReviews(html, variables?.["__reviews"]);
   }
+
+  // « Voir tous les avis » pointait sur une recherche Google générique, faute
+  // d'avoir jamais reçu l'URL de la fiche du client. Corrigé au rendu et pas
+  // seulement dans les variables : les démos déjà générées portent l'URL de
+  // recherche en dur, et il n'est pas question de les régénérer une par une.
+  html = corrigerLiensAvis(html, variables?.["entreprise.avis_url"]);
 
   // Chiffres clés ([data-stats]) depuis `__stats`. Même contrat que les avis :
   // sans stat disponible, les cartes d'exemple du design restent en place —

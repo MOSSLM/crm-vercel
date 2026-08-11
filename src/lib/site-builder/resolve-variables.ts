@@ -82,7 +82,8 @@ export async function resolveEnterpriseVariables(
         .from("entreprises")
         .select(
           "id, name, telephone, email, adresse, ville, code_postal, pays, logo_url, " +
-          "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires"
+          "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires, " +
+          "google_url, google_maps_url"
         )
         .eq("id", site.enterprise_id)
         .single()
@@ -122,6 +123,8 @@ export async function resolveEnterpriseVariables(
       service_tags: string[] | string | null;
       stats: Array<{ label: string; value: string; display_order?: number }> | null;
       horaires: string | null;
+      google_url: string | null;
+      google_maps_url: string | null;
     } | null;
 
     if (company) {
@@ -140,6 +143,14 @@ export async function resolveEnterpriseVariables(
       vars["entreprise.note_moyenne"] = String(company.note_moyenne ?? "");
       vars["entreprise.nombre_avis"] = String(company.nombre_avis ?? "");
       vars["entreprise.horaires"] = company.horaires ?? "";
+      // La fiche Google Business du client. Sans elle, un « Voir tous les
+      // avis » n'a rien vers quoi pointer et finit sur une recherche Google
+      // générique — ce qui était le cas de tout le parc (cf.
+      // `claude-design/corriger-liens-avis.ts`). `avis_url` est un alias : le
+      // bouton des avis et le lien de la fiche mènent au même endroit, mais le
+      // design lit mieux avec deux noms.
+      vars["entreprise.google_url"] = company.google_url ?? company.google_maps_url ?? "";
+      vars["entreprise.avis_url"] = vars["entreprise.google_url"];
       companyName = company.name ?? undefined;
       logoUrl = company.logo_url ?? undefined;
       phone = company.telephone ?? undefined;
