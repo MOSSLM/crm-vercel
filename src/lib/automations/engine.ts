@@ -14,7 +14,7 @@ import {
   stepStartMs,
   type StepAnchor,
 } from '@/lib/automations/week'
-import { interpolateVars, type VarBag } from '@/lib/automations/variables'
+import { interpolateVars, usedVariables, type VarBag } from '@/lib/automations/variables'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
 import {
@@ -36,6 +36,7 @@ import { SITE_DOMAIN } from '@/lib/site-domain'
 import { getAppUrl } from '@/lib/app-url'
 import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
+import { aDesMesuresAudit, assurerJetonRapport } from '@/lib/audit-site/rapport'
 
 const DAY_MS = 86_400_000
 
@@ -214,7 +215,12 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     // Le repli sur le PDF est conservé tel quel : les séquences déjà écrites
     // continuent de fonctionner sans être retouchées, et `attachAudit`
     // (pièce jointe e-mail) garde le PDF puisqu'on ne peut pas joindre une page.
-    const rapportUrl = await lireRapportUrl(sb, entrepriseId)
+    //
+    // LE JETON EST CRÉÉ ICI S'IL N'EXISTE PAS. Il ne naissait que dans le
+    // dialogue « Partager le rapport », que l'envoi automatique ne traverse
+    // jamais : aucun jeton n'existait en base, donc `company.audit_url`
+    // s'interpolait en vide pour TOUTES les entreprises, sans exception.
+    const rapportUrl = await lireRapportUrl(sb, entrepriseId, ownerId)
     if (rapportUrl) auditUrl = rapportUrl
 
     vars['company.audit_url'] = auditUrl ?? ''
@@ -293,16 +299,15 @@ async function lireCalendarLink(sb: SupabaseClient, ownerId: string | null): Pro
  * appliquée), et une séquence en cours d'exécution ne doit pas s'interrompre
  * pour ça — elle repart simplement sur le PDF.
  */
-async function lireRapportUrl(sb: SupabaseClient, entrepriseId: number): Promise<string | null> {
+async function lireRapportUrl(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  ownerId: string | null,
+): Promise<string | null> {
   try {
-    const { data, error } = await sb
-      .from('entreprises_rapport_public')
-      .select('token, actif')
-      .eq('entreprise_id', entrepriseId)
-      .maybeSingle()
-    const row = data as { token: string; actif: boolean } | null
-    if (error || !row?.actif || !row.token) return null
-    return rapportPublicUrl(row.token)
+    const { jeton, erreur } = await assurerJetonRapport(sb, entrepriseId, ownerId)
+    if (erreur || !jeton?.actif || !jeton.token) return null
+    return rapportPublicUrl(jeton.token)
   } catch {
     return null
   }
@@ -355,6 +360,58 @@ export async function renderStepMessage(
   }
 
   return { subject: null, body: interpolate(step.message, vars), source: null }
+}
+
+/**
+ * Le texte BRUT d'une étape, variables non résolues.
+ *
+ * Sert au garde-fou de l'audit : on doit savoir si le message CITE
+ * `{{company.audit_url}}` avant de l'interpoler, puisqu'après interpolation il
+ * ne reste qu'une URL — impossible de distinguer un lien promis d'un lien
+ * absent.
+ */
+export async function stepRawText(sb: SupabaseClient, step: SequenceStep): Promise<string> {
+  if (step.kind === 'email' && step.template) {
+    const { data } = await sb
+      .from('email_templates')
+      .select('subject,body')
+      .eq('id', step.template)
+      .maybeSingle()
+    return `${data?.subject ?? ''}\n${data?.body ?? ''}`
+  }
+  if (step.kind === 'whatsapp' && step.template) {
+    const { data } = await sb.from('whatsapp_templates').select('body').eq('id', step.template).maybeSingle()
+    return (data?.body as string | null) ?? ''
+  }
+  if (step.kind === 'call' && step.script) {
+    const { data } = await sb.from('call_scripts').select('body').eq('id', step.script).maybeSingle()
+    return (data?.body as string | null) ?? ''
+  }
+  return step.message ?? ''
+}
+
+/**
+ * Cette étape promet-elle un audit que l'entreprise n'a pas ?
+ *
+ * Le lien EXISTE toujours depuis qu'on crée le jeton à la demande — donc son
+ * absence ne signale plus rien. Ce qui compte est ce qu'il y a AU BOUT : sans
+ * `entreprises_audit_site`, la page est la trame par défaut au nom de
+ * l'entreprise, sans capture ni score ni constat la concernant. 192 des 295
+ * entreprises qualifiées sont dans ce cas.
+ *
+ * Envoyer « voici l'audit de votre site » vers cette page-là est pire que de ne
+ * rien envoyer : le prospect voit qu'on ne l'a pas regardé, et on ne peut pas
+ * rattraper une première impression.
+ */
+export async function etapePromettUnAuditAbsent(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  entrepriseId: number | null,
+): Promise<boolean> {
+  if (entrepriseId == null) return false
+  const texte = await stepRawText(sb, step)
+  if (!usedVariables(texte).includes('company.audit_url')) return false
+  return !(await aDesMesuresAudit(sb, entrepriseId))
 }
 
 /**
@@ -944,6 +1001,15 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   }
   const ent = await resolveEntities(sb, ctx)
 
+  // Le message promet l'audit, l'entreprise n'a rien à montrer : on GÈLE au lieu
+  // d'envoyer un lien vers une page générique à son nom. Vaut pour l'e-mail
+  // comme pour les tâches manuelles — la séquence WhatsApp cite le rapport elle
+  // aussi, et un lien creux se paie plus cher encore dans une conversation.
+  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId)) {
+    await holdForMissingAuditLink(sb, enrollment.id)
+    return
+  }
+
   if (step.kind === 'email') {
     // Aucun destinataire : l'étape ne s'exécute PAS et la séquence n'avance pas.
     // Avant, l'inscription franchissait l'étape email en silence — le prospect
@@ -1162,6 +1228,26 @@ export async function holdForMissingEmail(sb: SupabaseClient, enrollmentId: stri
     .update({
       send_at: null,
       hold_reason: 'no_email',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape dont le message promet un audit que l'entreprise n'a pas.
+ *
+ * Même mécanique que « sans email » : l'inscription n'est pas perdue, elle
+ * attend un geste — lancer l'audit du site, ou retirer la variable du modèle.
+ * `next_run_at` est repoussé de deux heures parce que rien ne changera d'ici là
+ * sans intervention humaine, et repasser dessus à chaque minute ne ferait que
+ * bruiter le journal.
+ */
+export async function holdForMissingAuditLink(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'lien_manquant',
       next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
     })
     .eq('id', enrollmentId)

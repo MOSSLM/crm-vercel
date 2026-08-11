@@ -860,10 +860,22 @@ function SeqStepInspector({
             <EmailTemplatePreview templateId={step.template ?? null} vars={vars} previewOn={previewOn} />
             <ToggleRow label="Tracker les ouvertures" checked={step.trackOpens !== false} onChange={(v) => onUpdate({ trackOpens: v })} accent />
             <ToggleRow label="Tracker les clics" checked={step.trackClicks !== false} onChange={(v) => onUpdate({ trackClicks: v })} accent />
+            {/*
+              La case reste, désactivée et expliquée. `audits.pdf_url` n'est
+              écrit par AUCUN code du dépôt — `savePdfUrl` n'a pas d'appelant et
+              l'export de l'éditeur passe par l'impression du navigateur sans
+              rien téléverser. Aucune entreprise n'a de PDF en base. Cochée, la
+              case ne joignait donc rien, en silence : l'opérateur croyait
+              envoyer un document et le prospect ne recevait qu'un texte.
+              Le lien du rapport web ({'{{'}company.audit_url{'}}'}), lui,
+              fonctionne — il se lit sur téléphone et compte ses vues.
+            */}
             <ToggleRow
-              label="Joindre l'audit PDF (si prêt)"
-              checked={step.attachAudit === true}
-              onChange={(v) => onUpdate({ attachAudit: v })}
+              label="Joindre l'audit PDF"
+              checked={false}
+              onChange={() => {}}
+              disabled
+              desc="Indisponible : aucun PDF n’est produit aujourd’hui. Le modèle peut porter le lien du rapport, qui se lit sur téléphone et compte ses vues."
               accent
             />
           </Section>
