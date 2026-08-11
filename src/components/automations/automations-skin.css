@@ -1838,3 +1838,23 @@
 /* Une étape « attendre une réponse » ne ressemble pas à une pause : elle
    attend un geste humain, et le flux doit le dire au premier coup d'œil. */
 .au-skin .seq-step[data-kind="wait"][data-reply="true"] { border-style: dashed; }
+
+/* ── Séquences garées en attente de réponse ───────────────────────────────
+   Elles n'ont plus de tâche : celle qui a envoyé le message est terminée et a
+   quitté la file. C'est le seul endroit d'où on peut les relancer. */
+.au-skin .pros-wait-row {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+}
+.au-skin .pros-wait-row .hd { display: flex; align-items: baseline; gap: 8px; }
+.au-skin .pros-wait-row .nm {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.au-skin .pros-wait-row .ag {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4);
+}
+.au-skin .pros-wait-row .sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.au-skin .pros-wait-row .acts { display: flex; gap: 6px; margin-top: 8px; }
+.au-skin .pros-wait-row .acts .btn:first-child { flex: 1; justify-content: center; }

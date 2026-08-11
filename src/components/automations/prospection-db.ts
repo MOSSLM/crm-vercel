@@ -37,6 +37,76 @@ export async function listProspectionTasks(): Promise<ProspectionTaskFull[]> {
   return (data ?? []) as unknown as ProspectionTaskFull[]
 }
 
+/**
+ * Une inscription garée sur une étape « attendre une réponse ».
+ *
+ * Ces prospects n'ont PLUS de tâche : celle qui a envoyé le WhatsApp est
+ * terminée, elle a disparu de la file. Sans cette liste, il n'existerait aucun
+ * endroit où déclarer la réponse — la séquence resterait garée pour toujours.
+ */
+export interface AwaitingReplyRow {
+  enrollmentId: string
+  automationId: string
+  sequenceName: string
+  entrepriseId: number | null
+  companyName: string
+  contactName: string | null
+  phone: string | null
+  /** Depuis quand on attend. */
+  since: string
+  /** Date de la relance automatique, ou null si on attend indéfiniment. */
+  relanceAt: string | null
+  assigneeId: string | null
+}
+
+export async function listAwaitingReply(): Promise<AwaitingReplyRow[]> {
+  const { data, error } = await supabase
+    .from('sequence_enrollments')
+    .select(
+      'id, automation_id, entreprise_id, next_run_at, updated_at, created_by, ' +
+        'automations(name), entreprises(id,name,telephone,owner_id), contacts(first_name,last_name,tel)',
+    )
+    .eq('status', 'active')
+    .eq('hold_reason', 'awaiting_reply')
+    .order('updated_at', { ascending: true })
+  if (error) throw error
+
+  type Row = {
+    id: string
+    automation_id: string
+    entreprise_id: number | null
+    next_run_at: string | null
+    updated_at: string
+    created_by: string | null
+    automations: { name: string | null } | null
+    entreprises: { id: number; name: string | null; telephone: string | null; owner_id: string | null } | null
+    contacts: { first_name: string | null; last_name: string | null; tel: string | null } | null
+  }
+
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    enrollmentId: r.id,
+    automationId: r.automation_id,
+    sequenceName: r.automations?.name ?? 'Séquence',
+    entrepriseId: r.entreprise_id,
+    companyName: r.entreprises?.name ?? 'Entreprise',
+    contactName: `${r.contacts?.first_name ?? ''} ${r.contacts?.last_name ?? ''}`.trim() || null,
+    phone: r.contacts?.tel ?? r.entreprises?.telephone ?? null,
+    since: r.updated_at,
+    relanceAt: r.next_run_at,
+    // Même règle que le routage des tâches : le propriétaire de l'entreprise
+    // d'abord, celui qui a lancé la séquence ensuite.
+    assigneeId: r.entreprises?.owner_id ?? r.created_by ?? null,
+  }))
+}
+
+/** « Il a répondu » — libère l'attente et enchaîne sur l'étape suivante. */
+export async function declareReply(enrollmentId: string): Promise<void> {
+  const res = await authedFetch(`/api/automations/enrollments/${enrollmentId}/reply`, { method: 'POST' })
+  if (res.ok) return
+  const payload = (await res.json().catch(() => ({}))) as { message?: string }
+  throw new Error(payload.message || 'Impossible de reprendre la séquence')
+}
+
 export async function completeProspectionTask(id: string, result?: string): Promise<void> {
   const res = await authedFetch(`/api/automations/prospection/${id}/complete`, {
     method: 'POST',
