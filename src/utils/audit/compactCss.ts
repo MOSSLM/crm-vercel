@@ -154,6 +154,10 @@ a{color:var(--azur);text-decoration:none}a:hover{color:#2C63AE}
 .invest-gradient{position:absolute;inset:0;background:url("be8c6080-e086-434a-b9a4-1a964b9483f5") 0 0/100% 100% no-repeat;opacity:.65}
 .invest-inner{position:relative;z-index:4}
 .invest-row{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:22px;padding:10px 0}
+/* Le filet entre deux lignes de prix. Il vivait en style inline, dans une chaîne
+   à guillemets simples où l'interpolation ne s'évalue pas : le document sortait
+   avec un « rgba(dollar-accolade…) » littéral, donc sans aucun filet. */
+.invest-row+.invest-row{border-top:1px solid rgba(${BRUME},.1)}
 .invest-label{font-size:11px;color:rgba(${BRUME},.75)}
 .invest-sublabel{font-size:9px;color:rgba(${BRUME},.38);margin-top:3px;line-height:1.5;max-width:330px}
 .invest-amount{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:19px;color:var(--blanc);white-space:nowrap}
@@ -215,15 +219,37 @@ a{color:var(--azur);text-decoration:none}a:hover{color:#2C63AE}
 .sheet-foot span{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:rgba(${NUIT},.3)}
 .sheet-foot b{font-family:'Cormorant Garamond',serif;font-size:12px;letter-spacing:0;text-transform:none;color:rgba(${NUIT},.28);font-weight:400}
 
-   supprime et le PDF sort en aplats. */
-@page{size:211mm 298mm;margin:0}
+/* ── L'impression ─────────────────────────────────────────────────────
+   TROIS FEUILLES, TROIS PAGES. Rien d'autre ne doit sortir de l'imprimante.
+
+   Ce bloc a passé sa vie neutralisé par une faute de frappe : la ligne de
+   commentaire qui le précédait avait perdu son ouverture, et le parseur CSS, qui
+   avale alors tout jusqu'à la prochaine accolade, emportait la règle @page avec
+   elle. Symptômes, tous les trois signalés par l'opérateur et tous les trois
+   retrouvés dans le PDF : format US Letter au lieu de l'A4, marges blanches à
+   gauche et à droite (celles que le navigateur applique faute de consigne), et
+   une page sur deux quasi vide portant la fin de la précédente. Une règle CSS
+   morte ne se plaint pas : d'où le test qui échoue désormais si un commentaire
+   se referme sans avoir été ouvert, et celui qui vérifie que la feuille déclare
+   toujours un A4 sans marge.
+
+   LA HAUTEUR EST SOUS L'A4, ET C'EST VOLONTAIRE. Une feuille de 297 mm exactement
+   dans une page de 297 mm déborde d'un sous-pixel dès que le navigateur arrondit,
+   et ce sous-pixel devient la page blanche suivante — l'ancien 298 mm tentait de
+   corriger cela par le haut, ce qui ne pouvait que l'aggraver. 296,6 mm laisse
+   1,5 px de jeu ; le dessin perd 0,13 % de sa hauteur, soit rien de visible, et
+   la page blanche ne peut plus se produire.
+
+   Les fonds, aplats et lueurs sont conservés : sans print-color-adjust, le
+   navigateur retire les aplats sombres et le document sort en blanc. */
+@page{size:A4;margin:0}
 @media print{
-  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;width:210mm}
   .sheet,.sheet+.sheet,.sheet:first-of-type,.sheet:last-of-type{margin:0!important;box-shadow:none!important}
-  .sheet{break-inside:avoid;page-break-inside:avoid}
+  .sheet{width:210mm;height:296.6mm;break-inside:avoid;page-break-inside:avoid}
   .sheet+.sheet{break-before:page;page-break-before:always}
+  .sheet:last-of-type{break-after:avoid;page-break-after:avoid}
 }
-/* Fonds, aplats et lueurs conservés à l'impression. */
 html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 
 /* Ajouts au compact A4 : couverture à grand aperçu, demi-page « relevé » (note + six axes
@@ -276,9 +302,17 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .lg b em{font-style:normal;color:currentColor}
 .lg small{font-size:8px;color:rgba(${NUIT},.4);display:block;margin-top:2px;line-height:1.4}
 .ax-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+/* Quatre axes dans une grille de trois laissent un orphelin sur une ligne vide.
+   Deux colonnes les rangent en carré ; trois, cinq et six retombent sur trois. */
+.ax-grid.ax-n4{grid-template-columns:repeat(2,1fr)}
 .ax-card{background:var(--ivoire);border:1px solid rgba(${NUIT},.1);border-radius:4px;padding:8px 12px}
 .ax-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .ax-nm{font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:rgba(${NUIT},.45);font-weight:500}
+/* La provenance de la mesure, en pastille sur sa propre ligne.
+   Elle était rendue en <u> collé au nom de l'axe : « RAPIDITÉMESURÉ PAR GOOGLE »
+   souligné, qui passait à la ligne et déformait la carte. Ce que cette mention
+   doit dire — c'est Google qui l'a relevé, pas nous — mérite d'être lisible. */
+.ax-src{display:block;margin-top:3px;font-size:7px;letter-spacing:.1em;color:var(--azur);font-weight:500}
 .ax-note{font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:300;line-height:1;color:var(--nuit);white-space:nowrap}
 .ax-note s{text-decoration:none;font-size:8.5px;color:rgba(${NUIT},.32);margin-left:1px}
 .ax-bar{display:flex;gap:1.5px;margin:6px 0 7px}
@@ -306,3 +340,65 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .plus-t{font-size:10.5px;font-weight:500;color:var(--nuit)}
 .plus-l{font-size:9px;color:rgba(${NUIT},.45);margin-top:4px;line-height:1.55}
 .plus-c{font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:rgba(${NUIT},.33);font-weight:500;text-align:right;white-space:nowrap}`;
+
+/**
+ * Ce que l'APERÇU ajoute au document, et que l'export n'emporte jamais.
+ *
+ * Le survol et le liseré du champ sélectionné n'existent que dans l'éditeur.
+ * Ils passent par une classe plutôt que par `element.style.outline` : écrire
+ * dans le style inline d'un nœud qu'on vient de recréer par `innerHTML` marche
+ * une fois sur deux, et écrase silencieusement un style que le rendu aurait posé.
+ */
+export const CSS_APERCU = `
+[data-field]{cursor:pointer;border-radius:2px}
+[data-field]:hover{outline:2px solid ${tinte(C.azur, 0.45)};outline-offset:2px}
+[data-field].champ-actif{outline:2px solid var(--azur);outline-offset:2px}
+`;
+
+/**
+ * Le document complet, prêt à être écrit dans une fenêtre ou une iframe.
+ *
+ * Un seul endroit construit l'enveloppe — `<head>`, polices, feuille de style —
+ * pour que l'aperçu de l'éditeur et le fichier exporté ne puissent pas diverger.
+ * `corps` est injecté tel quel : il vient de nos fonctions de rendu, qui
+ * échappent tout ce qui vient du contenu ou de la base.
+ */
+export function documentAudit(
+  titre: string,
+  corps: string,
+  opts: { apercu?: boolean; debordement?: boolean; impressionAuto?: boolean } = {},
+): string {
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=794">
+<title>${titre.replace(/[<>&"]/g, '')}</title>
+${LIEN_POLICES}
+<style>${CSS_COMPACT}${opts.debordement ? CSS_DEBUG_DEBORDEMENT : ''}${opts.apercu ? CSS_APERCU : ''}</style>
+</head>
+<body>
+<div id="doc">${corps}</div>
+${opts.impressionAuto ? SCRIPT_IMPRESSION : ''}
+</body>
+</html>`;
+}
+
+/**
+ * L'impression n'est déclenchée qu'une fois les polices arrivées.
+ *
+ * Le déclenchement se faisait sur un `setTimeout` d'une seconde. Une seconde
+ * suffit d'habitude et pas toujours : quand elle ne suffit pas, le PDF part en
+ * Times New Roman, ce que personne ne voit avant le prospect. `document.fonts.ready`
+ * attend ce qu'il faut attendre, et le délai de garde évite qu'une police
+ * injoignable — Google est un tiers — laisse la fenêtre ouverte sans rien faire.
+ */
+const SCRIPT_IMPRESSION = `<script>
+(function(){
+  var fait=false;
+  function go(){ if(fait) return; fait=true; window.focus(); window.print(); }
+  var attente = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  attente.then(function(){ setTimeout(go, 120); });
+  setTimeout(go, 4000);
+})();
+</script>`;

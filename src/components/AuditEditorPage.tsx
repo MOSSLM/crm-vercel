@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
@@ -24,7 +24,7 @@ import { authedFetch } from '@/utils/authedFetch';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { construireMesures, mesuresVides, type EchantillonMediane } from '@/lib/audit/mesures';
 import { supabase } from '@/utils/supabase/client';
-import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
+import { AUDIT_PREVIEW_DEBOUNCE_MS } from '@/utils/constants';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Page1Editor } from './audit/editors/Page1Editor';
 import { Page2Editor } from './audit/editors/Page2Editor';
@@ -34,38 +34,40 @@ import { Page5Editor } from './audit/editors/Page5Editor';
 import { Page6Editor } from './audit/editors/Page6Editor';
 import { StyleEditor } from './audit/editors/StyleEditor';
 
-// ── Field-to-page mapping ─────────────────────────────────
-const FIELD_PAGE: Record<string, number> = {
-  // Page 1
-  'page1.date': 1, 'page1.eyebrow': 1, 'page1.title': 1, 'page1.subtitle': 1,
-  'page1.client': 1, 'page1.logo': 1, 'page1.demo': 1,
-  // Page 2
-  'page2.header_section': 2, 'page2.section_label': 2, 'page2.section_heading': 2,
-  'page2.section_intro': 2,
-  'page2.problems.0': 2, 'page2.problems.1': 2, 'page2.problems.2': 2,
-  'page2.problems.3': 2, 'page2.problems.4': 2, 'page2.problems.5': 2,
-  'page2.quote': 2,
-  // Page 3
-  'page3.header_section': 3, 'page3.section_label': 3, 'page3.section_heading': 3,
-  'page3.section_intro': 3,
-  'page3.solutions.0': 3, 'page3.solutions.1': 3, 'page3.solutions.2': 3, 'page3.solutions.3': 3,
-  // Page 4
-  'page4.header_section': 4, 'page4.section_label': 4, 'page4.section_heading': 4,
-  'page4.section_subtitle': 4,
-  'page4.livrables.0': 4, 'page4.livrables.1': 4, 'page4.livrables.2': 4, 'page4.livrables.3': 4,
-  // Page 5
-  'page5.header_section': 5, 'page5.section_label': 5,
-  'page5.pricing_subtitle': 5, 'page5.pricing': 5, 'page5.price_note': 5,
-  'page5.addl_section_title': 5, 'page5.addl_section_subtitle': 5,
-  'page5.additional_services.0': 5, 'page5.additional_services.1': 5,
-  'page5.additional_services.2': 5, 'page5.additional_services.3': 5,
-  // Page 6
-  'page6.header_section': 6, 'page6.section_label': 6, 'page6.section_heading': 6,
-  'page6.section_subtitle': 6,
-  'page6.next_steps.0': 6, 'page6.next_steps.1': 6, 'page6.next_steps.2': 6, 'page6.cta': 6,
-};
+/**
+ * De quel champ du document relève quel onglet.
+ *
+ * C'ÉTAIT UNE TABLE DE CENT ENTRÉES ÉCRITE À LA MAIN, avec les index énumérés un
+ * par un — `page2.problems.0` à `page2.problems.5`. Elle datait du deck de six
+ * pages : les blocs que le document compact a introduits (`page3.avant_apres.N`
+ * en tête, qui est à lui seul une demi-page) n'y figuraient pas, donc cliquer
+ * dessus dans l'aperçu n'ouvrait aucun formulaire — le bloc paraissait
+ * simplement non modifiable. Le préfixe suffit à trancher, et il ne peut pas
+ * prendre de retard sur le rendu : tout `data-field` commence par `pageN.`.
+ */
+export function ongletDuChamp(field: string): number | null {
+  const n = Number(/^page([1-6])\./.exec(field)?.[1]);
+  return Number.isFinite(n) && n >= 1 && n <= 6 ? n : null;
+}
 
-const PAGE_LABELS = ['Couverture', 'Situation', 'Solution', 'Livrables', 'Tarifs', 'Étapes', 'Style'];
+/**
+ * Les onglets, dans l'ordre du document.
+ *
+ * Ils portaient encore les titres du deck supprimé — « Situation », « Solution »,
+ * « Livrables », « Tarifs » — alors que les demi-pages correspondantes ne
+ * montrent plus cela du tout : la deuxième est devenue le relevé de mesures, la
+ * troisième l'avant/après. Un onglet qui annonce autre chose que ce qu'il ouvre
+ * fait chercher ailleurs le champ qu'on a sous les yeux.
+ */
+const PAGE_LABELS = [
+  'Couverture',
+  'Le relevé',
+  'Constat → après',
+  'Ce qui change',
+  'Investissement',
+  'Étapes',
+  'Style',
+];
 
 interface AuditEditorPageProps {
   audit: Audit;
@@ -120,23 +122,6 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     return () => {
       vivant = false;
     };
-  }, []);
-
-  const previewContainerRef = useRef<HTMLDivElement>(null);
-  const previewInnerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.55);
-
-  useEffect(() => {
-    const container = previewContainerRef.current;
-    if (!container) return;
-    const obs = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        const w = entry.contentRect.width;
-        setScale(Math.max(0.3, (w - 32) / 794));
-      }
-    });
-    obs.observe(container);
-    return () => obs.disconnect();
   }, []);
 
   const markChange = () => setHasChanges(true);
@@ -223,11 +208,11 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     );
   }, [detectedIssueKeys, siteAudit, offres]);
 
-  const handleFieldClick = (field: string) => {
+  const handleFieldClick = useCallback((field: string) => {
     setActiveField(field);
-    const page = FIELD_PAGE[field];
+    const page = ongletDuChamp(field);
     if (page) setActivePage(page);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!initialAudit.id) {
@@ -302,28 +287,23 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     [siteAudit, mediane],
   );
 
+  /**
+   * L'export : la fenêtre s'imprime seule, une fois ses polices arrivées.
+   *
+   * Le déclenchement se faisait ici, sur un délai fixe d'une seconde. Il est
+   * maintenant dans le document lui-même, qui attend `document.fonts.ready` :
+   * une seconde suffit d'habitude, et quand elle ne suffit pas le PDF part en
+   * police de secours sans que personne ne s'en aperçoive avant le prospect.
+   */
   const handleExport = () => {
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
     Promise.resolve().then(() => {
-      const html = generateAuditHtml(content, mesures);
-      win.document.write(html);
+      win.document.write(generateAuditHtml(content, mesures, { impression: true }));
       win.document.close();
       win.focus();
-      setTimeout(() => win.print(), PRINT_DELAY_MS);
     });
   };
-
-  useEffect(() => {
-    const pageId = `audit-p${activePage}`;
-    const el = previewInnerRef.current?.querySelector(`#${pageId}`);
-    if (el && previewContainerRef.current) {
-      const offsetTop = (el as HTMLElement).offsetTop * scale;
-      previewContainerRef.current.scrollTo({ top: offsetTop, behavior: 'smooth' });
-    }
-  }, [activePage, scale]);
-
-  const totalHeight = (1123 * 6 + 24 * 5) * scale;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -447,32 +427,19 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
 
         <ResizableHandle withHandle />
 
-        {/* RIGHT — Preview */}
+        {/* RIGHT — Aperçu. Il gère lui-même son échelle, sa hauteur et son
+            défilement : c'est le seul endroit qui sait ce que le document mesure
+            réellement. La hauteur était calculée ici sur SIX feuilles alors que
+            le document compact en fait trois, d'où la moitié basse du panneau
+            vide en permanence. */}
         <ResizablePanel defaultSize={62} minSize={40}>
-          <div
-            ref={previewContainerRef}
-            className="h-full overflow-y-auto bg-[#1a1a1e]"
-            style={{ scrollBehavior: 'smooth' }}
-          >
-            <div
-              style={{
-                width: 794,
-                transformOrigin: 'top left',
-                transform: `scale(${scale})`,
-                height: totalHeight / scale,
-              }}
-            >
-              <div ref={previewInnerRef} style={{ paddingTop: 16 }}>
-                <AuditPreview
-                  content={debouncedContent}
-                  activeField={activeField}
-                  onFieldClick={handleFieldClick}
-                  mesures={mesures}
-                />
-                <div style={{ height: 16 }} />
-              </div>
-            </div>
-          </div>
+          <AuditPreview
+            content={debouncedContent}
+            activeField={activeField}
+            onFieldClick={handleFieldClick}
+            mesures={mesures}
+            demiPage={activePage <= 6 ? activePage : undefined}
+          />
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

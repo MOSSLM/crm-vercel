@@ -101,7 +101,7 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
   const p = c.page1;
   const capture = m.captureUrl;
 
-  return `<div class="half half-cover" data-screen-label="A4-1 couverture">
+  return `<div class="half half-cover" id="audit-h1" data-screen-label="A4-1 couverture">
 <div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
 <div class="cover-in">
   <div class="cover-top"><div class="logo-block">${logoSvg(22, C.brume)}<span class="logo-wm">SAMA</span></div>${z('span', 'cover-date', { field: 'page1.date' })}${esc(p.date)}</span></div>
@@ -197,26 +197,33 @@ function soustraction(m: MesuresAudit): string {
     .join(' · ')}</span></div>`;
 }
 
-/** Une carte par axe mesuré. Quatre à six selon que Google a mesuré. */
+/**
+ * Une carte par axe mesuré. Quatre à six selon que Google a mesuré.
+ *
+ * La mention « mesuré par Google » est la seule chose qui distingue un relevé
+ * opposable d'une opinion d'agence, et elle passe donc en pastille sous le nom
+ * de l'axe. Elle sortait jusqu'ici en `<u>` collé au nom — « RAPIDITÉMESURÉ PAR
+ * GOOGLE », souligné, sur deux lignes, la carte déformée.
+ */
 function cartesAxes(m: MesuresAudit): string {
   const cartes = m.axes
     .map((a) => {
       const remplies = Math.round(a.note / 10);
       const barres = Array.from({ length: 10 }, (_, i) => `<i class="${i < remplies ? 'on' : ''}"></i>`).join('');
       return `<div class="ax-card">
-<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<u>mesuré par Google</u>' : ''}</div><div class="ax-note">${a.note}<s>/100</s></div></div>
+<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<span class="ax-src">mesuré par Google</span>' : ''}</div><div class="ax-note">${a.note}<s>/100</s></div></div>
 <div class="ax-bar">${barres}</div>
 ${a.valeur ? `<div class="ax-v">${esc(a.valeur)}</div>` : ''}</div>`;
     })
     .join('');
-  return `<div class="ax-grid">${cartes}</div>`;
+  return `<div class="ax-grid${m.axes.length === 4 ? ' ax-n4' : ''}">${cartes}</div>`;
 }
 
 function cReleve(c: AuditContent, m: MesuresAudit): string {
   const p = c.page2;
   const intro = p.section_intro;
 
-  return `<div class="half half-score" data-screen-label="A4-1 · 01 Le relevé">
+  return `<div class="half half-score" id="audit-h2" data-screen-label="A4-1 · 01 Le relevé">
 ${panelHead(p.section_label, p.section_title, p.section_title_em, intro, {
     eyebrow: 'page2.section_label',
     titre: 'page2.section_heading',
@@ -268,11 +275,21 @@ function blocMethode(m: MesuresAudit): string {
  */
 function cConstats(c: AuditContent, m: MesuresAudit): string {
   const p = c.page3;
-  const comparables = (p.avant_apres ?? []).filter((l) => l.apres && l.apres.trim());
+  const lignesSaisies = p.avant_apres ?? [];
+  const comparables = lignesSaisies.filter((l) => l.apres && l.apres.trim());
   const detaillees = comparables.slice(0, MAX_LIGNES_AVANT_APRES);
+  /*
+   * Ce qui n'est pas détaillé est COMPTÉ, jamais perdu. Trois sources, et il en
+   * manquait une : les lignes sans après — celles dont les deux côtés ne portent
+   * pas la même unité — étaient écartées du détail puis oubliées du décompte,
+   * alors que ce sont justement des constats relevés sur le site. Le document
+   * affichait « +2 » là où l'opérateur en avait saisi quatre, et personne ne
+   * pouvait s'en apercevoir sans recompter à la main.
+   */
   const reste = [
     ...comparables.slice(MAX_LIGNES_AVANT_APRES),
-    ...m.constats.filter((k) => !comparables.some((l) => l.cle === k.cle)),
+    ...lignesSaisies.filter((l) => !l.apres || !l.apres.trim()),
+    ...m.constats.filter((k) => !lignesSaisies.some((l) => l.cle === k.cle)),
   ];
 
   const lignes = detaillees
@@ -294,7 +311,7 @@ function cConstats(c: AuditContent, m: MesuresAudit): string {
 <div class="plus-c">Détaillés pendant l’appel</div></div>`
       : '';
 
-  return `<div class="half" data-screen-label="A4-2 · 02 Constat → après">
+  return `<div class="half" id="audit-h3" data-screen-label="A4-2 · 02 Constat → après">
 ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_intro, {
     eyebrow: 'page3.section_label',
     titre: 'page3.section_heading',
@@ -315,7 +332,7 @@ function cRecu(c: AuditContent): string {
   const p = c.page4;
   const entetes = p.recu_head ?? ['Le volet', 'Ce que vous recevez', 'Ce que ça corrige'];
 
-  return `<div class="half" data-screen-label="A4-2 · 03 Ce qui change">
+  return `<div class="half" id="audit-h4" data-screen-label="A4-2 · 03 Ce qui change">
 ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_subtitle, {
     eyebrow: 'page4.section_label',
     titre: 'page4.section_heading',
@@ -348,7 +365,7 @@ function cInvestissement(c: AuditContent): string {
   const additions = p.additional_services ?? [];
   const sc = p.secondary_card;
 
-  return `<div class="half" data-screen-label="A4-3 · 04 Investissement">
+  return `<div class="half" id="audit-h5" data-screen-label="A4-3 · 04 Investissement">
 <div class="panel-head">${z('div', 'panel-eyebrow', { field: 'page5.section_label' })}${esc(p.section_label ?? '')}</div></div>
 <div class="panel-body" style="justify-content:flex-start;padding-top:6px">
   ${p.pricing_subtitle ? `${z('div', 'invest-subtitle', { field: 'page5.pricing_subtitle' })}${esc(p.pricing_subtitle)}</div>` : ''}
@@ -356,8 +373,8 @@ function cInvestissement(c: AuditContent): string {
     <div class="invest-inner">
       ${services
         .map(
-          (s, i) =>
-            `<div class="invest-row"${i < services.length - 1 ? ' style="border-bottom:1px solid rgba(${rgbDe(C.brume)},.1)"' : ''}><div><div class="invest-label">${esc(s.label)}</div>${s.sub_label ? `<div class="invest-sublabel">${esc(s.sub_label)}</div>` : ''}</div><div class="invest-amount">${s.from ? 'À partir de ' : ''}${fmtEur(s.amount)}${s.is_mrr ? '/mois' : ''}</div></div>`,
+          (s) =>
+            `<div class="invest-row"><div><div class="invest-label">${esc(s.label)}</div>${s.sub_label ? `<div class="invest-sublabel">${esc(s.sub_label)}</div>` : ''}</div><div class="invest-amount">${s.from ? 'À partir de ' : ''}${fmtEur(s.amount)}${s.is_mrr ? '/mois' : ''}</div></div>`,
         )
         .join('')}
       ${!p.hide_total ? `<div class="invest-row-total"><div class="invest-total-label">${hasMrr ? 'Investissement total (an 1)' : 'Investissement total'}</div><div class="invest-total-amount">${fmtEur(total)}</div></div>` : ''}
@@ -387,7 +404,7 @@ function cEtapes(c: AuditContent, m: MesuresAudit): string {
   const p = c.page6;
   const demo = c.page1.demo_url;
 
-  return `<div class="half" data-screen-label="A4-3 · 05 Prochaines étapes">
+  return `<div class="half" id="audit-h6" data-screen-label="A4-3 · 05 Prochaines étapes">
 <div class="panel-head">${z('div', 'panel-eyebrow', { field: 'page6.section_label' })}${esc(p.section_label ?? '')}</div></div>
 ${z('div', 'panel-title', { field: 'page6.section_heading' })}${esc(p.section_title ?? '')} ${esc(p.section_title_line2 ?? '')} <em>${esc(p.section_title_em ?? '')}</em></div>
 <div class="panel-body" style="justify-content:flex-start;padding-top:14px;gap:11px">
