@@ -77,7 +77,12 @@ const BAREME: Array<{ points: number; quand: (s: SignauxSite, c: ContexteEntrepr
   { points: 2, libelle: "Presque aucun bouton pour vous contacter", quand: (s) => s.nbCta < 2 },
   { points: 2, libelle: "Titre de page absent", quand: (s) => !s.title?.trim() },
   { points: 2, libelle: "Aucun résumé sous votre résultat Google", quand: (s) => !s.metaDescription?.trim() },
-  { points: 2, libelle: "Votre ville n’apparaît pas dans le titre du site", quand: (s, c) => Boolean(c.ville) && s.villeDansTitre === false },
+  // `=== false` et non `!` : le signal est à TROIS états. `analyze.ts` ne rend
+  // `false` que s'il connaissait la ville au moment de la lecture, et `null`
+  // sinon. Le test d'égalité stricte suffit donc à lui seul — une garde
+  // supplémentaire sur le contexte désarmerait la règle partout où la note se
+  // calcule sans jointure sur `entreprises`, ce qui est le cas à la lecture.
+  { points: 2, libelle: "Votre ville n’apparaît pas dans le titre du site", quand: (s) => s.villeDansTitre === false },
   { points: 1, libelle: "Fiche d’entreprise non déclarée à Google", quand: (s) => !s.jsonLdLocalBusiness },
 ];
 

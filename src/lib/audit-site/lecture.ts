@@ -318,12 +318,11 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   const signaux = row.signaux as SignauxSite | null | undefined;
   const doc =
     signaux && psiFraiche
-      ? noteDocument(psiPerf, signaux, {
-          // La ville n'est pas dans cette table ; le seul malus qui en dépend
-          // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
-          // et l'ajouter demanderait une jointure sur chaque lecture de liste.
-          ville: null,
-        })
+      ? // Aucun contexte CRM n'est nécessaire : le barème ne lit que les
+        // signaux, et le seul constat qui dépendait de la ville la porte
+        // désormais dans son propre signal — `villeDansTitre`, tranché à
+        // l'analyse, quand la ville était sous la main.
+        noteDocument(psiPerf, signaux)
       : { note: null, base: null, lignes: [], plancherAtteint: false };
 
   return {

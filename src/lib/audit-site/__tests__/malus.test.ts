@@ -108,6 +108,31 @@ describe("les deux garde-fous", () => {
     expect(r.lignes.length).toBeGreaterThan(7);
   });
 
+  it("retire la ville manquante SANS qu'on ait à lui passer la ville", () => {
+    /**
+     * Cette règle a été désarmée une fois, et silencieusement : elle exigeait
+     * `ctx.ville`, or la note se calcule à la lecture, qui ne fait aucune
+     * jointure sur `entreprises`. Deux cent cinquante-cinq analyses portaient
+     * le constat sans qu'il coûte jamais un point.
+     *
+     * Le signal se suffit à lui-même, et c'est ce que ce test verrouille :
+     * `false` ne sort de l'analyse que si elle connaissait la ville.
+     */
+    const r = noteDocument(70, { ...siteImpeccable(), villeDansTitre: false });
+    expect(r.note).toBe(68);
+    expect(r.lignes).toEqual([
+      { libelle: "Votre ville n’apparaît pas dans le titre du site", points: 2 },
+    ]);
+  });
+
+  it("ne conclut rien quand l'analyse ignorait la ville", () => {
+    // `null` n'est pas « absente », c'est « on n'a pas pu regarder ». Un malus
+    // ici affirmerait au prospect quelque chose qu'on n'a pas vérifié.
+    const r = noteDocument(70, { ...siteImpeccable(), villeDansTitre: null });
+    expect(r.note).toBe(70);
+    expect(r.lignes).toEqual([]);
+  });
+
   it("ignore le nombre d'avis Google : la note parle du SITE", () => {
     // Règle ancienne qu'une première version de ce barème avait emportée. Le
     // nombre d'avis reçus ne se répare pas en achetant un site.
