@@ -16,7 +16,13 @@ import { preflight } from '@/app/api/_lib/cors'
 import { jsonError } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { withAuth } from '@/app/api/_lib/with-auth'
-import { compterExport, construireVCards, type FicheProspect } from '@/lib/prospects/vcard'
+import {
+  compterExport,
+  construireLot,
+  nombreDeLots,
+  TAILLE_LOT,
+  type FicheProspect,
+} from '@/lib/prospects/vcard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -162,17 +168,20 @@ export const GET = withAuth<undefined, Record<string, never>>({}, async ({ req, 
   if (url.searchParams.get('compte')) {
     const { cartes, numeros } = compterExport(fiches)
     return Response.json(
-      { entreprises: fiches.length, cartes, numeros },
+      { entreprises: fiches.length, cartes, numeros, lots: nombreDeLots(fiches), tailleLot: TAILLE_LOT },
       { headers: { ...cors, 'cache-control': 'no-store' } },
     )
   }
 
-  const vcf = construireVCards(fiches)
+  // Un lot par téléchargement : les répertoires mobiles n'enregistrent qu'une
+  // fiche sur un fichier de plusieurs centaines, sans dire pourquoi.
+  const lot = Number(url.searchParams.get('lot') ?? '1')
+  const { vcf, lots } = construireLot(fiches, Number.isFinite(lot) ? lot : 1)
   if (!vcf) {
     return jsonError('rien_a_exporter', 404, { message: 'Aucun prospect avec un numéro exploitable.' }, cors)
   }
 
-  const nom = `prospects-${portee}.vcf`
+  const nom = lots > 1 ? `prospects-${portee}-lot${lot}-sur-${lots}.vcf` : `prospects-${portee}.vcf`
   return new Response(vcf, {
     headers: {
       ...cors,

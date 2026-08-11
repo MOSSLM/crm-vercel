@@ -35,6 +35,9 @@ interface Compte {
   entreprises: number
   cartes: number
   numeros: number
+  /** Nombre de fichiers à télécharger — cf. `TAILLE_LOT`. */
+  lots: number
+  tailleLot: number
 }
 
 export function ExportVCard() {
@@ -43,6 +46,10 @@ export function ExportVCard() {
   const [chargement, setChargement] = useState(false)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Lot à télécharger. Les répertoires mobiles n'enregistrent qu'une fiche
+  // au-delà de quelques dizaines : on descend le carnet lot par lot.
+  const [lot, setLot] = useState(1)
+  const [faits, setFaits] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     let annule = false
@@ -54,7 +61,10 @@ export function ExportVCard() {
         return (await res.json()) as Compte
       })
       .then((c) => {
-        if (!annule) setCompte(c)
+        if (annule) return
+        setCompte(c)
+        setLot(1)
+        setFaits(new Set())
       })
       .catch(() => {
         if (!annule) setCompte(null)
@@ -71,7 +81,7 @@ export function ExportVCard() {
     setEnCours(true)
     setErreur(null)
     try {
-      const res = await authedFetch(`/api/prospects/vcard?portee=${portee}`)
+      const res = await authedFetch(`/api/prospects/vcard?portee=${portee}&lot=${lot}`)
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { message?: string }
         throw new Error(payload.message || 'Export impossible')
@@ -80,17 +90,21 @@ export function ExportVCard() {
       const url = URL.createObjectURL(blob)
       const lien = document.createElement('a')
       lien.href = url
-      lien.download = `prospects-${portee}-${new Date().toISOString().slice(0, 10)}.vcf`
+      lien.download = `prospects-${portee}-lot${lot}.vcf`
       document.body.appendChild(lien)
       lien.click()
       document.body.removeChild(lien)
       URL.revokeObjectURL(url)
+      setFaits((f) => new Set(f).add(lot))
+      // On avance tout seul : le geste suivant est le lot suivant, et
+      // l'oubli d'un lot ne se voit pas dans le répertoire.
+      setLot((n) => (compte && n < compte.lots ? n + 1 : n))
     } catch (e) {
       setErreur(e instanceof Error ? e.message : 'Export impossible')
     } finally {
       setEnCours(false)
     }
-  }, [portee])
+  }, [portee, lot, compte])
 
   const vide = compte != null && compte.cartes === 0
   const aide = PORTEES.find((p) => p.valeur === portee)?.aide
@@ -114,6 +128,39 @@ export function ExportVCard() {
         {aide ? <p className="text-xs text-muted-foreground">{aide}</p> : null}
       </div>
 
+      {compte && compte.lots > 1 ? (
+        <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-xs font-medium">
+            {compte.lots} fichiers de {compte.tailleLot} fiches
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Les répertoires de téléphone n’enregistrent qu’une fiche sur un fichier de plusieurs centaines — sans dire
+            pourquoi. Téléchargez et ouvrez les lots un par un.
+          </p>
+          <div className="flex flex-wrap gap-1 pt-1">
+            {Array.from({ length: compte.lots }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setLot(n)}
+                aria-current={n === lot}
+                aria-label={`Lot ${n}${faits.has(n) ? ', téléchargé' : ''}`}
+                className={
+                  'h-7 min-w-7 rounded border px-2 text-xs transition-colors ' +
+                  (n === lot
+                    ? 'border-foreground bg-foreground text-background'
+                    : faits.has(n)
+                      ? 'border-border bg-background text-muted-foreground line-through'
+                      : 'border-border bg-background hover:bg-muted')
+                }
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <Button
         variant="outline"
         className="flex w-full items-center gap-2"
@@ -121,7 +168,7 @@ export function ExportVCard() {
         disabled={enCours || chargement || vide}
       >
         {enCours ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        Exporter les contacts (vCard)
+        {compte && compte.lots > 1 ? `Télécharger le lot ${lot} sur ${compte.lots}` : 'Exporter les contacts (vCard)'}
       </Button>
 
       <p className="text-xs text-muted-foreground" aria-live="polite">
