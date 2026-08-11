@@ -8,10 +8,13 @@
 //
 // Chaque carte porte le message déjà rédigé, le motif de son attribution, et
 // peut changer de main sans toucher à la règle globale.
-import React from 'react'
+import React, { useState } from 'react'
 import { toast } from 'sonner'
 import { XI } from './icons'
 import { Avatar } from './regulator/parts'
+import { lienWhatsApp } from '@/lib/prospects/canal'
+import { sourceNumeros, useNumeros } from './NumeroPicker'
+import type { UsageNumero } from '@/lib/prospects/numeros'
 import type { ProspectionTaskFull } from './prospection-db'
 import type { UserRef } from './types'
 
@@ -166,17 +169,27 @@ function TaskCard({
 }) {
   const overdue = new Date(task.due_at).getTime() < Date.now()
   const message = task.payload?.message ?? ''
-  const phone = task.contacts?.tel ?? ''
+  // Le numéro préparé par le moteur est le défaut — sur une entreprise sans
+  // fiche contact, il vient de `entreprises.telephone`. Mais 47 entreprises du
+  // parc en ont plusieurs, et l'agent doit pouvoir en essayer un autre sans
+  // quitter la carte.
+  const usage: UsageNumero = task.kind === 'call' ? 'appel' : 'whatsapp'
+  const numeros = useNumeros(sourceNumeros(task), usage, task.payload?.phone ?? task.contacts?.tel ?? null)
+  const [choisi, setChoisi] = useState<string | null>(null)
+  const phone = choisi ?? numeros[0]?.e164 ?? ''
 
   /** Ce que « ouvrir » veut dire pour ce canal — le CRM n'envoie jamais à votre place. */
   function open() {
     if (task.kind === 'whatsapp') {
-      const digits = phone.replace(/\D/g, '')
-      if (!digits) {
-        toast.error('Aucun numéro sur ce contact')
+      // `wa.me` veut l'international sans `+` : un `06…` recopié tel quel
+      // donnait `wa.me/0646…`, que WhatsApp ne résout pas — la tâche ouvrait
+      // une page d'erreur et l'agent croyait à une panne.
+      const url = lienWhatsApp(phone, message)
+      if (!url) {
+        toast.error('Aucun numéro exploitable sur cette fiche')
         return
       }
-      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, '_blank')
+      window.open(url, '_blank')
       return
     }
     if (task.kind === 'call') {
@@ -221,6 +234,20 @@ function TaskCard({
           <XI name="user" className="ico-xs" />
           {task.routing_reason}
         </div>
+      )}
+      {/* Le choix n'apparaît que s'il y en a un : une carte ne doit pas porter un
+          sélecteur à une seule entrée. */}
+      {numeros.length > 1 && (task.kind === 'whatsapp' || task.kind === 'call') && (
+        <label className="tb-assign">
+          <span>Numéro</span>
+          <select className="select" value={phone} onChange={(e) => setChoisi(e.target.value)}>
+            {numeros.map((n) => (
+              <option key={n.e164} value={n.e164}>
+                {n.affichage} · {n.libelleOrigine}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
       <div className="acts">
         <button type="button" className="btn accent xs" onClick={open}>

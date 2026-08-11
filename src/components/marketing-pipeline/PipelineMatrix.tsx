@@ -9,7 +9,7 @@ import {
   ClipboardCheck,
   Globe,
   Search,
-  UserPlus,
+  Flame,
   Check,
   Lock,
   MoreVertical,
@@ -42,9 +42,12 @@ import { archiveReasonLabel } from "@/lib/archive/reasons";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import { authedFetch } from "@/utils/authedFetch";
+import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
+import { AUTO_SEQUENCE } from "./types";
 import type {
   BoardItem,
   AgentRef,
+  SequenceRef,
   TemplateRef,
   PipelineRef,
   MatrixHandlers,
@@ -61,7 +64,7 @@ import "./mp-skin.css";
  * the next stage's cell active. Earlier "done" cells stay accessible (e.g. the
  * site card is still reachable while the row is on Audit).
  */
-type StageId = "enrich" | "validation" | "site" | "audit" | "attribution";
+type StageId = "enrich" | "validation" | "site" | "audit" | "sequence";
 
 interface StageDef {
   id: StageId;
@@ -77,16 +80,16 @@ export const STAGES: StageDef[] = [
   { id: "validation", name: "Validation données", short: "Validées", color: "#7A5AE0", icon: ClipboardCheck },
   { id: "site", name: "Site démo", short: "Site", color: "#2F7AE0", icon: Globe },
   { id: "audit", name: "Audit", short: "Audit", color: "#C8881F", icon: Search },
-  { id: "attribution", name: "Attribution", short: "Attribué", color: "#1F8A5B", icon: UserPlus },
+  { id: "sequence", name: "Séquence", short: "Séquence", color: "#1F8A5B", icon: Flame },
 ];
 
 /**
- * Les 4 étapes du board agent. L'attribution a déjà eu lieu — l'agent ne voit
- * que ses propres entreprises — donc la dernière colonne n'a plus de sens et
- * disparaît, avec tout ce qui l'accompagne (filtres d'attribution, bouton de
- * réattribution, menu « Attribuer à »).
+ * Les 4 étapes du board agent. L'inscription en séquence est décidée par
+ * l'admin — l'agent ne voit que ses propres entreprises et exécute les étapes
+ * manuelles depuis sa file — donc la dernière colonne n'a pas de sens ici, avec
+ * tout ce qui l'accompagne (filtres d'attribution, menu « Attribuer à »).
  */
-export const AGENT_STAGES: StageDef[] = STAGES.filter((s) => s.id !== "attribution");
+export const AGENT_STAGES: StageDef[] = STAGES.filter((s) => s.id !== "sequence");
 
 type CellStatus = "done" | "active" | "locked";
 
@@ -103,8 +106,11 @@ function activeStageIndex(item: BoardItem, stages: StageDef[] = STAGES): number 
   if (!item.project?.enrichment_validated) return 1;
   if (!siteValidated(item)) return 2;
   if (item.audit?.statut !== "ready") return 3;
-  if (!stages.some((s) => s.id === "attribution")) return 4;
-  if (!item.agent) return 4;
+  if (!stages.some((s) => s.id === "sequence")) return 4;
+  // La ligne est « faite » quand elle est en séquence. L'agent qui la suit n'est
+  // pas une étape du pipeline : c'est une propriété de la ligne, réglée sous son
+  // nom dans l'en-tête.
+  if (!item.sequence) return 4;
   return 5;
 }
 
@@ -449,19 +455,22 @@ function RowHead({
   item,
   stages,
   canAssign,
+  agents,
+  handlers,
   selected,
   onToggleSelect,
   onMenu,
-  onAssignClick,
   onNotes,
 }: {
   item: BoardItem;
   stages: StageDef[];
   canAssign: boolean;
+  /** Le menu d'attribution vit ici : l'agent est une propriété de la ligne. */
+  agents: AgentRef[];
+  handlers: MatrixHandlers;
   selected: boolean;
   onToggleSelect: (item: BoardItem) => void;
   onMenu: (e: React.MouseEvent, item: BoardItem) => void;
-  onAssignClick: (e: React.MouseEvent, item: BoardItem) => void;
   onNotes: (item: BoardItem) => void;
 }) {
   const active = activeStageIndex(item, stages);
@@ -579,21 +588,39 @@ function RowHead({
       </div>
 
       <div className="rh-foot">
+        {/* L'agent est une PROPRIÉTÉ de la ligne, pas une étape du pipeline :
+            il se règle ici, sous le nom de l'entreprise, là où son prénom était
+            déjà écrit. La dernière colonne sert désormais à la séquence, qui
+            est le vrai geste terminal du parcours. */}
         {!canAssign ? (
           <span className="assign" style={{ pointerEvents: "none" }}>
             <User className="ico-sm" />
             {item.agent?.name.split(" ")[0] ?? "Mon prospect"}
           </span>
-        ) : item.agent ? (
-          <button className="assign has" title="Réattribuer" onClick={(e) => onAssignClick(e, item)}>
-            <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
-            {item.agent.name.split(" ")[0]}
-          </button>
         ) : (
-          <button className="assign" title="Attribuer" onClick={(e) => onAssignClick(e, item)}>
-            <User className="ico-sm" />
-            Non attribué
-          </button>
+          <label className="assign-pick" title="Agent qui suit ce prospect — il recevra ses tâches manuelles">
+            {item.agent ? (
+              <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
+            ) : (
+              <User className="ico-sm" />
+            )}
+            <select
+              value={item.agent?.id ?? ""}
+              aria-label="Agent qui suit ce prospect"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                if (e.target.value) handlers.onAssign?.(item, e.target.value);
+              }}
+            >
+              <option value="">Non attribué</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <div className="rh-links">
           <button
@@ -896,9 +923,30 @@ function StageCell({ item, stage, status, working, templateId, templateName, age
   );
 }
 
-/* Attribution cell — keeps the agent picker in every state (also lets you
- * reassign once done). */
-function AttributionCell({ item, stage, status, agents, working, handlers }: { item: BoardItem; stage: StageDef; status: CellStatus; agents: AgentRef[]; working: string | null; handlers: MatrixHandlers }) {
+/* Sequence cell — la dernière colonne du board.
+ *
+ * Elle a remplacé « Attribution » : mettre en séquence est le vrai geste
+ * terminal du pipeline marketing, et l'agent — qui n'est pas une étape mais une
+ * propriété de la ligne — a rejoint le pied de l'en-tête, sous son nom.
+ *
+ * La séquence proposée est CALCULÉE à partir des canaux de la ligne et du
+ * public que chaque séquence déclare (`sequenceSuggeree`). Rien n'est codé en
+ * dur : le déroulant reste ouvert, la suggestion n'est qu'un favori. */
+function SequenceCell({
+  item,
+  stage,
+  status,
+  sequences,
+  working,
+  handlers,
+}: {
+  item: BoardItem;
+  stage: StageDef;
+  status: CellStatus;
+  sequences: SequenceRef[];
+  working: string | null;
+  handlers: MatrixHandlers;
+}) {
   const seg = {
     "--seg": stage.color,
     "--seg-soft": rgba(stage.color, 0.22),
@@ -918,6 +966,10 @@ function AttributionCell({ item, stage, status, agents, working, handlers }: { i
 
   const done = status === "done";
   const busy = working !== null;
+  const canaux = new Set(item.canaux ?? []);
+  const activables = sequences.filter((s) => s.status === "on" || s.status === "draft");
+  const suggeree = sequenceSuggeree(canaux, activables);
+
   return (
     <div className={"mx-cell " + (done ? "done" : "active-cell")} style={seg}>
       <div className={"card " + (done ? "is-done" : "active")}>
@@ -929,30 +981,72 @@ function AttributionCell({ item, stage, status, agents, working, handlers }: { i
           )}
           <span className="c-ttl">{stage.short}</span>
           <span className="c-tag">
-            {done ? <span className="pill ok">Attribué</span> : <span className="pill accent">À attribuer</span>}
+            {done ? <span className="pill ok">En séquence</span> : <span className="pill accent">À inscrire</span>}
           </span>
         </div>
-        {done && item.agent ? (
+
+        {done && item.sequence ? (
           <div className="c-body">
             <div className="done-line">
-              <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
-              {item.agent.name.split(" ")[0]}
+              <Flame className="ico-sm" />
+              {item.sequence.name}
             </div>
+            {item.sequence.holdReason === "awaiting_reply" && (
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
+                en attente de réponse
+              </div>
+            )}
           </div>
         ) : (
-          <div className="c-body muted" style={{ fontSize: 11 }}>Choisir l&apos;agent :</div>
-        )}
-        {agents.length === 0 ? (
-          <div className="muted" style={{ fontSize: 11 }}>Aucun agent</div>
-        ) : (
-          <div className="agents">
-            {agents.map((a) => (
-              <button key={a.id} className="agent-pick" title={"Attribuer à " + a.name} disabled={busy} onClick={() => handlers.onAssign?.(item, a.id)}>
-                <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={18} />
-                {a.name.split(" ")[0]}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="c-body muted" style={{ fontSize: 11 }}>
+              {canaux.size === 0 ? (
+                // Ni adresse ni téléphone : aucune séquence ne peut rien en
+                // faire. Le dire ici évite une inscription qui gèlerait aussitôt.
+                <span style={{ color: "var(--danger)" }}>Injoignable — ni e-mail ni téléphone</span>
+              ) : (
+                <>
+                  Joignable par{" "}
+                  {[...canaux].map((c) => CANAL_LABEL[c].toLowerCase()).join(" + ")}
+                </>
+              )}
+            </div>
+            {activables.length === 0 ? (
+              <div className="muted" style={{ fontSize: 11 }}>Aucune séquence</div>
+            ) : (
+              <div className="agents">
+                {suggeree && (
+                  <button
+                    className="agent-pick suggested"
+                    title={`Séquence conseillée pour ce canal — ${suggeree.name}`}
+                    disabled={busy || canaux.size === 0}
+                    onClick={() => handlers.onEnroll?.(item, suggeree.id)}
+                  >
+                    <Flame className="ico-xs" />
+                    {suggeree.name}
+                  </button>
+                )}
+                <select
+                  className="seq-pick"
+                  value=""
+                  disabled={busy}
+                  aria-label="Inscrire dans une séquence"
+                  onChange={(e) => {
+                    if (e.target.value) handlers.onEnroll?.(item, e.target.value);
+                  }}
+                >
+                  <option value="">{suggeree ? "Une autre séquence…" : "Choisir une séquence…"}</option>
+                  {activables
+                    .filter((s) => s.id !== suggeree?.id)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -967,6 +1061,7 @@ function AttributionCell({ item, stage, status, agents, working, handlers }: { i
 function BulkBar({
   rows,
   agents,
+  sequences,
   pipelines,
   canAssign,
   busy,
@@ -979,6 +1074,7 @@ function BulkBar({
 }: {
   rows: BoardItem[];
   agents: AgentRef[];
+  sequences: SequenceRef[];
   pipelines: PipelineRef[];
   canAssign: boolean;
   busy: boolean;
@@ -991,6 +1087,10 @@ function BulkBar({
   templateName: string | null;
 }) {
   const toComplete = rows.filter((r) => missingCount(r) > 0);
+  // Une ligne déjà inscrite ne doit pas l'être deux fois : le prospect
+  // recevrait tout en double. On la retire du lot AVANT de proposer l'action,
+  // pour que le compte annoncé soit celui qui partira.
+  const toEnroll = rows.filter((r) => !r.sequence);
   const toValidateEnrich = rows.filter((r) => r.project && !r.project.enrichment_validated);
   const toCreateSite = rows.filter((r) => r.entreprise_id != null && !r.site);
   // Symétrique de `toCreateSite` : les lignes qui ONT déjà un site. Sans elles,
@@ -1142,6 +1242,33 @@ function BulkBar({
           ))}
         </select>
       )}
+      {canAssign && sequences.length > 0 && bulk.onEnroll && (
+        <select
+          className="mp-select"
+          value=""
+          disabled={busy || toEnroll.length === 0}
+          title={
+            toEnroll.length === 0
+              ? "Toutes les lignes sélectionnées sont déjà en séquence"
+              : "Inscrire les lignes sélectionnées dans une séquence"
+          }
+          onChange={(e) => {
+            if (e.target.value) bulk.onEnroll?.(toEnroll, e.target.value);
+            e.target.value = "";
+          }}
+        >
+          <option value="">Inscrire à…{toEnroll.length > 0 ? ` (${toEnroll.length})` : ""}</option>
+          {/* Un lot mélangé n'a pas à être trié d'abord : chaque ligne part
+              vers la séquence que son canal appelle, et la répartition est
+              annoncée avant de partir. */}
+          <option value={AUTO_SEQUENCE}>Séquence suggérée par canal</option>
+          {sequences.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      )}
       {pipelines.length > 0 && (
         <select
           className="mp-select"
@@ -1197,8 +1324,63 @@ type SortMode =
   | "name";
 /** Complétude des variables requises pour créer le site. */
 type DataFilter = "all" | "incomplete" | "complete";
+/**
+ * Par quoi le prospect est joignable. Les trois derniers sont les segments
+ * réels des séquences multicanal — les filtres qu'on veut vraiment, plutôt que
+ * de croiser « avec e-mail » et « avec téléphone » à la main.
+ */
+type CanalFilter =
+  | "all"
+  | "email"
+  | "mobile"
+  | "fixe"
+  | "mobile-sans-email"
+  | "email-fixe"
+  | "email-mobile"
+  | "injoignable";
 /** Présence de tickets (notes agent ↔ admin). */
 type TicketFilter = "all" | "open" | "none";
+
+/**
+ * Cette ligne entre-t-elle dans le filtre de canal ?
+ *
+ * Les trois croisements (« mobile sans e-mail », « e-mail + fixe », « e-mail +
+ * mobile ») sont exactement les publics des trois séquences multicanal : c'est
+ * le tri qu'on veut réellement, et le croiser à la main depuis deux filtres
+ * séparés était impossible.
+ */
+function matchesCanal(item: BoardItem, filter: CanalFilter): boolean {
+  const c = new Set(item.canaux ?? []);
+  switch (filter) {
+    case "email":
+      return c.has("email");
+    case "mobile":
+      return c.has("mobile");
+    case "fixe":
+      return c.has("fixe");
+    case "mobile-sans-email":
+      return c.has("mobile") && !c.has("email");
+    case "email-fixe":
+      return c.has("email") && c.has("fixe") && !c.has("mobile");
+    case "email-mobile":
+      return c.has("email") && c.has("mobile");
+    case "injoignable":
+      return c.size === 0;
+    default:
+      return true;
+  }
+}
+
+const CANAL_FILTER_LABELS: Array<[CanalFilter, string]> = [
+  ["all", "Canal : tous"],
+  ["mobile-sans-email", "Sans e-mail + mobile"],
+  ["email-fixe", "E-mail + fixe"],
+  ["email-mobile", "E-mail + mobile"],
+  ["email", "Avec e-mail"],
+  ["mobile", "Avec mobile"],
+  ["fixe", "Avec fixe"],
+  ["injoignable", "Injoignable"],
+];
 
 const SORT_LABELS: Array<[SortMode, string]> = [
   ["recent", "Trier : récentes"],
@@ -1213,6 +1395,8 @@ const SORT_LABELS: Array<[SortMode, string]> = [
 interface PipelineMatrixProps {
   items: BoardItem[];
   agents: AgentRef[];
+  /** Séquences proposables, avec le public que chacune déclare viser. */
+  sequences?: SequenceRef[];
   templates: TemplateRef[];
   pipelines: PipelineRef[];
   templateId: string;
@@ -1260,6 +1444,7 @@ interface PipelineMatrixProps {
 export function PipelineMatrix({
   items,
   agents,
+  sequences = [],
   templates,
   pipelines,
   templateId,
@@ -1284,6 +1469,8 @@ export function PipelineMatrix({
   const [pipelineFilter, setPipelineFilter] = React.useState("all");
   const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
   const [dataFilter, setDataFilter] = React.useState<DataFilter>("all");
+  const [canalFilter, setCanalFilter] = React.useState<CanalFilter>("all");
+  const [sequenceFilter, setSequenceFilter] = React.useState<string>("all");
   const [ticketFilter, setTicketFilter] = React.useState<TicketFilter>("all");
   const [sort, setSort] = React.useState<SortMode>("recent");
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
@@ -1321,6 +1508,12 @@ export function PipelineMatrix({
       if (pipelineFilter !== "all" && it.pipeline_id !== pipelineFilter) return false;
       if (dataFilter === "incomplete" && missingCount(it) === 0) return false;
       if (dataFilter === "complete" && missingCount(it) > 0) return false;
+      if (canalFilter !== "all" && !matchesCanal(it, canalFilter)) return false;
+      if (sequenceFilter === "none" && it.sequence) return false;
+      if (sequenceFilter === "any" && !it.sequence) return false;
+      if (sequenceFilter !== "all" && sequenceFilter !== "none" && sequenceFilter !== "any") {
+        if (it.sequence?.automationId !== sequenceFilter) return false;
+      }
       if (ticketFilter === "open" && openNotes(it) === 0) return false;
       if (ticketFilter === "none" && openNotes(it) > 0) return false;
       if (nq) {
@@ -1329,7 +1522,7 @@ export function PipelineMatrix({
       }
       return true;
     });
-  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, ticketFilter, hidden]);
+  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden]);
 
   const visibleRows = React.useMemo(() => {
     const rows =
@@ -1570,6 +1763,41 @@ export function PipelineMatrix({
           <option value="complete">Données : complètes</option>
         </select>
 
+        {/* Par quoi le prospect est joignable — le tri qui décide de la
+            séquence. Les trois premiers croisements sont les publics réels des
+            séquences multicanal, impossibles à obtenir en croisant à la main
+            « avec e-mail » et « avec téléphone ». */}
+        <select
+          className="mp-select"
+          value={canalFilter}
+          onChange={(e) => setCanalFilter(e.target.value as CanalFilter)}
+          title="Par quoi ce prospect est joignable (entreprise et contacts confondus)"
+        >
+          {CANAL_FILTER_LABELS.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        {sequences.length > 0 && (
+          <select
+            className="mp-select"
+            value={sequenceFilter}
+            onChange={(e) => setSequenceFilter(e.target.value)}
+            title="Séquence dans laquelle la ligne est inscrite"
+          >
+            <option value="all">Séquence : toutes</option>
+            <option value="none">Pas encore en séquence</option>
+            <option value="any">Déjà en séquence</option>
+            {sequences.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Compléter d'un coup toutes les lignes visibles encore incomplètes.
             Posé à côté du filtre parce que c'est là qu'on les a trouvées — et
             sans passer par la sélection, qui aurait demandé de cocher soixante
@@ -1731,6 +1959,7 @@ export function PipelineMatrix({
         <BulkBar
           rows={selectedRows}
           agents={agents}
+          sequences={sequences.filter((s) => s.status === "on" || s.status === "draft")}
           pipelines={pipelines}
           canAssign={canAssign}
           busy={working !== null}
@@ -1803,16 +2032,27 @@ export function PipelineMatrix({
                   item={r}
                   stages={stages}
                   canAssign={canAssign}
+                  agents={agents}
+                  handlers={handlers}
                   selected={selected.has(r.id)}
                   onToggleSelect={(it) => toggleSelected(it.id)}
                   onMenu={(e, it) => openMenu(e, it, "row")}
-                  onAssignClick={(e, it) => openMenu(e, it, "assign")}
                   onNotes={(it) => handlers.onNotes(it)}
                 />
                 {stages.map((s, i) => {
                   const status = cellStatus(r, i, stages);
-                  if (s.id === "attribution") {
-                    return <AttributionCell key={s.id} item={r} stage={s} status={status} agents={agents} working={working} handlers={handlers} />;
+                  if (s.id === "sequence") {
+                    return (
+                      <SequenceCell
+                        key={s.id}
+                        item={r}
+                        stage={s}
+                        status={status}
+                        sequences={sequences}
+                        working={working}
+                        handlers={handlers}
+                      />
+                    );
                   }
                   return (
                     <StageCell

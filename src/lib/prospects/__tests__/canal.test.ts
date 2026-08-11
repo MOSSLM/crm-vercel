@@ -1,0 +1,228 @@
+import {
+  canauxDisponibles,
+  collecterCanaux,
+  correspondAuPublic,
+  estFixeFr,
+  estMobileFr,
+  lienWhatsApp,
+  premierMobile,
+  sequenceSuggeree,
+  type Canal,
+} from '../canal'
+
+describe('estMobileFr', () => {
+  it('reconnaît 06 et 07 quelle que soit la mise en forme', () => {
+    for (const n of ['0646042876', '06 46 04 28 76', '06.46.04.28.76', '+33646042876', '0033646042876']) {
+      expect(estMobileFr(n)).toBe(true)
+    }
+    expect(estMobileFr('07 12 34 56 78')).toBe(true)
+  })
+
+  it('refuse les fixes', () => {
+    for (const n of ['0241887766', '01 42 00 00 00', '+33241887766', '09 70 00 00 00']) {
+      expect(estMobileFr(n)).toBe(false)
+    }
+  })
+
+  it('refuse le vide et l’étranger', () => {
+    expect(estMobileFr(null)).toBe(false)
+    expect(estMobileFr('')).toBe(false)
+    expect(estMobileFr('+32470123456')).toBe(false) // mobile belge — on ne devine pas
+  })
+})
+
+describe('estFixeFr', () => {
+  it('reconnaît le géographique et le VoIP', () => {
+    expect(estFixeFr('0241887766')).toBe(true)
+    expect(estFixeFr('01 42 00 00 00')).toBe(true)
+    expect(estFixeFr('09 70 00 00 00')).toBe(true)
+  })
+
+  it('n’est pas « tout ce qui n’est pas mobile »', () => {
+    // Une saisie tronquée ne doit pas basculer en fixe par défaut.
+    expect(estFixeFr('06 46')).toBe(false)
+    expect(estFixeFr('0241')).toBe(false)
+    expect(estFixeFr('+32470123456')).toBe(false)
+    expect(estFixeFr(null)).toBe(false)
+  })
+})
+
+describe('canauxDisponibles', () => {
+  it('cumule les canaux — le plus gros segment est « e-mail + mobile »', () => {
+    const c = canauxDisponibles({ email: 'contact@x.fr', telephones: ['0646042876'] })
+    expect([...c].sort()).toEqual(['email', 'mobile'])
+  })
+
+  it('classe le segment WhatsApp seul : pas d’e-mail, un mobile', () => {
+    const c = canauxDisponibles({ email: null, telephones: ['06 46 04 28 76'] })
+    expect([...c]).toEqual(['mobile'])
+  })
+
+  it('classe le segment e-mail + fixe', () => {
+    const c = canauxDisponibles({ email: 'contact@x.fr', telephones: ['02 41 88 77 66'] })
+    expect([...c].sort()).toEqual(['email', 'fixe'])
+  })
+
+  it('ignore les e-mails vides ou en blancs', () => {
+    expect(canauxDisponibles({ email: '   ', telephones: [] }).has('email')).toBe(false)
+  })
+
+  it('accepte plusieurs numéros et retient les deux natures', () => {
+    const c = canauxDisponibles({ telephones: ['0241887766', null, '0646042876'] })
+    expect([...c].sort()).toEqual(['fixe', 'mobile'])
+  })
+
+  it('ne plante pas sans aucune donnée', () => {
+    expect(canauxDisponibles({}).size).toBe(0)
+  })
+})
+
+describe('premierMobile', () => {
+  it('retient le premier mobile, normalisé', () => {
+    expect(premierMobile(['0241887766', '06 46 04 28 76'])).toBe('+33646042876')
+  })
+
+  it('renvoie null quand il n’y a que du fixe', () => {
+    expect(premierMobile(['0241887766'])).toBeNull()
+    expect(premierMobile(null)).toBeNull()
+  })
+})
+
+describe('collecterCanaux', () => {
+  // Le cas qui a motivé la fonction : le standard est en 02, mais le gérant a un
+  // 06 sur sa fiche. L'entreprise SEULE dirait « fixe » et perdrait WhatsApp.
+  it('compte le mobile du gérant comme un mobile joignable', () => {
+    const r = collecterCanaux({
+      entrepriseTelephones: ['02 41 88 77 66'],
+      contacts: [{ tel: '06 46 04 28 76', isDecisionMaker: true }],
+    })
+    expect([...r.canaux].sort()).toEqual(['fixe', 'mobile'])
+    expect(r.mobile).toBe('+33646042876')
+    expect(r.fixe).toBe('+33241887766')
+  })
+
+  it('préfère le mobile du décideur à celui d’un autre contact', () => {
+    const r = collecterCanaux({
+      contacts: [
+        { tel: '06 11 11 11 11' },
+        { tel: '07 22 22 22 22', isDecisionMaker: true },
+      ],
+    })
+    expect(r.mobile).toBe('+33722222222')
+  })
+
+  it('préfère un mobile de contact au mobile de la fiche entreprise', () => {
+    const r = collecterCanaux({
+      entrepriseTelephones: ['06 99 99 99 99'],
+      contacts: [{ tel: '06 46 04 28 76' }],
+    })
+    // On cherche le téléphone d'une personne, pas celui d'un lieu.
+    expect(r.mobile).toBe('+33646042876')
+  })
+
+  it('garde la ligne pro de l’établissement comme fixe à appeler', () => {
+    const r = collecterCanaux({
+      entrepriseTelephones: ['02 41 88 77 66'],
+      contacts: [{ tel: '01 42 00 00 00' }],
+    })
+    expect(r.fixe).toBe('+33241887766')
+  })
+
+  it('prend l’adresse du contact avant celle de l’entreprise', () => {
+    // Même règle que `resolveEntities` : le tableau et l'envoi ne doivent
+    // jamais désigner deux destinataires différents.
+    const r = collecterCanaux({
+      entrepriseEmail: 'contact@x.fr',
+      contacts: [{ email: 'gerant@x.fr' }],
+    })
+    expect(r.email).toBe('gerant@x.fr')
+  })
+
+  it('retombe sur l’adresse de l’entreprise quand aucun contact n’en a', () => {
+    const r = collecterCanaux({
+      entrepriseEmail: 'contact@x.fr',
+      contacts: [{ tel: '0646042876' }],
+    })
+    expect(r.email).toBe('contact@x.fr')
+    expect([...r.canaux].sort()).toEqual(['email', 'mobile'])
+  })
+
+  it('reste muet sur un prospect sans rien', () => {
+    const r = collecterCanaux({ entrepriseEmail: '  ', contacts: [] })
+    expect(r.canaux.size).toBe(0)
+    expect(r.mobile).toBeNull()
+    expect(r.fixe).toBeNull()
+    expect(r.email).toBeNull()
+  })
+
+  it('ne plante pas sans aucune donnée', () => {
+    expect(collecterCanaux({}).canaux.size).toBe(0)
+  })
+})
+
+describe('public visé', () => {
+  // Les trois séquences réelles, déclarées comme elles le seront en base.
+  const WHATSAPP_SEUL = { id: 'wa', requireCanaux: ['mobile' as Canal], excludeCanaux: ['email' as Canal] }
+  const EMAIL_FIXE = { id: 'ef', requireCanaux: ['email' as Canal, 'fixe' as Canal] }
+  const MIX = { id: 'mix', requireCanaux: ['email' as Canal, 'mobile' as Canal] }
+  const TOUTES = [WHATSAPP_SEUL, EMAIL_FIXE, MIX]
+
+  const canaux = (...c: Canal[]) => new Set(c)
+
+  it('exclut un prospect qui porte un canal disqualifiant', () => {
+    expect(correspondAuPublic(canaux('email', 'mobile'), WHATSAPP_SEUL)).toBe(false)
+    expect(correspondAuPublic(canaux('mobile'), WHATSAPP_SEUL)).toBe(true)
+  })
+
+  it('exige TOUS les canaux requis, pas un seul', () => {
+    expect(correspondAuPublic(canaux('email'), MIX)).toBe(false)
+    expect(correspondAuPublic(canaux('email', 'mobile'), MIX)).toBe(true)
+  })
+
+  it('accepte tout le monde quand rien n’est déclaré', () => {
+    expect(correspondAuPublic(canaux(), {})).toBe(true)
+  })
+
+  it('suggère la bonne séquence pour chacun des trois segments réels', () => {
+    expect(sequenceSuggeree(canaux('mobile'), TOUTES)?.id).toBe('wa')
+    expect(sequenceSuggeree(canaux('email', 'fixe'), TOUTES)?.id).toBe('ef')
+    expect(sequenceSuggeree(canaux('email', 'mobile'), TOUTES)?.id).toBe('mix')
+  })
+
+  it('donne la main à la séquence la plus exigeante', () => {
+    const large = { id: 'large', requireCanaux: ['email' as Canal] }
+    // « e-mail ET mobile » décrit mieux le prospect que « e-mail ».
+    expect(sequenceSuggeree(canaux('email', 'mobile'), [large, MIX])?.id).toBe('mix')
+    expect(sequenceSuggeree(canaux('email', 'mobile'), [MIX, large])?.id).toBe('mix')
+  })
+
+  it('ne suggère jamais une séquence sans public déclaré', () => {
+    // Sinon une séquence oubliée sans règle s'imposerait à tout le parc.
+    expect(sequenceSuggeree(canaux('email', 'mobile'), [{ id: 'vide' }])).toBeNull()
+  })
+
+  it('ne suggère rien plutôt que n’importe quoi', () => {
+    expect(sequenceSuggeree(canaux('fixe'), TOUTES)).toBeNull()
+  })
+})
+
+describe('lienWhatsApp', () => {
+  // La régression : la file de démarchage recopiait les chiffres tels quels,
+  // donc `wa.me/0646042876` — que WhatsApp ne résout pas.
+  it('convertit un 06 en international sans +', () => {
+    expect(lienWhatsApp('06 46 04 28 76')).toBe('https://wa.me/33646042876')
+  })
+
+  it('encode le message pré-rempli', () => {
+    const url = lienWhatsApp('+33646042876', 'Bonjour, je suis bien avec Toiture Martin ?')
+    expect(url).toBe(
+      'https://wa.me/33646042876?text=Bonjour%2C%20je%20suis%20bien%20avec%20Toiture%20Martin%20%3F',
+    )
+  })
+
+  it('renvoie null plutôt que d’ouvrir dans le vide', () => {
+    expect(lienWhatsApp(null)).toBeNull()
+    expect(lienWhatsApp('')).toBeNull()
+    expect(lienWhatsApp('1234')).toBeNull() // extension de standard interne
+  })
+})

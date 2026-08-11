@@ -3,6 +3,7 @@ import { requireUser } from "@/app/api/_lib/auth";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { UNDEFINED_TABLE } from "@/lib/audit-site/lecture";
 import { rapportPublicUrl } from "@/lib/audit-site/rapport-url";
+import { assurerJetonRapport, type JetonRapport } from "@/lib/audit-site/rapport";
 
 /**
  * Le jeton de partage du rapport public.
@@ -19,37 +20,7 @@ import { rapportPublicUrl } from "@/lib/audit-site/rapport-url";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type JetonRow = {
-  entreprise_id: number;
-  token: string;
-  actif: boolean;
-  vues: number | null;
-  vu_le: string | null;
-};
-
-async function lireOuCreer(entrepriseId: number, userId: string) {
-  const sb = getServiceClient();
-
-  const { data, error } = await sb
-    .from("entreprises_rapport_public")
-    .select("entreprise_id, token, actif, vues, vu_le")
-    .eq("entreprise_id", entrepriseId)
-    .maybeSingle();
-
-  if (error) return { erreur: error };
-  if (data) return { jeton: data as JetonRow };
-
-  // Le `default` SQL fabrique le jeton : la valeur n'est pas produite côté
-  // application, donc jamais dérivée d'un identifiant devinable.
-  const { data: cree, error: erreurInsert } = await sb
-    .from("entreprises_rapport_public")
-    .insert({ entreprise_id: entrepriseId, cree_par: userId })
-    .select("entreprise_id, token, actif, vues, vu_le")
-    .single();
-
-  if (erreurInsert) return { erreur: erreurInsert };
-  return { jeton: cree as JetonRow };
-}
+type JetonRow = JetonRapport;
 
 function reponse(jeton: JetonRow): Response {
   return json({
@@ -72,7 +43,7 @@ export async function GET(
   const id = Number((await ctx.params).entrepriseId);
   if (!Number.isFinite(id)) return jsonError("Identifiant d'entreprise invalide.", 400);
 
-  const res = await lireOuCreer(id, auth.user.id);
+  const res = await assurerJetonRapport(getServiceClient(), id, auth.user.id);
   if (res.erreur) {
     if (res.erreur.code === UNDEFINED_TABLE) {
       return json({

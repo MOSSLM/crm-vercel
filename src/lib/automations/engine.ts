@@ -7,7 +7,14 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
-import { readSkippedSteps, readStepShifts } from '@/lib/automations/week'
+import {
+  readReplies,
+  readSkippedSteps,
+  readStepShifts,
+  stepStartMs,
+  type StepAnchor,
+} from '@/lib/automations/week'
+import { interpolateVars, usedVariables, type VarBag } from '@/lib/automations/variables'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
 import {
@@ -26,7 +33,12 @@ import type {
   TraceEntry,
 } from '@/components/automations/types'
 import { SITE_DOMAIN } from '@/lib/site-domain'
+import { getAppUrl } from '@/lib/app-url'
+import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
+import { aDesMesuresAudit, assurerJetonRapport } from '@/lib/audit-site/rapport'
+
+const DAY_MS = 86_400_000
 
 export interface RunContext {
   opportunite_id?: string | null
@@ -38,7 +50,6 @@ export interface RunContext {
   event?: string
 }
 
-type VarBag = Record<string, string>
 type ResolvedEntities = {
   contactId: string | null
   entrepriseId: number | null
@@ -87,12 +98,22 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   let contactPhone: string | null = null
   let contactLinkedin: string | null = null
 
+  type ContactRow = {
+    first_name: string | null
+    last_name: string | null
+    email: string | null
+    tel: string | null
+    role_title: string | null
+    linkedin_url: string | null
+  }
+  let c: ContactRow | null = null
   if (contactId) {
-    const { data: c } = await sb
+    const { data } = await sb
       .from('contacts')
       .select('first_name,last_name,email,tel,role_title,linkedin_url')
       .eq('id', contactId)
       .maybeSingle()
+    c = (data as ContactRow | null) ?? null
     if (c) {
       vars['contact.first_name'] = c.first_name ?? ''
       vars['contact.last_name'] = c.last_name ?? ''
@@ -106,10 +127,11 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   let auditUrl: string | null = null
   let auditPdfUrl: string | null = null
   let demoUrl: string | null = null
+  let ownerId: string | null = null
   if (entrepriseId) {
     const { data: e } = await sb
       .from('entreprises')
-      .select('name,ville,site_web_canonique,email')
+      .select('name,ville,site_web_canonique,email,telephone,telephones,owner_id')
       .eq('id', entrepriseId)
       .maybeSingle()
     if (e) {
@@ -118,6 +140,26 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       vars['company.website'] = e.site_web_canonique ?? ''
       companyEmail = cleanEmail(e.email)
       vars['company.email'] = companyEmail ?? ''
+      ownerId = (e.owner_id as string | null) ?? null
+
+      // Le téléphone du prospect, entreprise ET contacts confondus. Sans ce
+      // repli, une tâche WhatsApp posée sur une entreprise sans fiche contact
+      // partait sans numéro : l'agent voyait « aucun numéro » sur une fiche qui
+      // en portait un. 70 des 275 entreprises qualifiées sont dans ce cas.
+      const numeros = [
+        c?.tel,
+        e.telephone as string | null,
+        ...(Array.isArray(e.telephones) ? (e.telephones as string[]) : []),
+      ]
+      const canaux = collecterCanaux({
+        entrepriseEmail: e.email as string | null,
+        entrepriseTelephones: numeros,
+        contacts: c ? [{ email: c.email, tel: c.tel }] : [],
+      })
+      // Un mobile d'abord : c'est le seul numéro qui marche sur WhatsApp, et
+      // c'est celui d'une personne plutôt que d'un standard.
+      contactPhone = canaux.mobile ?? canaux.fixe ?? contactPhone
+      vars['company.phone'] = contactPhone ?? ''
     }
 
     // Audit + site démo : liens interpolables dans les messages des séquences.
@@ -173,12 +215,25 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     // Le repli sur le PDF est conservé tel quel : les séquences déjà écrites
     // continuent de fonctionner sans être retouchées, et `attachAudit`
     // (pièce jointe e-mail) garde le PDF puisqu'on ne peut pas joindre une page.
-    const rapportUrl = await lireRapportUrl(sb, entrepriseId)
+    //
+    // LE JETON EST CRÉÉ ICI S'IL N'EXISTE PAS. Il ne naissait que dans le
+    // dialogue « Partager le rapport », que l'envoi automatique ne traverse
+    // jamais : aucun jeton n'existait en base, donc `company.audit_url`
+    // s'interpolait en vide pour TOUTES les entreprises, sans exception.
+    const rapportUrl = await lireRapportUrl(sb, entrepriseId, ownerId)
     if (rapportUrl) auditUrl = rapportUrl
 
     vars['company.audit_url'] = auditUrl ?? ''
     vars['company.demo_url'] = demoUrl ?? ''
   }
+
+  // `owner.first_name` et `calendar_link` étaient annoncés dans le builder
+  // depuis toujours mais n'ont jamais été remplis : ils s'interpolaient en
+  // blanc. Un message signé « — » ou invitant à réserver sur un lien vide part
+  // quand même, et personne ne le voit avant le prospect.
+  vars['owner.first_name'] = await lireOwnerPrenom(sb, ownerId)
+  vars['calendar_link'] = await lireCalendarLink(sb, ownerId)
+
   // Un contact sans adresse n'est pas une impasse : l'email saisi sur la fiche
   // entreprise (`entreprises.email`) sert de destinataire de repli, c'est là que
   // le pipeline commercial enregistre les adresses ajoutées à la main.
@@ -198,29 +253,190 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
 }
 
 /**
+ * Le prénom de l'agent qui suit l'entreprise, pour signer les messages.
+ *
+ * Silencieuse en cas d'erreur, et vide quand personne ne suit le prospect : un
+ * message signé d'un blanc reste envoyable, une séquence qui s'interrompt pour
+ * ça ne l'est pas.
+ */
+async function lireOwnerPrenom(sb: SupabaseClient, ownerId: string | null): Promise<string> {
+  if (!ownerId) return ''
+  try {
+    const { data } = await sb.from('user_profiles').select('full_name').eq('id', ownerId).maybeSingle()
+    const full = (data?.full_name as string | null) ?? ''
+    return full.trim().split(/\s+/)[0] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Le lien de réservation de l'agent qui suit l'entreprise (`/rdv/{username}`).
+ *
+ * Vide quand la page n'existe pas ou est désactivée — plutôt qu'un lien mort :
+ * un prospect qui clique sur une page absente est perdu pour de bon.
+ */
+async function lireCalendarLink(sb: SupabaseClient, ownerId: string | null): Promise<string> {
+  if (!ownerId) return ''
+  try {
+    const { data } = await sb
+      .from('scheduling_pages')
+      .select('username,is_active')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    const page = data as { username: string | null; is_active: boolean | null } | null
+    if (!page?.username || page.is_active === false) return ''
+    return `${getAppUrl()}/rdv/${page.username}`
+  } catch {
+    return ''
+  }
+}
+
+/**
  * L'URL du rapport web de l'entreprise, si un jeton actif existe.
  *
  * Silencieuse en cas d'erreur : la table peut ne pas exister (migration non
  * appliquée), et une séquence en cours d'exécution ne doit pas s'interrompre
  * pour ça — elle repart simplement sur le PDF.
  */
-async function lireRapportUrl(sb: SupabaseClient, entrepriseId: number): Promise<string | null> {
+async function lireRapportUrl(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  ownerId: string | null,
+): Promise<string | null> {
   try {
-    const { data, error } = await sb
-      .from('entreprises_rapport_public')
-      .select('token, actif')
-      .eq('entreprise_id', entrepriseId)
-      .maybeSingle()
-    const row = data as { token: string; actif: boolean } | null
-    if (error || !row?.actif || !row.token) return null
-    return rapportPublicUrl(row.token)
+    const { jeton, erreur } = await assurerJetonRapport(sb, entrepriseId, ownerId)
+    if (erreur || !jeton?.actif || !jeton.token) return null
+    return rapportPublicUrl(jeton.token)
   } catch {
     return null
   }
 }
 
+/** Le texte qu'une étape enverra, une fois ses variables remplies. */
+export interface RenderedStepMessage {
+  /** E-mail seulement. */
+  subject: string | null
+  body: string
+  /** Nom du modèle ou du script d'où vient le texte, quand il en vient un. */
+  source: string | null
+}
+
+/**
+ * Le message d'une étape, modèle résolu et variables remplies.
+ *
+ * PARTAGÉ ENTRE L'ENVOI ET L'APERÇU, et c'est tout l'intérêt : deux chemins
+ * distincts finiraient par diverger, et l'écart se découvrirait chez le
+ * prospect. Un modèle choisi prime sur le message écrit dans l'étape — même
+ * règle des deux côtés.
+ */
+export async function renderStepMessage(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  vars: VarBag,
+): Promise<RenderedStepMessage> {
+  if (step.kind === 'email') {
+    if (!step.template) return { subject: null, body: '', source: null }
+    const { data } = await sb
+      .from('email_templates')
+      .select('name,subject,body')
+      .eq('id', step.template)
+      .maybeSingle()
+    return {
+      subject: interpolate(data?.subject, vars),
+      body: interpolate(data?.body, vars),
+      source: (data?.name as string | null) ?? null,
+    }
+  }
+
+  if (step.kind === 'whatsapp' && step.template) {
+    const { data } = await sb.from('whatsapp_templates').select('name,body').eq('id', step.template).maybeSingle()
+    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+  }
+
+  if (step.kind === 'call' && step.script) {
+    const { data } = await sb.from('call_scripts').select('name,body').eq('id', step.script).maybeSingle()
+    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+  }
+
+  return { subject: null, body: interpolate(step.message, vars), source: null }
+}
+
+/**
+ * Le texte BRUT d'une étape, variables non résolues.
+ *
+ * Sert au garde-fou de l'audit : on doit savoir si le message CITE
+ * `{{company.audit_url}}` avant de l'interpoler, puisqu'après interpolation il
+ * ne reste qu'une URL — impossible de distinguer un lien promis d'un lien
+ * absent.
+ */
+export async function stepRawText(sb: SupabaseClient, step: SequenceStep): Promise<string> {
+  if (step.kind === 'email' && step.template) {
+    const { data } = await sb
+      .from('email_templates')
+      .select('subject,body')
+      .eq('id', step.template)
+      .maybeSingle()
+    return `${data?.subject ?? ''}\n${data?.body ?? ''}`
+  }
+  if (step.kind === 'whatsapp' && step.template) {
+    const { data } = await sb.from('whatsapp_templates').select('body').eq('id', step.template).maybeSingle()
+    return (data?.body as string | null) ?? ''
+  }
+  if (step.kind === 'call' && step.script) {
+    const { data } = await sb.from('call_scripts').select('body').eq('id', step.script).maybeSingle()
+    return (data?.body as string | null) ?? ''
+  }
+  return step.message ?? ''
+}
+
+/**
+ * Cette étape promet-elle un audit que l'entreprise n'a pas ?
+ *
+ * Le lien EXISTE toujours depuis qu'on crée le jeton à la demande — donc son
+ * absence ne signale plus rien. Ce qui compte est ce qu'il y a AU BOUT : sans
+ * `entreprises_audit_site`, la page est la trame par défaut au nom de
+ * l'entreprise, sans capture ni score ni constat la concernant. 192 des 295
+ * entreprises qualifiées sont dans ce cas.
+ *
+ * Envoyer « voici l'audit de votre site » vers cette page-là est pire que de ne
+ * rien envoyer : le prospect voit qu'on ne l'a pas regardé, et on ne peut pas
+ * rattraper une première impression.
+ */
+export async function etapePromettUnAuditAbsent(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  entrepriseId: number | null,
+): Promise<boolean> {
+  if (entrepriseId == null) return false
+  const texte = await stepRawText(sb, step)
+  if (!usedVariables(texte).includes('company.audit_url')) return false
+  return !(await aDesMesuresAudit(sb, entrepriseId))
+}
+
+/**
+ * Le sac de variables d'un vrai prospect, pour l'aperçu des messages.
+ *
+ * Passe par `resolveEntities`, donc l'aperçu montre EXACTEMENT ce que l'envoi
+ * produira — y compris les liens du rapport et du site démo, et les variables
+ * qui resteront vides. Un aperçu calculé autrement mentirait tôt ou tard.
+ */
+export async function resolveMessageVars(ctx: RunContext): Promise<VarBag> {
+  const sb = getServiceClient()
+  const ent = await resolveEntities(sb, ctx)
+  return ent.vars
+}
+
+/**
+ * Rendu d'un texte de message.
+ *
+ * Délègue à `interpolateVars`, qui résout d'abord les anciennes écritures
+ * (`{{company_name}}`, `{{prénom}}`…) vers leur clé canonique. Sans ce
+ * détour, un modèle rédigé dans la messagerie et choisi dans une étape de
+ * séquence partait au prospect avec ses variables vidées.
+ */
 export function interpolate(text: string | null | undefined, vars: VarBag): string {
-  return (text ?? '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => vars[k] ?? '')
+  return interpolateVars(text, vars)
 }
 
 /** Signature du CRM (mono-équipe) : la plus récemment mise à jour. */
@@ -683,15 +899,29 @@ export async function enrollInSequence(
 ): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
   const sb = getServiceClient()
   const ent = await resolveEntities(sb, ctx)
-  if (!ent.contactId) return { enrolled: false, enrollmentId: null }
-  // éviter les doublons actifs
-  const { data: existing } = await sb
+
+  // Ce qu'il faut pour démarcher, c'est un CANAL, pas une fiche contact.
+  //
+  // L'ancienne garde exigeait `contactId` : 70 des 275 entreprises qualifiées
+  // n'ont aucune ligne `contacts` et étaient donc inenrôlables en silence — or
+  // c'est précisément le segment « sans e-mail, un mobile sur la fiche
+  // entreprise », celui de la séquence WhatsApp. On refuse maintenant sur le
+  // seul critère qui compte : personne à qui écrire NI appeler.
+  if (!ent.contactEmail && !ent.contactPhone) return { enrolled: false, enrollmentId: null }
+  if (ent.entrepriseId == null && !ent.contactId) return { enrolled: false, enrollmentId: null }
+
+  // Éviter les doublons actifs. Sur une entreprise sans contact, l'unicité se
+  // joue sur l'entreprise — sinon un second clic ouvrirait une deuxième
+  // inscription et le prospect recevrait tout en double.
+  const dedupe = sb
     .from('sequence_enrollments')
     .select('id')
     .eq('automation_id', automation.id)
-    .eq('contact_id', ent.contactId)
     .in('status', ['active', 'paused'])
-    .maybeSingle()
+  const { data: existing } = await (ent.contactId
+    ? dedupe.eq('contact_id', ent.contactId)
+    : dedupe.eq('entreprise_id', ent.entrepriseId as number)
+  ).maybeSingle()
   if (existing) return { enrolled: false, enrollmentId: existing.id }
 
   const { data: inserted } = await sb
@@ -754,12 +984,31 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   }
 
   const step = steps[idx]
+
+  // Une étape d'attente ne s'adresse à personne : elle n'a besoin ni du contact,
+  // ni de l'audit, ni du site démo. La traiter en premier évite une demi-douzaine
+  // de requêtes par tick — et depuis que les séquences WhatsApp comptent deux
+  // attentes chacune, ce n'est plus un cas marginal.
+  if (step.kind === 'wait') {
+    await processWaitStep(sb, enrollment, steps, idx, step)
+    return
+  }
+
   const ctx: RunContext = {
     contact_id: enrollment.contact_id,
     opportunite_id: enrollment.opportunite_id,
     entreprise_id: enrollment.entreprise_id,
   }
   const ent = await resolveEntities(sb, ctx)
+
+  // Le message promet l'audit, l'entreprise n'a rien à montrer : on GÈLE au lieu
+  // d'envoyer un lien vers une page générique à son nom. Vaut pour l'e-mail
+  // comme pour les tâches manuelles — la séquence WhatsApp cite le rapport elle
+  // aussi, et un lien creux se paie plus cher encore dans une conversation.
+  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId)) {
+    await holdForMissingAuditLink(sb, enrollment.id)
+    return
+  }
 
   if (step.kind === 'email') {
     // Aucun destinataire : l'étape ne s'exécute PAS et la séquence n'avance pas.
@@ -782,13 +1031,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
 
     let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
-      const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
-      if (tpl) {
-        const text = interpolate(tpl.body, ent.vars)
+      const tpl = await renderStepMessage(sb, step, ent.vars)
+      if (tpl.source !== null || tpl.body) {
+        const text = tpl.body
         const result = await sendEngineEmail(sb, {
           to: ent.contactEmail,
           toName: ent.contactName,
-          subject: interpolate(tpl.subject, ent.vars),
+          subject: tpl.subject ?? '',
           text,
           contactId: ent.contactId,
           entrepriseId: ent.entrepriseId,
@@ -847,20 +1096,15 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       .update({ send_at: null, hold_reason: null, ...(sentAt ? { last_email_at: sentAt } : {}) })
       .eq('id', enrollment.id)
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
-  } else if (step.kind === 'wait') {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
   } else if (stepIsManual(step)) {
-    let message = interpolate(step.message, ent.vars)
-    let scriptName: string | undefined
-    if (step.kind === 'whatsapp' && step.template) {
-      const { data: wt } = await sb.from('whatsapp_templates').select('body').eq('id', step.template).maybeSingle()
-      message = interpolate(wt?.body, ent.vars)
-    }
-    if (step.kind === 'call' && step.script) {
-      const { data: sc } = await sb.from('call_scripts').select('name,body').eq('id', step.script).maybeSingle()
-      scriptName = sc?.name
-      message = sc?.body ?? message
-    }
+    // Le corps d'un script d'appel ne passait PAS par `interpolate` : l'agent
+    // lisait « Bonjour, je suis bien avec {{company.name}} ? » à l'écran, en
+    // clair. `renderStepMessage` traite les trois canaux de la même façon, et
+    // c'est le même code que l'aperçu du builder — les deux ne peuvent plus
+    // diverger.
+    const rendu = await renderStepMessage(sb, step, ent.vars)
+    const message = rendu.body
+    const scriptName = rendu.source ?? undefined
     // À qui revient la tâche : propriétaire du contact, celui qui a lancé la
     // séquence, puis l'admin — selon la règle d'attribution du régulateur.
     const routing = await assignManualTask(sb, {
@@ -897,6 +1141,52 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   } else {
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   }
+}
+
+/**
+ * Étape d'attente : soit on laisse courir les jours, soit on attend un humain.
+ *
+ * LE MODE `reply` EST LE CŒUR D'UNE SÉQUENCE WHATSAPP
+ * Le premier message ne fait que vérifier qu'on parle bien à la bonne
+ * entreprise. Envoyer le site sans avoir eu de réponse, c'est écrire deux fois
+ * dans le vide — et sur WhatsApp, deux messages sans réponse mènent au blocage.
+ * L'inscription se gare donc jusqu'à ce que quelqu'un déclare la réponse.
+ */
+async function processWaitStep(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  steps: SequenceStep[],
+  idx: number,
+  step: SequenceStep,
+): Promise<void> {
+  if (step.waitMode !== 'reply') {
+    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    return
+  }
+
+  const timeoutDays = Number(step.replyTimeoutDays) || 0
+  const dejaRepondu = Boolean(readReplies(enrollment.vars)[String(idx)])
+  // Déjà garée et pourtant réveillée par le ticker : le délai de relance est
+  // échu et personne n'a répondu. On avance quand même — c'est exactement ce
+  // que « relancer au bout de n jours » veut dire.
+  const relanceEchue = enrollment.hold_reason === 'awaiting_reply' && timeoutDays > 0
+
+  if (dejaRepondu || relanceEchue) {
+    await scheduleNextStep(sb, enrollment, steps, idx + 1, { reanchor: true })
+    return
+  }
+
+  // Sans délai de relance, `next_run_at` reste nul : l'inscription sort de la
+  // file du ticker au lieu d'y revenir chaque minute pour ne rien faire, ce qui
+  // affamerait les inscriptions réellement envoyables.
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'awaiting_reply',
+      next_run_at: timeoutDays > 0 ? new Date(Date.now() + timeoutDays * DAY_MS).toISOString() : null,
+    })
+    .eq('id', enrollment.id)
 }
 
 /**
@@ -938,6 +1228,26 @@ export async function holdForMissingEmail(sb: SupabaseClient, enrollmentId: stri
     .update({
       send_at: null,
       hold_reason: 'no_email',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape dont le message promet un audit que l'entreprise n'a pas.
+ *
+ * Même mécanique que « sans email » : l'inscription n'est pas perdue, elle
+ * attend un geste — lancer l'audit du site, ou retirer la variable du modèle.
+ * `next_run_at` est repoussé de deux heures parce que rien ne changera d'ici là
+ * sans intervention humaine, et repasser dessus à chaque minute ne ferait que
+ * bruiter le journal.
+ */
+export async function holdForMissingAuditLink(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'lien_manquant',
       next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
     })
     .eq('id', enrollmentId)
@@ -1005,11 +1315,22 @@ export async function cancelEnrollmentWork(
   return { jobs: (jobs ?? []).length, tasks: (tasks ?? []).length }
 }
 
+/**
+ * Fait avancer une inscription à l'étape `nextIdx` et calcule sa date.
+ *
+ * `reanchor` remet le compteur des J+n à MAINTENANT, sur l'étape qu'on vient de
+ * franchir. À poser chaque fois que l'inscription a attendu un humain — tâche
+ * manuelle faite, réponse déclarée : sans ça, une accroche WhatsApp répondue au
+ * bout d'une semaine ferait partir la démo dans la seconde, tous ses J+n étant
+ * déjà dans le passé. Un envoi automatique, lui, ne réancre pas : il est parti
+ * à l'heure prévue, la séquence garde son rythme.
+ */
 async function scheduleNextStep(
   sb: SupabaseClient,
   enrollment: SequenceEnrollment,
   steps: SequenceStep[],
   nextIdx: number,
+  opts: { reanchor?: boolean } = {},
 ): Promise<void> {
   if (nextIdx >= steps.length) {
     await sb
@@ -1025,22 +1346,42 @@ async function scheduleNextStep(
       .eq('id', enrollment.id)
     return
   }
-  const next = steps[nextIdx]
-  const entered = new Date(enrollment.entered_at).getTime()
+  const now = Date.now()
+  const anchorMs = enrollment.anchor_at ? new Date(enrollment.anchor_at).getTime() : null
+  const anchor: StepAnchor = opts.reanchor
+    ? { enteredMs: now, anchorMs: now, anchorStep: Math.max(0, nextIdx - 1) }
+    : {
+        enteredMs: new Date(enrollment.entered_at).getTime(),
+        anchorMs: Number.isFinite(anchorMs) ? anchorMs : null,
+        anchorStep: enrollment.anchor_step ?? null,
+      }
   // Décalage posé à la main depuis la vue semaine : « cette relance, pas demain,
   // après-demain ». Il s'applique à l'étape, pas à toute la suite.
   const shift = readStepShifts(enrollment.vars)[String(nextIdx)] ?? 0
-  let runAt = entered + ((next.day ?? 0) + shift) * 86400000
-  if (runAt < Date.now()) runAt = Date.now()
+  let runAt = stepStartMs(steps, nextIdx, anchor, shift)
+  if (runAt < now) runAt = now
   // `next_run_at` reste « pas avant cette date » ; le créneau exact d'un email
   // sera reposé par le régulateur au tick suivant.
   await sb
     .from('sequence_enrollments')
-    .update({ current_step: nextIdx, next_run_at: new Date(runAt).toISOString(), send_at: null, hold_reason: null })
+    .update({
+      current_step: nextIdx,
+      next_run_at: new Date(runAt).toISOString(),
+      send_at: null,
+      hold_reason: null,
+      ...(opts.reanchor
+        ? { anchor_at: new Date(now).toISOString(), anchor_step: anchor.anchorStep }
+        : {}),
+    })
     .eq('id', enrollment.id)
 }
 
-/** Appelé quand une tâche de démarchage liée à une séquence est complétée. */
+/**
+ * Appelé quand une tâche de démarchage liée à une séquence est complétée.
+ *
+ * Réancre : le WhatsApp est parti maintenant, pas au jour où le builder l'avait
+ * prévu. L'étape suivante compte ses jours depuis ce geste.
+ */
 export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<void> {
   const sb = getServiceClient()
   const { data: enr } = await sb.from('sequence_enrollments').select('*').eq('id', enrollmentId).maybeSingle()
@@ -1049,5 +1390,16 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
   const { data: autoRow } = await sb.from('automations').select('definition').eq('id', enrollment.automation_id).maybeSingle()
   const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
   const steps = Array.isArray(def.steps) ? def.steps : []
-  await scheduleNextStep(sb, enrollment, steps, enrollment.current_step + 1)
+  await scheduleNextStep(sb, enrollment, steps, enrollment.current_step + 1, { reanchor: true })
+}
+
+/**
+ * Libère une inscription garée sur une attente-réponse (cf. `declarerReponse`).
+ *
+ * Identique à l'avancement après tâche — même réancrage, pour la même raison :
+ * la suite se compte depuis le geste, pas depuis l'inscription. Séparée pour
+ * que `reply.ts` n'ait pas à connaître la mécanique des étapes.
+ */
+export async function advanceEnrollmentAfterReply(enrollmentId: string): Promise<void> {
+  await advanceEnrollmentAfterTask(enrollmentId)
 }

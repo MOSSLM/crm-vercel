@@ -4,7 +4,7 @@
 jest.mock('@/app/api/_lib/service-client', () => ({ getServiceClient: () => ({}) }))
 jest.mock('@/app/api/automations/regulator/_view', () => ({ buildRegulatorView: jest.fn() }))
 
-import { derivePosition, toStateRow } from '../_board'
+import { derivePosition, toStateRow, visibleStepPosition } from '../_board'
 import { ENTRY_COLUMN_ID, buildColumns, type PipelineStageRef } from '@/lib/sales-pipeline/stages'
 import type { SalesSequenceInfo } from '../_board'
 import type { SeqStepKind } from '@/components/automations/types'
@@ -65,6 +65,45 @@ describe('toStateRow', () => {
     expect(s.state).toBe('progress') // valeur inconnue → on ne casse pas le rendu
     expect(s.propoAmount).toBe(1200.5)
     expect(s.stageDates).toEqual({})
+  })
+})
+
+describe('visibleStepPosition', () => {
+  /** La séquence WhatsApp réelle : accroche, attente, démo, attente, appel. */
+  const AVEC_ATTENTES = [
+    { kind: 'whatsapp' },
+    { kind: 'wait' },
+    { kind: 'whatsapp' },
+    { kind: 'wait' },
+    { kind: 'call' },
+  ]
+
+  it('suit les étapes visibles quand il n’y a aucune attente', () => {
+    const simple = [{ kind: 'email' }, { kind: 'whatsapp' }, { kind: 'call' }]
+    expect(visibleStepPosition(simple, 0)).toBe(1)
+    expect(visibleStepPosition(simple, 2)).toBe(3)
+  })
+
+  // La régression : `current_step` compte les attentes, les colonnes non. Un
+  // prospect garé après son accroche s'affichait dans la colonne du message
+  // SUIVANT — on l'aurait cru déjà envoyé.
+  it('garde le prospect sur le dernier message parti pendant l’attente', () => {
+    expect(visibleStepPosition(AVEC_ATTENTES, 1)).toBe(1) // garé après l'accroche
+    expect(visibleStepPosition(AVEC_ATTENTES, 3)).toBe(2) // garé après la démo
+  })
+
+  it('avance d’un cran une fois l’attente franchie', () => {
+    expect(visibleStepPosition(AVEC_ATTENTES, 2)).toBe(2) // la démo s'exécute
+    expect(visibleStepPosition(AVEC_ATTENTES, 4)).toBe(3) // l'appel s'exécute
+  })
+
+  it('ne compte rien avant la première étape', () => {
+    expect(visibleStepPosition([], 0)).toBe(0)
+    expect(visibleStepPosition([{ kind: 'wait' }], 0)).toBe(0)
+  })
+
+  it('ne déborde pas quand l’inscription est terminée', () => {
+    expect(visibleStepPosition(AVEC_ATTENTES, 99)).toBe(3)
   })
 })
 

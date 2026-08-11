@@ -247,6 +247,28 @@ export function toStateRow(row: StateRow | undefined): SalesStateRow {
  * l'opportunité. Une opportunité qui n'est pas encore arrivée à l'étape de
  * reprise se place sur la première colonne : il faut la mettre en séquence.
  */
+/**
+ * Sur quelle COLONNE se trouve un prospect, à partir de l'index moteur.
+ *
+ * Deux numérotations coexistent et ne peuvent pas être confondues :
+ * `sequence_enrollments.current_step` compte toutes les étapes, attentes
+ * comprises ; les colonnes du pipeline n'en montrent aucune (une attente n'est
+ * pas un geste commercial). Indexer les unes avec l'autre décale la ligne d'un
+ * cran par attente franchie.
+ *
+ * Renvoie une position 1-based dans la liste SANS attentes, ou 0 quand rien n'a
+ * encore été fait. Quand l'étape courante EST une attente, la position reste
+ * celle du dernier message parti — c'est lui qui attend une réponse, et c'est ce
+ * que l'opérateur doit voir.
+ */
+export function visibleStepPosition(steps: { kind: string }[], currentStep: number): number {
+  let count = 0
+  for (let i = 0; i < steps.length && i <= currentStep; i++) {
+    if (steps[i].kind !== 'wait') count++
+  }
+  return count
+}
+
 export function derivePosition(opts: {
   columns: SalesColumn[]
   sequence: SalesSequenceInfo | null
@@ -642,9 +664,15 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     if (enrollment) {
       const automation = automationById.get(enrollment.automation_id)
       const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
-      const allSteps = (Array.isArray(def.steps) ? def.steps : []).filter((s) => s.kind !== 'wait')
+      const fullSteps = Array.isArray(def.steps) ? def.steps : []
+      const allSteps = fullSteps.filter((s) => s.kind !== 'wait')
       stepsOfEnrollment = allSteps
-      const step = allSteps[enrollment.current_step]
+      // `current_step` compte TOUTES les étapes, attentes comprises ; les
+      // colonnes n'en montrent aucune. Sans conversion, un prospect garé après
+      // son accroche WhatsApp s'affichait dans la colonne du message SUIVANT —
+      // on l'aurait cru déjà envoyé.
+      const visible = visibleStepPosition(fullSteps, enrollment.current_step)
+      const step = fullSteps[enrollment.current_step]
       const slot = slotByEnrollment.get(enrollment.id)
       sequence = {
         enrollmentId: enrollment.id,
@@ -652,10 +680,10 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         name: automation?.name ?? 'Séquence',
         status:
           automation && automation.status !== 'on' && enrollment.status === 'active' ? 'paused' : enrollment.status,
-        currentStep: enrollment.current_step + 1,
+        currentStep: visible,
         totalSteps: allSteps.length,
         stepKind: step?.kind ?? null,
-        stepLabel: step?.label || step?.template || `Étape ${enrollment.current_step + 1}`,
+        stepLabel: step?.label || step?.template || `Étape ${Math.max(1, visible)}`,
         sendAt: slot?.sendAt ?? enrollment.send_at,
         holdReason: (slot?.reason ?? (enrollment.hold_reason as HoldReason | null)) ?? null,
         rank: slot?.rank ?? null,

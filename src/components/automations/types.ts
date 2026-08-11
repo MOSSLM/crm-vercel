@@ -1,4 +1,5 @@
 // types.ts — types du domaine Automatisations (workflows, séquences, démarchage).
+import type { Canal } from '@/lib/prospects/canal'
 
 export type AutomationKind = 'workflow' | 'sequence'
 export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error'
@@ -47,6 +48,20 @@ export interface SequenceStep {
   skipIfReplied?: boolean
   /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
   attachAudit?: boolean
+  /**
+   * Étape `wait` : ce qu'on attend.
+   *
+   * `days` (défaut) — le J+n de l'étape suivante, comme avant.
+   * `reply` — on attend qu'un humain déclare que le prospect a répondu. Rien ne
+   * part tant que le bouton n'a pas été cliqué : c'est le cœur d'une séquence
+   * WhatsApp, où le 2ᵉ message n'a de sens que si le 1ᵉʳ a reçu une réponse.
+   */
+  waitMode?: 'days' | 'reply'
+  /**
+   * Attente-réponse : au bout de combien de jours on relance quand même.
+   * Absent ou 0 = on attend indéfiniment, le prospect reste garé.
+   */
+  replyTimeoutDays?: number
 }
 
 export interface SequenceSettings {
@@ -75,6 +90,20 @@ export interface SequenceSettings {
    * rendez-vous (cf. `defaultHandoffOrdre`).
    */
   handoffStage?: number | null
+  /**
+   * Public visé — les canaux que le prospect DOIT avoir pour que cette séquence
+   * ait un sens (« il me faut un mobile », « il me faut une adresse »).
+   *
+   * La séquence ne parle jamais de préfixes téléphoniques : « 06/07 = mobile »
+   * est écrit une seule fois, dans `src/lib/prospects/canal.ts`, et vaut pour
+   * tout le CRM. Ici on déclare un besoin, pas une règle de numérotation.
+   *
+   * Sert à SUGGÉRER la bonne séquence dans le tableau. Ne bloque rien : on peut
+   * toujours inscrire une ligne hors public à la main.
+   */
+  requireCanaux?: Canal[]
+  /** Canaux qui DISQUALIFIENT le prospect (« pas d'adresse e-mail, sinon on écrit »). */
+  excludeCanaux?: Canal[]
 }
 
 export interface SequenceDefinition {
@@ -159,6 +188,15 @@ export interface SequenceEnrollment {
   hold_reason?: string | null
   /** Dernier email réellement sorti — vide si l'envoi a été retenu. */
   last_email_at?: string | null
+  /**
+   * Dernière reprise réelle de l'inscription (tâche manuelle faite, réponse
+   * déclarée). Les J+n des étapes suivantes se comptent à partir de là plutôt
+   * que d'`entered_at` — sinon une accroche répondue au bout d'une semaine
+   * ferait partir la suite dans la seconde. `null` = depuis `entered_at`.
+   */
+  anchor_at?: string | null
+  /** Étape où l'ancre a été posée : son `day` est le zéro du calcul. */
+  anchor_step?: number | null
   vars: Record<string, unknown>
   created_by: string | null
   entered_at: string

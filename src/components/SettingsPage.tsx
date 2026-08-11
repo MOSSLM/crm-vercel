@@ -14,6 +14,7 @@ import { Separator } from './ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
+import { ExportVCard } from './prospects/ExportVCard';
 import { 
   RotateCcw,
   Palette,
@@ -743,13 +744,13 @@ export const SettingsPage: React.FC = () => {
                 </Button>
                 <Button variant="outline" className="flex items-center gap-2">
                   <Download className="h-4 w-4" />
-                  Exporter les contacts (vCard)
-                </Button>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
                   Exporter le pipeline (JSON)
                 </Button>
               </div>
+
+              <Separator />
+
+              <ExportVCard />
 
               <Separator />
 

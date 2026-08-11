@@ -10,12 +10,24 @@ import { useRefData } from './ref-data'
 import { TaskBoard } from './TaskBoard'
 import {
   assignProspectionTask,
+  declareReply,
+  listAwaitingReply,
   listProspectionTasks,
   completeProspectionTask,
   snoozeProspectionTask,
   skipProspectionTask,
+  type AwaitingReplyRow,
   type ProspectionTaskFull,
 } from './prospection-db'
+import { lienWhatsApp } from '@/lib/prospects/canal'
+import { NumeroPicker, sourceNumeros, useNumeros } from './NumeroPicker'
+import type { NumeroProspect, UsageNumero } from '@/lib/prospects/numeros'
+
+/**
+ * L'onglet des séquences garées. Pas dans `TABS` : il ne filtre pas des tâches,
+ * il montre autre chose — des inscriptions qui n'ont plus de tâche du tout.
+ */
+const AWAITING_TAB = 'awaiting'
 
 const TABS: { id: string; label: string; icon: string; match: (t: ProspectionTaskFull) => boolean }[] = [
   { id: 'today', label: "Aujourd'hui", icon: 'cal', match: () => true },
@@ -24,6 +36,83 @@ const TABS: { id: string; label: string; icon: string; match: (t: ProspectionTas
   { id: 'linkedin', label: 'LinkedIn', icon: 'linkedin', match: (t) => t.kind === 'linkedin' },
   { id: 'overdue', label: 'En retard', icon: 'warning', match: (t) => new Date(t.due_at).getTime() < Date.now() },
 ]
+
+/**
+ * Les séquences arrêtées en attendant une réponse du prospect.
+ *
+ * C'est le seul endroit où l'on peut les relancer : la tâche qui a envoyé le
+ * message est terminée, elle a quitté la file. Sans cette liste, le prospect
+ * resterait garé indéfiniment — la séquence attendrait un clic qui n'a nulle
+ * part où se produire.
+ */
+function AwaitingList({ rows, onDone }: { rows: AwaitingReplyRow[]; onDone: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null)
+
+  if (rows.length === 0) {
+    return (
+      <div className="empty-row" style={{ padding: 30 }}>
+        Aucune séquence en attente de réponse.
+      </div>
+    )
+  }
+
+  async function repondu(row: AwaitingReplyRow) {
+    setBusy(row.enrollmentId)
+    try {
+      await declareReply(row.enrollmentId)
+      toast.success(`${row.companyName} — séquence reprise`)
+      onDone()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Reprise impossible')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      {rows.map((row) => {
+        const depuis = Math.floor((Date.now() - Date.parse(row.since)) / 86_400_000)
+        const wa = lienWhatsApp(row.phone)
+        return (
+          <div key={row.enrollmentId} className="pros-wait-row">
+            <div className="hd">
+              <span className="nm">{row.companyName}</span>
+              <span className="ag">
+                {depuis <= 0 ? "aujourd'hui" : `${depuis} j`}
+              </span>
+            </div>
+            <div className="sub">
+              {row.sequenceName}
+              {row.contactName ? ` · ${row.contactName}` : ''}
+            </div>
+            <div className="sub">
+              {row.relanceAt
+                ? `Relance automatique le ${new Date(row.relanceAt).toLocaleDateString('fr-FR')}`
+                : 'Aucune relance prévue — la séquence attend ce clic.'}
+            </div>
+            <div className="acts">
+              <button
+                type="button"
+                className="btn ok xs"
+                disabled={busy === row.enrollmentId}
+                onClick={() => repondu(row)}
+              >
+                <XI name="check" className="ico-xs" />
+                Il a répondu
+              </button>
+              {wa && (
+                <a className="btn xs" href={wa} target="_blank" rel="noopener noreferrer" title="Rouvrir la conversation">
+                  <XI name="whatsapp" className="ico-xs" />
+                </a>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
+}
 
 function contactName(t: ProspectionTaskFull): { first: string; last: string; full: string; initials: string } {
   const first = t.contacts?.first_name ?? ''
@@ -60,6 +149,11 @@ export function ProspectionPage() {
   // « file » répond à « que fais-je maintenant », « board » à « qui croule ».
   const [mode, setMode] = useState<'file' | 'board'>('file')
   const [sequenceNames, setSequenceNames] = useState<Record<string, string>>({})
+  // Les inscriptions garées sur une étape « attendre une réponse ». Elles n'ont
+  // plus de tâche — celle qui a envoyé le WhatsApp est terminée et a quitté la
+  // file — donc sans cette liste il n'existerait aucun endroit où déclarer la
+  // réponse, et la séquence resterait garée pour toujours.
+  const [awaiting, setAwaiting] = useState<AwaitingReplyRow[]>([])
 
   function reload() {
     setLoading(true)
@@ -70,6 +164,11 @@ export function ProspectionPage() {
       })
       .catch(() => toast.error('Chargement de la file impossible'))
       .finally(() => setLoading(false))
+    listAwaitingReply()
+      .then(setAwaiting)
+      .catch(() => {
+        /* la file reste utilisable même si l'attente ne se charge pas */
+      })
   }
 
   useEffect(reload, [])
@@ -232,6 +331,20 @@ export function ProspectionPage() {
               </button>
             )
           })}
+          {awaiting.length > 0 && (
+            <button
+              type="button"
+              role="tab"
+              className="pros-side-tab"
+              aria-selected={activeTab === AWAITING_TAB}
+              onClick={() => setActiveTab(AWAITING_TAB)}
+              title="Séquences arrêtées en attendant une réponse du prospect"
+            >
+              <XI name="user" className="ico-sm" />
+              En attente
+              <span className="num">{awaiting.length}</span>
+            </button>
+          )}
         </div>
         {owners.length > 1 && (
           <div className="pros-owner">
@@ -248,7 +361,11 @@ export function ProspectionPage() {
         )}
         <div className="pros-list">
           {loading && <div className="empty-row" style={{ padding: 30 }}>Chargement…</div>}
+          {!loading && activeTab === AWAITING_TAB && (
+            <AwaitingList rows={awaiting} onDone={reload} />
+          )}
           {!loading &&
+            activeTab !== AWAITING_TAB &&
             filtered.map((task) => {
               const c = contactName(task)
               const overdue = new Date(task.due_at).getTime() < Date.now()
@@ -338,12 +455,25 @@ function ProsDetail({
 }) {
   const c = contactName(task)
   const overdue = new Date(task.due_at).getTime() < Date.now()
-  const phone = task.contacts?.tel ?? ''
   const message = task.payload?.message ?? ''
 
+  // Tous les numéros du prospect, pas seulement celui du contact lié à la tâche.
+  const usage: UsageNumero = task.kind === 'call' ? 'appel' : 'whatsapp'
+  const source = sourceNumeros(task)
+  const numeros = useNumeros(source, usage, task.payload?.phone ?? task.contacts?.tel ?? null)
+  const [choisi, setChoisi] = useState<string | null>(null)
+  // Le choix ne survit pas au changement de tâche : sans cette remise à zéro, le
+  // numéro sélectionné sur le prospect précédent resterait coché sur le suivant.
+  useEffect(() => setChoisi(null), [task.id])
+  const phone = choisi ?? numeros[0]?.e164 ?? ''
+
   function openWhatsApp() {
-    const digits = phone.replace(/\D/g, '')
-    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, '_blank')
+    const url = lienWhatsApp(phone, message)
+    if (!url) {
+      toast.error('Ce numéro n’est pas exploitable sur WhatsApp.')
+      return
+    }
+    window.open(url, '_blank')
   }
 
   return (
@@ -390,7 +520,15 @@ function ProsDetail({
         </button>
       </div>
 
-      {tab === 'action' && <ProsAction task={task} onOpenWhatsApp={openWhatsApp} />}
+      {tab === 'action' && (
+        <ProsAction
+          task={task}
+          onOpenWhatsApp={openWhatsApp}
+          numeros={numeros}
+          selection={phone || null}
+          onSelect={setChoisi}
+        />
+      )}
       {tab === 'context' && <ProsContext task={task} />}
       {tab === 'history' && (
         <div className="pros-section">
@@ -411,7 +549,7 @@ function ProsDetail({
         {task.kind === 'call' && phone && (
           <a className="btn outline" href={`tel:${phone}`}>
             <XI name="phoneOut" className="ico-sm" />
-            Composer {phone}
+            Composer {numeros.find((n) => n.e164 === phone)?.affichage ?? phone}
           </a>
         )}
         {task.kind === 'whatsapp' && (
@@ -450,7 +588,19 @@ function ProsDetail({
   )
 }
 
-function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpenWhatsApp: () => void }) {
+function ProsAction({
+  task,
+  onOpenWhatsApp,
+  numeros,
+  selection,
+  onSelect,
+}: {
+  task: ProspectionTaskFull
+  onOpenWhatsApp: () => void
+  numeros: NumeroProspect[]
+  selection: string | null
+  onSelect: (e164: string) => void
+}) {
   const c = contactName(task)
   if (task.kind === 'call') {
     return (
@@ -460,8 +610,13 @@ function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpe
             <XI name="phone" className="ico-sm" />
             Coordonnées
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <KeyVal label="Téléphone" value={task.contacts?.tel ?? '—'} icon="phoneOut" mono />
+          <NumeroPicker
+            numeros={numeros}
+            selection={selection}
+            onSelect={onSelect}
+            label="Numéro à composer"
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
             <KeyVal label="Email" value={task.contacts?.email ?? '—'} icon="mail" mono />
           </div>
         </div>
@@ -488,10 +643,13 @@ function ProsAction({ task, onOpenWhatsApp }: { task: ProspectionTaskFull; onOpe
           <div className="pros-msg-card">
             <div className="hd">
               <XI name="whatsapp" className="ico-sm" style={{ color: 'var(--ok)' }} />
-              <span className="grow">vers {task.contacts?.tel ?? '—'}</span>
+              <span className="grow">
+                vers {numeros.find((n) => n.e164 === selection)?.affichage ?? '—'}
+              </span>
             </div>
             <div className="body-msg">{task.payload?.message || 'Aucun message pré-rédigé.'}</div>
           </div>
+          <NumeroPicker numeros={numeros} selection={selection} onSelect={onSelect} label="Destinataire" />
         </div>
         <div className="pros-section">
           <h3>
@@ -552,7 +710,9 @@ function ProsContext({ task }: { task: ProspectionTaskFull }) {
         <KeyVal label="Nom" value={task.entreprises?.name ?? '—'} icon="company" />
         <KeyVal label="Site web" value={task.entreprises?.site_web_canonique ?? '—'} icon="globe" mono />
         <KeyVal label="Email contact" value={task.contacts?.email ?? '—'} icon="mail" mono />
-        <KeyVal label="Téléphone" value={task.contacts?.tel ?? '—'} icon="phone" mono />
+        {/* Le bloc s'intitule « Entreprise » : c'est sa ligne qu'on attend ici, pas
+            celle du contact — qui figure déjà dans l'onglet Action. */}
+        <KeyVal label="Téléphone entreprise" value={task.entreprises?.telephone ?? '—'} icon="phone" mono />
       </div>
     </div>
   )

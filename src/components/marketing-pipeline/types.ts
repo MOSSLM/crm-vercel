@@ -2,6 +2,8 @@
  * /api/marketing-pipeline/board). Used by the data container
  * (MarketingWebPipeline) and the matrix view (PipelineMatrix). */
 
+import type { Canal } from "@/lib/prospects/canal";
+
 export interface BoardItem {
   id: string;
   name: string;
@@ -66,6 +68,22 @@ export interface BoardItem {
     partielle: boolean;
   } | null;
   agent: { id: string; name: string } | null;
+  /**
+   * Par quoi ce prospect est joignable — entreprise ET contacts confondus.
+   * C'est ce qui décide de la séquence : « sans e-mail + mobile » n'est pas
+   * démarché comme « e-mail + fixe ».
+   *
+   * Optionnel : une réponse d'API antérieure à la fonctionnalité ne le porte pas.
+   */
+  canaux?: Canal[];
+  /** L'inscription en cours de cette ligne, ou null si elle n'est pas en séquence. */
+  sequence?: {
+    enrollmentId: string;
+    automationId: string;
+    name: string;
+    status: string;
+    holdReason: string | null;
+  } | null;
   missing_for_site: string[];
   /**
    * Tickets (notes agent ↔ admin) de la ligne. Optionnel : une réponse d'API
@@ -131,6 +149,29 @@ export interface AgentRef {
   name: string;
 }
 
+/**
+ * Une séquence proposable, avec le public qu'elle déclare viser.
+ *
+ * Le tableau CALCULE la suggestion à partir de ces règles ; aucun rapprochement
+ * n'est écrit en dur. Une séquence créée demain, avec ses propres cases, entre
+ * dans la suggestion sans qu'on retouche le tableau.
+ */
+export interface SequenceRef {
+  id: string;
+  name: string;
+  status: string;
+  requireCanaux: Canal[];
+  excludeCanaux: Canal[];
+}
+
+/**
+ * Valeur sentinelle de `onEnroll` : « la séquence que son canal appelle ».
+ *
+ * Sert aux actions de masse sur un lot mélangé — chaque ligne part vers la
+ * séquence dont elle remplit le public, sans qu'on ait à trier le lot d'abord.
+ */
+export const AUTO_SEQUENCE = "auto";
+
 export interface PipelineRef {
   id: string;
   nom: string;
@@ -141,8 +182,12 @@ export interface BoardData {
   items: BoardItem[];
   templates: TemplateRef[];
   agents: AgentRef[];
+  /** Optionnel : une réponse d'API antérieure à la colonne « Séquence » ne le porte pas. */
+  sequences?: SequenceRef[];
   pipelines: PipelineRef[];
   has_validated_column: boolean;
+  /** `false` tant que la migration d'archivage n'est pas jouée : pas de bascule. */
+  has_archivage?: boolean;
 }
 
 /**
@@ -193,6 +238,13 @@ export interface BulkHandlers {
   onValidateAudits: (items: BoardItem[]) => void;
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
   onAssign?: (items: BoardItem[], agentId: string) => void;
+  /**
+   * Inscrit un lot dans une séquence. `automationId` vaut `"auto"` pour
+   * « celle que son canal appelle » : chaque ligne part alors vers la séquence
+   * qui correspond à ses canaux, ce qui permet de traiter un lot mélangé sans
+   * le trier à la main d'abord.
+   */
+  onEnroll?: (items: BoardItem[], automationId: string) => void;
   onMove: (items: BoardItem[], pipelineId: string) => void;
   /**
    * Archive les lignes cochées. `kind` distingue « la fiche entreprise, et ses
@@ -212,6 +264,8 @@ export interface MatrixHandlers {
   onValidateAudit: (item: BoardItem) => void;
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
   onAssign?: (item: BoardItem, agentId: string) => void;
+  /** Inscrit cette ligne dans une séquence, depuis la cellule « Séquence ». */
+  onEnroll?: (item: BoardItem, automationId: string) => void;
   onMove: (item: BoardItem, pipelineId: string) => void;
   onDetails: (item: BoardItem) => void;
   /**

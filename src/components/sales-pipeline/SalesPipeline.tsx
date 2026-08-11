@@ -20,6 +20,7 @@ import {
   Bolt,
   Building2,
   Calendar,
+  Check,
   ChevronDown,
   ChevronRight,
   ChevronsRight,
@@ -215,6 +216,36 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       }
     },
     [base, load],
+  )
+
+  /**
+   * « Il a répondu » — libère une séquence garée sur une attente-réponse.
+   *
+   * DÉLIBÉRÉMENT SÉPARÉ des cinq issues « le prospect a réagi », qui stoppent
+   * toutes la séquence. Répondre « oui, c'est bien nous » au premier message
+   * WhatsApp n'est pas montrer de l'intérêt pour l'offre : c'est ce qui autorise
+   * l'envoi du site. Le confondre avec « m'a rappelé » couperait justement les
+   * étapes qu'on cherche à enchaîner.
+   */
+  const declarerReponse = React.useCallback(
+    async (rowId: string, enrollmentId: string) => {
+      setBusy(rowId)
+      try {
+        const res = await authedFetch(`/api/automations/enrollments/${enrollmentId}/reply`, { method: 'POST' })
+        const payload = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(payload?.message || 'Reprise impossible')
+          return
+        }
+        toast.success('Séquence reprise — étape suivante planifiée')
+        await load(true)
+      } catch {
+        toast.error('Action impossible')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [load],
   )
 
   const columns = board?.columns ?? []
@@ -725,7 +756,33 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <>
             <div className="mp-scope-pop-scrim" onClick={() => setPopover(null)} />
             <div className="mp-scope-pop" style={{ left: popover.x, top: popover.y, minWidth: 254 }}>
-              <div className="ph">Le prospect a réagi</div>
+              {/* La séquence attend une réponse : « il a répondu » la fait
+                  CONTINUER. Les cinq issues du dessous l'arrêtent toutes — il
+                  fallait donc les séparer visiblement, pas les mélanger. */}
+              {popover.row.sequence?.holdReason === 'awaiting_reply' && popover.row.sequence.enrollmentId && (
+                <>
+                  <div className="ph">La séquence attend une réponse</div>
+                  <button
+                    className="pop-item"
+                    onClick={() => {
+                      const row = popover.row
+                      const enrollmentId = row.sequence?.enrollmentId
+                      setPopover(null)
+                      if (enrollmentId) void declarerReponse(row.id, enrollmentId)
+                    }}
+                  >
+                    <span className="ri ok">
+                      <Check className="ico-sm" />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span className="l">Il a répondu</span>
+                      <span className="sn">→ on continue · étape suivante planifiée</span>
+                    </span>
+                  </button>
+                  <div className="ph">Ou bien : le prospect a réagi</div>
+                </>
+              )}
+              {popover.row.sequence?.holdReason !== 'awaiting_reply' && <div className="ph">Le prospect a réagi</div>}
               {SALES_REACTIONS.map((r) => (
                 <button
                   key={r.id}

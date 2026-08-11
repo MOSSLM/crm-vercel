@@ -119,6 +119,8 @@ export type HoldReason =
   | 'email_pending' // pas de verdict frais — la vérification passe d'abord
   | 'risky_cap' // quota du jour atteint pour les adresses à signal négatif
   | 'domain_probe' // domaine jamais éprouvé : une adresse part, les autres attendent
+  | 'awaiting_reply' // étape « attendre une réponse » : on attend un humain, pas l'horloge
+  | 'lien_manquant' // le message promet l'audit, l'entreprise n'a aucune mesure à montrer
 
 /** Une entrée de la file, telle qu'elle sort de la base. */
 export interface QueueItem {
@@ -629,6 +631,16 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
       return 'quota du jour atteint pour les adresses douteuses'
     case 'domain_probe':
       return 'domaine à éprouver — une adresse part, les autres suivent'
+    case 'awaiting_reply':
+      // Ce n'est pas une panne : la séquence fait exactement ce qu'on lui a
+      // demandé. Le libellé doit dire à qui revient le geste suivant.
+      return at != null
+        ? 'en attente de réponse — relance prévue'
+        : 'en attente de réponse — reprend au clic'
+    case 'lien_manquant':
+      // Le geste attendu est de lancer l'audit, pas de patienter : le libellé
+      // le dit, sinon on croit à un report technique et on laisse traîner.
+      return 'audit à faire — le message le promet'
     default:
       return ''
   }

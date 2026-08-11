@@ -1741,3 +1741,177 @@
 .au-skin .tb-empty { padding: 70px 20px; text-align: center; color: var(--text-3); }
 .au-skin .tb-empty .t { font-size: 14px; font-weight: 500; color: var(--text); margin: 12px 0 4px; }
 .au-skin .tb-empty p { font-size: 12px; margin: 0 auto; max-width: 46ch; }
+
+/* ── Éditeur de message : variables insérables + aperçu ────────────────────
+   Les variables étaient listées dans un panneau replié, à recopier à la main.
+   Une faute de frappe ne se voyait nulle part — le moteur remplace toute clé
+   inconnue par du vide, donc le message partait amputé en silence. */
+.au-skin .msg-ed { display: flex; flex-direction: column; gap: 6px; }
+.au-skin .msg-ed-vars { display: flex; flex-wrap: wrap; gap: 4px; }
+.au-skin .msg-ed-var {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  border-radius: 999px; padding: 2px 8px; font-size: 10.5px; line-height: 1.6;
+  cursor: pointer; white-space: nowrap;
+}
+.au-skin .msg-ed-var:hover:not(:disabled) {
+  border-color: var(--accent); background: var(--accent-tint); color: var(--accent-2);
+}
+.au-skin .msg-ed-var:disabled { opacity: .45; cursor: default; }
+
+.au-skin .msg-ed-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.au-skin .msg-ed-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 0; background: transparent; cursor: pointer; padding: 0;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-4);
+}
+.au-skin .msg-ed-toggle:hover { color: var(--accent-2); }
+.au-skin .msg-ed-toggle .on { text-transform: none; letter-spacing: 0; color: var(--text-3); }
+.au-skin .msg-ed-count { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4); }
+
+.au-skin .msg-ed-preview {
+  border: 1px solid var(--border); border-left: 2px solid var(--accent);
+  border-radius: 6px; padding: 9px 11px; background: var(--bg-2);
+  font-size: 12.5px; line-height: 1.55; color: var(--text);
+  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.au-skin .msg-ed-preview .vide { color: var(--text-4); font-style: italic; }
+.au-skin .msg-ed-missing {
+  display: flex; align-items: flex-start; gap: 5px;
+  font-size: 11px; line-height: 1.45; color: var(--danger);
+}
+
+/* ── Bibliothèque de modèles ─────────────────────────────────────────────── */
+.au-skin .tpl-layout { display: grid; grid-template-columns: 260px 1fr; gap: 0; height: 100%; min-height: 0; }
+.au-skin .tpl-list { border-right: 1px solid var(--border); overflow: auto; padding: 10px; }
+.au-skin .tpl-fam { margin-bottom: 14px; }
+.au-skin .tpl-fam-hd {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-4);
+}
+.au-skin .tpl-fam-hd .count { margin-left: auto; }
+.au-skin .tpl-item {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  border: 1px solid transparent; background: transparent; border-radius: 6px;
+  padding: 6px 8px; cursor: pointer; text-align: left; color: var(--text);
+}
+.au-skin .tpl-item:hover { background: var(--bg-2); }
+.au-skin .tpl-item[aria-pressed="true"] {
+  background: var(--accent-tint); border-color: var(--accent); color: var(--accent-2);
+}
+.au-skin .tpl-item .nm { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .tpl-add {
+  display: flex; align-items: center; gap: 5px; width: 100%; margin-top: 4px;
+  border: 1px dashed var(--border); background: transparent; border-radius: 6px;
+  padding: 5px 8px; cursor: pointer; color: var(--text-3); font-size: 11.5px;
+}
+.au-skin .tpl-add:hover { border-color: var(--accent); color: var(--accent-2); }
+.au-skin .tpl-editor { overflow: auto; padding: 16px 18px; }
+.au-skin .tpl-editor-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.au-skin .tpl-editor-hd .input { font-size: 14px; font-weight: 600; }
+.au-skin .tpl-used {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px;
+}
+.au-skin .tpl-used .seq {
+  font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+  background: var(--bg-2); color: var(--text-3); border: 1px solid var(--border);
+}
+.au-skin .tpl-empty { padding: 60px 20px; text-align: center; color: var(--text-3); font-size: 12.5px; }
+
+/* ── Public visé d'une séquence ───────────────────────────────────────────
+   Déclaré en canaux (« il me faut un mobile »), jamais en préfixes : c'est ce
+   qui permet au tableau de suggérer la bonne séquence sans rien coder en dur. */
+.au-skin .seq-canaux { display: flex; gap: 5px; flex-wrap: wrap; }
+.au-skin .seq-canal {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  border-radius: 6px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;
+}
+.au-skin .seq-canal:hover { border-color: var(--accent); color: var(--accent-2); }
+.au-skin .seq-canal[aria-pressed="true"] {
+  border-color: var(--accent); background: var(--accent-tint); color: var(--accent-2); font-weight: 600;
+}
+.au-skin .seq-canal.danger[aria-pressed="true"] {
+  border-color: var(--danger); background: rgba(181, 50, 47, .10); color: var(--danger);
+}
+
+/* Une étape « attendre une réponse » ne ressemble pas à une pause : elle
+   attend un geste humain, et le flux doit le dire au premier coup d'œil. */
+.au-skin .seq-step[data-kind="wait"][data-reply="true"] { border-style: dashed; }
+
+/* ── Séquences garées en attente de réponse ───────────────────────────────
+   Elles n'ont plus de tâche : celle qui a envoyé le message est terminée et a
+   quitté la file. C'est le seul endroit d'où on peut les relancer. */
+.au-skin .pros-wait-row {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+}
+.au-skin .pros-wait-row .hd { display: flex; align-items: baseline; gap: 8px; }
+.au-skin .pros-wait-row .nm {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.au-skin .pros-wait-row .ag {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4);
+}
+.au-skin .pros-wait-row .sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.au-skin .pros-wait-row .acts { display: flex; gap: 6px; margin-top: 8px; }
+.au-skin .pros-wait-row .acts .btn:first-child { flex: 1; justify-content: center; }
+
+/* ── Sélecteur de numéro ───────────────────────────────────────────────────
+   47 entreprises du parc qualifié portent plusieurs numéros distincts : un
+   standard et le portable du gérant, deux mobiles, parfois trois lignes.
+   L'écran n'en montrait qu'un — celui que le moteur avait retenu — et l'agent
+   n'avait aucun moyen de savoir qu'il en existait d'autres, ni d'en essayer un
+   second quand ça ne répondait pas.
+
+   L'origine est écrite sous chaque numéro (« fiche entreprise », « Jérôme
+   Morandini · Gérant ») : c'est elle qui permet de choisir, pas le numéro. */
+.au-skin .numero-picker {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 0; margin: 0; padding: 0;
+}
+.au-skin .numero-picker-label {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-4);
+  padding: 0; margin-bottom: 2px;
+}
+.au-skin .numero-picker.unique,
+.au-skin .numero-picker.vide {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  gap: 2px;
+}
+.au-skin .numero-picker-choix {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.au-skin .numero-picker-choix:hover { border-color: var(--text-4); }
+.au-skin .numero-picker-choix[data-actif='true'] {
+  border-color: var(--accent, var(--manual));
+  background: var(--surface);
+}
+.au-skin .numero-picker-choix input { accent-color: var(--accent, var(--manual)); flex-shrink: 0; }
+.au-skin .numero-picker-valeur {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
+  flex-shrink: 0;
+}
+.au-skin .numero-picker-type {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-3);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 1px 7px; flex-shrink: 0;
+}
+.au-skin .numero-picker-origine {
+  font-size: 11px; color: var(--text-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.au-skin .numero-picker-aucun { font-size: 12px; color: var(--text-3); }

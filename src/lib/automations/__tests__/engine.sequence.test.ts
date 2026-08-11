@@ -12,7 +12,7 @@ jest.mock('@/app/api/_lib/service-client', () => ({
   getServiceClient: () => ({ from: (...args: unknown[]) => mockFrom(...args) }),
 }));
 
-import { processSequenceEnrollment } from '../engine';
+import { advanceEnrollmentAfterTask, enrollInSequence, processSequenceEnrollment } from '../engine';
 import { resetTestGuardCache } from '@/lib/email/test-guard';
 import type { SequenceEnrollment } from '@/components/automations/types';
 
@@ -22,11 +22,14 @@ type ChainResult = { data: unknown; error?: unknown };
 const tableChain = (result: ChainResult = { data: null, error: null }) => {
   const captured: { updates: unknown[]; inserts: unknown[] } = { updates: [], inserts: [] };
   const c: any = { captured };
-  for (const m of ['select', 'eq', 'not', 'lte', 'gte', 'order']) {
+  // `in` est un FILTRE, pas un terminateur : comme dans PostgrestFilterBuilder,
+  // il rend la chaîne pour qu'on puisse enchaîner `.eq(…).maybeSingle()`
+  // derrière. Le faire résoudre directement cassait tout appel qui filtre sur
+  // un statut avant de conclure.
+  for (const m of ['select', 'eq', 'in', 'not', 'lte', 'gte', 'order']) {
     c[m] = jest.fn(() => c);
   }
   c.limit = jest.fn(() => Promise.resolve(result));
-  c.in = jest.fn(() => Promise.resolve(result));
   // Comme PostgrestBuilder, la chaîne est « thenable » : un `await` sans
   // terminateur explicite (`.select('email')` seul) doit rendre le résultat.
   c.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
@@ -39,7 +42,10 @@ const tableChain = (result: ChainResult = { data: null, error: null }) => {
   });
   c.insert = jest.fn((i: unknown) => {
     captured.inserts.push(i);
-    return Promise.resolve({ error: null });
+    // Comme le vrai client : un insert rend une chaîne, pour que
+    // `.select('id').single()` puisse récupérer la ligne créée. Résoudre tout
+    // de suite empêchait de tester une inscription.
+    return c;
   });
   return c;
 };
@@ -365,5 +371,420 @@ describe('processSequenceEnrollment', () => {
 
     const task = (tables.prospection_tasks.captured.inserts as Record<string, unknown>[])[0];
     expect(task).toEqual(expect.objectContaining({ assignee_id: 'admin-1' }));
+  });
+});
+
+/* ── Inscription : un canal suffit, une fiche contact n'est pas requise ──── */
+
+describe('enrollInSequence', () => {
+  let tables: Record<string, any>;
+
+  /** Le socle commun ; `over` ne change que ce que le cas teste. */
+  const wireEnroll = (over: Record<string, any> = {}) => {
+    tables = {
+      contacts: tableChain({ data: null, error: null }),
+      entreprises: tableChain({ data: { name: 'Clim Ouest' }, error: null }),
+      opportunites: tableChain({ data: [], error: null }),
+      audits: tableChain({ data: [], error: null }),
+      sites: tableChain({ data: [], error: null }),
+      entreprises_rapport_public: tableChain({ data: null, error: null }),
+      user_profiles: tableChain({ data: null, error: null }),
+      scheduling_pages: tableChain({ data: null, error: null }),
+      sequence_enrollments: tableChain({ data: null, error: null }),
+      ...over,
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  const automation = { id: 'auto-1', name: 'WhatsApp seul' } as any;
+
+  beforeEach(() => mockFrom.mockReset());
+
+  // Le cas qui bloquait 70 des 275 entreprises qualifiées : aucune ligne
+  // `contacts`, mais un mobile sur la fiche entreprise — soit exactement le
+  // segment de la séquence WhatsApp.
+  it('inscrit une entreprise sans fiche contact, sur son seul mobile', async () => {
+    wireEnroll({
+      entreprises: tableChain({
+        data: { name: 'Clim Ouest', telephone: '06 46 04 28 76', email: null },
+        error: null,
+      }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result.enrolled).toBe(true);
+    const insert = (tables.sequence_enrollments.captured.inserts as Record<string, unknown>[])[0];
+    expect(insert).toEqual(expect.objectContaining({ entreprise_id: 42, contact_id: null }));
+  });
+
+  it('refuse un prospect qu’on ne peut ni écrire ni appeler', async () => {
+    wireEnroll({
+      entreprises: tableChain({ data: { name: 'Clim Ouest', telephone: null, email: null }, error: null }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result.enrolled).toBe(false);
+    expect(tables.sequence_enrollments.captured.inserts).toHaveLength(0);
+  });
+
+  it('ne double pas l’inscription d’une entreprise sans contact', async () => {
+    // Sans dédoublonnage sur l'entreprise, un second clic enverrait tout deux fois.
+    wireEnroll({
+      entreprises: tableChain({ data: { name: 'Clim Ouest', telephone: '0646042876' }, error: null }),
+      sequence_enrollments: tableChain({ data: { id: 'deja-la' }, error: null }),
+    });
+
+    const result = await enrollInSequence(automation, { entreprise_id: 42 });
+
+    expect(result).toEqual({ enrolled: false, enrollmentId: 'deja-la' });
+  });
+});
+
+/* ── Attente d'une réponse ───────────────────────────────────────────────── */
+
+describe('étape « attendre une réponse »', () => {
+  const DAY = 86_400_000;
+  let tables: Record<string, any>;
+
+  /** Accroche WhatsApp, puis attente, puis démo. */
+  const withWait = (waitStep: Record<string, unknown>) => ({
+    id: 'auto-1',
+    name: 'WhatsApp seul',
+    kind: 'sequence',
+    status: 'on',
+    definition: {
+      steps: [
+        { id: 's1', kind: 'whatsapp', day: 0 },
+        { id: 's2', kind: 'wait', day: 0, ...waitStep },
+        { id: 's3', kind: 'whatsapp', day: 3 },
+      ],
+    },
+    settings: {},
+  });
+
+  const wireWait = (automationRow: Record<string, unknown>) => {
+    tables = {
+      automations: tableChain({ data: automationRow, error: null }),
+      sequence_enrollments: tableChain(),
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  const updates = () => tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+  const onWait = (over: Partial<SequenceEnrollment> = {}): SequenceEnrollment => ({
+    ...enrollment,
+    current_step: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+  });
+
+  it('gare l’inscription au lieu d’enchaîner tout seul', async () => {
+    wireWait(withWait({ waitMode: 'reply' }));
+
+    await processSequenceEnrollment(onWait());
+
+    // Sans délai de relance, `next_run_at` est nul : l'inscription sort de la
+    // file du ticker plutôt que d'y revenir chaque minute pour ne rien faire.
+    expect(updates()[0]).toEqual(
+      expect.objectContaining({ hold_reason: 'awaiting_reply', next_run_at: null }),
+    );
+    // Surtout : elle n'a PAS avancé.
+    expect(updates()[0]).not.toHaveProperty('current_step');
+  });
+
+  it('programme la relance quand un délai est fixé', async () => {
+    const now = Date.now();
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }));
+
+    await processSequenceEnrollment(onWait());
+
+    const update = updates()[0];
+    expect(update.hold_reason).toBe('awaiting_reply');
+    const runAt = Date.parse(update.next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(runAt - now).toBeLessThan(3.1 * DAY);
+  });
+
+  it('relance quand même à l’échéance, personne n’ayant répondu', async () => {
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }));
+
+    // Le ticker nous réveille sur une inscription déjà garée.
+    await processSequenceEnrollment(onWait({ hold_reason: 'awaiting_reply' }));
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  it('avance dès qu’une réponse a été déclarée', async () => {
+    const now = Date.now();
+    wireWait(withWait({ waitMode: 'reply' }));
+
+    await processSequenceEnrollment(
+      onWait({
+        hold_reason: 'awaiting_reply',
+        vars: { replies: { '1': new Date().toISOString() } },
+        entered_at: new Date(now - 10 * DAY).toISOString(),
+      }),
+    );
+
+    const update = updates()[0];
+    expect(update.current_step).toBe(2);
+    // Réancré : la démo part trois jours après la réponse, pas dans la seconde
+    // — les J+n de l'inscription sont pourtant tous dans le passé.
+    const runAt = Date.parse(update.next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(update.anchor_step).toBe(1);
+  });
+
+  it('laisse une attente en jours se comporter comme avant', async () => {
+    wireWait(withWait({}));
+
+    await processSequenceEnrollment(onWait());
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+    expect(updates()[0].hold_reason).toBeNull();
+  });
+});
+
+/* ── Ancrage des délais ──────────────────────────────────────────────────── */
+
+describe('advanceEnrollmentAfterTask', () => {
+  const DAY = 86_400_000;
+  let enrollments: any;
+
+  /**
+   * Une séquence WhatsApp réaliste : accroche à J+1, démo trois jours après.
+   * C'est l'écart J+4 − J+1 qui doit être respecté, pas le J+4 absolu.
+   */
+  const STEPS = [
+    { id: 's1', kind: 'email', day: 0 },
+    { id: 's2', kind: 'whatsapp', day: 1 },
+    { id: 's3', kind: 'whatsapp', day: 4 },
+  ];
+
+  const wireAdvance = (enr: Partial<SequenceEnrollment>) => {
+    enrollments = tableChain({
+      data: { ...enrollment, current_step: 1, ...enr },
+      error: null,
+    });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'sequence_enrollments') return enrollments;
+      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      throw new Error(`unexpected table: ${table}`);
+    });
+  };
+
+  const lastUpdate = () => {
+    const updates = enrollments.captured.updates as Record<string, unknown>[];
+    return updates[updates.length - 1];
+  };
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+  });
+
+  // La régression qui a motivé l'ancre : une accroche WhatsApp prévue à J+1 mais
+  // faite au bout d'une semaine laissait J+4 dans le passé, donc la démo partait
+  // dans la seconde — juste après l'accroche, ce qui grille le prospect.
+  it('ne fait pas partir l’étape suivante immédiatement quand la tâche a traîné', async () => {
+    const now = Date.now();
+    wireAdvance({ entered_at: new Date(now - 8 * DAY).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const update = lastUpdate();
+    const runAt = Date.parse(update.next_run_at as string);
+    // Trois jours après le geste (J+4 − J+1), pas « maintenant ».
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+    expect(runAt - now).toBeLessThan(3.1 * DAY);
+  });
+
+  it('pose l’ancre sur l’étape qu’on vient de franchir', async () => {
+    wireAdvance({ entered_at: new Date(Date.now() - 8 * DAY).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const update = lastUpdate();
+    expect(update.anchor_step).toBe(1);
+    expect(Date.parse(update.anchor_at as string)).toBeCloseTo(Date.now(), -4);
+    expect(update.current_step).toBe(2);
+  });
+
+  it('respecte l’écart même sur une inscription toute fraîche', async () => {
+    const now = Date.now();
+    wireAdvance({ entered_at: new Date(now).toISOString() });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    const runAt = Date.parse(lastUpdate().next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
+  });
+
+  it('termine la séquence quand l’étape franchie était la dernière', async () => {
+    enrollments = tableChain({ data: { ...enrollment, current_step: 2 }, error: null });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'sequence_enrollments') return enrollments;
+      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      throw new Error(`unexpected table: ${table}`);
+    });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    expect(lastUpdate()).toEqual(expect.objectContaining({ status: 'finished', next_run_at: null }));
+  });
+
+  it('ne touche pas à une inscription qui n’est plus active', async () => {
+    wireAdvance({ status: 'exited' });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    expect(enrollments.captured.updates).toHaveLength(0);
+  });
+});
+
+/**
+ * Le lien d'audit — le trou le plus coûteux de la mécanique.
+ *
+ * `{{company.audit_url}}` s'interpolait en vide pour TOUTES les entreprises :
+ * le jeton de partage n'était créé que par le dialogue « Partager le rapport »,
+ * qu'un envoi automatique ne traverse jamais. Aucun jeton n'existait en base.
+ * Le message « c'est ici, rien à télécharger : » partait donc suivi de rien.
+ */
+describe('le lien du rapport d’audit', () => {
+  let tables: Record<string, any>;
+
+  const wireAudit = (over: Record<string, any> = {}) => {
+    tables = {
+      automations: tableChain({
+        data: {
+          id: 'auto-1',
+          name: 'Artisans',
+          kind: 'sequence',
+          status: 'on',
+          definition: { steps: [{ id: 's1', kind: 'email', day: 0, template: 'tpl-1' }] },
+          settings: {},
+        },
+        error: null,
+      }),
+      contacts: tableChain({
+        data: { first_name: 'Jean', last_name: 'Test', email: 'jean@test.fr', tel: '0600', role_title: null, linkedin_url: null },
+        error: null,
+      }),
+      entreprises: tableChain({
+        data: { name: 'Clim Ouest', ville: 'Angers', site_web_canonique: null, owner_id: 'agent-1' },
+        error: null,
+      }),
+      opportunites: tableChain({ data: [], error: null }),
+      audits: tableChain({ data: [], error: null }),
+      sites: tableChain({ data: [], error: null }),
+      // Le modèle CITE le rapport : c'est ce qui arme le garde-fou.
+      email_templates: tableChain({
+        data: { subject: 'Votre site', body: 'Le rapport est ici : {{company.audit_url}}' },
+        error: null,
+      }),
+      whatsapp_templates: tableChain({ data: null, error: null }),
+      call_scripts: tableChain({ data: null, error: null }),
+      automation_connections: tableChain({ data: null, error: null }),
+      email_signature_settings: tableChain({ data: null, error: null }),
+      email_logs: tableChain(),
+      sequence_enrollments: tableChain(),
+      prospection_tasks: tableChain({ data: [], error: null }),
+      regulator_settings: tableChain({ data: { id: 'global' }, error: null }),
+      user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
+      agent_settings: tableChain({ data: [], error: null }),
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 0 } as any),
+      entreprises_rapport_public: tableChain({ data: null, error: null }),
+      ...over,
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+    mockSend.mockReset();
+    resetTestGuardCache();
+    process.env = { ...ORIGINAL_ENV, RESEND_API_KEY: 'test-key' };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('gèle l’étape quand le message promet un audit que l’entreprise n’a pas', async () => {
+    // 192 des 295 entreprises qualifiées n'ont aucune mesure : le rapport
+    // n'afficherait que la trame par défaut à leur nom.
+    wireAudit();
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).not.toHaveBeenCalled();
+    const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+    expect(updates[0]).toEqual(
+      expect.objectContaining({ hold_reason: 'lien_manquant', send_at: null, next_run_at: expect.any(String) }),
+    );
+  });
+
+  it('laisse partir le message quand l’entreprise a des mesures', async () => {
+    wireAudit({
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 3 } as any),
+      entreprises_rapport_public: tableChain({
+        data: { entreprise_id: 42, token: 'a1b2c3d4e5f6a7b8', actif: true, vues: 0, vu_le: null },
+        error: null,
+      }),
+    });
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('crée le jeton à l’envoi quand l’entreprise n’en a pas encore', async () => {
+    // Le cœur du correctif : sans cet insert, le lien restait vide pour tout le
+    // parc — aucun jeton n'existait en base.
+    const rapport = tableChain({ data: null, error: null });
+    // Première lecture vide, puis l'insert rend la ligne créée.
+    rapport.maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+    rapport.single = jest
+      .fn()
+      .mockResolvedValue({ data: { entreprise_id: 42, token: 'ff00ff00ff00ff00', actif: true, vues: 0, vu_le: null }, error: null });
+
+    wireAudit({
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 1 } as any),
+      entreprises_rapport_public: rapport,
+    });
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(rapport.captured.inserts).toHaveLength(1);
+    expect(rapport.captured.inserts[0]).toEqual(expect.objectContaining({ entreprise_id: 42 }));
+    // Et le lien créé arrive bien dans le corps envoyé au prospect.
+    const envoi = mockSend.mock.calls[0][0] as { text?: string; html?: string };
+    expect(`${envoi.text ?? ''}${envoi.html ?? ''}`).toContain('ff00ff00ff00ff00');
+  });
+
+  it('ne gèle pas une étape dont le message ne parle pas d’audit', async () => {
+    wireAudit({
+      email_templates: tableChain({ data: { subject: 'Bonjour', body: 'Un mot rapide.' }, error: null }),
+    });
+    mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
   });
 });

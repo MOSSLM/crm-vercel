@@ -35,81 +35,27 @@ import {
   ServiceTagsField,
   requiredFieldControl,
 } from "./marketing-pipeline/RequiredFieldControl";
-import type { MatrixHandlers, BulkHandlers, NoteSubject } from "./marketing-pipeline/types";
+import { AUTO_SEQUENCE } from "./marketing-pipeline/types";
+import type {
+  AgentRef,
+  BoardData,
+  BoardItem,
+  BulkHandlers,
+  MatrixHandlers,
+  NoteSubject,
+  PipelineRef,
+  TemplateRef,
+} from "./marketing-pipeline/types";
+import { sequenceSuggeree } from "@/lib/prospects/canal";
 import { ArchiveDialog, type ArchiveTarget } from "./archive/ArchiveDialog";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
 
-interface BoardItem {
-  id: string;
-  name: string;
-  entreprise_id: number | null;
-  pipeline_id: string | null;
-  company_name: string | null;
-  company_url: string | null;
-  logo_url: string | null;
-  ville: string | null;
-  priorite: string | null;
-  montant: number | null;
-  type: string | null;
-  mrr: number | null;
-  recurrence_months: number | null;
-  tags: string | null;
-  /** Absents tant que la migration d'archivage n'est pas jouée. */
-  archived_at?: string | null;
-  archive_reason?: string | null;
-  archive_note?: string | null;
-  enriched: boolean;
-  enrichment: { status: string | null; website_url: string | null } | null;
-  project: {
-    id: string;
-    pret_pour_lm: boolean;
-    enrichment_validated: boolean;
-    statut: string | null;
-    enrichment_error: string | null;
-    enrichment_attempts: number | null;
-  } | null;
-  site: {
-    id: string;
-    name: string | null;
-    build_stage: string;
-    is_published: boolean;
-    url: string | null;
-    is_claude_design: boolean;
-    template_id?: string | null;
-    template_name?: string | null;
-  } | null;
-  audit: { id: string; statut: string; pdf_url: string | null } | null;
-  agent: { id: string; name: string } | null;
-  missing_for_site: string[];
-  notes?: { open: number; total: number; open_subjects: NoteSubject[] } | null;
-  column: number;
-}
-
-interface TemplateRef {
-  id: string;
-  name: string;
-  is_claude_design: boolean;
-}
-interface AgentRef {
-  id: string;
-  name: string;
-}
-interface PipelineRef {
-  id: string;
-  nom: string;
-  is_default: boolean;
-}
-
-interface BoardData {
-  items: BoardItem[];
-  templates: TemplateRef[];
-  agents: AgentRef[];
-  pipelines: PipelineRef[];
-  has_validated_column: boolean;
-  /** `false` tant que la migration d'archivage n'est pas jouée : pas de bascule. */
-  has_archivage?: boolean;
-}
+/* Les types du board vivent dans `marketing-pipeline/types.ts`, partagés avec
+ * la matrice. La copie qui vivait ici avait déjà dérivé : elle ignorait
+ * `note_site`, `published_subdomain` et `og_image_url`, pourtant renvoyés par
+ * l'API et affichés par la matrice. Deux définitions d'une même réponse finissent
+ * toujours par se contredire. */
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
@@ -997,6 +943,88 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /**
+   * Inscrit un lot dans une séquence.
+   *
+   * `automationId === AUTO_SEQUENCE` = « celle que son canal appelle » : chaque
+   * ligne part vers la séquence dont elle remplit le public déclaré. C'est ce
+   * qui permet de traiter un lot mélangé sans le trier à la main d'abord — et
+   * la répartition est annoncée avant de partir, parce que lancer 250
+   * inscriptions à l'aveugle n'est pas rattrapable.
+   */
+  const enrollInSequence = async (items: BoardItem[], automationId: string) => {
+    const sequences = board?.sequences ?? [];
+    const activables = sequences.filter((s) => s.status === "on" || s.status === "draft");
+
+    // Ligne → séquence, résolu AVANT d'envoyer quoi que ce soit.
+    const parSequence = new Map<string, BoardItem[]>();
+    const sansSequence: BoardItem[] = [];
+    for (const it of items) {
+      if (it.sequence) continue; // déjà en séquence : on ne double pas
+      const cible =
+        automationId === AUTO_SEQUENCE
+          ? sequenceSuggeree(new Set(it.canaux ?? []), activables)?.id
+          : automationId;
+      if (!cible) {
+        sansSequence.push(it);
+        continue;
+      }
+      const list = parSequence.get(cible);
+      if (list) list.push(it);
+      else parSequence.set(cible, [it]);
+    }
+
+    const total = [...parSequence.values()].reduce((n, l) => n + l.length, 0);
+    if (total === 0) {
+      toast.error(
+        sansSequence.length > 0
+          ? "Aucune séquence ne correspond au canal de ces lignes"
+          : "Ces lignes sont déjà en séquence",
+      );
+      return;
+    }
+
+    setWorking("enroll");
+    try {
+      const results = await Promise.allSettled(
+        [...parSequence.entries()].map(async ([seqId, lot]) => {
+          const res = await authedFetch("/api/sales-pipeline/enroll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ automation_id: seqId, opportunite_ids: lot.map((it) => it.id) }),
+          });
+          if (!res.ok) {
+            const payload = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(payload.error || "Échec");
+          }
+          return lot.length;
+        }),
+      );
+
+      const ok = results
+        .filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+        .reduce((n, r) => n + r.value, 0);
+      const ko = total - ok;
+      if (ok > 0) {
+        const detail = [...parSequence.entries()]
+          .map(([id, lot]) => `${lot.length} → ${activables.find((s) => s.id === id)?.name ?? "séquence"}`)
+          .join(" · ");
+        toast.success(`${ok} inscription(s) — ${detail}`);
+      }
+      if (ko > 0) toast.error(`${ko} inscription(s) en échec`);
+      // Une ligne sans séquence correspondante n'est pas une erreur : c'est un
+      // renseignement. La taire ferait croire que tout est parti.
+      if (sansSequence.length > 0) {
+        toast.warning(`${sansSequence.length} ligne(s) sans séquence pour leur canal — non inscrites`);
+      }
+      await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de l'inscription");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   // Reassign the selected opportunities to another CRM pipeline (e.g. move dead
   // sites into "Entreprises sans site web"), landing them on its first stage.
   const movePipeline = async (items: BoardItem[], pipelineId: string) => {
@@ -1073,6 +1101,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateAudit: (item) => validateAudits([item]),
     // Pas d'attribution en mode agent : la colonne et son menu n'existent pas.
     onAssign: isAgent ? undefined : (item, aId) => assignAgentTo([item], aId),
+    onEnroll: isAgent ? undefined : (item, sId) => enrollInSequence([item], sId),
     onMove: (item, pId) => movePipeline([item], pId),
     onDetails: (item) => {
       setSiteRequirement(false);
@@ -1103,6 +1132,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
+    onEnroll: isAgent ? undefined : (items, sId) => enrollInSequence(items, sId),
     onMove: (items, pId) => movePipeline(items, pId),
     onArchive: openArchive,
   };
@@ -1112,6 +1142,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       <PipelineMatrix
         items={board?.items ?? []}
         agents={board?.agents ?? []}
+        sequences={board?.sequences ?? []}
         templates={board?.templates ?? []}
         pipelines={board?.pipelines ?? []}
         templateId={templateId}

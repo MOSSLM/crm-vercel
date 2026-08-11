@@ -8,6 +8,7 @@ import {
   readSkippedSteps,
   readStepShifts,
   startOfLocalWeek,
+  stepStartMs,
   type WeekEnrollmentInput,
   type WeekSequenceInput,
 } from '../week'
@@ -78,6 +79,38 @@ describe('startOfLocalWeek', () => {
     const monday = startOfLocalWeek(MONDAY_10H, TZ)
     expect(startOfLocalWeek(MONDAY_10H, TZ, 1) - monday).toBe(7 * DAY)
     expect(monday - startOfLocalWeek(MONDAY_10H, TZ, -1)).toBe(7 * DAY)
+  })
+})
+
+describe('stepStartMs', () => {
+  const steps = [step({ day: 0 }), step({ day: 1, kind: 'whatsapp' }), step({ day: 4, kind: 'whatsapp' })]
+
+  it('compte depuis l’inscription tant qu’aucune ancre n’est posée', () => {
+    const at = stepStartMs(steps, 2, { enteredMs: MONDAY_10H, anchorMs: null, anchorStep: null })
+    expect(at).toBe(MONDAY_10H + 4 * DAY)
+  })
+
+  // La régression qui a motivé l'ancre : une accroche WhatsApp prévue à J+1 mais
+  // faite au bout d'une semaine laissait J+4 loin dans le passé, donc la démo
+  // partait dans la seconde.
+  it('recompte depuis l’ancre, en retirant le J+n de l’étape ancrée', () => {
+    const repriseJ8 = MONDAY_10H + 8 * DAY
+    const at = stepStartMs(steps, 2, { enteredMs: MONDAY_10H, anchorMs: repriseJ8, anchorStep: 1 })
+    // Le builder dit « trois jours après l'accroche » (J+4 − J+1), pas « J+4 ».
+    expect(at).toBe(repriseJ8 + 3 * DAY)
+    expect(at).toBeGreaterThan(repriseJ8)
+  })
+
+  it('applique le décalage posé à la main par-dessus l’ancre', () => {
+    const reprise = MONDAY_10H + 8 * DAY
+    const at = stepStartMs(steps, 2, { enteredMs: MONDAY_10H, anchorMs: reprise, anchorStep: 1 }, 2)
+    expect(at).toBe(reprise + 5 * DAY)
+  })
+
+  it('ne se fie pas à une étape d’ancrage disparue', () => {
+    // Étapes réordonnées après l'inscription : l'index ne pointe plus rien.
+    const at = stepStartMs(steps, 2, { enteredMs: MONDAY_10H, anchorMs: MONDAY_10H, anchorStep: 99 })
+    expect(Number.isFinite(at)).toBe(true)
   })
 })
 

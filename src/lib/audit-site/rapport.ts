@@ -220,3 +220,78 @@ export async function marquerVu(sb: SupabaseClient, token: string): Promise<void
     // manquant ne doit pas empêcher un prospect de lire son rapport.
   }
 }
+
+/* ── Le jeton de partage, produit au moment où un message en a besoin ────── */
+
+export type JetonRapport = {
+  entreprise_id: number;
+  token: string;
+  actif: boolean;
+  vues: number | null;
+  vu_le: string | null;
+};
+
+/**
+ * Le jeton de partage d'une entreprise, créé s'il n'existe pas encore.
+ *
+ * POURQUOI CETTE FONCTION A QUITTÉ SA ROUTE
+ * Elle ne vivait que dans `GET /api/rapport-public/[entrepriseId]`, appelée par
+ * le dialogue « Partager le rapport ». Un envoi automatique ne passe jamais par
+ * là : le moteur lisait `entreprises_rapport_public`, n'y trouvait rien, et
+ * interpolait `{{company.audit_url}}` en chaîne vide. Toutes séquences
+ * confondues, cela faisait partir des messages du genre « c'est ici, rien à
+ * télécharger : » suivis de rien — et aucun jeton n'existait en base, donc le
+ * cas était universel, pas marginal.
+ *
+ * Le jeton est fabriqué par le `default` SQL (`gen_random_bytes`) : la valeur
+ * n'est jamais produite côté application, donc jamais dérivable d'un
+ * identifiant d'entreprise.
+ */
+export async function assurerJetonRapport(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  userId: string | null,
+): Promise<{ jeton?: JetonRapport; erreur?: { code?: string; message: string } }> {
+  const { data, error } = await sb
+    .from("entreprises_rapport_public")
+    .select("entreprise_id, token, actif, vues, vu_le")
+    .eq("entreprise_id", entrepriseId)
+    .maybeSingle();
+
+  if (error) return { erreur: error };
+  if (data) return { jeton: data as JetonRapport };
+
+  const { data: cree, error: erreurInsert } = await sb
+    .from("entreprises_rapport_public")
+    .insert({ entreprise_id: entrepriseId, cree_par: userId })
+    .select("entreprise_id, token, actif, vues, vu_le")
+    .single();
+
+  if (erreurInsert) return { erreur: erreurInsert };
+  return { jeton: cree as JetonRapport };
+}
+
+/**
+ * Cette entreprise a-t-elle de quoi remplir un rapport ?
+ *
+ * `resoudreRapport` rend une page dans TOUS les cas — c'est voulu, une page
+ * amputée vaut mieux qu'une erreur pour un prospect qui a cliqué. Mais sans
+ * `entreprises_audit_site`, cette page est la trame par défaut avec le nom de
+ * l'entreprise dessus : ni capture, ni score, ni le moindre constat qui la
+ * concerne. 192 des 295 entreprises qualifiées sont dans ce cas.
+ *
+ * Envoyer « voici l'audit de votre site » vers cette page-là est pire que de ne
+ * rien envoyer : le prospect voit qu'on ne l'a pas regardé.
+ */
+export async function aDesMesuresAudit(sb: SupabaseClient, entrepriseId: number): Promise<boolean> {
+  try {
+    const { count, error } = await sb
+      .from("entreprises_audit_site")
+      .select("entreprise_id", { count: "exact", head: true })
+      .eq("entreprise_id", entrepriseId);
+    if (error) return false;
+    return (count ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
