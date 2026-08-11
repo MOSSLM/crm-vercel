@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { toast } from "sonner";
-import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen, Layers, Share2 } from "lucide-react";
+import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen, Layers, Share2, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { SITE_DOMAIN } from "@/lib/site-domain";
@@ -149,26 +149,37 @@ function DemoCard({
         Paywall {demo.paywall_enabled ? "ON" : "OFF"}
       </button>
 
-      <div className="mt-2 flex gap-1.5">
-        <Link href={`/site-builder/claude/${demo.id}`} className="flex-1">
-          <Button variant="outline" size="sm" className="w-full gap-1 text-xs h-7">
+      {/* Une seule action porte son nom ; les autres sont des icônes carrées.
+          Quatre boutons libellés côte à côte débordaient de la colonne — un
+          kanban à quatre colonnes laisse ~200 px par carte, et « Éditer · Lien ·
+          Partager · Déployer » en demande le double. Le `flex-wrap` est la
+          ceinture : si la colonne rétrécit encore, la rangée passe à la ligne
+          au lieu de sortir du cadre. */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Link href={`/site-builder/claude/${demo.id}`} className="min-w-0 flex-1">
+          <Button variant="outline" size="sm" className="h-7 w-full gap-1 text-xs">
             <Pencil className="h-3 w-3" /> Éditer
           </Button>
         </Link>
-        <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={copyLink} title="Copier le lien à envoyer au client">
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Lien
+        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={copyLink} title="Copier le lien à envoyer au client">
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         </Button>
         <Button
           variant="ghost"
           size="sm"
-          className="text-xs h-7 gap-1"
+          className="h-7 w-7 shrink-0 p-0"
           onClick={() => setSharing(true)}
           title="Voir la vignette de partage et envoyer sur WhatsApp"
         >
-          <Share2 className="h-3 w-3" /> Partager
+          <Share2 className="h-3 w-3" />
         </Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={() => onDeploy(demo.id)}>
-          <Rocket className="h-3 w-3" /> Déployer
+        <Link href={`/brief/${demo.id}`} className="shrink-0">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Brief de reprise — à remplir pendant l'appel">
+            <ClipboardList className="h-3 w-3" />
+          </Button>
+        </Link>
+        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={() => onDeploy(demo.id)} title="Déployer le site">
+          <Rocket className="h-3 w-3" />
         </Button>
       </div>
 

@@ -2866,3 +2866,83 @@
 .tel-skin .adm-tbl{ background: var(--surface); border: 1px solid var(--border-2); border-radius: 14px; overflow: hidden; }
 .tel-skin .adm-note{ font-size: 12px; color: var(--text-3); margin: 2px 0 10px; }
 
+
+/* ── Panneau « Lead magnets » du cockpit ──────────────────────────────────
+   Colonne de droite : 340 px, moins les marges du bloc. Chaque carte doit
+   donc tenir en ~300 px, d'où des actions en icônes carrées plutôt qu'en
+   boutons libellés — la même contrainte qui a fait déborder les cartes du
+   kanban quand elles portaient quatre libellés côte à côte. */
+.tel-skin .lm-liste{ display: flex; flex-direction: column; gap: 10px; }
+.tel-skin .lm-carte{
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-2);
+  padding: 9px 10px 10px;
+}
+.tel-skin .lm-hd{ display: flex; align-items: center; gap: 6px; color: var(--text-3); }
+.tel-skin .lm-ti{ font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.tel-skin .lm-chip{
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-3, rgba(127,127,127,.12));
+  color: var(--text-3);
+  font-size: 10px; font-weight: 500;
+  white-space: nowrap;
+}
+.tel-skin .lm-chip.on{ background: var(--ok-tint); color: var(--ok); }
+.tel-skin .lm-url{
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-2, #2F7AE0);
+  text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tel-skin .lm-url:hover{ text-decoration: underline; }
+
+/* L'interrupteur de paiement : volontairement large et libellé, contrairement
+   aux actions. C'est la seule commande du panneau qui change l'état d'un site
+   visible par un prospect — elle ne doit pas se cliquer par erreur en visant
+   l'icône d'à côté. */
+.tel-skin .lm-paywall{
+  appearance: none;
+  width: 100%;
+  margin-top: 8px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-3);
+  font: inherit; font-size: 11px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.tel-skin .lm-paywall b{ margin-left: auto; font-weight: 600; }
+.tel-skin .lm-paywall:hover:not(:disabled){ border-color: var(--border-strong, var(--border)); }
+.tel-skin .lm-paywall:disabled{ opacity: .55; cursor: default; }
+.tel-skin .lm-paywall.on{
+  border-color: var(--ok);
+  background: var(--ok-tint);
+  color: var(--ok);
+}
+
+.tel-skin .lm-actions{ display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.tel-skin .lm-act{
+  appearance: none;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-3);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.tel-skin .lm-act:hover{ background: var(--accent-tint); color: var(--accent-2); border-color: var(--accent-2); }
+.tel-skin .lm-act:disabled{ opacity: .4; cursor: default; }
+.tel-skin .lm-act:disabled:hover{ background: var(--surface); color: var(--text-3); border-color: var(--border); }

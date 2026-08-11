@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Package } from "lucide-react";
 import { SubscriptionCard, type SubscriptionRow } from "@/components/client-portal/SubscriptionCard";
 import { SiteCard, type SiteRow } from "@/components/client-portal/SiteCard";
-import { SiteAdaptationCard } from "@/components/client-portal/SiteAdaptationCard";
+import { SuiviSiteCard } from "@/components/client-portal/SuiviSiteCard";
 
 export default function ClientDashboardPage() {
   const { user } = useAuth();
@@ -29,7 +29,7 @@ export default function ClientDashboardPage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("sites")
-          .select("id, name, published_domain, published_subdomain, is_published")
+          .select("id, name, published_domain, published_subdomain, is_published, build_stage")
           .limit(1)
           .maybeSingle(),
       ]);
@@ -62,7 +62,7 @@ export default function ClientDashboardPage() {
 
       <SiteCard site={site} />
 
-      <SiteAdaptationCard />
+      <SuiviSiteCard site={site} />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
