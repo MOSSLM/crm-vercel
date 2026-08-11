@@ -674,9 +674,22 @@ export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatSc
     );
   }
 
-  // La note globale ne moyenne que les axes concluants : intégrer un axe en
-  // confiance faible reviendrait à publier indirectement ce qu'on refuse
-  // d'afficher directement.
+  /**
+   * LA NOTE GLOBALE EST UN SIGNAL DE TRI, PAS LE VERDICT DU DOCUMENT.
+   *
+   * Elle moyenne les axes concluants, sur tout le parc, gratuitement — c'est ce
+   * qui permet de classer 2 795 entreprises et de décider lesquelles valent un
+   * appel. À ce métier-là elle est bonne : il lui suffit d'ordonner.
+   *
+   * Elle n'est PAS la note montrée au prospect. On a vérifié qu'elle se trompe
+   * dans les deux sens — un site à 70/100 qui met 18,6 secondes à s'afficher,
+   * parce qu'elle ne chronomètre que la réponse du serveur. La note du document
+   * se calcule ailleurs, à partir de la mesure de Google : voir `malus.ts` et
+   * `noteDocument`.
+   *
+   * Les deux coexistent parce qu'elles ne s'adressent pas au même public. Ce qui
+   * serait faux, c'est de montrer celle-ci à un artisan.
+   */
   const retenus = (Object.keys(axes) as AxeId[]).filter((id) => axes[id].confiance !== "faible");
   const poidsTotal = retenus.reduce((a, id) => a + POIDS_AXES[id], 0);
   const noteGlobale =

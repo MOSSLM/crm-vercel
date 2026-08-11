@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AxeId, Confiance, ConstatGoogle, Preuve } from "./types";
+import type { AxeId, Confiance, ConstatGoogle, Preuve, SignauxSite } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
+import { noteDocument } from "./malus";
 import { psiEstFraiche } from "./pagespeed";
 
 /**
@@ -54,7 +55,22 @@ export interface AuditLu {
   http_status: number | null;
   bloque: boolean;
   injoignable: boolean;
+  /**
+   * La note du TRI, la nôtre, sur tout le parc. Sert à classer, jamais à montrer.
+   */
   note_globale: number | null;
+  /**
+   * La note du DOCUMENT : celle de Google, moins ce que Google ne voit pas.
+   *
+   * `null` tant que PageSpeed n'a pas mesuré — et c'est le pendant de la
+   * décision de ne plus publier nos axes vitesse et mobile sans lui. On ne
+   * publie pas au prospect un chiffre qu'on n'a pas mesuré.
+   */
+  note_document: number | null;
+  /** La base Google avant ajustement, pour montrer la soustraction. */
+  note_document_base: number | null;
+  /** Chaque point retiré, avec sa raison. C'est la démonstration. */
+  note_document_malus: Array<{ libelle: string; points: number }>;
   libelle: string | null;
   /** Axes publiables — ceux en confiance faible en sont retirés. */
   axes: AxePublie[];
@@ -156,7 +172,21 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    */
   const psiFraiche = psiEstFraiche(str(row.psi_recupere_le));
   const psiPerf = num(row.psi_performance);
-  const vitesseGoogle = psiFraiche && psiPerf != null;
+
+  /**
+   * Une mesure Google est exploitable dès qu'UNE catégorie est rendue.
+   *
+   * Cette condition portait auparavant sur la seule performance, ce qui liait le
+   * sort des trois autres à la plus fragile : Lighthouse échoue sur la
+   * performance bien plus souvent que sur le référencement ou l'accessibilité —
+   * un site trop lent pour finir de charger, justement.
+   */
+  const psiUtilisable =
+    psiFraiche &&
+    (psiPerf != null ||
+      num(row.psi_seo) != null ||
+      num(row.psi_accessibilite) != null ||
+      num(row.psi_bonnes_pratiques) != null);
 
   /**
    * La popularité n'a PAS de colonne dédiée, et c'est voulu.
@@ -167,7 +197,7 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    * c'est exactement la panne déjà vécue avec `paywall_enabled`. Ici, migration
    * ou pas, l'axe apparaît dès que ses preuves sont là.
    */
-  const google = vitesseGoogle && Array.isArray(detail.google) ? detail.google : [];
+  const google = psiUtilisable && Array.isArray(detail.google) ? detail.google : [];
   const constatsDe = (categorie: string) => google.filter((c) => c.categorie === categorie);
 
   const axes: AxePublie[] = [];
@@ -204,33 +234,69 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     };
   };
 
-  if (vitesseGoogle) {
+  const psiAccessibilite = num(row.psi_accessibilite);
+
+  if (psiUtilisable) {
     /**
-     * GOOGLE A MESURÉ : ON S'EFFACE.
+     * GOOGLE A MESURÉ : ON S'EFFACE, CATÉGORIE PAR CATÉGORIE.
      *
-     * Nos notes de vitesse, de référencement et de mobile ne sont plus publiées.
-     * Ce n'est pas de la modestie — c'est que les nôtres se discutent et que
-     * celles de Google se vérifient en trente secondes sur pagespeed.web.dev,
-     * devant le prospect, depuis son téléphone. Une note qu'on peut nous opposer
-     * vaut moins que la même note que le prospect peut opposer à son prestataire
-     * actuel.
+     * Nos notes ne sont plus publiées là où Google a rendu la sienne. Ce n'est
+     * pas de la modestie : les nôtres se discutent, celles de Google se vérifient
+     * en trente secondes sur pagespeed.web.dev, devant le prospect, depuis son
+     * téléphone. Une note qu'on peut nous opposer vaut moins que la même note que
+     * le prospect peut opposer à son prestataire actuel.
      *
-     * L'axe `mobile` disparaît alors purement et simplement, et il n'est même pas
-     * listé comme masqué : il n'est pas retenu faute de confiance, il est
-     * REMPLACÉ — l'accessibilité et les cibles tactiles de Google disent la même
-     * chose en mieux, et c'était de loin notre signal le plus fragile.
+     * Et elles sont surtout PLUS JUSTES. Notre `ttfb` chronomètre la réponse du
+     * serveur — le premier octet. Un serveur prompt qui sert ensuite une page
+     * injouable passe pour rapide chez nous : c'est ainsi qu'un site noté 70/100
+     * mettait 18,6 secondes à afficher son contenu. Le temps d'affichage réel, le
+     * LCP, exige d'exécuter le JavaScript et de charger les images — seul Google
+     * le fait.
+     *
+     * CHAQUE CATÉGORIE EST INDÉPENDANTE, et ça n'a rien de théorique : sur une
+     * entreprise réelle, Lighthouse a rendu le référencement, l'accessibilité et
+     * les bonnes pratiques mais échoué sur la performance. Tout conditionner au
+     * bloc performance faisait alors retomber le document sur nos cinq axes
+     * maison TOUT EN affichant les quinze constats de Google — la page méthode
+     * annonçait « mesuré avec notre analyseur » au-dessus de constats qui
+     * venaient d'ailleurs. Et on perdait une accessibilité à 29/100 sur un site
+     * où nous ne voyions rien d'anormal.
+     *
+     * L'axe `mobile` ne disparaît que si l'accessibilité le REMPLACE réellement.
+     * Elle dit la même chose en mieux — cibles tactiles, contrastes, tailles de
+     * police — mais seulement quand elle est là.
      */
-    publier(axeGoogle("vitesse", psiPerf, "performance", preuvesPsi(row)), "vitesse");
-    // Repli sur notre note de référencement si Google n'a pas rendu la sienne :
-    // un seul chiffre affiché, donc aucune contradiction possible à l'écran.
+    publier(axeGoogle("vitesse", psiPerf, "performance", preuvesPsi(row)) ?? axeMaison("vitesse"), "vitesse");
     publier(axeGoogle("seo", num(row.psi_seo), "seo") ?? axeMaison("seo"), "seo");
-    publier(axeGoogle("accessibilite", num(row.psi_accessibilite), "accessibility"), "accessibilite");
+    publier(
+      axeGoogle("accessibilite", psiAccessibilite, "accessibility") ?? axeMaison("mobile"),
+      psiAccessibilite == null ? "mobile" : "accessibilite",
+    );
     publier(
       axeGoogle("bonnes_pratiques", num(row.psi_bonnes_pratiques), "best-practices"),
       "bonnes_pratiques",
     );
   } else {
-    for (const id of ["vitesse", "seo", "mobile"] as const) publier(axeMaison(id), id);
+    /**
+     * SANS GOOGLE, ON NE PARLE PLUS NI DE VITESSE NI DE MOBILE.
+     *
+     * Nos deux mesures les plus fragiles, et on l'a vérifié sur le parc. `ttfb`
+     * chronomètre la réponse du serveur — le premier octet — pas l'affichage :
+     * un site que nous notions 70/100 mettait 18,6 secondes à afficher son
+     * contenu. Quant au mobile, il repose sur un comptage de règles CSS et de
+     * largeurs figées, l'heuristique la plus grossière de tout l'analyseur.
+     *
+     * Ces deux axes sont donc RETIRÉS, pas masqués faute de confiance : ils sont
+     * listés dans `axes_masques` pour que la page méthode les nomme, et le
+     * document dit franchement qu'ils n'ont pas été testés. Un audit à trois axes
+     * sûrs vaut mieux qu'un audit à cinq dont deux se discutent devant le
+     * prospect — et c'est ce qui rend la mesure Google indispensable avant envoi.
+     *
+     * Le référencement reste : ses preuves sont des faits binaires — balise
+     * présente ou absente, page indexable ou non — pas des seuils inventés.
+     */
+    publier(axeMaison("seo"), "seo");
+    masques.push("vitesse", "mobile");
   }
 
   // Ce que Google ne mesure pas et ne mesurera jamais : est-ce qu'on peut vous
@@ -240,6 +306,26 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
 
   const noteGlobale = num(row.note_globale);
 
+  /**
+   * La note montrée au prospect se calcule ICI, à la lecture.
+   *
+   * Pas à l'analyse — elle a besoin de la performance de Google, qui arrive
+   * après. Pas à la mesure PageSpeed non plus : la recalculer à l'écriture
+   * obligerait à relire les signaux et le contexte CRM à ce moment-là, et une
+   * ligne écrite avant qu'on conserve les signaux resterait sans note pour
+   * toujours. À la lecture, tout est là.
+   */
+  const signaux = row.signaux as SignauxSite | null | undefined;
+  const doc =
+    signaux && psiFraiche
+      ? noteDocument(psiPerf, signaux, {
+          // La ville n'est pas dans cette table ; le seul malus qui en dépend
+          // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
+          // et l'ajouter demanderait une jointure sur chaque lecture de liste.
+          ville: null,
+        })
+      : { note: null, base: null, lignes: [], plancherAtteint: false };
+
   return {
     entreprise_id: Number(row.entreprise_id),
     url_analysee: str(row.url_analysee),
@@ -248,7 +334,10 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     bloque: row.bloque === true,
     injoignable: row.injoignable === true,
     note_globale: noteGlobale,
-    libelle: noteGlobale == null ? null : libelleDeNote(noteGlobale),
+    note_document: doc.note,
+    note_document_base: doc.base,
+    note_document_malus: doc.lignes,
+    libelle: doc.note != null ? libelleDeNote(doc.note) : noteGlobale == null ? null : libelleDeNote(noteGlobale),
     axes,
     axes_masques: masques,
     issue_keys: Array.isArray(row.issue_keys) ? (row.issue_keys as string[]) : [],

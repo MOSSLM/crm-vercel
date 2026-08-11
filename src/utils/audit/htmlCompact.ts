@@ -1,6 +1,6 @@
 import type { AuditContent } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
-import { LIBELLE_DEMO, sousTitreNote } from '@/lib/audit/mesures';
+import { LIBELLE_DEMO, detailNote, sousTitreNote } from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
 import { C } from '@/components/audit/AuditShared';
 
@@ -172,12 +172,29 @@ function reglette(m: MesuresAudit): string {
   return `<div class="score-hero">
 <div class="score-num"><div class="score-lbl">Note globale</div>
   <div class="score-val"><b>${m.noteGlobale ?? '—'}</b><s>/ 100</s></div>
-  <div class="score-sub">${esc(sousTitreNote(m))}</div></div>
+  <div class="score-sub">${esc(sousTitreNote(m))}</div>
+  ${soustraction(m)}</div>
 <div class="score-rail">
   <div class="rail">${bandes}${marque('m', m.reperes.mediane)}${marque('s', m.reperes.demo)}${marque('p', m.reperes.prospect)}</div>
   <div class="rail-axis"><span>0 — rien ne fonctionne</span><span>50</span><span>100 — tout fonctionne</span></div>
   <div class="rail-legend">${legende}</div>
 </div></div>`;
+}
+
+/**
+ * La soustraction, écrite sous la note.
+ *
+ * C'est ce qui distingue cette note de celle qu'elle remplace : « 58 mesuré par
+ * Google, moins 7 » se lit à voix haute en rendez-vous, et chaque point retiré
+ * porte une raison que le prospect vérifie sur son téléphone. Une moyenne
+ * pondérée ne se raconte pas ; un malus caché serait encore plus opaque qu'elle.
+ */
+function soustraction(m: MesuresAudit): string {
+  const d = detailNote(m);
+  if (!d) return '';
+  return `<div class="score-calc"><b>${d.base}</b> mesuré par Google, moins <b>${d.retire}</b><span>${d.lignes
+    .map(esc)
+    .join(' · ')}</span></div>`;
 }
 
 /** Une carte par axe mesuré. Quatre à six selon que Google a mesuré. */

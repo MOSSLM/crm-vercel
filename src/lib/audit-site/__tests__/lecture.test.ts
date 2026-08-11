@@ -1,4 +1,4 @@
-import { lireAudit, UNDEFINED_TABLE } from "../lecture";
+import { lireAudit, UNDEFINED_TABLE} from "../lecture";
 
 /**
  * Ces tests protègent trois règles qui, si elles cassent, produisent une page
@@ -69,14 +69,27 @@ describe("lireAudit — règle de publication", () => {
     expect(res.disponible).toBe(true);
     if (!res.disponible || !res.audit) throw new Error("audit attendu");
 
-    expect(res.audit.axes.map((a) => a.id).sort()).toEqual(["mobile", "vitesse"]);
+    // Sans mesure Google, la vitesse et le mobile ne sont plus publiés du tout —
+    // ce sont nos deux heuristiques les plus fragiles. Il ne reste ici que des
+    // axes en confiance faible, donc rien.
+    expect(res.audit.axes.map((a) => a.id).sort()).toEqual([]);
     // `popularite` est masqué faute de preuves dans cette ligne de test : sans
     // détail, sa note ne se recalcule pas, et un axe sans note ne se publie pas.
-    expect(res.audit.axes_masques.sort()).toEqual(["conversion", "popularite", "seo"]);
+    expect(res.audit.axes_masques.sort()).toEqual([
+      "conversion",
+      "mobile",
+      "popularite",
+      "seo",
+      "vitesse",
+    ]);
   });
 
   it("n'expose jamais une preuve non mesurée", async () => {
-    const res = await lireAudit(client({ data: LIGNE_BASE, error: null }), 7);
+    // Mesuré sur l'axe vitesse, qui n'existe plus sans Google : on passe donc
+    // par une ligne mesurée par PageSpeed pour éprouver la même règle.
+    const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const row = { ...LIGNE_BASE, psi_seo: 90, psi_recupere_le: hier };
+    const res = await lireAudit(client({ data: row, error: null }), 7);
     if (!res.disponible || !res.audit) throw new Error("audit attendu");
 
     const vitesse = res.audit.axes.find((a) => a.id === "vitesse");
@@ -111,14 +124,16 @@ describe("lireAudit — cohabitation des deux vitesses", () => {
     expect(vitesse?.preuves.some((p) => p.valeur === "1,8 s")).toBe(false);
   });
 
-  it("PSI périmé laisse la note maison, sans mention Google", async () => {
+  it("PSI périmé retire la vitesse plutôt que de retomber sur la nôtre", async () => {
+    // Une mesure de plus de trente jours ne vaut pas mieux qu'aucune : le site a
+    // pu être refait entre-temps. Et notre note de vitesse n'est plus un repli
+    // acceptable — elle chronomètre le serveur, pas l'affichage.
     const row = { ...LIGNE_BASE, psi_performance: 31, psi_recupere_le: vieux };
     const res = await lireAudit(client({ data: row, error: null }), 7);
     if (!res.disponible || !res.audit) throw new Error("audit attendu");
 
-    const vitesse = res.audit.axes.find((a) => a.id === "vitesse");
-    expect(vitesse?.note).toBe(64);
-    expect(vitesse?.mesureGoogle).toBeUndefined();
+    expect(res.audit.axes.find((a) => a.id === "vitesse")).toBeUndefined();
+    expect(res.audit.axes_masques).toContain("vitesse");
   });
 
   it("PSI frais rend l'axe vitesse concluant même sur une SPA", async () => {
@@ -246,6 +261,85 @@ describe("lireAudit — quand Google a mesuré, nos notes de site s'effacent", (
     if (!res.disponible || !res.audit) throw new Error("audit attendu");
 
     expect(res.audit.constats_google).toEqual([]);
-    expect(res.audit.axes.find((a) => a.id === "vitesse")?.note).toBe(64); // la nôtre
+    // Et la vitesse ne revient pas non plus : une mesure périmée ne rouvre pas
+    // la porte à notre chronomètre de serveur.
+    expect(res.audit.axes.find((a) => a.id === "vitesse")).toBeUndefined();
+    expect(res.audit.axes_masques).toContain("vitesse");
+  });
+});
+
+describe("lireAudit — une catégorie Google absente n'emporte pas les autres", () => {
+  const hier = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+  /**
+   * Cas rencontré sur une entreprise réelle : Lighthouse rend le référencement,
+   * l'accessibilité et les bonnes pratiques, mais échoue sur la performance —
+   * ce qui arrive d'autant plus que le site est lent, justement.
+   *
+   * La condition portait alors sur la seule performance : le document retombait
+   * sur nos cinq axes maison TOUT EN affichant les constats de Google. La page
+   * méthode annonçait « mesuré avec notre analyseur » au-dessus de constats
+   * venus d'ailleurs, et on perdait une accessibilité à 29/100 sur un site où
+   * nous ne voyions rien d'anormal.
+   */
+  const SANS_PERFORMANCE = {
+    ...LIGNE_BASE,
+    psi_performance: null,
+    psi_lcp_ms: null,
+    psi_seo: 82,
+    psi_accessibilite: 29,
+    psi_bonnes_pratiques: 74,
+    psi_recupere_le: hier,
+    detail: {
+      ...LIGNE_BASE.detail,
+      google: [
+        {
+          id: "color-contrast",
+          categorie: "accessibility",
+          titre: "Contraste insuffisant",
+          valeur: null,
+          gainMs: null,
+          gainOctets: null,
+          elements: 12,
+          verdict: "probleme",
+        },
+      ],
+    },
+  };
+
+  it("publie les catégories rendues par Google", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    const axes = res.disponible ? (res.audit?.axes ?? []) : [];
+
+    const a11y = axes.find((a) => a.id === "accessibilite");
+    expect(a11y?.note).toBe(29);
+    expect(a11y?.mesureGoogle).toBe(true);
+    expect(axes.find((a) => a.id === "seo")?.note).toBe(82);
+    expect(axes.find((a) => a.id === "bonnes_pratiques")?.note).toBe(74);
+  });
+
+  it("retombe sur NOTRE vitesse pour la seule catégorie manquante", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    const vitesse = (res.disponible ? (res.audit?.axes ?? []) : []).find((a) => a.id === "vitesse");
+
+    expect(vitesse?.note).toBe(64);
+    // Et surtout : elle ne se revendique pas mesurée par Google.
+    expect(vitesse?.mesureGoogle).toBeFalsy();
+  });
+
+  it("garde les constats Google, qui seraient sinon affichés sans leur axe", async () => {
+    const res = await lireAudit(client({ data: SANS_PERFORMANCE, error: null }), 7);
+    expect(res.disponible ? res.audit?.constats_google : []).toHaveLength(1);
+  });
+
+  it("garde notre axe mobile tant que l'accessibilité ne le remplace pas", async () => {
+    // L'accessibilité dit la même chose en mieux — cibles tactiles, contrastes,
+    // tailles de police — mais seulement quand elle est là.
+    const sansA11y = { ...SANS_PERFORMANCE, psi_accessibilite: null };
+    const axes = await lireAudit(client({ data: sansA11y, error: null }), 7).then((r) =>
+      r.disponible ? (r.audit?.axes ?? []) : [],
+    );
+    expect(axes.find((a) => a.id === "mobile")?.note).toBe(55);
+    expect(axes.find((a) => a.id === "accessibilite")).toBeUndefined();
   });
 });
