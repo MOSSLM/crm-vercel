@@ -4,6 +4,7 @@
 import {
   EMPTY_STATE,
   ENTRY_COLUMN_ID,
+  SEQ_ANY_COLUMN_ID,
   buildColumns,
   cellStatuses,
   channelOf,
@@ -11,7 +12,9 @@ import {
   hasInterest,
   isLostStage,
   isPendingTask,
+  isStepColumn,
   parseColumnId,
+  partKind,
   stageColumnId,
   stageCta,
   stepColumnId,
@@ -119,6 +122,39 @@ describe('buildColumns', () => {
   it('garde le stock même sans séquence — il faut bien démarrer quelque part', () => {
     const columns = columnsOf({ steps: [] })
     expect(columns.map((c) => c.group)).toEqual(['entry', 'pipeline', 'pipeline'])
+  })
+
+  // La régression que tout ceci corrige : avec deux séquences affichées
+  // ensemble, chaque prospect tombait sous les étapes de la séquence de
+  // l'autre. La vue d'ensemble n'en montre donc aucune.
+  it('remplace les étapes par une seule colonne en vue d’ensemble', () => {
+    const columns = columnsOf({ overview: true })
+    expect(columns.map((c) => c.id)).toEqual([ENTRY_COLUMN_ID, SEQ_ANY_COLUMN_ID, 'stage:6', 'stage:7'])
+    expect(columns[1].group).toBe('sequence')
+    expect(columns[1].kind).toBeNull()
+    expect(columns.map((c) => c.index)).toEqual([0, 1, 2, 3])
+  })
+
+  it('n’invente pas d’étape en vue d’ensemble, même si la séquence en a', () => {
+    expect(columnsOf({ overview: true }).some((c) => c.id.startsWith('step:'))).toBe(false)
+  })
+})
+
+describe('parties du tableau', () => {
+  it('distingue la séquence choisie des deux vues réservées', () => {
+    expect(partKind('all')).toBe('all')
+    expect(partKind('none')).toBe('none')
+    expect(partKind('c0ffee00-0000-4000-8000-000000000000')).toBe('one')
+  })
+
+  it('ne prend la colonne d’ensemble pour une étape à sauter', () => {
+    expect(isStepColumn('step:s1')).toBe(true)
+    expect(isStepColumn(SEQ_ANY_COLUMN_ID)).toBe(false)
+    expect(isStepColumn(ENTRY_COLUMN_ID)).toBe(false)
+  })
+
+  it('range la colonne d’ensemble dans le groupe séquence', () => {
+    expect(parseColumnId(SEQ_ANY_COLUMN_ID)).toEqual({ group: 'sequence', ref: 'any' })
   })
 })
 

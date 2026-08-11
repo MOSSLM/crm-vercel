@@ -37,7 +37,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react'
-import { hasInterest, type SalesColumn } from '@/lib/sales-pipeline/stages'
+import { channelOf, hasInterest, type SalesColumn } from '@/lib/sales-pipeline/stages'
 import { holdReasonLabel } from '@/lib/automations/regulator'
 import { eta, hm, hmd } from '@/components/automations/regulator/parts'
 import type { SalesBoardRow } from './types'
@@ -56,6 +56,9 @@ export const KIND_ICON: Record<string, LucideIcon> = {
 export function columnIcon(column: SalesColumn): LucideIcon {
   if (column.group === 'entry') return Inbox
   if (column.kind) return KIND_ICON[column.kind] ?? ClipboardCheck
+  // Colonne « en séquence » de la vue d'ensemble : aucun canal, plusieurs
+  // séquences mêlées — l'icône du groupe est la seule juste.
+  if (column.group === 'sequence') return Layers
   const n = column.label.toLowerCase()
   if (n.includes('rdv') || n.includes('rendez')) return Calendar
   if (n.includes('propo') || n.includes('devis')) return FileText
@@ -104,8 +107,12 @@ export function eur(value: number | null | undefined): string {
 
 /** Résumé d'une colonne franchie — ce que la carte grisée raconte. */
 function doneSummary(column: SalesColumn, row: SalesBoardRow): string {
-  if (column.group === 'entry') return row.sequence?.name ?? 'Mis en séquence'
+  if (column.group === 'entry') return row.sequence?.name ?? 'Démarché sans séquence'
   if (column.group === 'sequence') {
+    // Vue d'ensemble : la colonne franchie ne raconte pas une étape, mais la
+    // séquence entière — quand il y en a eu une. Un prospect passé directement
+    // en phase commerciale n'en a jamais suivi : le dire.
+    if (!column.kind) return row.sequence ? `${row.sequence.name} · terminée` : 'Aucune séquence'
     switch (column.kind) {
       case 'email': {
         const n = row.emailsSent || 1
@@ -219,6 +226,56 @@ function ActiveBody({
 
   // ── Colonnes de séquence ────────────────────────────────────────────────
   if (column.group === 'sequence') {
+    // Vue d'ensemble : on ne sait pas — et on ne peut pas savoir — quelle étape
+    // est en cours, puisque chaque prospect suit la sienne. On montre donc où
+    // en est son inscription, pas une étape qui serait celle du voisin.
+    if (!column.kind) {
+      const seq = row.sequence
+      if (!seq) {
+        return (
+          <div className="c-body col">
+            <div className="muted">Pas encore en séquence.</div>
+          </div>
+        )
+      }
+      const manual = seq.stepKind != null && seq.stepKind !== 'email' && seq.stepKind !== 'wait'
+      const task = manual ? (row.tasks.find((t) => t.kind === seq.stepKind) ?? row.tasks[0]) : null
+      const remaining = seq.sendAt ? Date.parse(seq.sendAt) - now : null
+      return (
+        <div className="c-body col">
+          {manual ? (
+            <div className="taskrow">
+              <span className="due">
+                <Clock className="ico-xs" />à faire {task ? hm(task.dueAt, timezone) : '—:—'}
+              </span>
+              <span className="pill">{channelOf(seq.stepKind).label}</span>
+            </div>
+          ) : remaining != null && seq.status === 'active' ? (
+            <div className="eta">
+              <span className="v">{remaining > 0 ? eta(remaining) : 'imminent'}</span>
+              <span className="l">départ {hmd(seq.sendAt as string, now, timezone)}</span>
+            </div>
+          ) : (
+            <div className="eta wait">
+              <span className="v">—:—</span>
+              <span className="l">
+                {seq.status === 'paused'
+                  ? 'séquence en pause'
+                  : seq.status === 'exited'
+                    ? 'séquence stoppée'
+                    : holdReasonLabel(seq.holdReason) || 'en attente'}
+              </span>
+            </div>
+          )}
+          <div className="stepn">{seq.stepLabel}</div>
+          <div className="why">
+            <Layers className="ico-xs" />
+            étape {seq.currentStep}/{seq.totalSteps} · ouvrir pour agir
+          </div>
+        </div>
+      )
+    }
+
     if (column.kind === 'email') {
       const seq = row.sequence
       // Sans adresse, rien n'est préparé : ni créneau, ni compte à rebours. La
@@ -594,13 +651,18 @@ export function SalesCell({
   }
 
   const isEntry = column.group === 'entry'
+  // La colonne d'ensemble ne désigne aucune étape : elle ne peut donc pas en
+  // faire valider une. Son seul geste est d'aller voir la séquence.
+  const isAnySequence = column.group === 'sequence' && !column.kind
   const tagLabel = isEntry
     ? 'En attente'
-    : column.mode === 'auto'
-      ? 'Auto'
-      : column.mode === 'manual'
-        ? 'À faire'
-        : 'En cours'
+    : isAnySequence
+      ? 'En cours'
+      : column.mode === 'auto'
+        ? 'Auto'
+        : column.mode === 'manual'
+          ? 'À faire'
+          : 'En cours'
   const tagKind = isEntry ? 'outline' : column.mode === 'auto' ? 'magic' : column.mode === 'manual' ? 'warn' : 'accent'
   const isLastPipelineColumn = column.group === 'pipeline' && /sign|gagn|client/i.test(column.label)
   // Sans contact identifiable, la mise en séquence échouerait côté serveur :
@@ -694,6 +756,13 @@ export function SalesCell({
             <button className="btn ghost sm danger-h" onClick={(e) => handlers.onReact(e, row)}>
               <Slash className="ico-sm" />
               Écarter
+            </button>
+          ) : isAnySequence ? (
+            // Pas de « étape faite » ici : on ignore quelle étape court, la
+            // valider ferait avancer l'inscription à l'aveugle.
+            <button className="btn sm" onClick={(e) => handlers.onReact(e, row)}>
+              <Bolt className="ico-sm" />
+              Le prospect a réagi
             </button>
           ) : isLastPipelineColumn ? (
             <>

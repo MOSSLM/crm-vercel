@@ -9,6 +9,13 @@
 // La séquence pousse le prospect toute seule jusqu'à sa dernière étape ; le
 // commercial reprend la main à l'étape de reprise du pipeline. Règle d'or : on
 // n'intervient que quand le prospect réagit.
+//
+// UNE PARTIE À LA FOIS. Les colonnes du milieu sont les étapes d'UNE séquence :
+// tant qu'on n'en affichait qu'une pour tout le monde, les prospects des autres
+// séquences tombaient sous des colonnes qui n'étaient pas les leurs. Le tableau
+// se choisit donc par onglets (`.parts`) : une séquence, la vue d'ensemble, ou
+// le stock à démarcher. Chaque onglet annonce son nombre — rien ne disparaît,
+// tout se regarde séparément.
 import React from 'react'
 import Link from 'next/link'
 import { createPortal } from 'react-dom'
@@ -45,11 +52,16 @@ import { ArchiveDialog, type ArchiveTarget } from '@/components/archive/ArchiveD
 import { authedFetch } from '@/utils/authedFetch'
 import { getCompanyDisplayName } from '@/utils/displayHelpers'
 import {
+  ALL_SEQUENCES,
+  NO_SEQUENCE,
   SALES_REACTIONS,
   SEQUENCE_TINT,
   channelOf,
+  isStepColumn,
+  partKind,
   type SalesColumn,
   type SalesReactionId,
+  type SequencePart,
 } from '@/lib/sales-pipeline/stages'
 import { formatHM } from '@/lib/automations/regulator'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
@@ -115,7 +127,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     todoOnly: false,
     page: 0,
     pipelineId: readStored(variant, 'pipeline'),
-    sequenceId: readStored(variant, 'sequence'),
+    part: readStored(variant, 'sequence'),
   }))
   const [search, setSearch] = React.useState('')
   const [modal, setModal] = React.useState<
@@ -140,7 +152,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     p.set('status', filters.status)
     if (filters.todoOnly) p.set('todo', '1')
     if (filters.pipelineId) p.set('pipeline', filters.pipelineId)
-    if (filters.sequenceId) p.set('sequence', filters.sequenceId)
+    if (filters.part) p.set('sequence', filters.part)
     p.set('page', String(filters.page))
     return p.toString()
   }, [filters])
@@ -156,7 +168,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
         // Le serveur tranche le choix par défaut ; on le mémorise pour que la
         // page rouvre sur la même combinaison.
         store(variant, 'pipeline', data.selectedPipelineId)
-        store(variant, 'sequence', data.selectedSequenceId)
+        store(variant, 'sequence', data.selectedPart)
       } catch {
         if (!silent) toast.error('Chargement du pipeline impossible')
       } finally {
@@ -256,10 +268,26 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const sequenceName = board?.sequences.find((s) => s.id === board?.selectedSequenceId)?.name ?? 'Séquence'
   const pipelineName = board?.pipelines.find((p) => p.id === board?.selectedPipelineId)?.nom ?? 'Pipeline'
 
-  /** Colonnes de séquence pas encore faites — celles qu'un raccourci fait sauter. */
+  /** La partie affichée, telle que le serveur l'a tranchée. */
+  const part: SequencePart = board?.selectedPart ?? filters.part ?? ALL_SEQUENCES
+  const kind = partKind(part)
+  const setPart = React.useCallback(
+    (next: SequencePart) => setFilters((f) => (f.part === next ? f : { ...f, part: next, page: 0 })),
+    [],
+  )
+
+  /**
+   * Colonnes de séquence pas encore faites — celles qu'un raccourci fait sauter.
+   *
+   * Uniquement de VRAIES étapes : la colonne « en séquence » de la vue
+   * d'ensemble n'en est pas une, l'enregistrer comme sautée barrerait une
+   * colonne qui ne correspond à rien côté moteur.
+   */
   const pendingSequenceColumns = React.useCallback(
     (row: SalesBoardRow) =>
-      sequenceColumns.filter((c) => row.cells[c.id] === 'active' || row.cells[c.id] === 'locked').map((c) => c.id),
+      sequenceColumns
+        .filter((c) => isStepColumn(c.id) && (row.cells[c.id] === 'active' || row.cells[c.id] === 'locked'))
+        .map((c) => c.id),
     [sequenceColumns],
   )
 
@@ -267,7 +295,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const pendingEmailColumns = React.useCallback(
     (row: SalesBoardRow) =>
       sequenceColumns
-        .filter((c) => c.kind === 'email' && (row.cells[c.id] === 'active' || row.cells[c.id] === 'locked'))
+        .filter(
+          (c) => isStepColumn(c.id) && c.kind === 'email' && (row.cells[c.id] === 'active' || row.cells[c.id] === 'locked'),
+        )
         .map((c) => c.id),
     [sequenceColumns],
   )
@@ -334,6 +364,14 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
 
   async function work(column: SalesColumn, row: SalesBoardRow) {
     if (column.group === 'sequence') {
+      // Colonne « en séquence » de la vue d'ensemble : elle ne désigne aucune
+      // étape précise — le seul geste honnête est d'ouvrir la séquence du
+      // prospect, là où les étapes redeviennent comparables.
+      if (!column.kind) {
+        if (row.sequence) setPart(row.sequence.automationId)
+        else toast.error('Ce prospect n’est sur aucune séquence')
+        return
+      }
       if (column.kind === 'email') {
         setModal({ type: 'queue' })
         return
@@ -393,6 +431,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const pages = board ? Math.max(1, Math.ceil(board.total / board.perPage)) : 1
   const nextSendIn = board?.regulator.nextSendAt ? Date.parse(board.regulator.nextSendAt) - now : null
   const selected = rows.filter((r) => selection.has(r.id))
+  /** Ceux de la page qu'on peut encore mettre en séquence. */
+  const enrollable = rows.filter((r) => !r.sequence)
+  const stockCount = board?.partCounts.noSequence ?? 0
 
   return (
     <div className="mp-scope sp-scope">
@@ -420,17 +461,40 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               Réglages du régulateur
             </Link>
           )}
-          <button
-            className="btn accent sm"
-            onClick={() => setModal({ type: 'seq', rows: rows.filter((r) => !r.sequence) })}
-            disabled={loading}
-          >
-            <Layers className="ico-sm" />
-            Mettre en séquence
-            <span className="ct">{rows.filter((r) => !r.sequence).length}</span>
-          </button>
+          {/* Dans une séquence, tout le monde est déjà inscrit : proposer « mettre
+              en séquence » y offrirait un bouton sans matière. On renvoie au
+              stock, qui est l'endroit d'où on lance. */}
+          {enrollable.length === 0 && kind === 'one' ? (
+            <button className="btn sm" onClick={() => setPart(NO_SEQUENCE)} disabled={loading}>
+              <Inbox className="ico-sm" />
+              Stock à démarcher
+              <span className="ct">{stockCount}</span>
+            </button>
+          ) : (
+            <button
+              className="btn accent sm"
+              onClick={() => setModal({ type: 'seq', rows: enrollable })}
+              disabled={loading || enrollable.length === 0}
+            >
+              <Layers className="ico-sm" />
+              Mettre en séquence
+              <span className="ct">{enrollable.length}</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Onglets : quelle partie du tableau ? ─────────────────────────── */}
+      {board && (
+        <PartTabs
+          board={board}
+          part={part}
+          onPick={(next) => {
+            setPart(next)
+            setSelection(new Set())
+          }}
+        />
+      )}
 
       {/* ── Barre régulateur ────────────────────────────────────────────── */}
       {board && (
@@ -488,7 +552,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <span className="txt">
             {board.sequenceHasEmailStep
               ? 'aucun envoi n’est préparé pour elles — saisissez l’adresse, ou sautez l’étape email.'
-              : 'la séquence affichée n’a pas d’étape email : elles ne sont pas bloquées.'}
+              : kind === 'none'
+                ? 'pas encore en séquence — l’adresse manquera dès le premier envoi.'
+                : 'la séquence affichée n’a pas d’étape email : elles ne sont pas bloquées.'}
           </span>
           <button className="btn sm" onClick={() => setModal({ type: 'missing' })}>
             <MailPlus className="ico-sm" />
@@ -505,7 +571,8 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Entreprise, contact, ville…" />
         </div>
 
-        {/* Les deux sources des colonnes. */}
+        {/* La source des colonnes de droite. Celle de gauche — la séquence — se
+            choisit dans les onglets, au-dessus. */}
         <span className="tb-lb">Pipeline</span>
         <select
           className="mp-select"
@@ -515,20 +582,6 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           {(board?.pipelines ?? []).map((p) => (
             <option key={p.id} value={p.id}>
               {p.nom}
-            </option>
-          ))}
-        </select>
-
-        <span className="tb-lb">Séquence</span>
-        <select
-          className="mp-select"
-          value={board?.selectedSequenceId ?? ''}
-          onChange={(e) => setFilters((f) => ({ ...f, sequenceId: e.target.value, page: 0 }))}
-        >
-          {(board?.sequences ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-              {s.status !== 'on' ? ' (en pause)' : ''}
             </option>
           ))}
         </select>
@@ -630,8 +683,10 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               style={{ gridColumn: `span ${sequenceColumns.length}`, ['--gc' as string]: SEQUENCE_TINT }}
             >
               <Layers className="ico-xs" />
-              Séquence · {sequenceName}
-              <span className="n">{sequenceColumns.length} étapes automatisées</span>
+              {kind === 'one' ? `Séquence · ${sequenceName}` : 'Toutes séquences'}
+              {/* Une seule colonne en vue d'ensemble : le libellé la remplit
+                  déjà, un complément ne ferait que se faire couper. */}
+              {kind === 'one' && <span className="n">{sequenceColumns.length} étapes automatisées</span>}
             </div>
           )}
           {pipelineColumns.length > 0 && (
@@ -691,8 +746,20 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           {rows.length === 0 && (
             <div className="empty">
               <Search />
-              <div className="t">{loading ? 'Chargement…' : 'Aucun prospect'}</div>
-              <div className="s">Changez de pipeline, de vue, ou videz la recherche.</div>
+              <div className="t">
+                {loading
+                  ? 'Chargement…'
+                  : kind === 'one'
+                    ? 'Personne sur cette séquence'
+                    : kind === 'none'
+                      ? 'Plus rien à démarcher'
+                      : 'Aucun prospect'}
+              </div>
+              <div className="s">
+                {kind === 'one'
+                  ? 'Les autres prospects sont sous un autre onglet — ou dans le stock à démarcher.'
+                  : 'Changez d’onglet, de pipeline, ou videz la recherche.'}
+              </div>
             </div>
           )}
         </div>
@@ -956,6 +1023,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               )
               setSelection(new Set())
               setModal(null)
+              // Ils viennent de quitter le stock : on suit le mouvement plutôt
+              // que de les laisser disparaître de l'onglet qu'on regardait.
+              if (enrolled > 0 && kind !== 'one') setPart(automationId)
               await load(true)
             } finally {
               setBusy(null)
@@ -997,6 +1067,88 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   )
 }
 
+/* ── Onglets de partie ─────────────────────────────────────────────────── */
+
+/**
+ * Le sélecteur de partie : une séquence, le stock, ou la vue d'ensemble.
+ *
+ * C'est la navigation principale du tableau, pas un filtre de plus — d'où les
+ * onglets plutôt qu'une liste déroulante. Chaque onglet porte le nombre de
+ * prospects qu'il montrera : on voit du même coup d'œil que rien n'est perdu,
+ * seulement rangé ailleurs.
+ */
+function PartTabs({
+  board,
+  part,
+  onPick,
+}: {
+  board: SalesBoardData
+  part: SequencePart
+  onPick: (next: SequencePart) => void
+}) {
+  // Ordre STABLE : les actives d'abord, puis par nom. Trier par volume ferait
+  // danser les onglets à chaque rafraîchissement.
+  const sequences = React.useMemo(
+    () =>
+      [...board.sequences].sort((a, b) =>
+        (a.status === 'on') === (b.status === 'on')
+          ? a.name.localeCompare(b.name, 'fr')
+          : a.status === 'on'
+            ? -1
+            : 1,
+      ),
+    [board.sequences],
+  )
+  const kind = partKind(part)
+  const steps = board.columns.filter((c) => c.group === 'sequence').length
+
+  return (
+    <div className="parts">
+      <span className="tb-lb">Séquence</span>
+      <div className="part-row">
+        {sequences.map((s) => (
+          <button
+            key={s.id}
+            className={'part' + (part === s.id ? ' on' : '') + (s.status !== 'on' ? ' off' : '')}
+            onClick={() => onPick(s.id)}
+            title={`${s.steps.length} étapes · ${s.activeEnrollments} inscriptions actives`}
+          >
+            <i style={{ background: colorForId(s.id) }} />
+            <span className="nm">{s.name}</span>
+            {s.status !== 'on' && <Pause className="ico-xs" />}
+            <span className="ct">{board.partCounts.sequences[s.id] ?? 0}</span>
+          </button>
+        ))}
+        <button
+          className={'part alt' + (part === NO_SEQUENCE ? ' on' : '')}
+          onClick={() => onPick(NO_SEQUENCE)}
+          title="Les prospects qui ne sont sur aucune séquence"
+        >
+          <Inbox className="ico-xs" />
+          <span className="nm">À démarcher</span>
+          <span className="ct">{board.partCounts.noSequence}</span>
+        </button>
+        <button
+          className={'part alt' + (part === ALL_SEQUENCES ? ' on' : '')}
+          onClick={() => onPick(ALL_SEQUENCES)}
+          title="Tout le monde, sans le détail des étapes"
+        >
+          <Layers className="ico-xs" />
+          <span className="nm">Vue d’ensemble</span>
+          <span className="ct">{board.partCounts.all}</span>
+        </button>
+      </div>
+      <span className="parts-hint">
+        {kind === 'one'
+          ? `${steps} colonne${steps > 1 ? 's' : ''} : les étapes de cette séquence`
+          : kind === 'none'
+            ? 'jamais mis en séquence — c’est d’ici qu’on lance'
+            : 'toutes séquences mêlées : leurs étapes ne sont pas comparables, choisissez-en une pour les voir'}
+      </span>
+    </div>
+  )
+}
+
 /* ── En-tête de colonne ────────────────────────────────────────────────── */
 
 function ColumnHead({
@@ -1024,7 +1176,17 @@ function ColumnHead({
         <b style={{ color: column.color }}>{counts?.active ?? 0}</b>
         {column.group === 'entry' ? ' en attente' : ' en cours'} · {counts?.done ?? 0} faites
         <span className="mode">
-          {column.group === 'entry' ? 'stock' : column.mode === 'auto' ? 'auto' : column.mode === 'manual' ? 'tâche' : 'manuel'}
+          {column.group === 'entry'
+            ? 'stock'
+            : // Vue d'ensemble : la colonne mêle des étapes automatiques et des
+              // tâches à la main — annoncer « auto » serait faux.
+              column.group === 'sequence' && !column.kind
+              ? 'séquences'
+              : column.mode === 'auto'
+                ? 'auto'
+                : column.mode === 'manual'
+                  ? 'tâche'
+                  : 'manuel'}
         </span>
       </div>
     </div>

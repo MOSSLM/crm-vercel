@@ -4,8 +4,15 @@
 jest.mock('@/app/api/_lib/service-client', () => ({ getServiceClient: () => ({}) }))
 jest.mock('@/app/api/automations/regulator/_view', () => ({ buildRegulatorView: jest.fn() }))
 
-import { derivePosition, toStateRow, visibleStepPosition } from '../_board'
-import { ENTRY_COLUMN_ID, buildColumns, type PipelineStageRef } from '@/lib/sales-pipeline/stages'
+import { derivePosition, matchesPart, resolveSequencePart, toStateRow, visibleStepPosition } from '../_board'
+import {
+  ALL_SEQUENCES,
+  ENTRY_COLUMN_ID,
+  NO_SEQUENCE,
+  SEQ_ANY_COLUMN_ID,
+  buildColumns,
+  type PipelineStageRef,
+} from '@/lib/sales-pipeline/stages'
 import type { SalesSequenceInfo } from '../_board'
 import type { SeqStepKind } from '@/components/automations/types'
 
@@ -150,5 +157,87 @@ describe('derivePosition', () => {
     // La séquence affichée a changé : l'inscription pointe une étape inconnue.
     const other = sequence({ currentStep: 1 })
     expect(derivePosition({ columns, sequence: other, steps: [{ id: 'autre' }], stageId: 7 })).toBe('stage:7')
+  })
+})
+
+describe('derivePosition en vue d’ensemble', () => {
+  const overview = buildColumns({ steps: [], sequenceName: null, stages: STAGES, handoffOrdre: 50, overview: true })
+
+  // Le cœur du problème : sans colonne d'étape, un prospect en pleine séquence
+  // retombait dans le stock « à démarcher » — on l'aurait cru jamais démarché.
+  it('montre l’inscription vivante dans la colonne « en séquence »', () => {
+    expect(derivePosition({ columns: overview, sequence: sequence(), steps: STEPS, stageId: 1 })).toBe(
+      SEQ_ANY_COLUMN_ID,
+    )
+    expect(derivePosition({ columns: overview, sequence: sequence(), steps: STEPS, stageId: null })).toBe(
+      SEQ_ANY_COLUMN_ID,
+    )
+  })
+
+  it('laisse la phase commerciale primer sur la séquence encore ouverte', () => {
+    expect(derivePosition({ columns: overview, sequence: sequence(), steps: STEPS, stageId: 6 })).toBe('stage:6')
+  })
+
+  it('sans séquence, le stock reste le stock', () => {
+    expect(derivePosition({ columns: overview, sequence: null, steps: [], stageId: 1 })).toBe(ENTRY_COLUMN_ID)
+  })
+
+  it('une séquence terminée dépose la ligne à la reprise, pas dans « en séquence »', () => {
+    expect(
+      derivePosition({ columns: overview, sequence: sequence({ status: 'finished' }), steps: STEPS, stageId: 1 }),
+    ).toBe('stage:6')
+  })
+})
+
+describe('resolveSequencePart', () => {
+  const SEQUENCES = [
+    { id: 'a1', status: 'on' },
+    { id: 'a2', status: 'on' },
+    { id: 'a3', status: 'off' },
+  ]
+  const actives = new Map([
+    ['a1', 3],
+    ['a2', 12],
+  ])
+
+  it('respecte les deux vues réservées', () => {
+    expect(resolveSequencePart(ALL_SEQUENCES, SEQUENCES, actives)).toEqual({ part: 'all', sequenceId: null })
+    expect(resolveSequencePart(NO_SEQUENCE, SEQUENCES, actives)).toEqual({ part: 'none', sequenceId: null })
+  })
+
+  it('ouvre la séquence demandée, même en pause', () => {
+    expect(resolveSequencePart('a3', SEQUENCES, actives)).toEqual({ part: 'a3', sequenceId: 'a3' })
+  })
+
+  it('à défaut, ouvre la séquence active qui travaille le plus', () => {
+    expect(resolveSequencePart(null, SEQUENCES, actives).sequenceId).toBe('a2')
+    // Une séquence supprimée ne doit pas ouvrir un tableau vide sans raison.
+    expect(resolveSequencePart('disparue', SEQUENCES, actives).sequenceId).toBe('a2')
+  })
+
+  it('sans aucune séquence configurée, il n’y a que la vue d’ensemble', () => {
+    expect(resolveSequencePart('a1', [], new Map())).toEqual({ part: ALL_SEQUENCES, sequenceId: null })
+  })
+})
+
+describe('matchesPart', () => {
+  it('la vue d’ensemble ne trie personne', () => {
+    expect(matchesPart(ALL_SEQUENCES, new Set(['a1']))).toBe(true)
+    expect(matchesPart(ALL_SEQUENCES, undefined)).toBe(true)
+  })
+
+  it('le stock, c’est ceux qui n’ont jamais été inscrits nulle part', () => {
+    expect(matchesPart(NO_SEQUENCE, undefined)).toBe(true)
+    expect(matchesPart(NO_SEQUENCE, new Set())).toBe(true)
+    expect(matchesPart(NO_SEQUENCE, new Set(['a1']))).toBe(false)
+  })
+
+  // Deux inscriptions = deux parties : la ligne se regarde sous chacune, à
+  // l'étape qui la concerne, plutôt qu'une fois sous les colonnes du voisin.
+  it('une séquence ne montre que ses inscrits', () => {
+    expect(matchesPart('a1', new Set(['a1', 'a2']))).toBe(true)
+    expect(matchesPart('a2', new Set(['a1', 'a2']))).toBe(true)
+    expect(matchesPart('a3', new Set(['a1', 'a2']))).toBe(false)
+    expect(matchesPart('a1', undefined)).toBe(false)
   })
 })

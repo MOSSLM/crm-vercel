@@ -13,6 +13,55 @@
    message pré-rédigé ou un montant, pas seulement un statut. */
 .mp-scope.sp-scope { --rowh: 272px; --colw: 226px; }
 
+/* La grille du socle réserve une DERNIÈRE colonne pour la vignette de partage
+   du Marketing Pipeline (`--vignw`). Le pipeline commercial n'en pose aucune :
+   chaque rangée laissait donc une colonne vide en fin de ligne, et la rangée
+   suivante repartait décalée d'un cran — le bandeau violet ne couvrait plus les
+   étapes qu'il annonce, et les cartes glissaient un peu plus à chaque ligne.
+   Ici, la grille s'arrête donc à la dernière vraie colonne. */
+.mp-scope.sp-scope .matrix { grid-template-columns: var(--rowh) repeat(var(--ncol), var(--colw)); }
+
+/* ── onglets de partie ──
+   La navigation principale du tableau : une séquence à la fois, le stock, ou
+   la vue d'ensemble. Elle passe AVANT les filtres, parce qu'elle décide des
+   colonnes — pas seulement des lignes. */
+.mp-scope .parts {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 24px 12px; padding: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.mp-scope .part-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.mp-scope .part {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 260px;
+  border: 1px solid var(--border-2); background: var(--surface); color: var(--text-2);
+  border-radius: 999px; padding: 5px 11px; font-size: 12.5px; font-weight: 500;
+  transition: border-color .13s, background .13s, color .13s;
+}
+.mp-scope .part:hover { border-color: var(--border-strong); color: var(--text); }
+.mp-scope .part i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.mp-scope .part .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-scope .part .ico { color: var(--text-4); flex-shrink: 0; }
+.mp-scope .part .ct {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3);
+  background: var(--bg-2); border-radius: 5px; padding: 1px 5px;
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+/* Une séquence en pause reste consultable : elle a des prospects garés dessus,
+   les cacher reviendrait à les perdre de vue. */
+.mp-scope .part.off { opacity: .62; }
+.mp-scope .part.off .ico { color: var(--warn); }
+.mp-scope .part.on {
+  background: var(--text); border-color: var(--text); color: var(--bg);
+  box-shadow: var(--shadow-1);
+}
+.mp-scope .part.on .ico { color: var(--bg); opacity: .8; }
+.mp-scope .part.on .ct { background: rgba(255,255,255,.16); color: var(--bg); }
+.mp-scope .part.on.off { opacity: 1; }
+.mp-scope .parts-hint {
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-4);
+  margin-left: auto; text-align: right; min-width: 0;
+}
+
 /* ── barre régulateur ── */
 .mp-scope .regbar {
   display: flex; align-items: center; gap: 14px; overflow: hidden;

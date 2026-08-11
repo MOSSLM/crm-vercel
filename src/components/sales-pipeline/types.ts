@@ -1,9 +1,9 @@
 // types.ts — miroir de /api/sales-pipeline/board (et de son pendant agent).
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
-import type { CellStatus, SalesColumn, SalesStateRow } from '@/lib/sales-pipeline/stages'
+import type { CellStatus, SalesColumn, SalesStateRow, SequencePart } from '@/lib/sales-pipeline/stages'
 import type { RegulatorQueueRow } from '@/components/automations/regulator/types'
 
-export type { HoldReason, SendWindow, CellStatus, SalesColumn, SalesStateRow, RegulatorQueueRow }
+export type { HoldReason, SendWindow, CellStatus, SalesColumn, SalesStateRow, SequencePart, RegulatorQueueRow }
 
 export interface SalesSequenceInfo {
   enrollmentId: string
@@ -95,7 +95,12 @@ export interface SalesBoardData {
   sequenceHasEmailStep: boolean
   pipelines: { id: string; nom: string; isDefault: boolean }[]
   selectedPipelineId: string | null
+  /** Non nul seulement quand une séquence précise est affichée. */
   selectedSequenceId: string | null
+  /** La partie affichée : identifiant de séquence, `all` ou `none`. */
+  selectedPart: SequencePart
+  /** Ce que chaque onglet montrera si on clique dessus. */
+  partCounts: { sequences: Record<string, number>; noSequence: number; all: number }
   agents: { id: string; name: string; isAdmin: boolean }[]
   sequences: SalesSequenceOption[]
   regulator: {
@@ -121,5 +126,6 @@ export type SalesFilters = {
   todoOnly: boolean
   page: number
   pipelineId: string | null
-  sequenceId: string | null
+  /** Séquence affichée, `all` (vue d'ensemble) ou `none` (stock à démarcher). */
+  part: SequencePart | null
 }
