@@ -1801,6 +1801,15 @@
   background: var(--accent-tint); border-color: var(--accent); color: var(--accent-2);
 }
 .au-skin .tpl-item .nm { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Le modèle porte une version « à un contact » en plus de la version
+   entreprise. Sans repère, il faut ouvrir chaque modèle pour savoir lesquels
+   ont été doublés. */
+.au-skin .tpl-item .deux {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 9px; line-height: 14px;
+  min-width: 14px; height: 14px; padding: 0 3px; text-align: center;
+  border-radius: 4px; background: var(--accent-tint); color: var(--accent-2);
+}
 .au-skin .tpl-add {
   display: flex; align-items: center; gap: 5px; width: 100%; margin-top: 4px;
   border: 1px dashed var(--border); background: transparent; border-radius: 6px;

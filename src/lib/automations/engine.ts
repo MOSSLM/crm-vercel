@@ -14,7 +14,14 @@ import {
   stepStartMs,
   type StepAnchor,
 } from '@/lib/automations/week'
-import { interpolateVars, usedVariables, type VarBag } from '@/lib/automations/variables'
+import {
+  interpolateVars,
+  pickVariant,
+  usedVariables,
+  variantText,
+  type MessageVariant,
+  type VarBag,
+} from '@/lib/automations/variables'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
 import {
@@ -328,7 +335,44 @@ export interface RenderedStepMessage {
   body: string
   /** Nom du modèle ou du script d'où vient le texte, quand il en vient un. */
   source: string | null
+  /** Laquelle des deux versions du modèle a été retenue pour ce prospect. */
+  variant: MessageVariant
 }
+
+/**
+ * Une ligne de modèle, ses deux versions comprises.
+ *
+ * Les colonnes `*_contact` arrivent avec `20260814_modeles_variantes_contact` :
+ * elles peuvent manquer sur une base qui n'a pas encore reçu la migration, d'où
+ * l'optionalité, et d'où la lecture en `*` (cf. `lireModele`).
+ */
+interface TemplateRow {
+  name?: string | null
+  subject?: string | null
+  subject_contact?: string | null
+  body?: string | null
+  body_contact?: string | null
+}
+
+/**
+ * Lit un modèle avec ses deux versions.
+ *
+ * `select('*')` et NON la liste des colonnes : PostgREST fait échouer la requête
+ * entière sur une colonne inconnue, et `body_contact` n'existe qu'après la
+ * migration. Un déploiement de code qui la précède enverrait alors des messages
+ * VIDES — silencieusement, `data` étant nul et `interpolate(null)` rendant ''.
+ * Les trois tables tiennent en quelques colonnes ; tout prendre ne coûte rien.
+ */
+async function lireModele(sb: SupabaseClient, table: string, id: string): Promise<TemplateRow | null> {
+  const { data } = await sb.from(table).select('*').eq('id', id).maybeSingle()
+  return (data as TemplateRow | null) ?? null
+}
+
+/** Les deux écritures de chaque champ d'un modèle, dans l'ordre où on les juge. */
+const paires = (row: TemplateRow | null) => [
+  { company: row?.subject, contact: row?.subject_contact },
+  { company: row?.body, contact: row?.body_contact },
+]
 
 /**
  * Le message d'une étape, modèle résolu et variables remplies.
@@ -337,6 +381,12 @@ export interface RenderedStepMessage {
  * distincts finiraient par diverger, et l'écart se découvrirait chez le
  * prospect. Un modèle choisi prime sur le message écrit dans l'étape — même
  * règle des deux côtés.
+ *
+ * C'est ici que se tranche laquelle des deux versions du modèle part : celle
+ * qui nomme le contact quand on peut la tenir jusqu'au bout, sinon celle qui
+ * s'adresse à l'entreprise (`pickVariant`). Le sac reste COMPLET pour
+ * l'interpolation : un modèle sans version contact garde le droit de citer un
+ * prénom dans son texte principal, et ce prénom doit se remplir.
  */
 export async function renderStepMessage(
   sb: SupabaseClient,
@@ -344,30 +394,34 @@ export async function renderStepMessage(
   vars: VarBag,
 ): Promise<RenderedStepMessage> {
   if (step.kind === 'email') {
-    if (!step.template) return { subject: null, body: '', source: null }
-    const { data } = await sb
-      .from('email_templates')
-      .select('name,subject,body')
-      .eq('id', step.template)
-      .maybeSingle()
+    if (!step.template) return { subject: null, body: '', source: null, variant: 'company' }
+    const row = await lireModele(sb, 'email_templates', step.template)
+    const [sujet, corps] = paires(row)
+    const variant = pickVariant([sujet, corps], vars)
     return {
-      subject: interpolate(data?.subject, vars),
-      body: interpolate(data?.body, vars),
-      source: (data?.name as string | null) ?? null,
+      subject: interpolate(variantText(sujet, variant), vars),
+      body: interpolate(variantText(corps, variant), vars),
+      source: row?.name ?? null,
+      variant,
     }
   }
 
   if (step.kind === 'whatsapp' && step.template) {
-    const { data } = await sb.from('whatsapp_templates').select('name,body').eq('id', step.template).maybeSingle()
-    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+    const row = await lireModele(sb, 'whatsapp_templates', step.template)
+    const corps = { company: row?.body, contact: row?.body_contact }
+    const variant = pickVariant([corps], vars)
+    return { subject: null, body: interpolate(variantText(corps, variant), vars), source: row?.name ?? null, variant }
   }
 
   if (step.kind === 'call' && step.script) {
-    const { data } = await sb.from('call_scripts').select('name,body').eq('id', step.script).maybeSingle()
-    return { subject: null, body: interpolate(data?.body, vars), source: (data?.name as string | null) ?? null }
+    const row = await lireModele(sb, 'call_scripts', step.script)
+    const corps = { company: row?.body, contact: row?.body_contact }
+    const variant = pickVariant([corps], vars)
+    return { subject: null, body: interpolate(variantText(corps, variant), vars), source: row?.name ?? null, variant }
   }
 
-  return { subject: null, body: interpolate(step.message, vars), source: null }
+  // Message libre écrit dans l'étape : un seul texte, donc pas de variation.
+  return { subject: null, body: interpolate(step.message, vars), source: null, variant: 'company' }
 }
 
 /**
@@ -377,23 +431,28 @@ export async function renderStepMessage(
  * `{{company.audit_url}}` avant de l'interpoler, puisqu'après interpolation il
  * ne reste qu'une URL — impossible de distinguer un lien promis d'un lien
  * absent.
+ *
+ * Prend `vars` pour lire la version qui partira RÉELLEMENT. Sans ça, le garde
+ * jugerait le texte entreprise d'un modèle dont c'est la version contact qui
+ * part : il gèlerait une inscription dont le message ne promet rien, ou pire,
+ * en laisserait passer une qui promet un audit inexistant.
  */
-export async function stepRawText(sb: SupabaseClient, step: SequenceStep): Promise<string> {
+export async function stepRawText(sb: SupabaseClient, step: SequenceStep, vars: VarBag): Promise<string> {
   if (step.kind === 'email' && step.template) {
-    const { data } = await sb
-      .from('email_templates')
-      .select('subject,body')
-      .eq('id', step.template)
-      .maybeSingle()
-    return `${data?.subject ?? ''}\n${data?.body ?? ''}`
+    const row = await lireModele(sb, 'email_templates', step.template)
+    const [sujet, corps] = paires(row)
+    const variant = pickVariant([sujet, corps], vars)
+    return `${variantText(sujet, variant)}\n${variantText(corps, variant)}`
   }
   if (step.kind === 'whatsapp' && step.template) {
-    const { data } = await sb.from('whatsapp_templates').select('body').eq('id', step.template).maybeSingle()
-    return (data?.body as string | null) ?? ''
+    const row = await lireModele(sb, 'whatsapp_templates', step.template)
+    const corps = { company: row?.body, contact: row?.body_contact }
+    return variantText(corps, pickVariant([corps], vars))
   }
   if (step.kind === 'call' && step.script) {
-    const { data } = await sb.from('call_scripts').select('body').eq('id', step.script).maybeSingle()
-    return (data?.body as string | null) ?? ''
+    const row = await lireModele(sb, 'call_scripts', step.script)
+    const corps = { company: row?.body, contact: row?.body_contact }
+    return variantText(corps, pickVariant([corps], vars))
   }
   return step.message ?? ''
 }
@@ -415,9 +474,10 @@ export async function etapePromettUnAuditAbsent(
   sb: SupabaseClient,
   step: SequenceStep,
   entrepriseId: number | null,
+  vars: VarBag,
 ): Promise<boolean> {
   if (entrepriseId == null) return false
-  const texte = await stepRawText(sb, step)
+  const texte = await stepRawText(sb, step, vars)
   if (!usedVariables(texte).includes('company.audit_url')) return false
   return !(await aDesMesuresAudit(sb, entrepriseId))
 }
@@ -437,10 +497,10 @@ export async function etapePromettUnAuditAbsent(
 export async function etapePromettUneDemoAbsente(
   sb: SupabaseClient,
   step: SequenceStep,
-  demoUrl: string | null,
+  vars: VarBag,
 ): Promise<boolean> {
-  if (demoUrl) return false
-  const texte = await stepRawText(sb, step)
+  if (vars['company.demo_url']) return false
+  const texte = await stepRawText(sb, step, vars)
   return usedVariables(texte).includes('company.demo_url')
 }
 
@@ -640,14 +700,14 @@ async function executeAction(
     switch (node.type) {
       case 'act.send_email': {
         if (!ent.contactEmail) return { ...base, status: 'skipped', message: 'Aucun email destinataire' }
-        const { data: tpl } = await sb
-          .from('email_templates')
-          .select('subject,body')
-          .eq('id', cfg.template as string)
-          .maybeSingle()
+        const tpl = await lireModele(sb, 'email_templates', cfg.template as string)
         if (!tpl) return { ...base, status: 'error', message: 'Template introuvable' }
-        const subject = interpolate(tpl.subject, ent.vars)
-        const text = interpolate(tpl.body, ent.vars)
+        // Même arbitrage que dans les séquences : le modèle porte deux versions,
+        // c'est le prospect qui décide laquelle part.
+        const [sujet, corps] = paires(tpl)
+        const variant = pickVariant([sujet, corps], ent.vars)
+        const subject = interpolate(variantText(sujet, variant), ent.vars)
+        const text = interpolate(variantText(corps, variant), ent.vars)
         const r = await sendEngineEmail(sb, {
           to: ent.contactEmail,
           toName: ent.contactName,
@@ -724,16 +784,21 @@ async function executeAction(
         const kind = node.type === 'act.task_call' ? 'call' : node.type === 'act.task_whatsapp' ? 'whatsapp' : 'linkedin'
         let message = ''
         if (kind === 'whatsapp' && cfg.template) {
-          const { data: wt } = await sb.from('whatsapp_templates').select('body').eq('id', cfg.template as string).maybeSingle()
-          message = interpolate(wt?.body, ent.vars)
+          const wt = await lireModele(sb, 'whatsapp_templates', cfg.template as string)
+          const corps = { company: wt?.body, contact: wt?.body_contact }
+          message = interpolate(variantText(corps, pickVariant([corps], ent.vars)), ent.vars)
         } else if (kind === 'linkedin') {
           message = interpolate(cfg.message as string, ent.vars)
         }
         let scriptName: string | undefined
         if (kind === 'call' && cfg.script) {
-          const { data: sc } = await sb.from('call_scripts').select('name,body').eq('id', cfg.script as string).maybeSingle()
-          scriptName = sc?.name
-          message = sc?.body ?? ''
+          const sc = await lireModele(sb, 'call_scripts', cfg.script as string)
+          scriptName = sc?.name ?? undefined
+          const corps = { company: sc?.body, contact: sc?.body_contact }
+          // Le corps passe par `interpolate`, comme dans les séquences. Il en
+          // sortait BRUT ici : l'agent lisait « je suis bien avec
+          // {{company.name}} ? » à l'écran, en clair, pendant qu'il composait.
+          message = interpolate(variantText(corps, pickVariant([corps], ent.vars)), ent.vars)
         }
         await sb.from('prospection_tasks').insert({
           kind,
@@ -1035,14 +1100,14 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   // d'envoyer un lien vers une page générique à son nom. Vaut pour l'e-mail
   // comme pour les tâches manuelles — la séquence WhatsApp cite le rapport elle
   // aussi, et un lien creux se paie plus cher encore dans une conversation.
-  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId)) {
+  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId, ent.vars)) {
     await holdForMissingAuditLink(sb, enrollment.id)
     return
   }
 
   // Même règle pour la démo : `company.demo_url` s'interpolait en vide pour les
   // 295 entreprises, aucun site du parc n'étant publié.
-  if (await etapePromettUneDemoAbsente(sb, step, ent.vars['company.demo_url'] || null)) {
+  if (await etapePromettUneDemoAbsente(sb, step, ent.vars)) {
     await holdForMissingDemo(sb, enrollment.id)
     return
   }

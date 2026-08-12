@@ -1,12 +1,17 @@
 import {
   ALIASES,
   VARIABLES,
+  VARIANT_LABELS,
   canonicalKey,
   insertVariable,
   interpolateVars,
+  missingContactVariables,
   missingVariables,
+  pickVariant,
   sampleVars,
   usedVariables,
+  variantText,
+  varsForVariant,
 } from '../variables'
 
 describe('canonicalKey', () => {
@@ -107,7 +112,124 @@ describe('insertVariable', () => {
   })
 })
 
+describe('deux variations — pickVariant', () => {
+  const ENTREPRISE = 'Bonjour, je suis bien avec {{company.name}} ?'
+  const CONTACT = 'Bonjour, je suis bien avec {{contact.first_name}} de {{company.name}} ?'
+
+  const avecContact = { 'company.name': 'Toiture Martin', 'contact.first_name': 'Julien' }
+  const sansContact = { 'company.name': 'Toiture Martin' }
+
+  it('prend la version contact quand on connaît la personne', () => {
+    expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], avecContact)).toBe('contact')
+  })
+
+  // LE DÉFAUT QUI A MOTIVÉ LA BASCULE : 70 des 275 entreprises qualifiées n'ont
+  // aucune ligne `contacts`. Sans ce repli, elles recevaient « je suis bien
+  // avec  de Toiture Martin ? ».
+  it('retombe sur l’entreprise dès qu’une variable du contact manque', () => {
+    expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], sansContact)).toBe('company')
+    expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], { ...avecContact, 'contact.first_name': '' })).toBe(
+      'company',
+    )
+  })
+
+  it('retombe sur l’entreprise quand aucune version contact n’est écrite', () => {
+    // Le cas de TOUS les modèles antérieurs à la migration : comportement
+    // strictement inchangé, même quand le prénom est connu.
+    expect(pickVariant([{ company: ENTREPRISE, contact: null }], avecContact)).toBe('company')
+    expect(pickVariant([{ company: ENTREPRISE, contact: '   ' }], avecContact)).toBe('company')
+  })
+
+  it('résout les alias avant de juger', () => {
+    // Un modèle écrit dans la messagerie utilise `{{prénom}}` : la version
+    // contact doit être jugée sur la clé canonique, pas sur l'écriture.
+    expect(pickVariant([{ company: ENTREPRISE, contact: 'Bonjour {{prénom}}' }], sansContact)).toBe('company')
+    expect(pickVariant([{ company: ENTREPRISE, contact: 'Bonjour {{prénom}}' }], avecContact)).toBe('contact')
+  })
+
+  it('ne regarde que les variables du contact', () => {
+    // Un lien de démo manquant ne doit pas faire basculer de version : c'est le
+    // garde-fou de la démo qui gèle l'étape, pas le choix du texte.
+    expect(
+      pickVariant([{ company: ENTREPRISE, contact: 'Bonjour {{contact.first_name}}, {{company.demo_url}}' }], avecContact),
+    ).toBe('contact')
+  })
+
+  it('juge l’objet et le corps ensemble — ils partent dans la même enveloppe', () => {
+    const sujet = { company: 'Votre site', contact: '{{contact.first_name}}, votre site' }
+    const corps = { company: 'Bonjour,', contact: 'Bonjour {{contact.last_name}},' }
+    // Le nom de famille manque : les DEUX champs repassent en version
+    // entreprise, plutôt que d'envoyer un objet nommé sur un corps anonyme.
+    expect(pickVariant([sujet, corps], avecContact)).toBe('company')
+    expect(pickVariant([sujet, corps], { ...avecContact, 'contact.last_name': 'Martin' })).toBe('contact')
+  })
+})
+
+describe('deux variations — variantText', () => {
+  it('rend la version demandée', () => {
+    expect(variantText({ company: 'A', contact: 'B' }, 'contact')).toBe('B')
+    expect(variantText({ company: 'A', contact: 'B' }, 'company')).toBe('A')
+  })
+
+  it('replie un champ sans version contact sur l’entreprise', () => {
+    // C'est ce qui permet de n'écrire QUE le corps en version contact et de
+    // laisser l'objet tel quel.
+    expect(variantText({ company: 'A', contact: null }, 'contact')).toBe('A')
+    expect(variantText({ company: 'A', contact: '  ' }, 'contact')).toBe('A')
+  })
+
+  it('ne rend jamais null', () => {
+    expect(variantText({ company: null, contact: null }, 'company')).toBe('')
+  })
+})
+
+describe('deux variations — varsForVariant', () => {
+  const vars = { 'company.name': 'Toiture Martin', 'contact.first_name': 'Julien' }
+
+  it('vide le contact pour la version entreprise', () => {
+    // L'aperçu de cette version doit montrer le cas qu'elle a pour mission de
+    // tenir : personne de nommé en face.
+    const vu = varsForVariant(vars, 'company')
+    expect(vu['contact.first_name']).toBe('')
+    expect(vu['company.name']).toBe('Toiture Martin')
+    // Le sac d'origine n'est pas modifié — le moteur interpole avec, lui.
+    expect(vars['contact.first_name']).toBe('Julien')
+  })
+
+  it('laisse le sac intact pour la version contact', () => {
+    expect(varsForVariant(vars, 'contact')).toBe(vars)
+  })
+
+  it('fait dire à l’éditeur ce qui partira vide', () => {
+    // Le lien entre les deux : sur la version entreprise, un `{{prénom}}` resté
+    // dans le texte est signalé au lieu de partir en blanc chez le prospect.
+    expect(missingVariables('Bonjour {{contact.first_name}}', varsForVariant(vars, 'company'))).toEqual([
+      'contact.first_name',
+    ])
+  })
+})
+
+describe('deux variations — missingContactVariables', () => {
+  it('ne retient que les clés du contact', () => {
+    expect(
+      missingContactVariables('{{contact.first_name}} {{contact.role}} {{company.demo_url}}', {
+        'contact.role': 'Gérant',
+      }),
+    ).toEqual(['contact.first_name'])
+  })
+})
+
 describe('catalogue', () => {
+  it('nomme les deux versions dans les deux sens', () => {
+    // Les libellés sont lus par la bibliothèque, le builder ET la vue semaine :
+    // un vocabulaire qui diverge ferait croire à trois notions différentes.
+    for (const v of ['company', 'contact'] as const) {
+      expect(VARIANT_LABELS[v].tab).toBeTruthy()
+      expect(VARIANT_LABELS[v].short).toBeTruthy()
+      expect(VARIANT_LABELS[v].hint).toBeTruthy()
+    }
+  })
+
   it('a des exemples pour toutes les variables — l’aperçu ne doit jamais être vide', () => {
     for (const v of VARIABLES) expect(sampleVars()[v.key]).toBeTruthy()
   })

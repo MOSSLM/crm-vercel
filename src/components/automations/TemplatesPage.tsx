@@ -12,10 +12,17 @@
 // je suis bien avec X ? » et l'envoi du site démo servent à la fois à la
 // séquence WhatsApp seule et à la séquence mixte. Les écrire une fois est tout
 // l'intérêt.
+//
+// CHAQUE MODÈLE PORTE DEUX VERSIONS
+// La même accroche ne se dit pas pareil selon qu'on sache à QUI on écrit —
+// « je suis bien avec Toiture Martin ? » contre « je suis bien avec Julien de
+// Toiture Martin ? ». Les deux s'écrivent ici, côte à côte ; c'est le moteur
+// qui choisit à l'envoi, et l'aperçu de chaque onglet montre le cas que cette
+// version-là doit tenir.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { XI } from './icons'
-import { Field, Section } from './atoms'
+import { Field, SegFull, Section } from './atoms'
 import { MessageEditor } from './MessageEditor'
 import { useRefData } from './ref-data'
 import { listAutomations } from './automations-db'
@@ -29,7 +36,15 @@ import {
   type TemplateFamily,
 } from './templates-db'
 import { authedFetch } from '@/utils/authedFetch'
-import { sampleVars, type VarBag } from '@/lib/automations/variables'
+import {
+  VARIANTS,
+  VARIANT_LABELS,
+  pickVariant,
+  sampleVars,
+  varsForVariant,
+  type MessageVariant,
+  type VarBag,
+} from '@/lib/automations/variables'
 import type { Automation, SequenceDefinition } from './types'
 
 const FAMILIES: TemplateFamily[] = ['whatsapp', 'email', 'call']
@@ -55,6 +70,9 @@ export function TemplatesPage() {
   const [sequences, setSequences] = useState<Automation[]>([])
   const [vars, setVars] = useState<VarBag>(() => sampleVars())
   const [previewOn, setPreviewOn] = useState<string | null>(null)
+  // Quelle des deux versions on écrit. Toujours l'entreprise au départ : c'est
+  // celle qui part par défaut, et la seule que portent les modèles existants.
+  const [variant, setVariant] = useState<MessageVariant>('company')
 
   const reload = useCallback(async () => {
     try {
@@ -129,8 +147,22 @@ export function TemplatesPage() {
         name: current.name,
         body: current.body,
         subject: current.subject,
+        bodyContact: current.bodyContact,
+        subjectContact: current.subjectContact,
         duration: current.duration,
-      }).catch(() => toast.error('Enregistrement échoué'))
+      })
+        .then((issue) => {
+          // La base n'a pas encore les colonnes des deux versions. Le silence
+          // serait le pire des cas : on croirait avoir écrit une variation qui
+          // n'existe nulle part, et le prospect recevrait l'autre.
+          if (issue === 'sans-variantes') {
+            toast.warning('Version contact non enregistrée', {
+              description: 'La base n’a pas encore la migration 20260814. Le texte principal, lui, est bien écrit.',
+              id: 'variantes-migration',
+            })
+          }
+        })
+        .catch(() => toast.error('Enregistrement échoué'))
     }, SAVE_DELAY)
     return () => clearTimeout(t)
   }, [current, selected])
@@ -140,6 +172,7 @@ export function TemplatesPage() {
       const created = await createTemplate(family, { name: `Nouveau ${TEMPLATE_LABELS[family].one.toLowerCase()}` })
       await reload()
       setSelected({ family, id: created.id })
+      setVariant('company')
       // Le builder lit ses sélecteurs depuis le référentiel : sans ce
       // rafraîchissement, le modèle qu'on vient d'écrire n'y apparaît qu'après
       // un rechargement de page.
@@ -195,9 +228,20 @@ export function TemplatesPage() {
                     // `aria-pressed` et non `aria-selected` : ce sont des
                     // boutons, pas des options d'une liste ARIA.
                     aria-pressed={selected?.id === t.id}
-                    onClick={() => setSelected({ family, id: t.id })}
+                    onClick={() => {
+                      setSelected({ family, id: t.id })
+                      // Repartir de la version entreprise à chaque modèle : rester
+                      // sur l'onglet contact ferait écrire la variation d'un
+                      // modèle en croyant écrire son texte principal.
+                      setVariant('company')
+                    }}
                   >
                     <span className="nm">{t.name}</span>
+                    {t.bodyContact?.trim() && (
+                      <span className="deux" title="Ce modèle a une version pour les contacts nommés">
+                        2
+                      </span>
+                    )}
                   </button>
                 ))}
                 <button type="button" className="tpl-add" onClick={() => ajouter(family)}>
@@ -243,16 +287,6 @@ export function TemplatesPage() {
               </p>
 
               <Section label="Message">
-                {current.family === 'email' && (
-                  <Field label="Objet" required>
-                    <input
-                      className="input"
-                      value={current.subject ?? ''}
-                      onChange={(e) => patch({ subject: e.target.value })}
-                      placeholder="Votre site, vu par un client"
-                    />
-                  </Field>
-                )}
                 {current.family === 'call' && (
                   <Field label="Durée estimée">
                     <input
@@ -263,18 +297,58 @@ export function TemplatesPage() {
                     />
                   </Field>
                 )}
-                <MessageEditor
-                  value={current.body}
-                  onChange={(body) => patch({ body })}
+
+                <VariantTabs
+                  current={current}
+                  variant={variant}
+                  onChange={setVariant}
                   vars={vars}
-                  previewOn={previewOn ?? 'des valeurs d’exemple'}
-                  rows={current.family === 'whatsapp' ? 5 : 10}
-                  placeholder={
-                    current.family === 'whatsapp'
-                      ? 'Bonjour, je suis bien avec {{company.name}} ?'
-                      : 'Bonjour {{contact.first_name}},'
-                  }
+                  previewOn={previewOn}
                 />
+
+                {current.family === 'email' && (
+                  <Field
+                    label="Objet"
+                    required={variant === 'company'}
+                    hint={variant === 'contact' ? 'vide = l’objet de la version entreprise' : undefined}
+                  >
+                    <input
+                      className="input"
+                      value={(variant === 'contact' ? current.subjectContact : current.subject) ?? ''}
+                      onChange={(e) =>
+                        patch(variant === 'contact' ? { subjectContact: e.target.value } : { subject: e.target.value })
+                      }
+                      placeholder={
+                        variant === 'contact'
+                          ? current.subject || '{{contact.first_name}}, votre site vu par un client'
+                          : 'Votre site, vu par un client'
+                      }
+                    />
+                  </Field>
+                )}
+
+                <MessageEditor
+                  // Remonter l'éditeur au changement d'onglet : sans clé, React
+                  // réutilise le textarea et garde la position du curseur d'un
+                  // texte dans l'autre.
+                  key={variant}
+                  value={(variant === 'contact' ? current.bodyContact : current.body) ?? ''}
+                  onChange={(v) => patch(variant === 'contact' ? { bodyContact: v } : { body: v })}
+                  // L'aperçu de la version entreprise se calcule SANS contact :
+                  // c'est le cas qu'elle doit tenir, et le seul où son défaut —
+                  // une variable du contact restée dedans — se voit.
+                  vars={varsForVariant(vars, variant)}
+                  previewOn={apercuSur(variant, previewOn)}
+                  rows={current.family === 'whatsapp' ? 5 : 10}
+                  placeholder={placeholderPour(current.family, variant)}
+                />
+
+                {variant === 'contact' && !current.bodyContact?.trim() && (
+                  <p className="rg-hint">
+                    Pas de version contact : même en connaissant la personne, c’est le texte de l’onglet «{' '}
+                    {VARIANT_LABELS.company.tab} » qui partira.
+                  </p>
+                )}
               </Section>
 
               <Section label="Utilisé par" count={usedBy.length} defaultOpen={usedBy.length > 0}>
@@ -294,6 +368,83 @@ export function TemplatesPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Le texte d'amorce, qui montre à quoi ressemble CETTE version-là. */
+function placeholderPour(family: TemplateFamily, variant: MessageVariant): string {
+  if (family === 'whatsapp')
+    return variant === 'contact'
+      ? 'Bonjour, je suis bien avec {{contact.first_name}} de {{company.name}} ?'
+      : 'Bonjour, je suis bien avec {{company.name}} ?'
+  return variant === 'contact' ? 'Bonjour {{contact.first_name}},' : 'Bonjour,'
+}
+
+/** Sur quoi l'aperçu est calculé, dit à l'opérateur. */
+function apercuSur(variant: MessageVariant, previewOn: string | null): string {
+  const base = previewOn ?? 'des valeurs d’exemple'
+  return variant === 'company' ? `${base}, sans contact identifié` : base
+}
+
+/**
+ * Les deux versions d'un modèle, et laquelle on écrit.
+ *
+ * POURQUOI DEUX ONGLETS ET PAS DEUX MODÈLES
+ * Deux modèles séparés se choisissent étape par étape : il faudrait doubler
+ * chaque étape de chaque séquence et savoir, au moment de l'écrire, si le
+ * prospect aura un contact nommé — ce qu'on ne sait qu'à l'envoi. Ici c'est un
+ * seul modèle, choisi une fois dans la séquence, dont le moteur prend la bonne
+ * version prospect par prospect.
+ */
+function VariantTabs({
+  current,
+  variant,
+  onChange,
+  vars,
+  previewOn,
+}: {
+  current: MessageTemplate
+  variant: MessageVariant
+  onChange: (v: MessageVariant) => void
+  vars: VarBag
+  previewOn: string | null
+}) {
+  const ecrite = !!current.bodyContact?.trim() || !!current.subjectContact?.trim()
+
+  // Laquelle partirait pour le prospect de l'aperçu, calculée par la MÊME
+  // fonction que le moteur. Sans ça, la règle ne se vérifie qu'après l'envoi —
+  // et c'est le prospect qui découvre qu'on ne connaissait pas son prénom.
+  const partirait = useMemo(
+    () =>
+      pickVariant(
+        [
+          { company: current.subject, contact: current.subjectContact },
+          { company: current.body, contact: current.bodyContact },
+        ],
+        vars,
+      ),
+    [current, vars],
+  )
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SegFull
+        value={variant}
+        onChange={(v) => onChange(v as MessageVariant)}
+        options={VARIANTS.map((v) => ({
+          value: v,
+          label: v === 'contact' && !ecrite ? `${VARIANT_LABELS[v].tab} · vide` : VARIANT_LABELS[v].tab,
+        }))}
+      />
+      <p className="rg-hint" style={{ marginTop: 6 }}>
+        {VARIANT_LABELS[variant].hint}
+      </p>
+      <p className="rg-hint" style={{ marginTop: 2 }}>
+        <XI name={partirait === variant ? 'check' : 'arrow'} className="ico-xs" />{' '}
+        Sur {previewOn ?? 'les valeurs d’exemple'}, c’est la{' '}
+        <strong style={{ color: 'var(--accent-2)' }}>{VARIANT_LABELS[partirait].short}</strong> qui partirait.
+      </p>
     </div>
   )
 }

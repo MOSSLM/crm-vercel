@@ -374,6 +374,125 @@ describe('processSequenceEnrollment', () => {
   });
 });
 
+/* ── Les deux versions d'un modèle ───────────────────────────────────────── */
+//
+// Un modèle porte un texte pour l'entreprise et un pour le contact nommé. Le
+// choix se fait à l'envoi, prospect par prospect : c'est le seul endroit où on
+// sait si la fiche a un prénom. Ces tests tiennent la règle de bout en bout,
+// depuis la ligne de base jusqu'au message posé dans la file de l'agent.
+
+describe('processSequenceEnrollment — variations du modèle', () => {
+  let tables: Record<string, any>;
+
+  const MODELE = {
+    name: 'Accroche',
+    body: 'Bonjour, je suis bien avec {{company.name}} ?',
+    body_contact: 'Bonjour, je suis bien avec {{contact.first_name}} de {{company.name}} ?',
+  };
+
+  const wireWhatsapp = (contactRow: unknown) => {
+    tables = {
+      automations: tableChain({ data: sequenceWith('whatsapp'), error: null }),
+      contacts: tableChain({ data: contactRow, error: null }),
+      entreprises: tableChain({
+        data: { name: 'Clim Ouest', ville: 'Angers', site_web_canonique: null, owner_id: 'agent-1' },
+        error: null,
+      }),
+      opportunites: tableChain({ data: [], error: null }),
+      audits: tableChain({ data: [], error: null }),
+      sites: tableChain({ data: [], error: null }),
+      email_templates: tableChain({ data: null, error: null }),
+      whatsapp_templates: tableChain({ data: MODELE, error: null }),
+      call_scripts: tableChain({ data: null, error: null }),
+      automation_connections: tableChain({ data: null, error: null }),
+      email_signature_settings: tableChain({ data: null, error: null }),
+      email_logs: tableChain(),
+      sequence_enrollments: tableChain(),
+      prospection_tasks: tableChain({ data: [], error: null }),
+      regulator_settings: tableChain({
+        data: { id: 'global', task_routing_mode: 'pref', task_max_per_agent: 8 },
+        error: null,
+      }),
+      user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
+      agent_settings: tableChain({ data: [], error: null }),
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+
+  const messagePose = () =>
+    ((tables.prospection_tasks.captured.inserts as Record<string, any>[])[0].payload as { message: string }).message;
+
+  beforeEach(() => {
+    mockFrom.mockReset();
+    mockSend.mockReset();
+    resetTestGuardCache();
+    process.env = { ...ORIGINAL_ENV, RESEND_API_KEY: 'test-key' };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('nomme la personne quand la fiche porte un prénom', async () => {
+    wireWhatsapp({
+      first_name: 'Jean',
+      last_name: 'Test',
+      email: 'jean@test.fr',
+      tel: '0600',
+      role_title: null,
+      linkedin_url: null,
+    });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(messagePose()).toBe('Bonjour, je suis bien avec Jean de Clim Ouest ?');
+  });
+
+  // Le défaut corrigé : 70 des 275 entreprises qualifiées n'ont AUCUNE ligne
+  // `contacts`. Un texte unique citant le prénom leur partait amputé — « je
+  // suis bien avec  de Clim Ouest ? » —, `interpolate` vidant toute clé sans
+  // valeur. On envoie désormais la version qui n'a personne à nommer.
+  it('retombe sur la version entreprise quand la fiche n’a pas de contact', async () => {
+    wireWhatsapp(null);
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(messagePose()).toBe('Bonjour, je suis bien avec Clim Ouest ?');
+    expect(messagePose()).not.toContain('  de');
+  });
+
+  it('retombe aussi quand le contact existe mais n’a pas de prénom', async () => {
+    // Une fiche à moitié remplie est plus courante qu'une fiche absente, et
+    // elle produisait exactement le même trou.
+    wireWhatsapp({ first_name: '', last_name: 'Test', email: null, tel: '0600', role_title: null, linkedin_url: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(messagePose()).toBe('Bonjour, je suis bien avec Clim Ouest ?');
+  });
+
+  it('laisse les modèles d’avant la migration se comporter à l’identique', async () => {
+    // Sans colonne `body_contact` en base — cas d'un déploiement qui précède la
+    // migration —, il ne reste qu'un texte, et c'est lui qui part.
+    wireWhatsapp({
+      first_name: 'Jean',
+      last_name: 'Test',
+      email: null,
+      tel: '0600',
+      role_title: null,
+      linkedin_url: null,
+    });
+    tables.whatsapp_templates = tableChain({ data: { name: 'Accroche', body: MODELE.body }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(messagePose()).toBe('Bonjour, je suis bien avec Clim Ouest ?');
+  });
+});
+
 /* ── Inscription : un canal suffit, une fiche contact n'est pas requise ──── */
 
 describe('enrollInSequence', () => {
