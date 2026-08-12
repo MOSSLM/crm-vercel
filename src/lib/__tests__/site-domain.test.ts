@@ -193,3 +193,46 @@ describe("deciderDestination", () => {
     expect(deciderDestination(null, "/", DOMAIN)).toEqual({ kind: "next" });
   });
 });
+
+describe("deciderDestination — chemins SEO", () => {
+  it("réécrit robots.txt et sitemap.xml par tenant", () => {
+    // Deux verrous indépendants les rendaient inatteignables : le matcher les
+    // excluait, et la garde `pathname.includes(".")` les traitait en statiques.
+    for (const p of ["/robots.txt", "/sitemap.xml"]) {
+      expect(deciderDestination("plomberie-dupont.fr", p, DOMAIN)).toEqual({
+        kind: "site",
+        segment: "plomberie-dupont.fr",
+      });
+      expect(deciderDestination(`ecotherme.${DOMAIN}`, p, DOMAIN)).toEqual({
+        kind: "site",
+        segment: "ecotherme",
+      });
+    }
+  });
+
+  it("laisse l'apex de l'agence à ses routes racine", () => {
+    // Sans ça, débloquer ces chemins pour les tenants ferait servir le fichier
+    // de l'agence sous chaque hôte — le domaine du client compris.
+    expect(deciderDestination(DOMAIN, "/robots.txt", DOMAIN)).toEqual({ kind: "next" });
+    expect(deciderDestination(`www.${DOMAIN}`, "/sitemap.xml", DOMAIN)).toEqual({ kind: "next" });
+  });
+
+  it("laisse l'aperçu de brouillon au robots.txt racine", () => {
+    // /preview/{uuid}/robots.txt tomberait dans l'attrape-tout de l'aperçu et
+    // rendrait du HTML sous un content-type de texte.
+    expect(deciderDestination(`${UUID}.${DOMAIN}`, "/robots.txt", DOMAIN)).toEqual({ kind: "next" });
+    // Le rendu de l'aperçu, lui, ne bouge pas.
+    expect(deciderDestination(`${UUID}.${DOMAIN}`, "/", DOMAIN)).toEqual({
+      kind: "preview",
+      segment: UUID,
+    });
+  });
+
+  it("ne débloque QUE ces deux chemins", () => {
+    // La garde des statiques est ce qui laisse passer les assets des 36 sites
+    // publiés : l'exception doit être une liste, pas un assouplissement.
+    for (const p of ["/logo.png", "/styles.css", "/a/robots.txt", "/robots.txt.bak", "/sitemap.xml/x"]) {
+      expect(deciderDestination("plomberie-dupont.fr", p, DOMAIN)).toEqual({ kind: "next" });
+    }
+  });
+});
