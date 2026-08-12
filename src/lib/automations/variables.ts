@@ -132,10 +132,14 @@ export function interpolateVars(text: string | null | undefined, vars: VarBag): 
 // personne — et n'a de sens que si on connaît son prénom.
 //
 // Avec un seul texte il fallait trancher pour tout le parc : soit citer
-// `{{contact.first_name}}` et l'envoyer amputé aux fiches sans contact (sur les
-// 275 entreprises qualifiées, 70 n'ont AUCUNE ligne `contacts` — le prospect
-// lisait « je suis bien avec  de Toiture Martin ? »), soit ne nommer personne,
-// jamais, y compris quand on a le nom du gérant sous les yeux.
+// `{{contact.first_name}}` et l'envoyer amputé aux fiches sans personne nommée
+// — le prospect lisait « je suis bien avec  de Toiture Martin ? » —, soit ne
+// nommer personne, jamais, y compris quand on a le nom du gérant sous les yeux.
+//
+// Mesuré le 12/08 sur les 294 entreprises qualifiées non archivées : 227 ont un
+// contact avec un prénom, 67 n'en ont pas. Aucun des deux camps n'est
+// négligeable, et c'est exactement pourquoi il faut deux textes plutôt qu'un
+// compromis qui sert mal les deux.
 //
 // LA VERSION ENTREPRISE FAIT FOI. Elle marche toujours, c'est la seule que
 // portent les modèles écrits avant cette bascule, et c'est là qu'on retombe dès

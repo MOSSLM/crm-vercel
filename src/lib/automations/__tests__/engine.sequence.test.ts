@@ -451,8 +451,8 @@ describe('processSequenceEnrollment — variations du modèle', () => {
     expect(messagePose()).toBe('Bonjour, je suis bien avec Jean de Clim Ouest ?');
   });
 
-  // Le défaut corrigé : 70 des 275 entreprises qualifiées n'ont AUCUNE ligne
-  // `contacts`. Un texte unique citant le prénom leur partait amputé — « je
+  // Le défaut corrigé : 67 des 294 entreprises qualifiées n'ont aucun contact
+  // avec un prénom. Un texte unique citant le prénom leur partait amputé — « je
   // suis bien avec  de Clim Ouest ? » —, `interpolate` vidant toute clé sans
   // valeur. On envoie désormais la version qui n'a personne à nommer.
   it('retombe sur la version entreprise quand la fiche n’a pas de contact', async () => {
