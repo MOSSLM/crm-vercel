@@ -123,6 +123,102 @@ export function interpolateVars(text: string | null | undefined, vars: VarBag): 
   return (text ?? '').replace(VAR_PATTERN, (_, raw: string) => vars[canonicalKey(raw)] ?? '')
 }
 
+// ── Deux variations d'un même message ──────────────────────────────────────
+//
+// POURQUOI DEUX TEXTES ET PAS UN
+// Un modèle ne se dit pas pareil selon qu'on sache À QUI on écrit.
+// « Bonjour, je suis bien avec Toiture Martin ? » s'adresse à une enseigne ;
+// « Bonjour, je suis bien avec Julien de Toiture Martin ? » s'adresse à une
+// personne — et n'a de sens que si on connaît son prénom.
+//
+// Avec un seul texte il fallait trancher pour tout le parc : soit citer
+// `{{contact.first_name}}` et l'envoyer amputé aux fiches sans contact (sur les
+// 275 entreprises qualifiées, 70 n'ont AUCUNE ligne `contacts` — le prospect
+// lisait « je suis bien avec  de Toiture Martin ? »), soit ne nommer personne,
+// jamais, y compris quand on a le nom du gérant sous les yeux.
+//
+// LA VERSION ENTREPRISE FAIT FOI. Elle marche toujours, c'est la seule que
+// portent les modèles écrits avant cette bascule, et c'est là qu'on retombe dès
+// qu'un doute existe sur l'identité du contact.
+
+export type MessageVariant = 'company' | 'contact'
+
+export const VARIANTS: readonly MessageVariant[] = ['company', 'contact'] as const
+
+/** Le vocabulaire des deux versions — partagé par la bibliothèque et le builder. */
+export const VARIANT_LABELS: Readonly<Record<MessageVariant, { tab: string; short: string; hint: string }>> = {
+  company: {
+    tab: 'À l’entreprise',
+    short: 'version entreprise',
+    hint: 'Ce qui part quand on ne connaît que l’enseigne. Une variable du contact y partirait vide.',
+  },
+  contact: {
+    tab: 'À un contact',
+    short: 'version contact',
+    hint: 'Ce qui part quand on sait à qui on écrit. Laissée vide, c’est la version entreprise qui part.',
+  },
+}
+
+/** Les deux écritures d'un même champ. `contact` vide = pas de version dédiée. */
+export interface VariantPair {
+  company: string | null | undefined
+  contact: string | null | undefined
+}
+
+const blank = (s: string | null | undefined): boolean => !(s ?? '').trim()
+
+/** Les variables du CONTACT citées par un texte que le sac ne peut pas remplir. */
+export function missingContactVariables(text: string | null | undefined, vars: VarBag): string[] {
+  return missingVariables(text, vars).filter((k) => k.startsWith('contact.'))
+}
+
+/**
+ * Laquelle des deux versions part, pour ce prospect-là.
+ *
+ * La version contact n'est retenue que si on peut la tenir jusqu'au bout : un
+ * texte qui dit « je suis bien avec {{contact.first_name}} » et qu'on envoie à
+ * une fiche sans prénom est PIRE que la version entreprise — il annonce qu'on
+ * connaît quelqu'un, puis laisse le trou. On retombe donc sur l'entreprise dès
+ * qu'une variable du contact manque, plutôt que d'envoyer une phrase amputée.
+ *
+ * Les champs sont jugés ENSEMBLE : sur un e-mail, l'objet et le corps partent
+ * dans la même enveloppe, il n'y a pas de sens à tutoyer dans l'un et pas dans
+ * l'autre. Un champ sans version contact se replie sur l'entreprise (cf.
+ * `variantText`), donc n'écrire que le corps reste possible.
+ */
+export function pickVariant(pairs: readonly VariantPair[], vars: VarBag): MessageVariant {
+  const ecrits = pairs.map((p) => p.contact).filter((t) => !blank(t))
+  if (ecrits.length === 0) return 'company'
+  if (ecrits.some((t) => missingContactVariables(t, vars).length > 0)) return 'company'
+  return 'contact'
+}
+
+/** Le texte d'un champ dans la version choisie — repli sur la version entreprise. */
+export function variantText(pair: VariantPair, variant: MessageVariant): string {
+  if (variant === 'contact' && !blank(pair.contact)) return pair.contact as string
+  return pair.company ?? ''
+}
+
+/**
+ * Le sac tel que la version le voit — POUR L'ÉCRITURE, pas pour l'envoi.
+ *
+ * La version entreprise existe précisément pour les prospects dont on ne
+ * connaît personne : la prévisualiser avec un prénom rempli masquerait le seul
+ * défaut qu'elle puisse avoir. En vidant `contact.*`, l'aperçu montre le cas
+ * qu'elle doit tenir, et l'avertissement « cette variable partira vide » de
+ * l'éditeur se déclenche là où il faut.
+ *
+ * Le moteur, lui, interpole avec le sac COMPLET : quand un modèle n'a pas de
+ * version contact, sa version entreprise part aussi à des fiches qui, elles,
+ * ont un prénom — le vider serait une régression.
+ */
+export function varsForVariant(vars: VarBag, variant: MessageVariant): VarBag {
+  if (variant === 'contact') return vars
+  const out: VarBag = { ...vars }
+  for (const k of Object.keys(out)) if (k.startsWith('contact.')) out[k] = ''
+  return out
+}
+
 /** Le sac d'exemple, pour un aperçu quand aucune entreprise réelle n'est choisie. */
 export function sampleVars(): VarBag {
   const bag: VarBag = {}
