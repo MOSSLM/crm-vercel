@@ -12,6 +12,7 @@ import {
   Users,
   Building2,
   Package,
+  BookOpen,
   Euro,
   Flag,
   Headset,
@@ -137,8 +138,11 @@ export const AGENT_SPACES: AgentSpace[] = [
     id: "sama",
     label: "SAMA",
     icon: Package,
-    href: "/espace-agent/offres",
+    // Le brief est la porte d'entrée de la section : un agent qui ouvre « SAMA »
+    // cherche d'abord à savoir ce qu'on vend, pas la grille tarifaire.
+    href: "/espace-agent/argumentaire",
     tools: [
+      { title: "Brief commercial", href: "/espace-agent/argumentaire", icon: BookOpen },
       { title: "Offres", href: "/espace-agent/offres", icon: Package },
       { title: "Commissions", href: "/espace-agent/commissions", icon: Euro, soon: true },
       { title: "Objectifs", href: "/espace-agent/objectifs", icon: Flag, soon: true },
@@ -188,6 +192,7 @@ const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
 
   ["/espace-agent/telephonie", "telephonie"],
 
+  ["/espace-agent/argumentaire", "sama"],
   ["/espace-agent/offres", "sama"],
   ["/espace-agent/commissions", "sama"],
   ["/espace-agent/objectifs", "sama"],
