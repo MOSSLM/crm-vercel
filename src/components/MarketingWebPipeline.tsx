@@ -36,7 +36,9 @@ import {
   ServiceTagsField,
   requiredFieldControl,
 } from "./marketing-pipeline/RequiredFieldControl";
-import { AUTO_SEQUENCE } from "./marketing-pipeline/types";
+import { AUTO_SEQUENCE, sequenceEtatLabel, sequenceLancable } from "./marketing-pipeline/types";
+import { updateAutomation } from "./automations/automations-db";
+import { errorLabel as enrollErrorLabel } from "@/lib/sales-pipeline/error-labels";
 import type {
   AgentRef,
   BoardData,
@@ -1163,6 +1165,12 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
    * qui permet de traiter un lot mélangé sans le trier à la main d'abord — et
    * la répartition est annoncée avant de partir, parce que lancer 250
    * inscriptions à l'aveugle n'est pas rattrapable.
+   *
+   * Une séquence encore en brouillon est proposée comme les autres, mais elle
+   * ne DÉMARRE pas tant qu'elle n'est pas activée : l'API refuse l'inscription
+   * (`sequence_inactive`), le ticker gèlerait ce qui serait passé. On demande
+   * donc l'activation ici, une fois, plutôt que de laisser l'inscription
+   * échouer sur un code que l'écran ne traduisait pas.
    */
   const enrollInSequence = async (items: BoardItem[], automationId: string) => {
     const sequences = board?.sequences ?? [];
@@ -1196,6 +1204,36 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       return;
     }
 
+    // ── Activer ce qui est encore en brouillon ───────────────────────────
+    // Demandé AVANT la première inscription, et pour tout le lot d'un coup :
+    // c'est une décision (« cette séquence part pour de bon »), pas une
+    // formalité à répéter par entreprise.
+    const aActiver = [...parSequence.keys()]
+      .map((id) => sequences.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => !!s && !sequenceLancable(s));
+    if (aActiver.length > 0) {
+      const noms = aActiver.map((s) => `« ${s.name} » (${sequenceEtatLabel(s.status)})`).join(", ");
+      const question =
+        `${aActiver.length === 1 ? "Cette séquence n'est pas active" : "Ces séquences ne sont pas actives"} : ${noms}.\n\n` +
+        `L'activer et inscrire ${total} prospect(s) ?\n\n` +
+        "Sans activation, rien ne part : l'inscription est refusée et aucun message n'est envoyé.";
+      if (typeof window !== "undefined" && !window.confirm(question)) {
+        toast.warning("Inscription annulée — séquence non activée");
+        return;
+      }
+      setWorking("enroll");
+      try {
+        for (const s of aActiver) await updateAutomation(s.id, { status: "on" });
+        toast.success(`${aActiver.length} séquence(s) activée(s)`);
+      } catch (e) {
+        setWorking(null);
+        toast.error(
+          e instanceof Error ? `Activation impossible — ${e.message}` : "Activation de la séquence impossible",
+        );
+        return;
+      }
+    }
+
     setWorking("enroll");
     try {
       const results = await Promise.allSettled(
@@ -1206,8 +1244,10 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
             body: JSON.stringify({ automation_id: seqId, opportunite_ids: lot.map((it) => it.id) }),
           });
           if (!res.ok) {
-            const payload = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(payload.error || "Échec");
+            const payload = (await res.json().catch(() => ({}))) as { error?: string; sequence_name?: string };
+            throw new Error(
+              enrollErrorLabel(payload.error, payload.sequence_name ?? sequences.find((s) => s.id === seqId)?.name),
+            );
           }
           return lot.length;
         }),
@@ -1223,7 +1263,19 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           .join(" · ");
         toast.success(`${ok} inscription(s) — ${detail}`);
       }
-      if (ko > 0) toast.error(`${ko} inscription(s) en échec`);
+      // Le COMPTE seul ne se répare pas : c'est ce qui a laissé un 409
+      // `sequence_inactive` visible dans la console du navigateur et nulle part
+      // à l'écran. Les raisons distinctes sont donc reprises dans le message.
+      if (ko > 0) {
+        const raisons = [
+          ...new Set(
+            results
+              .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+              .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason))),
+          ),
+        ];
+        toast.error(`${ko} inscription(s) en échec${raisons.length ? ` — ${raisons.join(" · ")}` : ""}`);
+      }
       // Une ligne sans séquence correspondante n'est pas une erreur : c'est un
       // renseignement. La taire ferait croire que tout est parti.
       if (sansSequence.length > 0) {

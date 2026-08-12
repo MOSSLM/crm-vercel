@@ -361,6 +361,9 @@
 /* La séquence conseillée pour ce canal : proposée en tête, jamais imposée. */
 .mp-scope .agent-pick.suggested{ border-color:var(--ok); color:var(--text); }
 .mp-scope .agent-pick.suggested:hover{ background:var(--ok-tint,rgba(31,138,91,.08)); }
+/* « brouillon » / « en pause » sur la puce : la pastille standard fait 20px et
+   déformerait une puce qui en fait 22. Visible, sans casser la ligne. */
+.mp-scope .agent-pick .pill{ height:16px; padding:0 6px; font-size:10px; }
 .mp-scope .seq-pick{
   width:100%; margin-top:4px; height:24px; font-size:11px;
   border:1px solid var(--border); border-radius:6px; background:var(--surface);

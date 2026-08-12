@@ -65,6 +65,7 @@ import {
   type SequencePart,
 } from '@/lib/sales-pipeline/stages'
 import { formatHM } from '@/lib/automations/regulator'
+import { errorLabel } from '@/lib/sales-pipeline/error-labels'
 import type { MessageVariant } from '@/lib/automations/variables'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
@@ -2259,16 +2260,5 @@ function relativeDay(iso: string, now: number): string {
   return `il y a ${days} j`
 }
 
-const ERROR_LABELS: Record<string, string> = {
-  motif_requis: 'Un motif est obligatoire.',
-  date_de_relance_requise: 'Choisissez une date de relance.',
-  prospect_non_attribue: 'Ce prospect ne vous est pas attribué.',
-  sequence_non_assignee: 'Cette séquence ne vous a pas été attribuée.',
-  sequence_inactive: 'Cette séquence est en pause.',
-  sequence_introuvable: 'Séquence introuvable.',
-  aucun_pipeline: 'Aucun pipeline configuré.',
-  introuvable: 'Introuvable.',
-  email_invalide: 'Cette adresse email n’est pas valide.',
-  aucune_fiche: 'Ce prospect n’a ni entreprise ni contact où enregistrer l’adresse.',
-}
-const errorLabel = (code: unknown) => (typeof code === 'string' && ERROR_LABELS[code]) || 'Action impossible'
+// Les libellés vivent dans `@/lib/sales-pipeline/error-labels`, partagés avec le
+// tableau marketing — qui appelle les mêmes routes et affichait leurs codes bruts.
