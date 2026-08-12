@@ -558,6 +558,107 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   };
 
   /**
+   * Retire au sort les photos des sites sélectionnés.
+   *
+   * Même tirage que le panneau « Images » de l'éditeur, mais sur tout un lot :
+   * ouvrir chaque site pour cliquer le même bouton est ce qui faisait renoncer,
+   * et un parc entier restait avec les photos du modèle.
+   *
+   * Deux conditions, vérifiées par la route et pas ici : le site doit être un
+   * design Claude (lui seul a des zones à remplir) et son entreprise doit porter
+   * des services — ce sont eux qui choisissent les photos. D'où des refus nommés
+   * un par un avec leur cause : « aucun service tag » se corrige sur la fiche,
+   * « aucune image ne porte ses services » dans la médiathèque. Relancer le
+   * tirage, lui, n'y changerait rien.
+   */
+  // Chaque tirage lit la médiathèque puis réécrit toutes les pages du site :
+  // un lot de cent lancé d'un coup se ferait limiter.
+  const IMAGES_PAR_PAQUET = 3;
+
+  const tirerImages = async (items: BoardItem[]) => {
+    const targets = items.filter((it) => it.site?.is_claude_design && it.entreprise_id != null);
+    if (targets.length === 0) {
+      toast.error("Aucun design Claude dans la sélection — seules ces maquettes ont des zones photo");
+      return;
+    }
+
+    setWorking("create-site");
+    const suivi = toast.loading(`Tirage des photos de ${targets.length} site(s)…`);
+    try {
+      let ok = 0;
+      /** Emplacements réellement remplis, toutes pages confondues. */
+      let emplacements = 0;
+      /** Sites dont la médiathèque n'a pas couvert toutes les cartes. */
+      let courts = 0;
+      /** Vignettes déjà fabriquées, donc devenues fausses par ce tirage. */
+      let vignettesObsoletes = 0;
+      const echecs: string[] = [];
+
+      for (let i = 0; i < targets.length; i += IMAGES_PAR_PAQUET) {
+        const paquet = targets.slice(i, i + IMAGES_PAR_PAQUET);
+        const res = await Promise.allSettled(
+          paquet.map(async (it) => {
+            const r = await authedFetch(`/api/site-builder/designs/${it.site!.id}/auto-images`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ entrepriseId: it.entreprise_id }),
+            });
+            const body = (await r.json().catch(() => ({}))) as {
+              error?: string;
+              written?: number;
+              hiddenSlots?: number;
+            };
+            if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+            return body;
+          }),
+        );
+        res.forEach((r, j) => {
+          if (r.status === "rejected") {
+            echecs.push(
+              `${displayName(paquet[j])} (${r.reason instanceof Error ? r.reason.message : "échec"})`,
+            );
+            return;
+          }
+          ok++;
+          emplacements += r.value.written ?? 0;
+          if ((r.value.hiddenSlots ?? 0) > 0) courts++;
+          if (paquet[j].site?.og_image_url) vignettesObsoletes++;
+        });
+        toast.loading(`${ok + echecs.length}/${targets.length} site(s) traité(s)…`, { id: suivi });
+      }
+
+      toast.dismiss(suivi);
+      if (ok > 0) toast.success(`${ok} site(s) — ${emplacements} emplacement(s) remplis`);
+      // Une carte en moins n'est pas un échec : la bande préfère se raccourcir
+      // plutôt que montrer deux fois la même photo. Mais ça se répare en
+      // important, pas en relançant — donc on le dit.
+      if (courts > 0) {
+        toast.info(
+          `${courts} site(s) à court de photos : des cartes ont été retirées plutôt que dupliquées. Importe des images pour leurs services.`,
+        );
+      }
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 3).join(" · ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 3 ? `… et ${echecs.length - 3} autre(s)` : ""}`,
+        );
+      }
+      // La vignette est une capture : celles déjà fabriquées montrent les
+      // anciennes photos, et c'est cette image-là qui part dans les messages.
+      if (vignettesObsoletes > 0) {
+        toast.info(
+          `${vignettesObsoletes} vignette(s) de partage montrent encore les anciennes photos — reprépare-les avant d'envoyer les liens.`,
+        );
+      }
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors du tirage des images");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
    * Analyse en masse le site ACTUEL des entreprises sélectionnées.
    *
    * Même déroulé par paquets que la refonte, et pour la même raison : chaque
@@ -1125,6 +1226,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateEnrich: (items) => validateEnrichment(items),
     onCreateSites: (items) => createSites(items),
     onRegenerateSites: (items) => regenerateSites(items),
+    onTirerImages: (items) => tirerImages(items),
     onAnalyserSites: (items) => analyserSites(items),
     onMesurerPsi: (items) => mesurerPsiSites(items),
     onPreparerVignettes: (items) => preparerVignettes(items),

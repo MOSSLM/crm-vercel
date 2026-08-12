@@ -33,6 +33,7 @@ import {
   ListChecks,
   Gauge,
   Share2,
+  Shuffle,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -1128,6 +1129,10 @@ function BulkBar({
   // rafraîchissement des infos de fiche. La distinction change le sens du
   // bouton, donc elle est dite avant de cliquer.
   const toSwapTemplate = toRegenerateSite.filter((r) => templateMismatch(r, templateId));
+  // Seul un design Claude porte des zones photo à remplir — la route refuse les
+  // autres — et le tirage se fait à partir des services de l'entreprise, donc
+  // sans entreprise il n'y a rien pour choisir.
+  const toTirerImages = rows.filter((r) => r.site?.is_claude_design && r.entreprise_id != null);
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
   // Analyser le site ACTUEL du prospect ne dépend d'aucune étape du pipeline :
   // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
@@ -1197,6 +1202,25 @@ function BulkBar({
         <RefreshCw className="ico-sm" />
         Refaire les sites
         {ct(toRegenerateSite.length)}
+      </button>
+      {/*
+        Placé juste après « Refaire les sites », parce que c'est son ordre réel :
+        une refonte repart du modèle et jette les retouches d'instance — donc le
+        tirage précédent avec elles. Les photos se retirent APRÈS, jamais avant.
+      */}
+      <button
+        className="btn sm"
+        disabled={busy || toTirerImages.length === 0}
+        title={
+          toTirerImages.length === 0
+            ? "Aucun design Claude dans la sélection : seules ces maquettes ont des zones photo à remplir"
+            : `Retirer au sort les photos de ${toTirerImages.length} site(s) dans la médiathèque, selon les services de chaque entreprise. À refaire après une refonte, qui repart du modèle.`
+        }
+        onClick={() => bulk.onTirerImages(toTirerImages)}
+      >
+        <Shuffle className="ico-sm" />
+        Tirer les images
+        {ct(toTirerImages.length)}
       </button>
       <button className="btn sm" disabled={busy || toValidateSite.length === 0} onClick={() => bulk.onValidateSites(toValidateSite)}>
         <Check className="ico-sm" />
