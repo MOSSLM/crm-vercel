@@ -8,8 +8,9 @@ import {
   type ReviewItem,
 } from "@/lib/site-builder/resolve-variables";
 import { SAMPLE_VARIABLES } from "@/lib/site-builder/claude-design/sample-variables";
-import { selectDroppingMissingColumns } from "@/lib/schema-drift";
+import { selectDroppingMissingColumns, type PgErrorLike } from "@/lib/schema-drift";
 import { siteCacheTag, SITE_CACHE_REVALIDATE_SECONDS } from "@/lib/site-builder/site-cache";
+import { toggleWww } from "@/lib/http/url-variants";
 
 export type { ReviewItem };
 
@@ -138,6 +139,16 @@ export interface ResolvedSite {
   logoUrl?: string;
   phone?: string;
   isPublished: boolean;
+  /**
+   * Les deux destinations publiées du site. La requête les sélectionnait déjà
+   * (PUBLISHED_SITE_COLUMNS) sans jamais les remonter, ce qui rendait l'adresse
+   * canonique incalculable depuis `generateMetadata` : le même contenu est servi
+   * sur le sous-domaine ET sur le domaine client, et sans `alternates.canonical`
+   * Google peut retenir le nôtre — le client paierait un domaine dont les pages
+   * sont indexées sous notre marque.
+   */
+  publishedSubdomain?: string | null;
+  publishedDomain?: string | null;
   styleGuide?: StyleGuide | null;
   /** Published snapshot of style_guide (set by "Publish" action) */
   publishedStyleGuide?: StyleGuide | null;
@@ -199,29 +210,56 @@ async function resolveSiteUncached(
 ): Promise<ResolvedSite | null> {
   const supabase = getServiceClient();
 
-  if (!subdomain && !host) return null;
+  // `cle` porte le SEGMENT DE ROUTE : un label de sous-domaine, ou un hôte
+  // complet quand le middleware a réécrit un domaine client vers /site/{host}.
+  const cle = (subdomain || host || "").trim().toLowerCase();
+  if (!cle) return null;
 
-  const { data: siteRow, error, dropped } = await selectDroppingMissingColumns<SiteRowLike>(
+  // La discrimination se fait sur la FORME du segment, pas sur sa présence.
+  // C'est l'invariant du routage : un label est validé `/^[a-z0-9-]+$/` à
+  // l'écriture et ne contient jamais de point, un hôte en contient toujours un.
+  // (Le ternaire précédent — `subdomain ? … : …` — rendait la branche
+  // published_domain inatteignable : le segment de route est toujours renseigné,
+  // donc un domaine client partait chercher un label et tombait en 404.)
+  const estHote = cle.includes(".");
+
+  // `.limit(2)` et non `.single()` : PostgREST rend la MÊME erreur PGRST116 pour
+  // « zéro ligne » et pour « plusieurs lignes », et le code avalait les deux en
+  // silence. Un doublon de published_domain éteignait donc le domaine du client
+  // avec un journal serveur vide. L'index unique posé par la migration
+  // 20260812 empêche le doublon ; ceci le rend diagnosticable s'il survient
+  // quand même (base en retard de migration).
+  const { data: lignes, error, dropped } = await selectDroppingMissingColumns<SiteRowLike[]>(
     PUBLISHED_SITE_COLUMNS,
     (select) => {
-    // Try subdomain first, then custom domain
-    const query = supabase.from("sites").select(select).eq("is_published", true);
-    return subdomain
-      ? query.eq("published_subdomain", subdomain).single()
-      : query.eq("published_domain", host as string).single();
+      const query = supabase.from("sites").select(select).eq("is_published", true);
+      // `www.exemple.fr` et `exemple.fr` sont le même site : on stocke une seule
+      // forme et on accepte les deux à la lecture, en une requête. Sans ça la
+      // moitié du trafic entrant d'un domaine client tombe en 404.
+      const filtree = estHote
+        ? query.in("published_domain", [cle, toggleWww(cle)]).limit(2)
+        : query.eq("published_subdomain", cle).limit(2);
+      // La liste de colonnes est construite à l'exécution (schema-drift), donc
+      // supabase-js ne peut pas inférer la forme des lignes et rend
+      // `GenericStringError[]`. Le contrat réel est `SiteRowLike[]`, dont chaque
+      // champ est lu défensivement plus bas.
+      return filtree as unknown as PromiseLike<{ data: SiteRowLike[] | null; error: PgErrorLike | null }>;
     },
   );
-  warnDroppedColumns(`resolveSite(${subdomain || host})`, dropped);
-  if (error || !siteRow) {
-    // PGRST116 ("no rows") is the ordinary unknown-subdomain case — not worth a
-    // log line on every stray request. Anything else is a real failure.
-    if (error && error.code !== "PGRST116") {
-      console.warn(
-        `[site-resolver] resolveSite(${subdomain || host}) → ${error.code ?? "?"} ${error.message}`,
-      );
-    }
+  warnDroppedColumns(`resolveSite(${cle})`, dropped);
+
+  if (error) {
+    console.warn(`[site-resolver] resolveSite(${cle}) → ${error.code ?? "?"} ${error.message}`);
     return null;
   }
+  if (!lignes || lignes.length === 0) return null; // hôte inconnu : cas ordinaire
+  if (lignes.length > 1) {
+    console.warn(
+      `[site-resolver] resolveSite(${cle}) → ${lignes.length} sites publiés revendiquent cette ` +
+        `destination ; on sert le premier. Un index unique manque sur cet environnement.`,
+    );
+  }
+  const siteRow = lignes[0];
 
   let config: SiteConfig = siteRow.site_config ?? {
     theme: "theme-default",
@@ -324,6 +362,8 @@ async function resolveSiteUncached(
     logoUrl,
     phone,
     isPublished: Boolean(siteRow.is_published),
+    publishedSubdomain: (siteRow as { published_subdomain?: string | null }).published_subdomain ?? null,
+    publishedDomain: (siteRow as { published_domain?: string | null }).published_domain ?? null,
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
     publishedStyleGuide: (siteRow.published_style_guide as StyleGuide) ?? null,
     publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
