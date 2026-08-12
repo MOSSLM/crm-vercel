@@ -249,6 +249,20 @@ export interface BulkHandlers {
    */
   onPreparerVignettes: (items: BoardItem[]) => void;
   onValidateSites: (items: BoardItem[]) => void;
+  /**
+   * Met les sites sélectionnés en ligne, chacun sur un sous-domaine tiré du nom
+   * de l'entreprise.
+   *
+   * C'est ce qui change l'adresse envoyée au prospect : tant qu'un site n'est
+   * pas déployé, son lien de partage est l'identifiant technique
+   * (`3f2b…-….samadigitalstudio.fr`) ; publié, il devient
+   * `entreprise.samadigitalstudio.fr`, qui se lit et se reconnaît.
+   *
+   * Vaut aussi pour les sites DÉJÀ en ligne : la page publique sert
+   * l'instantané de la dernière publication, donc tout ce qui a été refait
+   * depuis — photos comprises — n'y est visible qu'après republication.
+   */
+  onPublierSites: (items: BoardItem[]) => void;
   onCreateAudits: (items: BoardItem[]) => void;
   onValidateAudits: (items: BoardItem[]) => void;
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */

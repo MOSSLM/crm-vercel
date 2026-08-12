@@ -32,6 +32,7 @@ import {
   MessageSquare,
   ListChecks,
   Gauge,
+  Rocket,
   Share2,
   Shuffle,
   X,
@@ -1134,6 +1135,14 @@ function BulkBar({
   // sans entreprise il n'y a rien pour choisir.
   const toTirerImages = rows.filter((r) => r.site?.is_claude_design && r.entreprise_id != null);
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
+  // Tout site peut être mis en ligne, y compris un site déjà publié : la page
+  // publique sert l'instantané de sa dernière publication, donc republier est
+  // le seul moyen d'y faire apparaître ce qui a été refait depuis.
+  const toPublier = rows.filter((r) => r.site);
+  const toRepublier = toPublier.filter((r) => r.site!.is_published);
+  // Publier sous le nom de l'entreprise un site qu'on n'a pas encore regardé,
+  // c'est mettre en ligne une page à moitié faite : le compte est dit avant.
+  const toPublierNonValides = toPublier.filter((r) => !siteValidated(r));
   // Analyser le site ACTUEL du prospect ne dépend d'aucune étape du pipeline :
   // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
   // décider qui démarcher, donc avant que quoi que ce soit soit construit.
@@ -1226,6 +1235,31 @@ function BulkBar({
         <Check className="ico-sm" />
         Valider les sites
         {ct(toValidateSite.length)}
+      </button>
+      {/*
+        Avant « Préparer les vignettes », et pas après : publier remet la carte
+        de partage à zéro (elle montrerait l'état d'avant la mise en ligne).
+        Fabriquer les vignettes d'abord, c'est les refaire pour rien.
+      */}
+      <button
+        className="btn sm"
+        disabled={busy || toPublier.length === 0}
+        title={
+          toPublier.length === 0
+            ? "Aucun site dans la sélection"
+            : `Mettre ${toPublier.length} site(s) en ligne sur un sous-domaine tiré du nom de l'entreprise` +
+              (toRepublier.length > 0
+                ? ` — dont ${toRepublier.length} déjà publié(s), republié(s) pour reprendre ce qui a changé depuis`
+                : "") +
+              (toPublierNonValides.length > 0
+                ? `. Attention : ${toPublierNonValides.length} pas encore validé(s).`
+                : "")
+        }
+        onClick={() => bulk.onPublierSites(toPublier)}
+      >
+        <Rocket className="ico-sm" />
+        Publier les sites
+        {ct(toPublier.length)}
       </button>
       <button
         className="btn sm"

@@ -106,6 +106,7 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
     onCreateSites: jest.fn(),
     onTirerImages: jest.fn(),
     onValidateSites: jest.fn(),
+    onPublierSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
     onAssign: jest.fn(),
@@ -138,6 +139,7 @@ function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
     onCreateSites: jest.fn(),
     onTirerImages: jest.fn(),
     onValidateSites: jest.fn(),
+    onPublierSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
     onAssign: jest.fn(),
@@ -481,6 +483,57 @@ describe("PipelineMatrix — tirage des images en masse", () => {
 
     expect(bar().getByRole("button", { name: /Tirer les images/ })).toBeDisabled();
     expect(bulk.onTirerImages).not.toHaveBeenCalled();
+  });
+});
+
+describe("PipelineMatrix — publication en masse", () => {
+  const withSite = (id: string, name: string, site: Partial<NonNullable<BoardItem["site"]>>) =>
+    item({
+      id,
+      name,
+      enriched: true,
+      project: project(true),
+      site: {
+        id: `site-${id}`,
+        name,
+        build_stage: "a_faire",
+        is_published: false,
+        url: null,
+        is_claude_design: true,
+        ...site,
+      },
+    });
+
+  it("emporte tous les sites cochés, publiés compris — republier est le seul moyen de mettre la page à jour", () => {
+    const bulk = renderRows([
+      withSite("p", "Pi", {}),
+      withSite("r", "Rho", { is_published: true, published_subdomain: "rho" }),
+      // Pas de site : rien à mettre en ligne.
+      item({ id: "s", name: "Sigma" }),
+    ]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+
+    fireEvent.click(bar().getByRole("button", { name: /Publier les sites/ }));
+
+    expect((bulk.onPublierSites as jest.Mock).mock.calls[0][0].map((r: BoardItem) => r.id)).toEqual(["p", "r"]);
+  });
+
+  it("annonce les republications et les sites pas encore validés avant le clic", () => {
+    renderRows([
+      withSite("p", "Pi", {}),
+      withSite("r", "Rho", { is_published: true, published_subdomain: "rho" }),
+    ]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+
+    // « Pi » n'est ni publié ni validé ; « Rho » est déjà en ligne.
+    expect(
+      bar().getByRole("button", { name: /Publier les sites/ }),
+    ).toHaveAttribute(
+      "title",
+      "Mettre 2 site(s) en ligne sur un sous-domaine tiré du nom de l'entreprise" +
+        " — dont 1 déjà publié(s), republié(s) pour reprendre ce qui a changé depuis" +
+        ". Attention : 1 pas encore validé(s).",
+    );
   });
 });
 

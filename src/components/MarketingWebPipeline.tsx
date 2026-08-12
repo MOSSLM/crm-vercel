@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { MAX_PSI_PAR_LOT } from "@/utils/constants";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 import { Check, Loader2, Globe, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -590,6 +591,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       let emplacements = 0;
       /** Sites dont la médiathèque n'a pas couvert toutes les cartes. */
       let courts = 0;
+      /**
+       * Sites déjà en ligne : la page publique sert l'instantané de leur
+       * dernière publication, où les nouvelles photos ne sont pas.
+       */
+      let enLigne = 0;
       /** Vignettes déjà fabriquées, donc devenues fausses par ce tirage. */
       let vignettesObsoletes = 0;
       const echecs: string[] = [];
@@ -622,7 +628,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           ok++;
           emplacements += r.value.written ?? 0;
           if ((r.value.hiddenSlots ?? 0) > 0) courts++;
-          if (paquet[j].site?.og_image_url) vignettesObsoletes++;
+          // Un site en ligne demande une republication, qui refait la vignette
+          // au passage : le compter des deux côtés ferait dire deux fois la
+          // même chose, en proposant deux corrections dont une inutile.
+          if (paquet[j].site?.is_published) enLigne++;
+          else if (paquet[j].site?.og_image_url) vignettesObsoletes++;
         });
         toast.loading(`${ok + echecs.length}/${targets.length} site(s) traité(s)…`, { id: suivi });
       }
@@ -641,6 +651,14 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         const noms = echecs.slice(0, 3).join(" · ");
         toast.error(
           `${echecs.length} échec(s) : ${noms}${echecs.length > 3 ? `… et ${echecs.length - 3} autre(s)` : ""}`,
+        );
+      }
+      // Le tirage écrit sur le site de travail ; la page publique, elle, sert
+      // l'instantané figé à la dernière publication. Sans republication, le
+      // prospect ouvre son lien et voit les anciennes photos.
+      if (enLigne > 0) {
+        toast.info(
+          `${enLigne} site(s) en ligne servent encore les anciennes photos — « Publier les sites » pour les republier.`,
         );
       }
       // La vignette est une capture : celles déjà fabriquées montrent les
@@ -805,6 +823,99 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     } catch (e) {
       toast.dismiss(suivi);
       toast.error(e instanceof Error ? e.message : "Erreur lors de la mesure Google");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
+   * Met en ligne les sites sélectionnés, chacun sur son sous-domaine.
+   *
+   * C'est l'adresse envoyée au prospect qui change : tant qu'un site n'est pas
+   * déployé, son lien de partage porte l'identifiant technique
+   * (`3f2b…-….samadigitalstudio.fr`) — celui-là, personne ne l'ouvre. Publié, il
+   * devient `entreprise.samadigitalstudio.fr` : le prospect y lit son propre nom
+   * avant même de cliquer.
+   *
+   * Le sous-domaine est déduit côté serveur de l'URL — ou du nom — de
+   * l'entreprise, et rendu unique s'il est déjà pris ; un site déjà publié garde
+   * le sien. Rien à saisir, donc — c'est ce qui rend le lot possible.
+   *
+   * SÉQUENTIEL, contrairement aux autres actions de masse. Deux publications
+   * menées en parallèle lisent la même liste de sous-domaines déjà attribués et
+   * peuvent en déduire le même : la base refuse le doublon, et c'est une
+   * publication perdue pour une raison que l'opérateur ne peut pas corriger. La
+   * route de déploiement en lot du site-builder passe en file pour cette raison
+   * exacte ; on fait pareil.
+   */
+  const publierSites = async (items: BoardItem[]) => {
+    const targets = items.filter((it) => it.site);
+    if (targets.length === 0) {
+      toast.error("Aucun site dans la sélection");
+      return;
+    }
+    const republies = targets.filter((it) => it.site!.is_published).length;
+    // Un site jamais regardé publié sous le nom de l'entreprise, c'est une page
+    // à moitié faite en ligne à son adresse : ça se dit avant, pas après.
+    const nonValides = targets.filter(
+      (it) => !it.site!.is_published && it.site!.build_stage !== "pret",
+    ).length;
+    const question =
+      `Mettre ${targets.length} site(s) en ligne ?\n\n` +
+      `Chacun sera publié sur un sous-domaine tiré du nom de son entreprise.\n` +
+      (republies > 0
+        ? `${republies} sont déjà publiés : ils gardent leur adresse et reprennent ce qui a changé depuis.\n`
+        : "") +
+      (nonValides > 0 ? `\n⚠ ${nonValides} ne sont pas encore validés.` : "");
+    if (typeof window !== "undefined" && !window.confirm(question)) return;
+
+    setWorking("create-site");
+    const suivi = toast.loading(`Publication de ${targets.length} site(s)…`);
+    try {
+      let ok = 0;
+      /** Adresses obtenues, pour montrer à quoi ressemble le résultat. */
+      const adresses: string[] = [];
+      const echecs: string[] = [];
+
+      for (const [i, it] of targets.entries()) {
+        try {
+          const r = await authedFetch(`/api/site-builder/sites/${it.site!.id}/deploy`, {
+            method: "POST",
+          });
+          const body = (await r.json().catch(() => ({}))) as { error?: string; subdomain?: string };
+          if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+          ok++;
+          if (body.subdomain) adresses.push(body.subdomain);
+        } catch (e) {
+          // Avec la cause : « sous-domaine déjà utilisé » se règle en renommant,
+          // « site introuvable » pas du tout.
+          echecs.push(`${displayName(it)} (${e instanceof Error ? e.message : "échec"})`);
+        }
+        toast.loading(`${i + 1}/${targets.length} publié(s)…`, { id: suivi });
+      }
+
+      toast.dismiss(suivi);
+      if (ok > 0) {
+        // Une adresse en exemple : c'est elle le résultat visible de l'action,
+        // et la voir vaut mieux que la deviner.
+        const exemple = adresses[0] ? ` — ex. ${adresses[0]}.${SITE_DOMAIN}` : "";
+        toast.success(`${ok} site(s) en ligne${exemple}`);
+      }
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 3).join(" · ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 3 ? `… et ${echecs.length - 3} autre(s)` : ""}`,
+        );
+      }
+      // Publier remet la carte de partage à zéro : elle montrerait le site
+      // d'AVANT la mise en ligne, y compris sous l'ancienne adresse.
+      if (ok > 0) {
+        toast.info("Vignettes de partage à refaire — « Préparer les vignettes » avant d'envoyer les liens.");
+      }
+      await afterAction();
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la publication des sites");
     } finally {
       setWorking(null);
     }
@@ -1231,6 +1342,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onMesurerPsi: (items) => mesurerPsiSites(items),
     onPreparerVignettes: (items) => preparerVignettes(items),
     onValidateSites: (items) => validateSites(items),
+    onPublierSites: (items) => publierSites(items),
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
