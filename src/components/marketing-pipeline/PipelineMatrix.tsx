@@ -46,7 +46,7 @@ import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog
 import { authedFetch } from "@/utils/authedFetch";
 import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
 import { aUneFicheGoogle, lienGoogle, lienMaps } from "@/lib/prospects/lien-google";
-import { AUTO_SEQUENCE } from "./types";
+import { AUTO_SEQUENCE, sequenceEtatLabel, sequenceOptionLabel } from "./types";
 import type {
   BoardItem,
   AgentRef,
@@ -985,8 +985,13 @@ function SequenceCell({
   const done = !!item.sequence;
   const busy = working !== null;
   const canaux = new Set(item.canaux ?? []);
+  // Un brouillon reste proposé — il correspond au canal de la ligne aussi bien
+  // qu'une séquence déjà activée, et c'est souvent celui qu'on vient d'écrire.
+  // Mais son état est ANNONCÉ, ici et dans le déroulant : une séquence qui n'est
+  // pas `on` ne démarre pas, et l'inscription passe d'abord par son activation.
   const activables = sequences.filter((s) => s.status === "on" || s.status === "draft");
   const suggeree = sequenceSuggeree(canaux, activables);
+  const etatSuggeree = suggeree ? sequenceEtatLabel(suggeree.status) : null;
 
   return (
     <div className={"mx-cell " + (done ? "done" : "active-cell")} style={seg}>
@@ -1048,12 +1053,17 @@ function SequenceCell({
                 {suggeree && (
                   <button
                     className="agent-pick suggested"
-                    title={`Séquence conseillée pour ce canal — ${suggeree.name}`}
+                    title={
+                      etatSuggeree
+                        ? `Séquence conseillée pour ce canal — ${suggeree.name} (${etatSuggeree}, à activer avant de partir)`
+                        : `Séquence conseillée pour ce canal — ${suggeree.name}`
+                    }
                     disabled={busy || canaux.size === 0}
                     onClick={() => handlers.onEnroll?.(item, suggeree.id)}
                   >
                     <Flame className="ico-xs" />
                     {suggeree.name}
+                    {etatSuggeree && <span className="pill warn">{etatSuggeree}</span>}
                   </button>
                 )}
                 <select
@@ -1070,7 +1080,7 @@ function SequenceCell({
                     .filter((s) => s.id !== suggeree?.id)
                     .map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name}
+                        {sequenceOptionLabel(s)}
                       </option>
                     ))}
                 </select>
@@ -1350,7 +1360,7 @@ function BulkBar({
           <option value={AUTO_SEQUENCE}>Séquence suggérée par canal</option>
           {sequences.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.name}
+              {sequenceOptionLabel(s)}
             </option>
           ))}
         </select>

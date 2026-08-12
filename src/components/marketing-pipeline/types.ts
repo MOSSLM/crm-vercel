@@ -168,6 +168,34 @@ export interface SequenceRef {
 }
 
 /**
+ * Une séquence ne DÉMARRE que si elle est activée.
+ *
+ * Tout le moteur pose la même condition — l'inscription (`handleEnroll`), le
+ * ticker (`processSequenceEnrollment` gèle une inscription dont la séquence
+ * n'est plus `on`) et le régulateur. Le tableau doit donc dire la même chose :
+ * proposer un brouillon sans le nommer envoyait l'inscription contre un 409
+ * `sequence_inactive`, sans que rien à l'écran n'explique pourquoi.
+ */
+export const sequenceLancable = (s: { status: string }): boolean => s.status === "on";
+
+/**
+ * Ce qui manque à une séquence pour partir, en clair. `null` quand rien ne
+ * manque.
+ *
+ * « Brouillon » et « en pause » ne se réparent pas pareil : le premier n'a
+ * jamais été lancé (un bouton Activer suffit), le second a été arrêté
+ * volontairement — les confondre enverrait chercher la mauvaise cause.
+ */
+export const sequenceEtatLabel = (status: string): string | null =>
+  status === "on" ? null : status === "draft" ? "brouillon" : "en pause";
+
+/** Nom de séquence suffixé de son état, pour les listes déroulantes. */
+export const sequenceOptionLabel = (s: { name: string; status: string }): string => {
+  const etat = sequenceEtatLabel(s.status);
+  return etat ? `${s.name} — ${etat}` : s.name;
+};
+
+/**
  * Valeur sentinelle de `onEnroll` : « la séquence que son canal appelle ».
  *
  * Sert aux actions de masse sur un lot mélangé — chaque ligne part vers la

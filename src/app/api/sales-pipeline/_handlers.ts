@@ -247,7 +247,17 @@ export async function handleEnroll(
   const { data: autoRow } = await sc.from('automations').select('*').eq('id', body.automation_id).maybeSingle()
   const automation = autoRow as Automation | null
   if (!automation || automation.kind !== 'sequence') return jsonError('sequence_introuvable', 404, {}, cors)
-  if (automation.status !== 'on') return jsonError('sequence_inactive', 409, {}, cors)
+  // Le refus dit LAQUELLE et DANS QUEL ÉTAT : sur une action de masse répartie
+  // entre plusieurs séquences, « inactive » tout court n'indique pas celle qu'il
+  // faut aller activer — et « brouillon » ne se répare pas comme « en pause ».
+  if (automation.status !== 'on') {
+    return jsonError(
+      'sequence_inactive',
+      409,
+      { sequence_name: automation.name, sequence_status: automation.status },
+      cors,
+    )
+  }
 
   // Un agent ne lance que les séquences que l'admin lui a attribuées.
   if (scope.ownerId) {
