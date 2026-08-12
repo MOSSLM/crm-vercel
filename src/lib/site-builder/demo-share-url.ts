@@ -58,10 +58,17 @@ export function choisirSiteMontrable<T extends SiteMontrableLike>(sites: T[]): T
  * Le domaine est stocké tantôt nu (`exemple.fr`), tantôt déjà préfixé — d'où la
  * normalisation, sans laquelle un `href` sur `exemple.fr` part en relatif et
  * atterrit sur une 404 du CRM.
+ *
+ * Le garde `is_published` n'est pas décoratif : `resolveSite` filtre
+ * `is_published = true`, et la dépublication (DELETE /publish) laisse
+ * `published_domain` intact. Sans lui, un site dépublié continuait d'envoyer les
+ * prospects vers son domaine — via le moteur d'automatisations et le cockpit
+ * RDV, donc par WhatsApp et par e-mail — pour atterrir sur un 404. Le repli
+ * `demoShareUrl` pointe l'aperçu UUID, lui toujours joignable.
  */
 export function urlPubliqueDuSite(site: SiteMontrableLike): string {
   const propre = site.published_domain?.trim();
-  if (propre) return propre.startsWith('http') ? propre : `https://${propre}`;
+  if (propre && site.is_published) return propre.startsWith('http') ? propre : `https://${propre}`;
   return demoShareUrl(site);
 }
 

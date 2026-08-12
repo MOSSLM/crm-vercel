@@ -5,6 +5,15 @@
  *   {label}.{SITE_DOMAIN}  → published site   (middleware → /site/{label})
  *   {uuid}.{SITE_DOMAIN}   → draft/template preview (middleware → /preview/{uuid})
  *   app.{SITE_DOMAIN}      → the CRM app itself
+ *   {domaine-client}       → published site   (middleware → /site/{host})
+ *
+ * La quatrième forme n'a PAS son propre arbre de routes : le segment
+ * `/site/[subdomain]` porte soit un label, soit un hôte, et les deux se
+ * distinguent par la présence d'un point — un label est slugifié `[a-z0-9-]` et
+ * n'en contient jamais. `deciderDestination` (bas de fichier) et
+ * `resolveSite` (site-resolver.ts) DOIVENT appliquer la même règle : le jour où
+ * l'une discrimine sur la forme et l'autre sur autre chose, tous les domaines
+ * clients tombent en 404.
  *
  * Historically two env vars named the same domain — NEXT_PUBLIC_APP_DOMAIN (read
  * by the middleware) and NEXT_PUBLIC_SITE_DOMAIN (read by the code that BUILDS
@@ -17,6 +26,8 @@
  * NEXT_PUBLIC_* by textual substitution at build time, so a computed key would
  * resolve to undefined in the browser bundle.
  */
+
+import { isPreviewSubdomain } from "@/lib/site-builder/preview-url";
 
 export const DEFAULT_SITE_DOMAIN = "samadigitalstudio.fr";
 
@@ -49,6 +60,58 @@ export const RESERVED_SUBDOMAINS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Suffixes d'hôtes d'infrastructure : ils servent l'app, mais ne sont ni l'apex
+ * ni un site client.
+ *
+ * `crm-vercel.vercel.app` est un hôte de PRODUCTION réellement appelé (trois
+ * migrations pg_cron tapent dessus), et c'est aussi l'accès de secours quand le
+ * DNS de SITE_DOMAIN casse. Les URLs d'aperçu par PR
+ * (`crm-vercel-git-<branche>-<team>.vercel.app`) en dépendent également. Sans
+ * cette sortie, la branche « hôte inconnu » les réécrirait toutes vers un site
+ * client inexistant et rendrait le CRM injoignable hors DNS.
+ */
+const INFRA_HOST_SUFFIXES = [".vercel.app"] as const;
+
+/**
+ * L'hôte, réduit à sa forme comparable : minuscules, sans port, sans point
+ * racine final.
+ *
+ * Existe parce que le middleware ne faisait que `host.split(":")[0]` et que la
+ * normalisation vraie vivait À L'INTÉRIEUR d'`extractSubdomain`. Tant que le
+ * middleware ne faisait que passer l'hôte à cette fonction, l'écart était
+ * invisible ; dès qu'il utilise l'hôte lui-même (comme segment de chemin, ou
+ * pour le comparer à SITE_DOMAIN), les deux trous s'ouvrent : `EXEMPLE.FR` ne
+ * matche plus la valeur stockée en minuscules, et `samadigitalstudio.fr.`
+ * (forme pleinement qualifiée, légale, émise par certains clients) n'est plus
+ * égal à SITE_DOMAIN — il échapperait donc à la garde « ni l'apex ».
+ */
+export function normalizeHost(raw: string | null | undefined): string {
+  const host = (raw ?? "").trim().toLowerCase();
+  if (!host) return "";
+  // IPv6 littéral (`[::1]:3000`) : un split(":") naïf rendrait "[".
+  if (host.startsWith("[")) {
+    const fin = host.indexOf("]");
+    return fin === -1 ? host : host.slice(0, fin + 1);
+  }
+  return host.split(":")[0].replace(/\.+$/, "");
+}
+
+/**
+ * Hôtes qui servent l'app sans être un site : dev local, IP nue, plateforme.
+ *
+ * Tout ce qui est ici doit continuer de tomber sur l'arbre du CRM, jamais sur
+ * la réécriture « domaine client ».
+ */
+export function isInfrastructureHost(hostname: string): boolean {
+  const host = normalizeHost(hostname);
+  if (!host) return true;
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return true;
+  if (host.startsWith("[")) return true; // IPv6
+  return INFRA_HOST_SUFFIXES.some((s) => host === s.slice(1) || host.endsWith(s));
+}
+
+/**
  * Reduce a configured value to the bare apex domain: tolerate a protocol, a
  * port, a trailing path or dot, and an `app.` / `www.` host label (a natural
  * thing to paste in, and the exact value that used to break `extractSubdomain`).
@@ -75,15 +138,20 @@ export const SITE_DOMAIN =
 
 /**
  * The client-site subdomain carried by `hostname`, or null when this host is not
- * one: the apex itself, localhost, a raw IP, or a custom domain (those are
- * resolved by `published_domain` lookup, not by subdomain).
+ * one: the apex itself, localhost, a raw IP, or a custom domain.
+ *
+ * Renvoyer `null` sur un domaine client est un COMPORTEMENT VOULU dont dépend
+ * tout le routage : c'est ce qui permet à `deciderDestination` de distinguer
+ * « sous-domaine de chez nous » de « domaine propre du client ». Le test
+ * correspondant (`__tests__/site-domain.test.ts`) est un test de non-régression,
+ * pas un vestige.
  *
  * CRM subdomains (`app`, `www`, …) ARE returned — callers filter them through
  * CRM_SUBDOMAINS, which is what tells "route to the CRM" apart from "unknown
  * host" at the call site.
  */
 export function extractSubdomain(hostname: string, siteDomain: string = SITE_DOMAIN): string | null {
-  const host = hostname.split(":")[0].toLowerCase().replace(/\.+$/, "");
+  const host = normalizeHost(hostname);
   if (!host || host === "localhost" || host.endsWith(".localhost")) return null;
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return null;
 
@@ -93,4 +161,78 @@ export function extractSubdomain(hostname: string, siteDomain: string = SITE_DOM
   if (!host.endsWith(suffix)) return null;
 
   return host.slice(0, -suffix.length) || null;
+}
+
+/**
+ * Où va cette requête — la décision de routage, en fonction pure.
+ *
+ * Elle vit ici et pas dans `src/middleware.ts` pour une raison de test : aucun
+ * des tests du dépôt n'importe `next/server`, donc `NextRequest`/`NextResponse`
+ * n'ont jamais été chargés sous ce transform ts-jest/CJS. Un test de middleware
+ * serait un pari d'infrastructure ; une fonction pure se teste avec la table
+ * hôte × chemin qu'il faut pour figer les exclusions, dans le fichier qui a déjà
+ * tout le vocabulaire.
+ *
+ * LA CONTRAINTE À CONNAÎTRE : le middleware tourne sur l'edge runtime et
+ * s'exécute sur CHAQUE requête de CHAQUE hôte — y compris les hôtes qui ne sont
+ * pas les nôtres. Il n'a donc pas le droit de consulter la base. La réécriture
+ * d'un domaine client est OPTIMISTE et sans état : on réécrit à l'aveugle, et
+ * c'est la route qui tranche en résolvant `published_domain`. Corollaire assumé :
+ * un hôte inconnu pointé sur nous consomme une invocation pour finir en 404.
+ */
+export type Destination =
+  /** Laisser passer : le CRM, l'API, les statiques, l'infrastructure. */
+  | { kind: "next" }
+  /** Sous-domaine public servi par l'app (`rapport.` → `/rapport`). */
+  | { kind: "public"; path: string }
+  /** Aperçu d'un brouillon, sur un sous-domaine en forme d'UUID. */
+  | { kind: "preview"; segment: string }
+  /** Site publié. `segment` porte un LABEL (jamais de point) ou un HÔTE. */
+  | { kind: "site"; segment: string }
+  /** Redirection absolue (le CRM servi sous la marque d'un client). */
+  | { kind: "redirect"; to: string };
+
+export function deciderDestination(
+  rawHost: string | null | undefined,
+  pathname: string,
+  siteDomain: string = SITE_DOMAIN,
+): Destination {
+  // Chemins servis à l'identique quel que soit l'hôte. `/api` reste ouvert :
+  // les formulaires de contact des sites publiés en dépendent, et la carte
+  // OpenGraph pose `og:image` sur `{origine}/api/og/...`.
+  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname.includes(".")) {
+    return { kind: "next" };
+  }
+
+  const host = normalizeHost(rawHost);
+  if (isInfrastructureHost(host)) return { kind: "next" };
+
+  const subdomain = extractSubdomain(host, siteDomain);
+
+  // Testé AVANT le cas « site client », sinon le rapport serait réécrit vers
+  // /site/rapport et rendrait un 404 — c'est le piège documenté sur la route OG.
+  const publicPath = subdomain ? PUBLIC_SUBDOMAINS.get(subdomain) : undefined;
+  if (publicPath) return { kind: "public", path: publicPath };
+
+  // L'apex nu ne finit pas par `.{siteDomain}` : extractSubdomain rend null pour
+  // lui comme pour un domaine client. Il faut donc le nommer explicitement,
+  // sans quoi la vitrine de l'agence partirait en /site/samadigitalstudio.fr.
+  if (host === siteDomain) return { kind: "next" };
+  if (subdomain && CRM_SUBDOMAINS.has(subdomain)) return { kind: "next" };
+
+  // À partir d'ici l'hôte est un hôte de SITE : sous-domaine client ou domaine
+  // propre. Le portail de gestion n'a rien à y faire — il s'y affichait jusqu'ici
+  // sous la marque du client. Redirection plutôt que 404 : un lien de portail
+  // déjà partagé continue de fonctionner.
+  if (pathname.startsWith("/portail")) {
+    return { kind: "redirect", to: `https://app.${siteDomain}${pathname}` };
+  }
+
+  if (subdomain) {
+    return isPreviewSubdomain(subdomain)
+      ? { kind: "preview", segment: subdomain }
+      : { kind: "site", segment: subdomain };
+  }
+
+  return { kind: "site", segment: host };
 }

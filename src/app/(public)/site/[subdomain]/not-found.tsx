@@ -2,7 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { resolveSite } from "@/lib/site-resolver";
-import { extractSubdomain } from "@/lib/site-domain";
+import { extractSubdomain, normalizeHost } from "@/lib/site-domain";
 
 /** 404 for published sites. Branded with the site's logo when resolvable. */
 export default async function SiteNotFound() {
@@ -10,8 +10,13 @@ export default async function SiteNotFound() {
   const host = headersList.get("host") ?? "";
   const hostname = host.split(":")[0];
 
-  const subdomain = extractSubdomain(hostname);
-  const site = subdomain ? await resolveSite(subdomain, host).catch(() => null) : null;
+  // Même règle de forme que le middleware et que le résolveur : un hôte sous
+  // SITE_DOMAIN donne son label, un domaine client se résout par l'hôte lui-même.
+  // Auparavant on s'arrêtait à `extractSubdomain`, qui rend null sur un domaine
+  // client : le visiteur du client recevait une 404 anonyme, sans logo ni nom
+  // d'entreprise, sur le domaine que le client venait d'acheter.
+  const segment = extractSubdomain(hostname) ?? normalizeHost(hostname);
+  const site = segment ? await resolveSite(segment, host).catch(() => null) : null;
   const companyName = site?.companyName ?? null;
 
   return (

@@ -1,50 +1,46 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { isPreviewSubdomain } from "@/lib/site-builder/preview-url";
-import { CRM_SUBDOMAINS, PUBLIC_SUBDOMAINS, SITE_DOMAIN, extractSubdomain } from "@/lib/site-domain";
+import { deciderDestination } from "@/lib/site-domain";
 
+/**
+ * Aiguillage par hôte.
+ *
+ * Toute la décision vit dans `deciderDestination` (src/lib/site-domain.ts), qui
+ * est pure et testée : ce fichier ne fait plus que la traduire en réponse Next.
+ * La raison est concrète — aucun test du dépôt n'importe `next/server`, donc la
+ * table hôte × chemin ne pouvait pas être figée ici.
+ *
+ * Rappel de la contrainte qui gouverne le design : ce code tourne sur l'edge, à
+ * chaque requête de chaque hôte, y compris des hôtes qui ne sont pas les nôtres.
+ * Il ne consulte jamais la base. Un domaine client est réécrit À L'AVEUGLE vers
+ * /site/{host} et c'est la route qui tranche en résolvant `published_domain`.
+ */
 export function middleware(request: NextRequest) {
-  const host = request.headers.get("host") ?? "";
-  const hostname = host.split(":")[0]; // strip port for local dev
   const { pathname } = request.nextUrl;
+  const destination = deciderDestination(request.headers.get("host"), pathname);
 
-  // Skip Next.js internals and static files
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/portail") ||
-    pathname.includes(".") // static assets
-  ) {
-    return NextResponse.next();
+  switch (destination.kind) {
+    case "next":
+      return NextResponse.next();
+
+    case "redirect":
+      return NextResponse.redirect(destination.to, 308);
+
+    case "public": {
+      const url = request.nextUrl.clone();
+      url.pathname = `${destination.path}${pathname === "/" ? "" : pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
+    case "preview":
+    case "site": {
+      const url = request.nextUrl.clone();
+      const suffix = pathname === "/" ? "" : pathname;
+      const racine = destination.kind === "preview" ? "/preview" : "/site";
+      url.pathname = `${racine}/${destination.segment}${suffix}`;
+      return NextResponse.rewrite(url);
+    }
   }
-
-  // Determine if this request is for a client subdomain. A custom domain (one
-  // that isn't under SITE_DOMAIN) yields null and is handled by the
-  // published_domain lookup in the route itself.
-  const subdomain = extractSubdomain(hostname, SITE_DOMAIN);
-
-  // Sous-domaines publics servis par l'app (rapport.…). Testés AVANT le cas
-  // « site client », sinon le rapport serait réécrit vers /site/rapport et
-  // rendrait un 404 — c'est le même piège que celui documenté sur la route OG.
-  const publicPath = subdomain ? PUBLIC_SUBDOMAINS.get(subdomain) : undefined;
-  if (publicPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = `${publicPath}${pathname === "/" ? "" : pathname}`;
-    return NextResponse.rewrite(url);
-  }
-
-  if (subdomain && !CRM_SUBDOMAINS.has(subdomain)) {
-    const url = request.nextUrl.clone();
-    const suffix = pathname === "/" ? "" : pathname;
-    // A UUID-shaped subdomain is an unguessable draft/template preview → render
-    // the live (unpublished) draft. Everything else is a published site.
-    url.pathname = isPreviewSubdomain(subdomain)
-      ? `/preview/${subdomain}${suffix}`
-      : `/site/${subdomain}${suffix}`;
-    return NextResponse.rewrite(url);
-  }
-
-  return NextResponse.next();
 }
 
 export const config = {

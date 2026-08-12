@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ensureHostedLogo } from "@/lib/site-builder/ensure-hosted-logo";
 import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
 import { UNDEFINED_COLUMN, missingColumnFrom, type PgErrorLike } from "@/lib/schema-drift";
+import { canonicalizeDomain } from "@/lib/url-canonical";
 
 export interface PublishSiteResult {
   ok: boolean;
@@ -10,6 +11,14 @@ export interface PublishSiteResult {
   error?: string;
   status?: number;
   publishedSubdomain?: string | null;
+  publishedDomain?: string | null;
+  /**
+   * Les destinations AVANT cette publication. Sans elles l'appelant ne peut ni
+   * purger le cache de l'ancienne adresse, ni y poser une redirection, ni
+   * détacher le domaine côté hébergeur : il ne sait pas ce qu'il vient de
+   * remplacer.
+   */
+  ancienneDestination?: { subdomain: string | null; domain: string | null };
   /**
    * Anomalies non bloquantes, à montrer dans l'éditeur du CRM — jamais dans le
    * site publié. Aujourd'hui : un logo qu'on n'a pas pu rapatrier.
@@ -38,10 +47,26 @@ export async function publishSite(
     return { ok: false, error: "Le sous-domaine ne peut contenir que des lettres minuscules, chiffres et tirets", status: 400 };
   }
 
+  // On NORMALISE ici, on ne rejette pas — et c'est délibéré.
+  //
+  // Deux appelants (`rebuild-site-from-template`, `republish-after-enrichment`)
+  // réinjectent la valeur ACTUELLE de published_domain au lieu d'une nouvelle,
+  // et le parc contient des valeurs préfixées par le protocole (cf. l'en-tête de
+  // demo-share-url.ts, et les cinq lecteurs qui font `startsWith("http")` pour
+  // s'en accommoder). Une regex qui rejette ici rendrait un site parfaitement en
+  // ligne impossible à reconstruire, pour un défaut de forme d'une valeur écrite
+  // il y a des mois — et `rebuild-site-from-template` remonte l'erreur au caller.
+  //
+  // Le REJET d'une saisie mal formée appartient à la route qui reçoit l'opérateur
+  // (isPlausibleDomain, src/lib/archive/reasons.ts). Ici, la seule règle est que
+  // ce qui part en base doit avoir la forme comparée à la lecture : minuscules,
+  // sans protocole, sans port, sans chemin, sans `www.`.
+  const domaineNormalise = domain ? canonicalizeDomain(domain) || null : null;
+
   const [{ data: currentSite }, { data: currentInstances }] = await Promise.all([
     supabase
       .from("sites")
-      .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id, content_overrides, shared_assets, tweaks")
+      .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id, content_overrides, shared_assets, tweaks, published_subdomain, published_domain")
       .eq("id", siteId)
       .single(),
     supabase
@@ -102,19 +127,39 @@ export async function publishSite(
     og_generated_at: null,
   };
   if (subdomain) updatePayload.published_subdomain = subdomain;
-  if (domain) updatePayload.published_domain = domain;
+  // `!== undefined` et non `if (domain)` : sans cette distinction, passer `null`
+  // laissait la colonne intacte et AUCUN chemin du dépôt ne pouvait remettre
+  // published_domain à NULL. Le miroir était irréversible — donc un client qui
+  // part, transfère son domaine ou le laisse expirer restait annoncé par le CRM
+  // comme l'adresse publique de son site, potentiellement vers un repreneur.
+  if (domain !== undefined) updatePayload.published_domain = domaineNormalise;
 
   const { data, error } = await updateDroppingMissingColumns(supabase, siteId, updatePayload);
 
   if (error) {
-    if (error.code === "23505") return { ok: false, error: "Ce sous-domaine est déjà utilisé par un autre site", status: 409 };
+    if (error.code === "23505") {
+      // Deux index uniques peuvent produire un 23505 sur cet UPDATE depuis la
+      // migration 20260812. Annoncer « sous-domaine » dans les deux cas
+      // envoyait l'opérateur corriger le mauvais champ.
+      const detail = (error as { details?: string | null }).details ?? "";
+      const surLeDomaine = /published_domain/i.test(`${error.message} ${detail}`);
+      return surLeDomaine
+        ? { ok: false, error: `Le domaine ${domaineNormalise} est déjà rattaché à un autre site`, status: 409 }
+        : { ok: false, error: "Ce sous-domaine est déjà utilisé par un autre site", status: 409 };
+    }
     return { ok: false, error: error.message, status: 500 };
   }
 
+  const ligne = data as { published_subdomain?: string | null; published_domain?: string | null } | null;
   return {
     ok: true,
     site: data,
-    publishedSubdomain: (data as { published_subdomain?: string | null } | null)?.published_subdomain ?? subdomain ?? null,
+    publishedSubdomain: ligne?.published_subdomain ?? subdomain ?? null,
+    publishedDomain: ligne?.published_domain ?? domaineNormalise,
+    ancienneDestination: {
+      subdomain: (currentSite as { published_subdomain?: string | null } | null)?.published_subdomain ?? null,
+      domain: (currentSite as { published_domain?: string | null } | null)?.published_domain ?? null,
+    },
     ...(logo.warnings.length ? { warnings: logo.warnings } : {}),
   };
 }
