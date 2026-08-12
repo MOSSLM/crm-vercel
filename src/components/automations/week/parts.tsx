@@ -7,6 +7,7 @@ import { XI } from '../icons'
 import { authedFetch } from '@/utils/authedFetch'
 import type { SeqStepKind } from '../types'
 import { weekDuration, weekHM, type WeekPlan, type WeekWave } from '@/lib/automations/week'
+import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
 import type { WeekContactRow, WeekView } from './types'
 
 /* ── Jetons visuels par canal ────────────────────────────────────────────── */
@@ -32,10 +33,10 @@ export const kindMeta = (kind: SeqStepKind | string) => KIND_META[kind] ?? KIND_
  * Charge à la demande : seule la vague ouverte est rendue, et l'appel passe par
  * `renderStepMessage`, le même code que l'envoi.
  */
+type PreviewMessage = { subject: string | null; body: string; source: string | null; variant?: MessageVariant }
+
 function WaveMessage({ wave, contact }: { wave: WeekWave; contact: WeekContactRow | undefined }) {
-  const [message, setMessage] = React.useState<{ subject: string | null; body: string; source: string | null } | null>(
-    null,
-  )
+  const [message, setMessage] = React.useState<PreviewMessage | null>(null)
   const [state, setState] = React.useState<'loading' | 'done' | 'error'>('loading')
 
   React.useEffect(() => {
@@ -49,7 +50,7 @@ function WaveMessage({ wave, contact }: { wave: WeekWave; contact: WeekContactRo
 
     authedFetch(`/api/automations/preview?${params}`)
       .then((r) => r.json())
-      .then((payload: { message?: { subject: string | null; body: string; source: string | null } | null }) => {
+      .then((payload: { message?: PreviewMessage | null }) => {
         if (!vivant) return
         setMessage(payload.message ?? null)
         setState('done')
@@ -72,7 +73,15 @@ function WaveMessage({ wave, contact }: { wave: WeekWave; contact: WeekContactRo
 
   return (
     <div className="wk-msg">
-      {message.source && <div className="src">{message.source}</div>}
+      {message.source && (
+        <div className="src">
+          {message.source}
+          {/* Le modèle porte deux versions : dire laquelle a été retenue évite
+              de croire que les quarante entreprises de la vague liront ce
+              texte-là. */}
+          {message.variant && ` · ${VARIANT_LABELS[message.variant].short}`}
+        </div>
+      )}
       {message.subject && <div className="subj">{message.subject}</div>}
       <div className="body">{message.body}</div>
       {contact && (

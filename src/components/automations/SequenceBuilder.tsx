@@ -16,7 +16,17 @@ import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
 import { moveStep } from './sequence-steps'
 import { MessageEditor } from './MessageEditor'
 import { normalizeWindows } from '@/lib/automations/regulator'
-import { interpolateVars, sampleVars, VARIABLES, type VarBag } from '@/lib/automations/variables'
+import {
+  interpolateVars,
+  pickVariant,
+  sampleVars,
+  variantText,
+  VARIABLES,
+  VARIANT_LABELS,
+  type MessageVariant,
+  type VarBag,
+  type VariantPair,
+} from '@/lib/automations/variables'
 import { CANAL_LABEL, CANAUX, type Canal } from '@/lib/prospects/canal'
 import { authedFetch } from '@/utils/authedFetch'
 import type { Automation, SequenceDefinition, SequenceStep, SeqStepKind, SequenceSettings } from './types'
@@ -1046,16 +1056,18 @@ function EmailTemplatePreview({
   vars: VarBag
   previewOn: string | null
 }) {
-  const tpl = useTemplateBody('email_templates', 'subject,body', templateId)
+  const tpl = useTemplateBody('email_templates', templateId)
   if (!templateId) return null
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
+  const variant = pickVariant([tpl.subject, tpl.body], vars)
   return (
     <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
       <div className="msg-ed-preview">
-        <strong>{interpolateVars(tpl.subject, vars) || '(sans objet)'}</strong>
+        <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
         {'\n\n'}
-        {interpolateVars(tpl.body, vars)}
+        {interpolateVars(variantText(tpl.body, variant), vars)}
       </div>
+      <VariantNote variant={variant} pairs={[tpl.subject, tpl.body]} />
     </Field>
   )
 }
@@ -1070,11 +1082,13 @@ function WhatsappTemplatePreview({
   vars: VarBag
   previewOn: string | null
 }) {
-  const tpl = useTemplateBody('whatsapp_templates', 'body', templateId)
+  const tpl = useTemplateBody('whatsapp_templates', templateId)
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
+  const variant = pickVariant([tpl.body], vars)
   return (
     <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
-      <div className="msg-ed-preview">{interpolateVars(tpl.body, vars)}</div>
+      <div className="msg-ed-preview">{interpolateVars(variantText(tpl.body, variant), vars)}</div>
+      <VariantNote variant={variant} pairs={[tpl.body]} />
       <p className="rg-hint">
         Ce texte vient des{' '}
         <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
@@ -1086,13 +1100,37 @@ function WhatsappTemplatePreview({
   )
 }
 
-/** Charge le corps d'un modèle, quelle que soit la table. */
+/**
+ * Laquelle des deux versions du modèle est montrée, et pourquoi.
+ *
+ * L'aperçu se calcule sur UN prospect ; sans cette ligne, on croirait que le
+ * texte affiché est le seul que la séquence enverra, alors qu'il change d'une
+ * fiche à l'autre selon qu'on connaisse ou non la personne.
+ */
+function VariantNote({ variant, pairs }: { variant: MessageVariant; pairs: VariantPair[] }) {
+  const aUneVersionContact = pairs.some((p) => (p.contact ?? '').trim())
+  if (!aUneVersionContact) return null
+  return (
+    <p className="rg-hint" style={{ marginTop: 4 }}>
+      <XI name="user" className="ico-xs" /> {VARIANT_LABELS[variant].short}, choisie pour ce prospect — l’autre part aux
+      fiches où c’est l’inverse.
+    </p>
+  )
+}
+
+/**
+ * Charge un modèle et ses deux versions, quelle que soit la table.
+ *
+ * `select('*')` : `body_contact` n'existe qu'après la migration `20260814`, et
+ * PostgREST fait échouer la requête entière sur une colonne inconnue — l'aperçu
+ * afficherait « Chargement du modèle… » pour toujours si le code arrivait
+ * avant elle.
+ */
 function useTemplateBody(
   table: string,
-  columns: string,
   id: string | null,
-): { subject: string | null; body: string } | null {
-  const [row, setRow] = useState<{ subject: string | null; body: string } | null>(null)
+): { subject: VariantPair; body: VariantPair } | null {
+  const [row, setRow] = useState<{ subject: VariantPair; body: VariantPair } | null>(null)
   useEffect(() => {
     if (!id) {
       setRow(null)
@@ -1101,18 +1139,26 @@ function useTemplateBody(
     let vivant = true
     supabase
       .from(table)
-      .select(columns)
+      .select('*')
       .eq('id', id)
       .maybeSingle()
       .then(({ data }) => {
         if (!vivant) return
-        const d = data as { subject?: string | null; body?: string | null } | null
-        setRow({ subject: d?.subject ?? null, body: d?.body ?? '' })
+        const d = data as {
+          subject?: string | null
+          subject_contact?: string | null
+          body?: string | null
+          body_contact?: string | null
+        } | null
+        setRow({
+          subject: { company: d?.subject ?? null, contact: d?.subject_contact ?? null },
+          body: { company: d?.body ?? '', contact: d?.body_contact ?? null },
+        })
       })
     return () => {
       vivant = false
     }
-  }, [table, columns, id])
+  }, [table, id])
   return row
 }
 
