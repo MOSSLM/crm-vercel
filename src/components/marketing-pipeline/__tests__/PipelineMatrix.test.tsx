@@ -104,6 +104,7 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
     onComplete: jest.fn(),
     onValidateEnrich: jest.fn(),
     onCreateSites: jest.fn(),
+    onTirerImages: jest.fn(),
     onValidateSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
@@ -135,6 +136,7 @@ function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
     onComplete: jest.fn(),
     onValidateEnrich: jest.fn(),
     onCreateSites: jest.fn(),
+    onTirerImages: jest.fn(),
     onValidateSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
@@ -437,6 +439,48 @@ describe("PipelineMatrix — refaire le site avec un autre template", () => {
   it("affiche le template d'origine sur la carte du site", () => {
     renderRows([withSite("t2", "Chantier")]);
     expect(screen.getByText("Chantier")).toBeInTheDocument();
+  });
+});
+
+describe("PipelineMatrix — tirage des images en masse", () => {
+  const withSite = (id: string, name: string, isClaudeDesign: boolean) =>
+    item({
+      id,
+      name,
+      enriched: true,
+      project: project(true),
+      site: {
+        id: `site-${id}`,
+        name,
+        build_stage: "pret",
+        is_published: false,
+        url: null,
+        is_claude_design: isClaudeDesign,
+      },
+    });
+
+  it("n'envoie au tirage que les designs Claude de la sélection", () => {
+    const bulk = renderRows([
+      withSite("k", "Kappa", true),
+      // Un site d'un autre modèle : aucune zone photo, la route le refuserait.
+      withSite("l", "Lambda", false),
+      // Pas de site du tout : rien à remplir.
+      item({ id: "n", name: "Nu" }),
+    ]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+
+    fireEvent.click(bar().getByRole("button", { name: /Tirer les images/ }));
+
+    expect((bulk.onTirerImages as jest.Mock).mock.calls[0][0].map((r: BoardItem) => r.id)).toEqual(["k"]);
+  });
+
+  it("écarte une ligne sans entreprise : les services sont ce qui choisit les photos", () => {
+    const sansEntreprise = { ...withSite("k", "Kappa", true), entreprise_id: null };
+    const bulk = renderRows([sansEntreprise]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+
+    expect(bar().getByRole("button", { name: /Tirer les images/ })).toBeDisabled();
+    expect(bulk.onTirerImages).not.toHaveBeenCalled();
   });
 });
 

@@ -228,6 +228,18 @@ export interface BulkHandlers {
   /** Mesure Google PageSpeed — quarante secondes par site, quota journalier. */
   onMesurerPsi: (items: BoardItem[]) => void;
   /**
+   * Retire au sort les photos des sites sélectionnés depuis la médiathèque,
+   * selon les services de chaque entreprise.
+   *
+   * Même tirage que le panneau « Images » de l'éditeur, mais sur tout un lot :
+   * ouvrir chaque site pour cliquer le même bouton est ce qui faisait renoncer,
+   * et un parc entier restait avec les photos du modèle.
+   *
+   * À relancer APRÈS une refonte : « Refaire les sites » repart du modèle et
+   * jette les retouches d'instance — donc le tirage précédent avec elles.
+   */
+  onTirerImages: (items: BoardItem[]) => void;
+  /**
    * Fabrique à l'avance la vignette de partage des sites sélectionnés.
    *
    * Indispensable AVANT une campagne automatique : une séquence n'ouvre aucun
