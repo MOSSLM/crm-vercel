@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: CatchAllProps): Promise<Metad
 
   // L'origine réellement demandée : la carte de partage est servie depuis le
   // MÊME hôte que la page qui la déclare (sous-domaine, ou domaine du client).
-  return buildPageMetadata(site, page, subdomain, await origineRequete());
+  return buildPageMetadata(site, page, subdomain, await origineRequete(), pageSlug);
 }
 
 export default async function CatchAllSitePage({ params }: CatchAllProps) {
