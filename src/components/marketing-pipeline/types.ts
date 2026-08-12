@@ -220,6 +220,20 @@ export interface BulkHandlers {
    */
   onRegenerateSites: (items: BoardItem[]) => void;
   /**
+   * Retire au sort les photos de la bande « réalisations » de sites existants.
+   *
+   * Distinct de `onRegenerateSites`, et l'ordre entre les deux n'est pas neutre :
+   * refaire un site repart du modèle et REMPLACE ses overrides par ceux du
+   * template — donc par le tirage figé du template. Un tirage fait avant une
+   * refonte est perdu. Celui-ci vient après.
+   *
+   * Il est nécessaire parce que la création ne tire rien : elle clone le tirage
+   * du template, fait pour l'entreprise du template. Une entreprise dont les
+   * métiers diffèrent retombe alors sur les candidats de repli, et la même photo
+   * peut sortir deux fois dans une bande de six.
+   */
+  onRetirerPhotos: (items: BoardItem[]) => void;
+  /**
    * Analyse le site ACTUEL des entreprises sélectionnées (pas notre démo) et
    * enregistre les notes. Sert à prioriser le démarchage : on appelle d'abord
    * ceux dont le site est le plus faible, avec les mesures sous les yeux.
@@ -262,6 +276,8 @@ export interface MatrixHandlers {
   onValidateEnrich: (item: BoardItem) => void;
   onCreateSite: (item: BoardItem) => void;
   onRegenerateSite: (item: BoardItem) => void;
+  /** Retire au sort les photos de la bande « réalisations » de ce site. */
+  onRetirerPhotos: (item: BoardItem) => void;
   onValidateSite: (item: BoardItem) => void;
   onCreateAudit: (item: BoardItem) => void;
   onValidateAudit: (item: BoardItem) => void;
