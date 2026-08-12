@@ -3,6 +3,9 @@ import React from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { resolveSite, fetchBlogPost } from "@/lib/site-resolver";
+import { urlCanonique } from "@/lib/site-builder/host-canonique";
+import { origineRequete } from "@/lib/site-builder/origine-requete";
+import { getAppUrl } from "@/lib/app-url";
 import type { Metadata } from "next";
 
 interface BlogPostPageProps {
@@ -20,10 +23,26 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
   const post = await fetchBlogPost(site.siteId, slug);
   if (!post) return {};
 
+  // Cette route construit son Metadata à la main, sans passer par
+  // buildPageMetadata : toute correction apportée là-bas la laissait de côté.
+  // Or les articles sont les pages les plus susceptibles d'être indexées, donc
+  // de se cannibaliser entre le sous-domaine et le domaine du client.
+  //
+  // `metadataBase` manquait aussi : sans elle, une `cover_image_url` relative
+  // fait abandonner la balise og:image en silence — le piège déjà documenté
+  // dans build-page-metadata.ts.
+  const canonical = urlCanonique(site, `/blog/${slug}`);
+  const origine = await origineRequete();
+
   return {
     title: post.title,
     description: post.excerpt,
-    openGraph: post.cover_image_url ? { images: [post.cover_image_url] } : undefined,
+    metadataBase: new URL(origine ?? getAppUrl()),
+    ...(canonical ? { alternates: { canonical } } : {}),
+    openGraph: {
+      ...(canonical ? { url: canonical } : {}),
+      ...(post.cover_image_url ? { images: [post.cover_image_url] } : {}),
+    },
   };
 }
 

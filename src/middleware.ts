@@ -49,8 +49,14 @@ export const config = {
      * Match all request paths EXCEPT:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico, sitemap.xml, robots.txt
+     * - favicon.ico
+     *
+     * sitemap.xml et robots.txt ONT ÉTÉ RETIRÉS de cette liste : ils doivent
+     * être réécrits par tenant, et tant qu'ils étaient exclus le middleware
+     * n'était même pas invoqué pour eux. C'était le premier des deux verrous
+     * qui rendaient un sitemap par tenant inatteignable ; le second est la
+     * garde `pathname.includes(".")`, traitée dans `deciderDestination`.
      */
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

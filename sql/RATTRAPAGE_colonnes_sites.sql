@@ -15,7 +15,7 @@
 --     'published_sitemap','published_instances','published_variables',
 --     'published_reviews','paywall_enabled','booking_url','client_brief',
 --     'og_image_url','og_shot_url','og_logo_url','og_generated_at','og_shot_at',
---     'og_shot_mobile_url','og_logo_sombre'
+--     'og_shot_mobile_url','og_logo_sombre','published_at'
 --   ]) as c(nom)
 --   where not exists (
 --     select 1 from information_schema.columns
@@ -61,6 +61,11 @@ begin;
 alter table public.sites
   add column if not exists published_subdomain text unique,
   add column if not exists published_domain    text,
+  -- Écrite par publishSite à CHAQUE publication, et créée par aucune
+  -- migration : updateDroppingMissingColumns la retirait donc silencieusement du
+  -- payload, avec un console.warn que personne ne lit. L'horodatage de
+  -- publication n'existait tout simplement pas sur un environnement neuf.
+  add column if not exists published_at        timestamptz,
   add column if not exists is_published        boolean not null default false,
   add column if not exists enterprise_id       integer references public.entreprises(id) on delete set null,
   add column if not exists site_config         jsonb,

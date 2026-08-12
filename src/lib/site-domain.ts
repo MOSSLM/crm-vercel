@@ -72,6 +72,9 @@ export const RESERVED_SUBDOMAINS: ReadonlySet<string> = new Set([
  */
 const INFRA_HOST_SUFFIXES = [".vercel.app"] as const;
 
+/** Chemins qui échappent à la garde « contient un point = statique ». */
+const CHEMINS_SEO = new Set(["/robots.txt", "/sitemap.xml"]);
+
 /**
  * L'hôte, réduit à sa forme comparable : minuscules, sans port, sans point
  * racine final.
@@ -197,10 +200,15 @@ export function deciderDestination(
   pathname: string,
   siteDomain: string = SITE_DOMAIN,
 ): Destination {
+  // `/robots.txt` et `/sitemap.xml` doivent être réécrits par tenant, alors que
+  // TOUT chemin contenant un point est traité comme un statique et laissé
+  // passer. Sans cette exception, un sitemap par tenant est inatteignable par
+  // construction — et le second verrou est le matcher, qui les exclut lui aussi.
+  const estSeo = CHEMINS_SEO.has(pathname);
   // Chemins servis à l'identique quel que soit l'hôte. `/api` reste ouvert :
   // les formulaires de contact des sites publiés en dépendent, et la carte
   // OpenGraph pose `og:image` sur `{origine}/api/og/...`.
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname.includes(".")) {
+  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || (pathname.includes(".") && !estSeo)) {
     return { kind: "next" };
   }
 
@@ -229,9 +237,14 @@ export function deciderDestination(
   }
 
   if (subdomain) {
-    return isPreviewSubdomain(subdomain)
-      ? { kind: "preview", segment: subdomain }
-      : { kind: "site", segment: subdomain };
+    // L'aperçu de brouillon n'a pas de route SEO — `/preview/{uuid}/robots.txt`
+    // tomberait dans son attrape-tout et rendrait du HTML sous un content-type
+    // de texte. On le laisse au robots.txt racine, qui refuse tout hôte qui
+    // n'est pas celui de l'agence.
+    if (isPreviewSubdomain(subdomain)) {
+      return estSeo ? { kind: "next" } : { kind: "preview", segment: subdomain };
+    }
+    return { kind: "site", segment: subdomain };
   }
 
   return { kind: "site", segment: host };

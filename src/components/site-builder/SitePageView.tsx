@@ -3,18 +3,12 @@ import { notFound } from "next/navigation";
 import { resolveSite } from "@/lib/site-resolver";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
-import { serviceTagGate } from "@/utils/serviceTags";
+import { pageEstServie, parseEnterpriseTags } from "@/lib/site-builder/pages-servies";
 import { DynamicPageRenderer } from "./DynamicPageRenderer";
 
-/** Parse the enterprise service tags from the resolved variables map. */
-export function parseEnterpriseTags(variables: Record<string, string>): string[] {
-  try {
-    const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
-  } catch {
-    return [];
-  }
-}
+// Réexporté : l'aperçu de brouillon l'importe depuis ici. La définition a
+// déménagé dans `pages-servies.ts` avec les règles de visibilité qu'elle sert.
+export { parseEnterpriseTags };
 
 interface SitePageViewProps {
   subdomain: string;
@@ -55,17 +49,13 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
     is_hidden?: boolean;
   }>;
   const enterpriseTags = parseEnterpriseTags(enterpriseVariables);
-  const isHome = pageSlug === "/";
-  const targetPage = publishedSitemap?.find((p) => p.slug === pageSlug);
 
-  // A non-home page must exist in the sitemap.
-  if (!isHome && !targetPage) notFound();
-  // A page tagged with a service the enterprise doesn't have is hidden. Compared
-  // through serviceTagGate: the page's tag is the ASCII of its file name
-  // ("pompe-a-chaleur"), the enterprise's is the CRM label ("pompe à chaleur").
-  if (!serviceTagGate(enterpriseTags)(targetPage?.service_tag)) notFound();
-  // A page with no sections is a category, not a real page.
-  if (!instances.some((i) => i.page_slug === pageSlug && !i.is_hidden)) notFound();
+  // Les trois conditions de 404 vivent dans `pages-servies.ts`, parce que le
+  // sitemap.xml par tenant doit appliquer EXACTEMENT les mêmes : un sitemap bâti
+  // sur `published_sitemap` seul listerait des URLs qui répondent 404.
+  if (!pageEstServie(pageSlug, { sitemap: publishedSitemap, instances, enterpriseTags })) {
+    notFound();
+  }
 
   const visibleMenus = buildPublicMenus(menus, publishedSitemap, instances, enterpriseTags);
 

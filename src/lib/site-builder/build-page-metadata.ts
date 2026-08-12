@@ -3,6 +3,7 @@ import type { ResolvedSite } from "@/lib/site-resolver";
 import type { SitemapPage } from "@/types";
 import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
 import { getAppUrl } from "@/lib/app-url";
+import { urlCanonique } from "@/lib/site-builder/host-canonique";
 
 /**
  * URL de SECOURS de la carte de partage — celle qui la fabrique à la volée.
@@ -65,10 +66,19 @@ export function buildPageMetadata(
   fallbackTitle: string,
   /** Origine réellement demandée, pour servir la carte depuis le MÊME hôte. */
   origine?: string | null,
+  /** Chemin de la page, pour l'adresse canonique. « / » ou « /contact ». */
+  pageSlug?: string,
 ): Metadata {
   const vars = site.enterpriseVariables ?? {};
   const seo = site.seo ?? {};
-  const companyName = site.companyName ?? fallbackTitle;
+  // `fallbackTitle` reçoit le SEGMENT DE ROUTE, qui porte désormais un hôte
+  // complet quand le site a un domaine propre. Un site sans companyName
+  // titrerait donc « plomberie-dupont.fr » et « Site de plomberie-dupont.fr »,
+  // dans Google et dans l'unfurl WhatsApp — et différemment selon l'URL
+  // empruntée, ce qui contredirait le canonical qu'on ajoute ici. On retombe
+  // donc sur le label publié, qui ne dépend pas de l'hôte de la requête.
+  const repli = site.publishedSubdomain?.trim() || (fallbackTitle.includes(".") ? "" : fallbackTitle);
+  const companyName = site.companyName ?? repli;
   const ip = (v?: string | null) => (v ? interpolateVars(v, vars) : "");
 
   const title =
@@ -102,6 +112,11 @@ export function buildPageMetadata(
     ? [{ url: chosenImage }]
     : [{ url: generatedImage, width: 1200, height: 630 }];
 
+  // L'adresse officielle du site, indépendante de l'hôte emprunté. Volontairement
+  // PAS calculée depuis `origine` : ce serait un self-canonical sur chaque
+  // espace d'URL, donc aucune déduplication (voir host-canonique.ts).
+  const canonical = urlCanonique(site, pageSlug ?? "/");
+
   return {
     title,
     description,
@@ -109,10 +124,12 @@ export function buildPageMetadata(
     // Sans `metadataBase`, Next ne sait pas rendre absolue une URL relative et
     // laisse tomber la balise sans rien dire.
     metadataBase: new URL(origine ?? getAppUrl()),
+    ...(canonical ? { alternates: { canonical } } : {}),
     openGraph: {
       title: ogTitle,
       description: ogDescription,
       type: "website",
+      ...(canonical ? { url: canonical } : {}),
       images,
     },
     twitter: {
