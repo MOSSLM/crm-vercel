@@ -11,16 +11,19 @@ import {
   readReplies,
   readSkippedSteps,
   readStepShifts,
+  readVariant,
   stepStartMs,
   type StepAnchor,
 } from '@/lib/automations/week'
 import {
   interpolateVars,
+  otherVariant,
   pickVariant,
   usedVariables,
   variantText,
   type MessageVariant,
   type VarBag,
+  type VariantPair,
 } from '@/lib/automations/variables'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
@@ -337,6 +340,15 @@ export interface RenderedStepMessage {
   source: string | null
   /** Laquelle des deux versions du modèle a été retenue pour ce prospect. */
   variant: MessageVariant
+  /**
+   * L'AUTRE version, rendue elle aussi — `null` quand le modèle n'en a qu'une.
+   *
+   * Rendue ici et pas plus tard parce que le pipeline commercial propose de
+   * basculer d'une version à l'autre sur la carte : sans les deux textes déjà
+   * prêts, chaque bascule serait un aller-retour en base, et l'aperçu montrerait
+   * autre chose que ce que le moteur enverrait.
+   */
+  other: { variant: MessageVariant; subject: string | null; body: string } | null
 }
 
 /**
@@ -392,36 +404,54 @@ export async function renderStepMessage(
   sb: SupabaseClient,
   step: SequenceStep,
   vars: VarBag,
+  forced?: MessageVariant | null,
 ): Promise<RenderedStepMessage> {
-  if (step.kind === 'email') {
-    if (!step.template) return { subject: null, body: '', source: null, variant: 'company' }
-    const row = await lireModele(sb, 'email_templates', step.template)
-    const [sujet, corps] = paires(row)
-    const variant = pickVariant([sujet, corps], vars)
+  /** Rend les deux versions d'un modèle, celle qui part en premier. */
+  const rendu = (
+    pairs: VariantPair[],
+    source: string | null,
+    avecObjet: boolean,
+  ): RenderedStepMessage => {
+    const [sujet, corps] = avecObjet ? pairs : [{ company: null, contact: null }, pairs[0]]
+    const variant = pickVariant(avecObjet ? [sujet, corps] : [corps], vars, forced)
+    const rendreDans = (v: MessageVariant) => ({
+      subject: avecObjet ? interpolate(variantText(sujet, v), vars) : null,
+      body: interpolate(variantText(corps, v), vars),
+    })
+    const autre = otherVariant(variant)
+    const alt = rendreDans(autre)
+    const principal = rendreDans(variant)
     return {
-      subject: interpolate(variantText(sujet, variant), vars),
-      body: interpolate(variantText(corps, variant), vars),
-      source: row?.name ?? null,
+      ...principal,
+      source,
       variant,
+      // Deux versions identiques ne sont qu'une : le modèle n'a pas été doublé,
+      // et proposer une bascule qui ne change rien ferait douter de l'écran.
+      other:
+        alt.body === principal.body && alt.subject === principal.subject
+          ? null
+          : { variant: autre, ...alt },
     }
+  }
+
+  if (step.kind === 'email') {
+    if (!step.template) return { subject: null, body: '', source: null, variant: 'company', other: null }
+    const row = await lireModele(sb, 'email_templates', step.template)
+    return rendu(paires(row), row?.name ?? null, true)
   }
 
   if (step.kind === 'whatsapp' && step.template) {
     const row = await lireModele(sb, 'whatsapp_templates', step.template)
-    const corps = { company: row?.body, contact: row?.body_contact }
-    const variant = pickVariant([corps], vars)
-    return { subject: null, body: interpolate(variantText(corps, variant), vars), source: row?.name ?? null, variant }
+    return rendu([{ company: row?.body, contact: row?.body_contact }], row?.name ?? null, false)
   }
 
   if (step.kind === 'call' && step.script) {
     const row = await lireModele(sb, 'call_scripts', step.script)
-    const corps = { company: row?.body, contact: row?.body_contact }
-    const variant = pickVariant([corps], vars)
-    return { subject: null, body: interpolate(variantText(corps, variant), vars), source: row?.name ?? null, variant }
+    return rendu([{ company: row?.body, contact: row?.body_contact }], row?.name ?? null, false)
   }
 
   // Message libre écrit dans l'étape : un seul texte, donc pas de variation.
-  return { subject: null, body: interpolate(step.message, vars), source: null, variant: 'company' }
+  return { subject: null, body: interpolate(step.message, vars), source: null, variant: 'company', other: null }
 }
 
 /**
@@ -437,22 +467,27 @@ export async function renderStepMessage(
  * part : il gèlerait une inscription dont le message ne promet rien, ou pire,
  * en laisserait passer une qui promet un audit inexistant.
  */
-export async function stepRawText(sb: SupabaseClient, step: SequenceStep, vars: VarBag): Promise<string> {
+export async function stepRawText(
+  sb: SupabaseClient,
+  step: SequenceStep,
+  vars: VarBag,
+  forced?: MessageVariant | null,
+): Promise<string> {
   if (step.kind === 'email' && step.template) {
     const row = await lireModele(sb, 'email_templates', step.template)
     const [sujet, corps] = paires(row)
-    const variant = pickVariant([sujet, corps], vars)
+    const variant = pickVariant([sujet, corps], vars, forced)
     return `${variantText(sujet, variant)}\n${variantText(corps, variant)}`
   }
   if (step.kind === 'whatsapp' && step.template) {
     const row = await lireModele(sb, 'whatsapp_templates', step.template)
     const corps = { company: row?.body, contact: row?.body_contact }
-    return variantText(corps, pickVariant([corps], vars))
+    return variantText(corps, pickVariant([corps], vars, forced))
   }
   if (step.kind === 'call' && step.script) {
     const row = await lireModele(sb, 'call_scripts', step.script)
     const corps = { company: row?.body, contact: row?.body_contact }
-    return variantText(corps, pickVariant([corps], vars))
+    return variantText(corps, pickVariant([corps], vars, forced))
   }
   return step.message ?? ''
 }
@@ -475,9 +510,10 @@ export async function etapePromettUnAuditAbsent(
   step: SequenceStep,
   entrepriseId: number | null,
   vars: VarBag,
+  forced?: MessageVariant | null,
 ): Promise<boolean> {
   if (entrepriseId == null) return false
-  const texte = await stepRawText(sb, step, vars)
+  const texte = await stepRawText(sb, step, vars, forced)
   if (!usedVariables(texte).includes('company.audit_url')) return false
   return !(await aDesMesuresAudit(sb, entrepriseId))
 }
@@ -498,9 +534,10 @@ export async function etapePromettUneDemoAbsente(
   sb: SupabaseClient,
   step: SequenceStep,
   vars: VarBag,
+  forced?: MessageVariant | null,
 ): Promise<boolean> {
   if (vars['company.demo_url']) return false
-  const texte = await stepRawText(sb, step, vars)
+  const texte = await stepRawText(sb, step, vars, forced)
   return usedVariables(texte).includes('company.demo_url')
 }
 
@@ -1096,18 +1133,23 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   }
   const ent = await resolveEntities(sb, ctx)
 
+  // La version épinglée sur la ligne du pipeline commercial, quand quelqu'un en
+  // a choisi une. C'est le seul moyen de la faire respecter par un e-mail : il
+  // part tout seul, par le régulateur, sans personne devant l'écran.
+  const forced = readVariant(enrollment.vars)
+
   // Le message promet l'audit, l'entreprise n'a rien à montrer : on GÈLE au lieu
   // d'envoyer un lien vers une page générique à son nom. Vaut pour l'e-mail
   // comme pour les tâches manuelles — la séquence WhatsApp cite le rapport elle
   // aussi, et un lien creux se paie plus cher encore dans une conversation.
-  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId, ent.vars)) {
+  if (await etapePromettUnAuditAbsent(sb, step, ent.entrepriseId, ent.vars, forced)) {
     await holdForMissingAuditLink(sb, enrollment.id)
     return
   }
 
   // Même règle pour la démo : `company.demo_url` s'interpolait en vide pour les
   // 295 entreprises, aucun site du parc n'étant publié.
-  if (await etapePromettUneDemoAbsente(sb, step, ent.vars)) {
+  if (await etapePromettUneDemoAbsente(sb, step, ent.vars, forced)) {
     await holdForMissingDemo(sb, enrollment.id)
     return
   }
@@ -1133,7 +1175,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
 
     let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
-      const tpl = await renderStepMessage(sb, step, ent.vars)
+      const tpl = await renderStepMessage(sb, step, ent.vars, forced)
       if (tpl.source !== null || tpl.body) {
         const text = tpl.body
         const result = await sendEngineEmail(sb, {
@@ -1204,7 +1246,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
     // clair. `renderStepMessage` traite les trois canaux de la même façon, et
     // c'est le même code que l'aperçu du builder — les deux ne peuvent plus
     // diverger.
-    const rendu = await renderStepMessage(sb, step, ent.vars)
+    const rendu = await renderStepMessage(sb, step, ent.vars, forced)
     const message = rendu.body
     const scriptName = rendu.source ?? undefined
     // À qui revient la tâche : propriétaire du contact, celui qui a lancé la
@@ -1233,6 +1275,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
         linkedin: ent.contactLinkedin,
         audit_url: ent.auditUrl,
         demo_url: ent.demoUrl,
+        // Les DEUX versions voyagent avec la tâche : la carte du pipeline
+        // propose de basculer de l'une à l'autre juste avant d'ouvrir WhatsApp,
+        // et c'est le seul moment où quelqu'un regarde. Les recalculer au clic
+        // voudrait dire relire modèle + variables depuis le navigateur, avec le
+        // risque d'afficher autre chose que ce que le moteur a préparé.
+        variant: rendu.variant,
+        variantAlt: rendu.other ? { variant: rendu.other.variant, message: rendu.other.body } : null,
       },
     })
     // l'inscription attend que l'humain ait fait le geste

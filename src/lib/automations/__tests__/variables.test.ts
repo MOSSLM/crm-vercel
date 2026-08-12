@@ -7,9 +7,11 @@ import {
   interpolateVars,
   missingContactVariables,
   missingVariables,
+  otherVariant,
   pickVariant,
   sampleVars,
   usedVariables,
+  variantIsSendable,
   variantText,
   varsForVariant,
 } from '../variables'
@@ -162,6 +164,58 @@ describe('deux variations — pickVariant', () => {
     // entreprise, plutôt que d'envoyer un objet nommé sur un corps anonyme.
     expect(pickVariant([sujet, corps], avecContact)).toBe('company')
     expect(pickVariant([sujet, corps], { ...avecContact, 'contact.last_name': 'Martin' })).toBe('contact')
+  })
+})
+
+describe('deux variations — la version épinglée', () => {
+  const ENTREPRISE = 'Bonjour, je suis bien avec {{company.name}} ?'
+  const CONTACT = 'Bonjour, je suis bien avec {{contact.first_name}} de {{company.name}} ?'
+  const paire = { company: ENTREPRISE, contact: CONTACT }
+  const avecContact = { 'company.name': 'Toiture Martin', 'contact.first_name': 'Julien' }
+
+  it('force la version entreprise même quand on connaît la personne', () => {
+    // Le cas qui motive l'épingle : le numéro est celui du standard, on ne veut
+    // pas l'aborder par le prénom du gérant.
+    expect(pickVariant([paire], avecContact)).toBe('contact')
+    expect(pickVariant([paire], avecContact, 'company')).toBe('company')
+  })
+
+  it('n’envoie pas un trou parce qu’on a épinglé « contact »', () => {
+    // L'épingle prime sur la règle automatique, JAMAIS sur la sécurité : sans
+    // prénom en base, « je suis bien avec  de Toiture Martin ? » ne part pas.
+    expect(pickVariant([paire], { 'company.name': 'Toiture Martin' }, 'contact')).toBe('company')
+  })
+
+  it('sans épingle, se comporte exactement comme avant', () => {
+    expect(pickVariant([paire], avecContact, null)).toBe('contact')
+    expect(pickVariant([paire], avecContact, undefined)).toBe('contact')
+  })
+})
+
+describe('deux variations — variantIsSendable', () => {
+  const paire = { company: 'Bonjour,', contact: 'Bonjour {{contact.first_name}},' }
+
+  it('dit toujours oui à la version entreprise', () => {
+    // Elle n'a personne à nommer : elle tient sur n'importe quelle fiche.
+    expect(variantIsSendable([paire], {}, 'company')).toBe(true)
+  })
+
+  it('refuse la version contact quand on ne peut pas la tenir', () => {
+    expect(variantIsSendable([paire], {}, 'contact')).toBe(false)
+    expect(variantIsSendable([paire], { 'contact.first_name': 'Julien' }, 'contact')).toBe(true)
+  })
+
+  it('refuse la version contact quand elle n’est pas écrite', () => {
+    expect(variantIsSendable([{ company: 'Bonjour,', contact: null }], { 'contact.first_name': 'Julien' }, 'contact')).toBe(
+      false,
+    )
+  })
+})
+
+describe('deux variations — otherVariant', () => {
+  it('renvoie l’autre, dans les deux sens', () => {
+    expect(otherVariant('company')).toBe('contact')
+    expect(otherVariant('contact')).toBe('company')
   })
 })
 

@@ -1,9 +1,19 @@
 // types.ts — miroir de /api/sales-pipeline/board (et de son pendant agent).
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
-import type { CellStatus, SalesColumn, SalesStateRow, SequencePart } from '@/lib/sales-pipeline/stages'
+import type { CellStatus, SalesColumn, SalesStateRow, SequencePart, StepNote } from '@/lib/sales-pipeline/stages'
+import type { MessageVariant } from '@/lib/automations/variables'
 import type { RegulatorQueueRow } from '@/components/automations/regulator/types'
 
-export type { HoldReason, SendWindow, CellStatus, SalesColumn, SalesStateRow, SequencePart, RegulatorQueueRow }
+export type {
+  HoldReason,
+  SendWindow,
+  CellStatus,
+  SalesColumn,
+  SalesStateRow,
+  SequencePart,
+  StepNote,
+  RegulatorQueueRow,
+}
 
 export interface SalesSequenceInfo {
   enrollmentId: string
@@ -18,6 +28,10 @@ export interface SalesSequenceInfo {
   holdReason: HoldReason | null
   rank: number | null
   gapMinutes: number | null
+  /** Étape courante telle que la séquence la nomme — rattache une note. */
+  stepId: string | null
+  /** Version épinglée à la main, `null` = le moteur choisit. */
+  variant: MessageVariant | null
 }
 
 export interface SalesTaskInfo {
@@ -30,6 +44,10 @@ export interface SalesTaskInfo {
   linkedin: string | null
   assigneeId: string | null
   routingReason: string | null
+  /** Version que le moteur a préparée pour cette tâche. */
+  variant: MessageVariant
+  /** L'autre version, déjà rendue — `null` quand le modèle n'en a qu'une. */
+  variantAlt: { variant: MessageVariant; message: string } | null
 }
 
 export interface SalesBoardRow {
@@ -54,6 +72,8 @@ export interface SalesBoardRow {
   tasks: SalesTaskInfo[]
   emailsSent: number
   lastExchange: { channel: string; at: string } | null
+  /** La dernière note de chaque étape, la plus récente d'abord. */
+  notes: StepNote[]
   auditReady: boolean
   demoUrl: string | null
   state: SalesStateRow

@@ -6,16 +6,27 @@
 
 import { json, jsonError } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
-import { advanceStage, applyReaction, reviveRow, setProspectEmail, skipEmailStep } from '@/lib/sales-pipeline/actions'
+import {
+  advanceStage,
+  applyReaction,
+  pinVariant,
+  recordOutcome,
+  reviveRow,
+  setProspectEmail,
+  skipEmailStep,
+} from '@/lib/sales-pipeline/actions'
+import { stepOutcome } from '@/lib/sales-pipeline/stages'
 import { enrollInSequence, processSequenceEnrollment } from '@/lib/automations/engine'
 import type { Automation, SequenceEnrollment } from '@/components/automations/types'
 import type {
   SalesAdvancePayload,
   SalesEnrollPayload,
+  SalesOutcomePayload,
   SalesReactionPayload,
   SalesRevivePayload,
   SalesSetEmailPayload,
   SalesSkipEmailPayload,
+  SalesVariantPayload,
 } from '@/app/api/_lib/schemas'
 
 type Scope = { ownerId: string | null; userId: string }
@@ -71,6 +82,52 @@ export async function handleReaction(
     userId: scope.userId,
     skipColumns: body.skip_columns,
   })
+  return json({ ok: true, ...result }, { headers: cors })
+}
+
+/**
+ * L'issue d'une étape, et ce que la personne a dit.
+ *
+ * Les exigences (`needsNote`, `needsDate`) sont lues sur l'issue elle-même
+ * plutôt que codées ici : la liste vit dans `STEP_OUTCOMES`, et un ajout ne doit
+ * pas obliger à retoucher la route.
+ */
+export async function handleOutcome(
+  body: SalesOutcomePayload,
+  scope: Scope,
+  cors: Record<string, string>,
+): Promise<Response> {
+  const access = await assertAccess([body.opportunite_id], scope)
+  if (!access.ok) return jsonError(access.error, access.status, {}, cors)
+
+  const outcome = stepOutcome(body.outcome)
+  if (!outcome) return jsonError('issue_inconnue', 400, {}, cors)
+  if (outcome.needsNote && !body.note?.trim()) return jsonError('note_requise', 400, {}, cors)
+  if (outcome.needsDate && !body.nurture_at) return jsonError('date_de_relance_requise', 400, {}, cors)
+
+  const result = await recordOutcome(getServiceClient(), body.opportunite_id, outcome.id, {
+    note: body.note,
+    stepId: body.step_id ?? null,
+    columnId: body.column_id ?? null,
+    channel: body.channel ?? null,
+    nurtureAt: body.nurture_at ?? null,
+    userId: scope.userId,
+    skipColumns: body.skip_columns,
+  })
+  return json({ ok: true, ...result }, { headers: cors })
+}
+
+/** Épingler (ou libérer) la version de message employée pour ce prospect. */
+export async function handleVariant(
+  body: SalesVariantPayload,
+  scope: Scope,
+  cors: Record<string, string>,
+): Promise<Response> {
+  const access = await assertAccess([body.opportunite_id], scope)
+  if (!access.ok) return jsonError(access.error, access.status, {}, cors)
+
+  const result = await pinVariant(getServiceClient(), body.opportunite_id, body.variant)
+  if (result.enrollments === 0) return jsonError('aucune_inscription', 409, {}, cors)
   return json({ ok: true, ...result }, { headers: cors })
 }
 

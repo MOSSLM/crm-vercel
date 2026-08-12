@@ -37,10 +37,17 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react'
-import { channelOf, hasInterest, type SalesColumn } from '@/lib/sales-pipeline/stages'
+import {
+  channelOf,
+  hasInterest,
+  stepOutcome,
+  type SalesColumn,
+  type StepNote,
+} from '@/lib/sales-pipeline/stages'
+import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
 import { holdReasonLabel } from '@/lib/automations/regulator'
 import { eta, hm, hmd } from '@/components/automations/regulator/parts'
-import type { SalesBoardRow } from './types'
+import type { SalesBoardRow, SalesTaskInfo } from './types'
 
 /** Icône d'un canal de séquence. */
 export const KIND_ICON: Record<string, LucideIcon> = {
@@ -89,7 +96,96 @@ export interface SalesHandlers {
   onAddEmail: (row: SalesBoardRow) => void
   /** Sauter l'étape email et enchaîner sur le canal suivant (WhatsApp). */
   onSkipEmail: (row: SalesBoardRow) => void
+  /** Enregistrer ce que la personne a dit, et l'issue de l'étape. */
+  onOutcome: (row: SalesBoardRow, column: SalesColumn) => void
+  /** Épingler la version de message employée pour ce prospect. */
+  onVariant: (row: SalesBoardRow, variant: MessageVariant | null) => void
   busy: string | null
+}
+
+/**
+ * L'étape que porte cette colonne — `step:s3` → `s3`.
+ *
+ * Tirée de la COLONNE et non de l'étape courante de l'inscription : une colonne
+ * déjà franchie doit montrer ce qui s'y est dit à l'époque, pas la note de
+ * l'étape où le prospect en est aujourd'hui.
+ */
+export function columnStepId(column: SalesColumn): string | null {
+  return column.id.startsWith('step:') ? column.id.slice('step:'.length) : null
+}
+
+/**
+ * La note de CETTE étape, s'il y en a une.
+ *
+ * On cherche par étape et non « la dernière note du prospect » : sinon la carte
+ * WhatsApp afficherait ce qui s'est dit au téléphone trois jours plus tard, et
+ * on croirait que le message WhatsApp a provoqué cette réponse.
+ */
+function noteFor(row: SalesBoardRow, column: SalesColumn): StepNote | null {
+  const stepId = columnStepId(column)
+  if (!stepId) return null
+  return (row.notes ?? []).find((n) => n.stepId === stepId) ?? null
+}
+
+/** Le fil est court sur une carte : la note s'y lit en deux lignes maximum. */
+function NoteLine({ note }: { note: StepNote }) {
+  const outcome = stepOutcome(note.outcome)
+  return (
+    <div className={'sp-note ' + (outcome?.tone ?? 'muted')}>
+      <span className="o">{outcome?.label ?? note.outcome}</span>
+      {note.note && <span className="n">{note.note}</span>}
+      <span className="d">{new Date(note.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>
+    </div>
+  )
+}
+
+/**
+ * Le sélecteur de version, sur la moitié « Envoi ».
+ *
+ * Il ne s'affiche que si le modèle a RÉELLEMENT deux versions — proposer une
+ * bascule qui ne change pas un mot ferait douter de tout l'écran. La version
+ * choisie est épinglée sur l'inscription et non sur la carte : c'est le seul
+ * moyen qu'un e-mail la respecte, puisqu'il part par le régulateur sans
+ * personne devant l'écran.
+ */
+function VariantPicker({
+  row,
+  task,
+  disabled,
+  onPick,
+}: {
+  row: SalesBoardRow
+  task: SalesTaskInfo | undefined
+  disabled: boolean
+  onPick: (v: MessageVariant | null) => void
+}) {
+  const alt = task?.variantAlt ?? null
+  const pinned = row.sequence?.variant ?? null
+  // Sans deuxième version préparée ET sans épingle déjà posée, il n'y a rien à
+  // choisir : le modèle n'a qu'un texte.
+  if (!alt && !pinned) return null
+  const current: MessageVariant = task?.variant ?? pinned ?? 'company'
+
+  return (
+    <div className="sp-variant" role="group" aria-label="Version du message">
+      {(['company', 'contact'] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          className="sp-variant-b"
+          aria-pressed={current === v}
+          disabled={disabled}
+          title={VARIANT_LABELS[v].hint}
+          // Recliquer la version déjà retenue retire l'épingle et rend la main
+          // à la règle automatique — sinon on ne pourrait plus jamais l'ôter.
+          onClick={() => onPick(pinned === v ? null : v)}
+        >
+          {VARIANT_LABELS[v].tab}
+          {pinned === v && <span className="pin">épinglée</span>}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export function rgba(hex: string, alpha: number): string {
@@ -589,6 +685,7 @@ export function SalesCell({
   }
 
   if (status === 'done') {
+    const done = noteFor(row, column)
     return (
       <div className={'mx-cell done' + groupClass} style={seg}>
         <div className="card is-done">
@@ -598,7 +695,9 @@ export function SalesCell({
             </span>
             <span className="c-ttl">{column.label}</span>
           </div>
-          <div className="done-line">{doneSummary(column, row)}</div>
+          {/* Une étape franchie garde ce qui s'y est dit : c'est là que se
+              relit l'histoire du prospect, colonne par colonne. */}
+          {done ? <NoteLine note={done} /> : <div className="done-line">{doneSummary(column, row)}</div>}
           <div className="done-foot">
             <button className="link-btn" onClick={() => handlers.onWork(column, row)}>
               <Icon className="ico-sm" />
@@ -672,6 +771,7 @@ export function SalesCell({
   // une file où ce prospect ne figure pas, elle propose de saisir l'adresse — et
   // le pied de carte offre la sortie : passer au canal suivant.
   const emailBlocked = column.kind === 'email' && row.emailMissing
+  const noteRow = noteFor(row, column)
 
   if (emailBlocked) {
     return (
@@ -739,6 +839,19 @@ export function SalesCell({
 
         <ActiveBody column={column} row={row} now={now} timezone={timezone} />
 
+        {/* ── Moitié « Envoi » ─────────────────────────────────────────────
+            Le sélecteur de version se pose juste au-dessus du bouton qui
+            ouvre WhatsApp : c'est le dernier instant où quelqu'un regarde le
+            message, donc le seul où le choix a du sens. */}
+        {inSequence && column.kind && (
+          <VariantPicker
+            row={row}
+            task={row.tasks.find((t) => t.kind === column.kind) ?? row.tasks[0]}
+            disabled={busy}
+            onPick={(v) => handlers.onVariant(row, v)}
+          />
+        )}
+
         <button
           className="cta"
           disabled={busy || (isEntry && !canEnroll)}
@@ -748,6 +861,21 @@ export function SalesCell({
           <CtaIcon className="ico-sm" />
           {column.cta}
         </button>
+
+        {/* ── Moitié « Réponse » ───────────────────────────────────────────
+            Envoyer et recevoir sont deux gestes, séparés parfois de plusieurs
+            jours. Les mettre sur la même ligne de boutons obligeait à choisir
+            entre « fait » et « le prospect a réagi » — alors que le cas le plus
+            courant, « envoyé, puis il a dit ça », n'était nulle part. */}
+        {inSequence && column.kind && (
+          <div className="sp-reply">
+            {noteRow && <NoteLine note={noteRow} />}
+            <button className="sp-reply-b" disabled={busy} onClick={() => handlers.onOutcome(row, column)}>
+              <MessageCircle className="ico-sm" />
+              {noteRow ? 'Modifier la réponse' : 'Noter la réponse'}
+            </button>
+          </div>
+        )}
 
         <div className="c-foot">
           {isEntry ? (

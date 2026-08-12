@@ -29,8 +29,15 @@ export interface EmailLog {
   contact_id?: string;
   entreprise_id?: number;
   opportunite_id?: string;
-  /** "email" (default) or "whatsapp" — email_logs is now a multi-channel log. */
-  channel?: "email" | "whatsapp";
+  /**
+   * "email" (default), "whatsapp", ou "note" — `email_logs` est le fil
+   * d'échanges multicanal de l'entreprise. Une note n'est pas un envoi : c'est
+   * ce que le prospect a DIT, rapporté depuis le pipeline commercial, et qui se
+   * lit à sa date entre les messages qui l'encadrent.
+   */
+  channel?: "email" | "whatsapp" | "note";
+  /** Issue de l'étape, pour une ligne `channel = "note"` (cf. STEP_OUTCOMES). */
+  outcome?: string | null;
   body_text?: string;
 }
 
