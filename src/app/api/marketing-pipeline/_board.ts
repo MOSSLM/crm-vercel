@@ -352,15 +352,39 @@ async function fetchDemoSites(
   entIds: number[],
 ): Promise<{ data: SiteRow[]; error: { message: string } | null }> {
   if (entIds.length === 0) return { data: [], error: null };
-  // `source_template_id` vient d'une migration tardive : on retente sans elle
-  // plutôt que de faire tomber le board (même parti pris qu'ailleurs ici).
-  let columns = `${DEMO_SITE_COLUMNS}, source_template_id, og_image_url`;
+  // `source_template_id` et `og_image_url` viennent de deux migrations
+  // distinctes : elles doivent dégrader INDÉPENDAMMENT, comme la chaîne de
+  // replis de `lead_magnet_projects` plus bas.
+  //
+  // L'ancien repli les abandonnait ensemble. Or la base de production a
+  // `og_image_url` mais PAS `source_template_id` : la première requête échouait
+  // sur la colonne absente, le repli jetait les deux, et le board renvoyait
+  // `og_image_url: null` pour tous les sites. La colonne « Vignette » annonçait
+  // donc « Aucune vignette — le lien partirait nu » et proposait de la fabriquer
+  // à chaque rechargement, sur les 68 sites validés qui en avaient pourtant
+  // une. Un défaut d'affichage qui faisait refaire du travail déjà fait.
+  const SELECT_ATTEMPTS = [
+    `${DEMO_SITE_COLUMNS}, source_template_id, og_image_url`,
+    `${DEMO_SITE_COLUMNS}, og_image_url`,
+    `${DEMO_SITE_COLUMNS}, source_template_id`,
+    DEMO_SITE_COLUMNS,
+  ];
+
+  // Le premier `select` qui passe est retenu pour les lots suivants : on ne
+  // repaie le tâtonnement qu'une fois.
+  let columns = SELECT_ATTEMPTS[0];
   const rows: SiteRow[] = [];
   for (let i = 0; i < entIds.length; i += ENT_CHUNK) {
     const chunk = entIds.slice(i, i + ENT_CHUNK);
     let res = await supabase.from("sites").select(columns).in("enterprise_id", chunk);
-    if (res.error && isMissingColumn(res.error)) {
-      columns = DEMO_SITE_COLUMNS;
+    // On ne réessaie que les variantes plus pauvres que celle qui vient
+    // d'échouer : redescendre depuis le début rejouerait le même échec.
+    for (
+      let a = SELECT_ATTEMPTS.indexOf(columns) + 1;
+      a < SELECT_ATTEMPTS.length && res.error && isMissingColumn(res.error);
+      a++
+    ) {
+      columns = SELECT_ATTEMPTS[a];
       res = await supabase.from("sites").select(columns).in("enterprise_id", chunk);
     }
     if (res.error) return { data: [], error: res.error };

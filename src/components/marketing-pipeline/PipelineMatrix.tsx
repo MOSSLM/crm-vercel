@@ -943,6 +943,7 @@ function StageCell({ item, stage, status, working, templateId, templateName, age
 function SequenceCell({
   item,
   stage,
+  stages,
   status,
   sequences,
   working,
@@ -950,6 +951,7 @@ function SequenceCell({
 }: {
   item: BoardItem;
   stage: StageDef;
+  stages: StageDef[];
   status: CellStatus;
   sequences: SequenceRef[];
   working: string | null;
@@ -961,18 +963,24 @@ function SequenceCell({
     "--seg-wash": rgba(stage.color, 0.05),
   } as React.CSSProperties;
 
-  if (status === "locked") {
-    return (
-      <div className="mx-cell locked">
-        <div className="locked-ph">
-          <Lock className="ico-sm" />
-          <span className="t">À débloquer</span>
-        </div>
-      </div>
-    );
-  }
+  // Cette cellule ne se verrouille JAMAIS. Lancer un prospect dans une séquence
+  // est une décision commerciale, pas une étape de production : l'audit peut
+  // très bien se terminer pendant que les premiers messages partent. Le cadenas
+  // ne protégeait rien — la même inscription restait faisable depuis la page
+  // Séquences — il obligeait juste à sortir du board.
+  //
+  // Ce qui reste vrai est dit, pas masqué : quand on inscrit en avance, la carte
+  // nomme les étapes encore en attente, et le rail d'avancement de la ligne
+  // continue de compter cette étape comme non franchie.
+  const early = status === "locked";
+  const sequenceIndex = stages.findIndex((s) => s.id === "sequence");
+  const pending = early
+    ? stages.slice(activeStageIndex(item, stages), sequenceIndex).map((s) => s.name)
+    : [];
 
-  const done = status === "done";
+  // La cellule dit la vérité sur la séquence elle-même : une ligne inscrite en
+  // avance affiche sa séquence, quel que soit l'état de l'audit.
+  const done = !!item.sequence;
   const busy = working !== null;
   const canaux = new Set(item.canaux ?? []);
   const activables = sequences.filter((s) => s.status === "on" || s.status === "draft");
@@ -992,6 +1000,18 @@ function SequenceCell({
             {done ? <span className="pill ok">En séquence</span> : <span className="pill accent">À inscrire</span>}
           </span>
         </div>
+
+        {early && pending.length > 0 && (
+          <div
+            className="c-body muted"
+            style={{ fontSize: 10.5, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <Lock className="ico-xs" />
+            <span title={`Étapes encore en attente : ${pending.join(", ")}`}>
+              En avance · {pending.join(", ")}
+            </span>
+          </div>
+        )}
 
         {done && item.sequence ? (
           <div className="c-body">
@@ -2055,6 +2075,7 @@ export function PipelineMatrix({
                         key={s.id}
                         item={r}
                         stage={s}
+                        stages={stages}
                         status={status}
                         sequences={sequences}
                         working={working}
