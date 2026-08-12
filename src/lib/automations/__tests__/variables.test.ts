@@ -123,9 +123,9 @@ describe('deux variations — pickVariant', () => {
     expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], avecContact)).toBe('contact')
   })
 
-  // LE DÉFAUT QUI A MOTIVÉ LA BASCULE : 70 des 275 entreprises qualifiées n'ont
-  // aucune ligne `contacts`. Sans ce repli, elles recevaient « je suis bien
-  // avec  de Toiture Martin ? ».
+  // LE DÉFAUT QUI A MOTIVÉ LA BASCULE : 67 des 294 entreprises qualifiées n'ont
+  // aucun contact avec un prénom. Sans ce repli, elles recevaient « je suis
+  // bien avec  de Toiture Martin ? ».
   it('retombe sur l’entreprise dès qu’une variable du contact manque', () => {
     expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], sansContact)).toBe('company')
     expect(pickVariant([{ company: ENTREPRISE, contact: CONTACT }], { ...avecContact, 'contact.first_name': '' })).toBe(

@@ -2,12 +2,12 @@
 --
 -- LE DÉFAUT QUE ÇA CORRIGE
 -- Un modèle ne portait qu'un texte, donc il fallait trancher une fois pour tout
--- le parc. Mesuré sur les 275 entreprises qualifiées non archivées : 70 n'ont
--- AUCUNE ligne `contacts`. Un modèle qui écrit « je suis bien avec
--- {{contact.first_name}} de {{company.name}} ? » leur partait amputé —
+-- le parc. Mesuré le 12/08 sur les 294 entreprises qualifiées non archivées :
+-- 67 n'ont aucun contact avec un prénom. Un modèle qui écrit « je suis bien
+-- avec {{contact.first_name}} de {{company.name}} ? » leur partait amputé —
 -- « je suis bien avec  de Toiture Martin ? » —, puisque `interpolate` remplace
 -- par du vide toute clé sans valeur. L'alternative était de ne nommer personne,
--- jamais, y compris pour les 205 fiches dont on a le nom du gérant.
+-- jamais, y compris pour les 227 fiches dont on a le prénom du gérant.
 --
 -- CE QUE LES COLONNES SIGNIFIENT
 --   `body` / `subject`                  la version ENTREPRISE — celle qui fait
