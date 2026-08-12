@@ -33,6 +33,10 @@ export default async function SiteLayout({ children, params }: SiteLayoutProps) 
       companyName={companyName}
       logoUrl={logoUrl}
       phone={phone}
+      // Une conception importée apporte sa propre typographie : le calque de ce
+      // gabarit doit alors s'effacer, sinon il retypographie la page publiée
+      // (voir le commentaire dans theme-default/layout.tsx).
+      claudeDesign={Boolean(site.claudeDesign)}
     >
       {children}
       {site.paywallEnabled && (
