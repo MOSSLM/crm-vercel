@@ -736,6 +736,39 @@ export const salesSkipEmailSchema = z.object({
 export type SalesSkipEmailPayload = z.infer<typeof salesSkipEmailSchema>;
 
 /**
+ * L'issue d'une étape de démarchage, et ce que la personne a dit.
+ *
+ * `outcome` n'est pas énuméré ici mais validé contre `STEP_OUTCOMES`
+ * (`src/lib/sales-pipeline/stages.ts`) : la liste vit là-bas avec, pour chaque
+ * issue, l'effet qu'elle produit. La dupliquer en `z.enum` créerait deux
+ * sources qui divergeraient au premier ajout.
+ */
+export const salesOutcomeSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  outcome: z.string().trim().min(1).max(40),
+  /** Ce que la personne a dit. Exigé par certaines issues, cf. `needsNote`. */
+  note: z.string().trim().max(4000).optional(),
+  /** L'étape d'où vient la note — `s1`, `s2`… tels qu'écrits dans la séquence. */
+  step_id: z.string().trim().max(64).optional(),
+  column_id: salesColumnId.optional(),
+  channel: z.string().trim().max(20).optional(),
+  nurture_at: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "nurture_at doit être une date YYYY-MM-DD")
+    .optional(),
+  skip_columns: z.array(salesColumnId).max(40).optional(),
+});
+export type SalesOutcomePayload = z.infer<typeof salesOutcomeSchema>;
+
+/** Épingler la version de message employée pour ce prospect. */
+export const salesVariantSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  /** `null` retire l'épingle et rend la main à la règle automatique. */
+  variant: z.enum(["company", "contact"]).nullable(),
+});
+export type SalesVariantPayload = z.infer<typeof salesVariantSchema>;
+
+/**
  * Saisie manuelle de l'adresse d'un prospect, depuis le pipeline commercial
  * (qui raisonne en opportunités) ou depuis les séquences (qui raisonnent en
  * entreprises). L'un ou l'autre suffit — l'adresse finit au même endroit.

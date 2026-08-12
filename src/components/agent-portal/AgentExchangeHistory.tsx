@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { authedFetch } from "@/utils/authedFetch";
 import { formatDate, type EmailLog } from "@/components/messaging/emailTypes";
-import { Mail, MessageCircle, CheckCircle2, AlertCircle } from "lucide-react";
+import { Mail, MessageCircle, CheckCircle2, AlertCircle, Quote } from "lucide-react";
 
 /**
  * Compact email + WhatsApp exchange history for a company, shown on the agent's
@@ -39,27 +39,44 @@ export function AgentExchangeHistory({ entrepriseId }: { entrepriseId: number })
     <div className="space-y-2">
       {logs.map((log) => {
         const isWa = log.channel === "whatsapp";
+        // Une note n'est pas un envoi : c'est ce que le prospect a DIT, rapporté
+        // depuis le pipeline commercial. Elle se lit à sa date, entre les
+        // messages qui l'encadrent — sans quoi on relirait la conversation sans
+        // jamais savoir ce qu'elle a produit.
+        const isNote = log.channel === "note";
         return (
-          <div key={log.id} className="flex items-start gap-2 rounded-md border px-3 py-2">
-            {isWa ? (
+          <div
+            key={log.id}
+            className={
+              "flex items-start gap-2 rounded-md border px-3 py-2" +
+              (isNote ? " border-dashed bg-muted/40" : "")
+            }
+          >
+            {isNote ? (
+              <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            ) : isWa ? (
               <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#25D366]" />
             ) : (
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium">
-                  {isWa ? log.body_text?.slice(0, 100) || "Message WhatsApp" : log.subject}
+                <span className={"truncate text-sm" + (isNote ? "" : " font-medium")}>
+                  {isNote
+                    ? log.body_text || log.subject
+                    : isWa
+                      ? log.body_text?.slice(0, 100) || "Message WhatsApp"
+                      : log.subject}
                 </span>
-                {log.status === "sent" ? (
+                {isNote ? null : log.status === "sent" ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                 ) : (
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
                 )}
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                {isWa ? "WhatsApp" : "Email"}
-                {log.to_email ? ` · ${log.to_email}` : log.to_name ? ` · ${log.to_name}` : ""} ·{" "}
+                {isNote ? `Réponse · ${log.subject}` : isWa ? "WhatsApp" : "Email"}
+                {!isNote && (log.to_email ? ` · ${log.to_email}` : log.to_name ? ` · ${log.to_name}` : "")} ·{" "}
                 {formatDate(log.sent_at)}
               </div>
             </div>

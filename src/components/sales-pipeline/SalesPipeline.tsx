@@ -56,6 +56,7 @@ import {
   NO_SEQUENCE,
   SALES_REACTIONS,
   SEQUENCE_TINT,
+  STEP_OUTCOMES,
   channelOf,
   isStepColumn,
   partKind,
@@ -64,9 +65,10 @@ import {
   type SequencePart,
 } from '@/lib/sales-pipeline/stages'
 import { formatHM } from '@/lib/automations/regulator'
+import type { MessageVariant } from '@/lib/automations/variables'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
-import { KIND_ICON, SalesCell, columnIcon, eur, rgba, type SalesHandlers } from './SalesCells'
+import { KIND_ICON, SalesCell, columnIcon, columnStepId, eur, rgba, type SalesHandlers } from './SalesCells'
 import type { SalesBoardData, SalesBoardRow, SalesFilters, SalesMissingEmailRow } from './types'
 import './sp-skin.css'
 
@@ -138,6 +140,8 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const [rowMenu, setRowMenu] = React.useState<{ row: SalesBoardRow; x: number; y: number } | null>(null)
   const [archiveTarget, setArchiveTarget] = React.useState<ArchiveTarget | null>(null)
   const [reaction, setReaction] = React.useState<{ row: SalesBoardRow; id: SalesReactionId } | null>(null)
+  /** La moitié « Réponse » d'une carte, ouverte sur une étape précise. */
+  const [outcome, setOutcome] = React.useState<{ row: SalesBoardRow; column: SalesColumn } | null>(null)
   const [emailTarget, setEmailTarget] = React.useState<EmailTarget | null>(null)
 
   React.useEffect(() => {
@@ -197,6 +201,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       setPopover(null)
       setModal(null)
       setReaction(null)
+      setOutcome(null)
       setEmailTarget(null)
     }
     window.addEventListener('keydown', onKey)
@@ -345,6 +350,16 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     },
     onRevive: (row, columnId) =>
       void post('revive', { opportunite_id: row.id, stage: columnId }, row.id, 'Étape rouverte'),
+    onOutcome: (row, column) => setOutcome({ row, column }),
+    onVariant: (row, variant) =>
+      void post(
+        'variant',
+        { opportunite_id: row.id, variant },
+        row.id,
+        variant
+          ? `Version ${variant === 'contact' ? 'contact' : 'entreprise'} épinglée`
+          : 'Version rendue au choix automatique',
+      ),
     onSkipToDeal: (row) =>
       void post(
         'react',
@@ -990,6 +1005,35 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               'Enregistré',
             )
             if (ok) setReaction(null)
+          }}
+        />
+      )}
+
+      {outcome && (
+        <OutcomeDialog
+          row={outcome.row}
+          column={outcome.column}
+          busy={busy === outcome.row.id}
+          onClose={() => setOutcome(null)}
+          onSubmit={async (body) => {
+            const ok = await post(
+              'outcome',
+              {
+                opportunite_id: outcome.row.id,
+                // L'étape vient de la COLONNE, pas de l'inscription : on note la
+                // réponse à CE message-là, même si la séquence a déjà avancé.
+                step_id: columnStepId(outcome.column) ?? undefined,
+                column_id: outcome.column.id,
+                channel: outcome.column.kind ?? undefined,
+                // Une issue qui arrête la ligne barre les étapes non faites —
+                // sans quoi elles resteraient « à faire » sur un prospect clos.
+                skip_columns: pendingSequenceColumns(outcome.row),
+                ...body,
+              },
+              outcome.row.id,
+              'Réponse enregistrée',
+            )
+            if (ok) setOutcome(null)
           }}
         />
       )}
@@ -2064,6 +2108,125 @@ function ReactionDialog({
             }
           >
             Confirmer
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Ce que la personne a dit, et ce qu'on en fait.
+ *
+ * DEUX FAMILLES SÉPARÉES À L'ŒIL, parce que c'est la seule chose qui compte au
+ * moment de cliquer : en haut ce qui laisse la ligne vivante, en bas ce qui
+ * l'arrête et annule tout ce qui était encore planifié. Les mélanger ferait
+ * stopper une séquence pour un « pas de réponse ».
+ */
+function OutcomeDialog({
+  row,
+  column,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  row: SalesBoardRow
+  column: SalesColumn
+  busy: boolean
+  onClose: () => void
+  onSubmit: (body: { outcome: string; note?: string; nurture_at?: string }) => void
+}) {
+  const existing = (row.notes ?? []).find((n) => n.stepId === columnStepId(column)) ?? null
+  const [outcome, setOutcome] = React.useState<string>(existing?.outcome ?? '')
+  const [note, setNote] = React.useState(existing?.note ?? '')
+  const [date, setDate] = React.useState(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() + 1)
+    return d.toISOString().slice(0, 10)
+  })
+  const meta = STEP_OUTCOMES.find((o) => o.id === outcome) ?? null
+  const valid = !!meta && (!meta.needsNote || note.trim().length > 0) && (!meta.needsDate || !!date)
+
+  const groupe = (flow: 'continue' | 'stop') => STEP_OUTCOMES.filter((o) => o.flow === flow)
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal" style={{ width: 500 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd">
+          <span className="sw" style={{ background: 'var(--bg-2)' }}>
+            <MessageCircle className="ico-sm" />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mt">Réponse — {column.label}</div>
+            <div className="ms">{displayName(row)}</div>
+          </div>
+          <button className="rh-more" onClick={onClose} aria-label="Fermer">
+            <X className="ico-sm" />
+          </button>
+        </div>
+
+        <div className="react-form">
+          {(['continue', 'stop'] as const).map((flow) => (
+            <div key={flow}>
+              <div className="sp-outcome-h">
+                {flow === 'continue' ? 'On continue' : 'On arrête là'}
+              </div>
+              <div className="sp-outcome-grid">
+                {groupe(flow).map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    className={'sp-outcome ' + o.tone}
+                    aria-pressed={outcome === o.id}
+                    onClick={() => setOutcome(o.id)}
+                  >
+                    <span className="l">{o.label}</span>
+                    <span className="s">{o.note}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {meta?.needsDate && (
+            <label>
+              Date de relance
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </label>
+          )}
+
+          <label>
+            Ce que la personne a dit{meta?.needsNote ? '' : ' (facultatif)'}
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Rappeler en septembre, le gérant est en congés. Intéressé par la démo mais veut voir le prix d’abord…"
+            />
+          </label>
+
+          <p className="muted" style={{ fontSize: 11.5 }}>
+            {meta?.flow === 'stop'
+              ? 'Les envois encore planifiés seront annulés et les tâches en attente marquées comme sautées.'
+              : 'La note rejoint le fil d’échanges de l’entreprise, à sa date, entre les messages qui l’encadrent.'}
+          </p>
+        </div>
+
+        <div className="modal-foot">
+          <button className="btn ghost sm" onClick={onClose}>
+            Annuler
+          </button>
+          <button
+            className="btn accent sm"
+            disabled={!valid || busy}
+            onClick={() =>
+              onSubmit({
+                outcome,
+                note: note.trim() || undefined,
+                nurture_at: meta?.needsDate ? date : undefined,
+              })
+            }
+          >
+            Enregistrer
           </button>
         </div>
       </div>

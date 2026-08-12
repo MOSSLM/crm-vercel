@@ -13,7 +13,16 @@ import { cleanEmail } from '@/lib/automations/regulator-db'
 import { verifyEmail, type VerifyResult } from '@/lib/email/verify/service'
 import type { VerificationStatus } from '@/lib/email/verify/score'
 import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
-import { isLostStage, parseColumnId, stepColumnId, type SalesReactionId, type SalesRowState } from './stages'
+import { declarerReponse } from '@/lib/automations/reply'
+import {
+  isLostStage,
+  parseColumnId,
+  stepColumnId,
+  stepOutcome,
+  type SalesReactionId,
+  type SalesRowState,
+} from './stages'
+import type { MessageVariant } from '@/lib/automations/variables'
 
 type StatePatch = {
   skipped?: string[]
@@ -161,6 +170,152 @@ export async function stopOutreach(
       .in('id', ids)
   }
   return { enrollments: ids.length, jobs, tasks }
+}
+
+/* ── Ce que le prospect a dit ────────────────────────────────────────────── */
+
+export interface OutcomeResult {
+  /** L'issue a-t-elle stoppé la ligne ? */
+  stopped: boolean
+  /** Une attente-réponse a été libérée : la séquence est repartie. */
+  released: boolean
+  noteId: string | null
+  state: SalesRowState
+}
+
+/**
+ * Enregistre l'issue d'une étape et ce que la personne a dit.
+ *
+ * LA NOTE VA DANS `email_logs`, PAS DANS UNE TABLE À PART.
+ * `email_logs` est le fil d'échanges d'une entreprise depuis qu'il porte un
+ * `channel` : c'est lui que lisent la fiche entreprise, la messagerie et le
+ * dernier échange du pipeline. Une table séparée aurait obligé chacun de ces
+ * écrans à fusionner deux sources dans le bon ordre — trois occasions de
+ * diverger pour un fil qui se lit d'une traite. « Il m'a dit de rappeler en
+ * septembre » se range donc juste après le WhatsApp qui l'a provoqué.
+ *
+ * TROIS EFFETS POSSIBLES, ET ILS NE S'EXCLUENT PAS :
+ *   · la note est écrite — toujours, quelle que soit l'issue ;
+ *   · une attente-réponse est libérée (`releasesWait`), donc la séquence repart ;
+ *   · la ligne change d'état (`reaction`), et si l'issue STOPPE, tous les envois
+ *     encore planifiés sont annulés — sans quoi un e-mail partirait après que le
+ *     prospect a dit non.
+ */
+export async function recordOutcome(
+  sb: SupabaseClient,
+  opportuniteId: string,
+  outcomeId: string,
+  opts: {
+    note?: string
+    stepId?: string | null
+    columnId?: string | null
+    channel?: string | null
+    nurtureAt?: string | null
+    userId?: string | null
+    skipColumns?: string[]
+  } = {},
+): Promise<OutcomeResult> {
+  const outcome = stepOutcome(outcomeId)
+  if (!outcome) throw new Error('issue inconnue')
+
+  const note = (opts.note ?? '').trim()
+  if (outcome.needsNote && !note) throw new Error('note requise')
+
+  const { data: opp } = await sb
+    .from('opportunites')
+    .select('id, contact_id, entreprise_id')
+    .eq('id', opportuniteId)
+    .maybeSingle()
+
+  // L'inscription vivante, pour rattacher la note à SA séquence — et pour
+  // savoir s'il y a une attente à libérer.
+  const { data: enr } = await sb
+    .from('sequence_enrollments')
+    .select('id, automation_id, hold_reason')
+    .eq('opportunite_id', opportuniteId)
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+  const enrollment = enr as { id: string; automation_id: string; hold_reason: string | null } | null
+
+  // `to_email` est `not null` sur la table : une note n'a pas de destinataire,
+  // elle rapporte ce qu'on a ENTENDU. On pose une chaîne vide plutôt que de
+  // relâcher la contrainte, dont les vrais envois dépendent.
+  const { data: inserted } = await sb
+    .from('email_logs')
+    .insert({
+      channel: 'note',
+      outcome: outcome.id,
+      step_id: opts.stepId ?? null,
+      contact_id: opp?.contact_id ?? null,
+      entreprise_id: opp?.entreprise_id ?? null,
+      opportunite_id: opportuniteId,
+      automation_id: enrollment?.automation_id ?? null,
+      enrollment_id: enrollment?.id ?? null,
+      to_email: '',
+      subject: outcome.label,
+      body_text: note || null,
+      status: 'sent',
+      type: 'note',
+    })
+    .select('id')
+    .maybeSingle()
+
+  // Une attente-réponse ne se libère que si l'inscription en attend vraiment
+  // une : `declarerReponse` refuse sinon, et c'est voulu — avancer à l'aveugle
+  // ferait sauter une étape au prospect.
+  let released = false
+  if (outcome.releasesWait && enrollment && enrollment.hold_reason === 'awaiting_reply') {
+    const r = await declarerReponse(sb, enrollment.id).catch(() => ({ ok: false }))
+    released = r.ok
+  }
+
+  let state: SalesRowState = 'progress'
+  if (outcome.reaction) {
+    const applied = await applyReaction(sb, opportuniteId, outcome.reaction, {
+      // Le motif affiché sur la carte, c'est ce que la personne a dit — pas le
+      // libellé générique de l'issue, qui n'apprend rien à celui qui relit.
+      reason: note || outcome.label,
+      nurtureAt: opts.nurtureAt ?? undefined,
+      userId: opts.userId,
+      skipColumns: outcome.flow === 'stop' ? opts.skipColumns : undefined,
+    })
+    state = applied.state
+  }
+
+  return { stopped: outcome.flow === 'stop', released, noteId: inserted?.id ?? null, state }
+}
+
+/**
+ * Épingle la version de message à employer pour ce prospect.
+ *
+ * Vit dans `sequence_enrollments.vars` — une décision par inscription, pas un
+ * objet du domaine. C'est le SEUL moyen de la faire respecter par un e-mail :
+ * il part par le régulateur, sans personne devant l'écran, donc le choix doit
+ * être posé avant l'envoi et non au moment du clic.
+ */
+export async function pinVariant(
+  sb: SupabaseClient,
+  opportuniteId: string,
+  variant: MessageVariant | null,
+): Promise<{ enrollments: number }> {
+  const { data } = await sb
+    .from('sequence_enrollments')
+    .select('id, vars')
+    .eq('opportunite_id', opportuniteId)
+    .in('status', ['active', 'paused'])
+
+  const rows = (data ?? []) as { id: string; vars: Record<string, unknown> | null }[]
+  for (const row of rows) {
+    const vars = { ...(row.vars ?? {}) }
+    // `null` retire l'épingle et rend la main à la règle automatique — on
+    // supprime la clé au lieu d'écrire `null`, pour que `readVariant` n'ait
+    // qu'un cas à traiter.
+    if (variant) vars.variant = variant
+    else delete vars.variant
+    await sb.from('sequence_enrollments').update({ vars }).eq('id', row.id)
+  }
+  return { enrollments: rows.length }
 }
 
 export interface ReactionResult {

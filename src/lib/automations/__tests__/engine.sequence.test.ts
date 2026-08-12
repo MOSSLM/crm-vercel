@@ -474,6 +474,65 @@ describe('processSequenceEnrollment — variations du modèle', () => {
     expect(messagePose()).toBe('Bonjour, je suis bien avec Clim Ouest ?');
   });
 
+  // L'épingle posée sur la ligne du pipeline commercial. C'est le SEUL moyen
+  // qu'un e-mail la respecte : il part par le régulateur, sans personne devant
+  // l'écran, donc le choix doit vivre sur l'inscription et pas sur la carte.
+  it('respecte la version épinglée sur l’inscription', async () => {
+    wireWhatsapp({
+      first_name: 'Jean',
+      last_name: 'Test',
+      email: null,
+      tel: '0600',
+      role_title: null,
+      linkedin_url: null,
+    });
+
+    await processSequenceEnrollment({ ...enrollment, vars: { variant: 'company' } });
+
+    expect(messagePose()).toBe('Bonjour, je suis bien avec Clim Ouest ?');
+  });
+
+  it('transporte les DEUX versions dans la tâche, pour que la carte puisse basculer', async () => {
+    wireWhatsapp({
+      first_name: 'Jean',
+      last_name: 'Test',
+      email: null,
+      tel: '0600',
+      role_title: null,
+      linkedin_url: null,
+    });
+
+    await processSequenceEnrollment(enrollment);
+
+    const payload = (tables.prospection_tasks.captured.inserts as Record<string, any>[])[0].payload;
+    expect(payload.variant).toBe('contact');
+    // Recalculer l'autre version au clic voudrait dire relire modèle et
+    // variables depuis le navigateur — donc risquer d'afficher autre chose que
+    // ce que le moteur a réellement préparé.
+    expect(payload.variantAlt).toEqual({
+      variant: 'company',
+      message: 'Bonjour, je suis bien avec Clim Ouest ?',
+    });
+  });
+
+  it('ne propose pas de bascule quand le modèle n’a qu’une version', async () => {
+    wireWhatsapp({
+      first_name: 'Jean',
+      last_name: 'Test',
+      email: null,
+      tel: '0600',
+      role_title: null,
+      linkedin_url: null,
+    });
+    tables.whatsapp_templates = tableChain({ data: { name: 'Accroche', body: MODELE.body }, error: null });
+
+    await processSequenceEnrollment(enrollment);
+
+    // Une bascule qui ne changerait pas un mot ferait douter de tout l'écran.
+    const payload = (tables.prospection_tasks.captured.inserts as Record<string, any>[])[0].payload;
+    expect(payload.variantAlt).toBeNull();
+  });
+
   it('laisse les modèles d’avant la migration se comporter à l’identique', async () => {
     // Sans colonne `body_contact` en base — cas d'un déploiement qui précède la
     // migration —, il ne reste qu'un texte, et c'est lui qui part.

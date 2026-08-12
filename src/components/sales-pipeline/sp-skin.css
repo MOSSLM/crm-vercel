@@ -297,6 +297,94 @@
 }
 .mp-scope .card.active.is-blocked .cta:hover { filter: brightness(1.08); }
 
+/* ── La carte en deux moitiés : on envoie, puis on note ce qui revient ──────
+   Envoyer et recevoir sont deux gestes séparés parfois de plusieurs jours. Une
+   seule rangée de boutons obligeait à choisir entre « fait » et « le prospect a
+   réagi », alors que le cas courant — « envoyé, puis il a dit ça » — n'était
+   nulle part. La moitié basse est donc visuellement détachée, sans être une
+   deuxième carte : c'est la même étape. */
+
+/* Le sélecteur de version, juste avant le bouton d'envoi : le dernier moment
+   où quelqu'un regarde le message. */
+.mp-scope .sp-variant { display: flex; gap: 4px; margin: 8px 0 0; }
+.mp-scope .sp-variant-b {
+  flex: 1; min-width: 0; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-3);
+  border-radius: 7px; padding: 4px 6px; font-size: 10.5px; line-height: 1.35;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.mp-scope .sp-variant-b:hover:not(:disabled) { border-color: var(--seg); color: var(--text); }
+.mp-scope .sp-variant-b[aria-pressed='true'] {
+  border-color: var(--seg); background: var(--seg-wash); color: var(--text); font-weight: 600;
+}
+.mp-scope .sp-variant-b:disabled { opacity: .5; cursor: default; }
+.mp-scope .sp-variant-b .pin {
+  font-family: var(--font-mono); font-size: 8.5px;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--seg); font-weight: 600;
+}
+
+.mp-scope .sp-reply {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.mp-scope .sp-reply-b {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: 100%; cursor: pointer;
+  border: 1px dashed var(--border); background: transparent; color: var(--text-3);
+  border-radius: 8px; padding: 5px 8px; font-size: 11.5px;
+}
+.mp-scope .sp-reply-b:hover:not(:disabled) { border-color: var(--seg); color: var(--text); background: var(--seg-wash); }
+.mp-scope .sp-reply-b:disabled { opacity: .5; cursor: default; }
+
+/* Ce que la personne a dit, tel qu'il se relit sur la carte. La couleur porte
+   l'issue : un « pas intéressé » ne doit pas se lire comme un « a répondu ». */
+.mp-scope .sp-note {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px;
+  border-left: 2px solid var(--border); padding: 2px 0 2px 7px;
+  font-size: 11.5px; line-height: 1.4; color: var(--text-2);
+}
+.mp-scope .sp-note .o { font-weight: 600; }
+.mp-scope .sp-note .n {
+  color: var(--text-3); min-width: 0; flex: 1;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mp-scope .sp-note .d {
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4);
+  margin-left: auto; flex-shrink: 0;
+}
+.mp-scope .sp-note.ok     { border-left-color: var(--ok); }
+.mp-scope .sp-note.ok .o     { color: var(--ok); }
+.mp-scope .sp-note.warn   { border-left-color: var(--warn); }
+.mp-scope .sp-note.warn .o   { color: var(--warn); }
+.mp-scope .sp-note.danger { border-left-color: var(--danger); }
+.mp-scope .sp-note.danger .o { color: var(--danger); }
+.mp-scope .sp-note.info   { border-left-color: var(--accent); }
+.mp-scope .sp-note.info .o   { color: var(--accent); }
+
+/* ── Le choix de l'issue, dans la modale « Réponse » ──
+   Deux familles séparées à l'œil : ce qui laisse la ligne vivante, et ce qui
+   l'arrête. Les mélanger ferait stopper une séquence pour un « pas de
+   réponse ». */
+.mp-scope .sp-outcome-h {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--text-4); margin: 0 0 5px;
+}
+.mp-scope .sp-outcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.mp-scope .sp-outcome {
+  display: flex; flex-direction: column; gap: 1px; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: 8px; padding: 6px 9px;
+}
+.mp-scope .sp-outcome:hover { border-color: var(--border-strong); background: var(--hover); }
+.mp-scope .sp-outcome .l { font-size: 12px; font-weight: 500; color: var(--text); }
+.mp-scope .sp-outcome .s { font-size: 10.5px; color: var(--text-3); }
+.mp-scope .sp-outcome[aria-pressed='true'] { border-width: 1.5px; }
+.mp-scope .sp-outcome.ok[aria-pressed='true']     { border-color: var(--ok);     background: var(--ok-tint); }
+.mp-scope .sp-outcome.warn[aria-pressed='true']   { border-color: var(--warn);   background: var(--warn-tint); }
+.mp-scope .sp-outcome.danger[aria-pressed='true'] { border-color: var(--danger); background: var(--danger-tint); }
+.mp-scope .sp-outcome.info[aria-pressed='true']   { border-color: var(--accent); background: var(--accent-tint); }
+.mp-scope .sp-outcome.muted[aria-pressed='true']  { border-color: var(--border-strong); background: var(--bg-2); }
+
 /* ── alerte « sans email » ──
    Une bande sous la barre régulateur : le compte des prospects que l'étape
    email ne peut pas atteindre, et le raccourci pour les traiter d'un bloc. */

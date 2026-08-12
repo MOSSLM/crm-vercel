@@ -818,6 +818,19 @@ export function readReplies(vars: unknown): Record<string, string> {
   return out
 }
 
+/**
+ * La version de message épinglée sur cette inscription, s'il y en a une.
+ *
+ * Même logement que les trois lectures ci-dessus, et pour la même raison : c'est
+ * une décision prise sur UNE inscription — « pour ce prospect-là, écris à
+ * l'entreprise » —, pas un objet du domaine. Absente, le moteur choisit seul
+ * (`pickVariant`).
+ */
+export function readVariant(vars: unknown): 'company' | 'contact' | null {
+  const raw = (vars as Record<string, unknown> | null)?.variant
+  return raw === 'company' || raw === 'contact' ? raw : null
+}
+
 /** `08:30` à partir de minutes depuis minuit. */
 export function weekHM(minutes: number): string {
   const m = ((Math.floor(minutes) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES

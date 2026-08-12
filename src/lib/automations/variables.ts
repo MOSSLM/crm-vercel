@@ -189,12 +189,48 @@ export function missingContactVariables(text: string | null | undefined, vars: V
  * dans la même enveloppe, il n'y a pas de sens à tutoyer dans l'un et pas dans
  * l'autre. Un champ sans version contact se replie sur l'entreprise (cf.
  * `variantText`), donc n'écrire que le corps reste possible.
+ *
+ * `forced` est la version ÉPINGLÉE sur la ligne du pipeline commercial, quand
+ * quelqu'un en a choisi une à la main. Elle prime sur la règle automatique,
+ * jamais sur la sécurité : épingler « contact » sur une fiche sans prénom
+ * n'envoie pas le trou, ça retombe sur l'entreprise. Autrement dit, seul
+ * `'company'` change réellement l'issue — la règle préfère DÉJÀ le contact dès
+ * que c'est tenable. C'est assumé : ce qu'on épingle vraiment, c'est « écris à
+ * l'entreprise même si tu connais quelqu'un », le cas du standard qu'on ne veut
+ * pas tutoyer.
  */
-export function pickVariant(pairs: readonly VariantPair[], vars: VarBag): MessageVariant {
+export function pickVariant(
+  pairs: readonly VariantPair[],
+  vars: VarBag,
+  forced?: MessageVariant | null,
+): MessageVariant {
+  if (forced === 'company') return 'company'
   const ecrits = pairs.map((p) => p.contact).filter((t) => !blank(t))
   if (ecrits.length === 0) return 'company'
   if (ecrits.some((t) => missingContactVariables(t, vars).length > 0)) return 'company'
   return 'contact'
+}
+
+/** L'autre version — celle qui ne part pas. */
+export const otherVariant = (v: MessageVariant): MessageVariant =>
+  v === 'contact' ? 'company' : 'contact'
+
+/**
+ * Une version peut-elle être envoyée telle quelle à ce prospect ?
+ *
+ * Sert à l'interface : proposer d'épingler « contact » à une fiche sans prénom
+ * serait offrir un bouton qui ne changerait rien, et laisserait croire que le
+ * message nommera la personne.
+ */
+export function variantIsSendable(
+  pairs: readonly VariantPair[],
+  vars: VarBag,
+  variant: MessageVariant,
+): boolean {
+  if (variant === 'company') return true
+  const ecrits = pairs.map((p) => p.contact).filter((t) => !blank(t))
+  if (ecrits.length === 0) return false
+  return ecrits.every((t) => missingContactVariables(t, vars).length === 0)
 }
 
 /** Le texte d'un champ dans la version choisie — repli sur la version entreprise. */

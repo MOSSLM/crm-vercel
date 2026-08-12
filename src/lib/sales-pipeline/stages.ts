@@ -367,6 +367,123 @@ export function isPendingTask(
   return cellStatuses(columns, positionId, state)[columnId] === 'active' && !hasInterest(state)
 }
 
+/* ── Les issues d'une étape de démarchage ────────────────────────────────── */
+//
+// CE QUE ÇA RÉSOUT
+// Une étape manuelle n'avait que deux sorties : « Fait » (on avance) ou l'une
+// des cinq réactions, qui STOPPENT toutes la séquence. Entre les deux, rien —
+// or c'est là que se passe l'essentiel du démarchage : personne n'a décroché,
+// la personne a répondu mollement, ce n'est pas le bon moment. Faute de pouvoir
+// l'exprimer, ces cas se rangeaient soit en « Fait » (et on perdait ce qui
+// s'était dit), soit en « Pas intéressé » (et on perdait le prospect).
+//
+// DEUX FAMILLES, ET C'EST TOUTE LA DISTINCTION QUI COMPTE
+// `continue` — la ligne reste vivante, la séquence garde son cours.
+// `stop`     — on arrête d'insister, et TOUS les envois encore planifiés sont
+//              annulés (cf. `applyReaction`). Sans cette annulation, un e-mail
+//              partirait après que le prospect a dit non.
+
+export type OutcomeFlow = 'continue' | 'stop'
+
+export interface StepOutcome {
+  id: string
+  label: string
+  flow: OutcomeFlow
+  tone: 'ok' | 'info' | 'warn' | 'danger' | 'muted'
+  /** L'effet, dit en clair sous le libellé — l'opérateur ne doit pas le deviner. */
+  note: string
+  /**
+   * L'issue « le prospect a réagi » à appliquer derrière, quand celle-ci change
+   * l'état de la ligne. Absente = on enregistre, et rien d'autre ne bouge.
+   */
+  reaction?: SalesReactionId
+  /** Libère une attente-réponse : la séquence repart sans attendre. */
+  releasesWait?: boolean
+  /** Sans description, l'issue ne dit rien d'exploitable — on l'exige. */
+  needsNote?: boolean
+  /** Demande une date de relance. */
+  needsDate?: boolean
+}
+
+export const STEP_OUTCOMES: readonly StepOutcome[] = [
+  {
+    id: 'answered',
+    label: 'A répondu',
+    flow: 'continue',
+    tone: 'ok',
+    note: '→ on enchaîne l’étape suivante',
+    // Le cas de l'accroche WhatsApp : « oui c'est bien nous » n'est pas de
+    // l'intérêt pour l'offre, c'est l'autorisation d'envoyer la suite.
+    releasesWait: true,
+  },
+  {
+    id: 'no_answer',
+    label: 'Pas de réponse',
+    flow: 'continue',
+    tone: 'muted',
+    note: '→ la séquence suit son cours',
+  },
+  {
+    id: 'lukewarm',
+    label: 'A répondu, peu intéressé',
+    flow: 'continue',
+    tone: 'warn',
+    note: '→ on continue, mais c’est noté',
+    releasesWait: true,
+  },
+  {
+    id: 'later',
+    label: 'Pas le bon moment',
+    flow: 'continue',
+    tone: 'warn',
+    note: '→ Nurturing · relance datée',
+    reaction: 'later',
+    needsDate: true,
+  },
+  {
+    id: 'not_interested',
+    label: 'Pas intéressé',
+    flow: 'stop',
+    tone: 'danger',
+    note: '→ Perdu · plus rien ne part',
+    reaction: 'no',
+    needsNote: true,
+  },
+  {
+    id: 'blocked',
+    label: 'Bloqué / mauvais numéro',
+    flow: 'stop',
+    tone: 'danger',
+    note: '→ Blacklist · numéro exclu',
+    reaction: 'bad',
+  },
+  {
+    id: 'other',
+    label: 'Autre',
+    flow: 'continue',
+    tone: 'info',
+    // Le fourre-tout est délibéré : une issue qu'on ne sait pas nommer se note
+    // en clair plutôt que d'être forcée dans la case la moins fausse.
+    note: '→ noté au fil, rien ne change',
+    needsNote: true,
+  },
+] as const
+
+export type StepOutcomeId = (typeof STEP_OUTCOMES)[number]['id']
+
+export const stepOutcome = (id: string): StepOutcome | null =>
+  STEP_OUTCOMES.find((o) => o.id === id) ?? null
+
+/** Une note déjà enregistrée, telle que la carte la relit. */
+export interface StepNote {
+  id: string
+  outcome: string
+  note: string
+  at: string
+  /** Étape d'où elle vient — `null` pour une note prise hors séquence. */
+  stepId: string | null
+}
+
 /** Les cinq issues du bouton « le prospect a réagi ». */
 export const SALES_REACTIONS = [
   { id: 'rdv', label: 'A pris RDV lui-même', tone: 'ok', note: '→ RDV · séquence stoppée' },

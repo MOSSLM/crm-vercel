@@ -35,7 +35,10 @@ import {
   type SalesColumn,
   type SalesStateRow,
   type SequencePart,
+  type StepNote,
 } from '@/lib/sales-pipeline/stages'
+import { readVariant } from '@/lib/automations/week'
+import type { MessageVariant } from '@/lib/automations/variables'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
 import { cleanEmail } from '@/lib/automations/regulator-db'
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
@@ -77,6 +80,13 @@ export interface SalesSequenceInfo {
   holdReason: HoldReason | null
   rank: number | null
   gapMinutes: number | null
+  /** Identifiant de l'étape courante dans la séquence — rattache une note. */
+  stepId: string | null
+  /**
+   * Version de message épinglée à la main sur cette ligne, `null` si personne
+   * n'a choisi : le moteur tranche alors seul (`pickVariant`).
+   */
+  variant: MessageVariant | null
 }
 
 export interface SalesTaskInfo {
@@ -89,6 +99,17 @@ export interface SalesTaskInfo {
   linkedin: string | null
   assigneeId: string | null
   routingReason: string | null
+  /** Laquelle des deux versions du modèle le moteur a préparée. */
+  variant: MessageVariant
+  /**
+   * L'autre version, déjà rendue — `null` quand le modèle n'en a qu'une.
+   *
+   * Le moteur l'a posée dans la tâche au moment de la préparer : la carte peut
+   * donc proposer de basculer juste avant d'ouvrir WhatsApp, sans relire ni le
+   * modèle ni les variables, et donc sans risquer d'afficher autre chose que ce
+   * qui est réellement prêt à partir.
+   */
+  variantAlt: { variant: MessageVariant; message: string } | null
 }
 
 export interface SalesBoardRow {
@@ -120,6 +141,15 @@ export interface SalesBoardRow {
   tasks: SalesTaskInfo[]
   emailsSent: number
   lastExchange: { channel: string; at: string } | null
+  /**
+   * La dernière note par étape, la plus récente d'abord.
+   *
+   * Ce qu'on garde ici, c'est le DERNIER mot de chaque étape — de quoi rendre la
+   * carte. Le fil complet se lit sur la fiche entreprise, qui le tient déjà :
+   * les notes sont des lignes de `email_logs`, au milieu des e-mails et des
+   * WhatsApp qui les ont provoquées.
+   */
+  notes: StepNote[]
   auditReady: boolean
   demoUrl: string | null
   state: SalesStateRow
@@ -538,7 +568,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     oppIds.length > 0
       ? sb
           .from('sequence_enrollments')
-          .select('id, automation_id, opportunite_id, current_step, status, send_at, hold_reason')
+          // `vars` porte l'épingle de version posée sur la ligne (`readVariant`).
+          .select('id, automation_id, opportunite_id, current_step, status, send_at, hold_reason, vars')
           .in('opportunite_id', oppIds)
       : Promise.resolve({ data: [] as unknown[] }),
     oppIds.length > 0
@@ -551,7 +582,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     oppIds.length > 0
       ? sb
           .from('email_logs')
-          .select('opportunite_id, sent_at, channel, type, status')
+          // `outcome` / `step_id` / `body_text` : les lignes `channel = 'note'`
+          // portent ce que le prospect a dit, et l'étape qui l'a provoqué.
+          .select('id, opportunite_id, sent_at, channel, type, status, outcome, step_id, subject, body_text')
           .in('opportunite_id', oppIds)
           .eq('status', 'sent')
           .order('sent_at', { ascending: false })
@@ -632,6 +665,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     status: string
     send_at: string | null
     hold_reason: string | null
+    /** Sac de contexte de l'inscription — porte l'épingle de version. */
+    vars: Record<string, unknown> | null
   }
   const enrollments = (enrollRes.data ?? []) as EnrollRow[]
   const enrollByOpp = new Map<string, EnrollRow>()
@@ -652,6 +687,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   }
 
   const automationById = new Map(sequenceRows.map((a) => [a.id, a]))
+
+  /** L'autre version telle que le moteur l'a posée dans la tâche. */
+  const readVariantAlt = (raw: unknown): SalesTaskInfo['variantAlt'] => {
+    const v = raw as { variant?: unknown; message?: unknown } | null
+    if (!v || (v.variant !== 'company' && v.variant !== 'contact')) return null
+    return { variant: v.variant, message: String(v.message ?? '') }
+  }
 
   const tasksByOpp = new Map<string, SalesTaskInfo[]>()
   for (const t of (tasksRes.data ?? []) as {
@@ -676,21 +718,42 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       linkedin: (payload.linkedin as string | undefined) ?? null,
       assigneeId: t.assignee_id,
       routingReason: t.routing_reason,
+      // Les tâches créées avant la bascule à deux versions n'ont rien dans leur
+      // payload : elles restent une version unique, ce qui est exact.
+      variant: payload.variant === 'contact' ? 'contact' : 'company',
+      variantAlt: readVariantAlt(payload.variantAlt),
     })
     tasksByOpp.set(t.opportunite_id, list)
   }
 
   const emailCount = new Map<string, number>()
   const lastExchange = new Map<string, { channel: string; at: string }>()
+  // La dernière note PAR ÉTAPE : c'est ce que la carte de l'étape affiche.
+  // Une seule note par prospect ne suffirait pas — la carte WhatsApp montrerait
+  // ce qui s'est dit au téléphone trois jours plus tard.
+  const notesByOpp = new Map<string, StepNote[]>()
   for (const log of (logsRes.data ?? []) as {
+    id: string
     opportunite_id: string | null
     sent_at: string
     channel: string | null
+    outcome: string | null
+    step_id: string | null
+    body_text: string | null
   }[]) {
     if (!log.opportunite_id) continue
     const channel = log.channel ?? 'email'
     if (channel === 'email') emailCount.set(log.opportunite_id, (emailCount.get(log.opportunite_id) ?? 0) + 1)
     if (!lastExchange.has(log.opportunite_id)) lastExchange.set(log.opportunite_id, { channel, at: log.sent_at })
+
+    if (channel !== 'note' || !log.outcome) continue
+    const list = notesByOpp.get(log.opportunite_id) ?? []
+    // Les logs arrivent du plus récent au plus ancien : la première note vue
+    // pour une étape est la bonne, les suivantes sont son historique.
+    if (!list.some((n) => n.stepId === (log.step_id ?? null))) {
+      list.push({ id: log.id, outcome: log.outcome, note: log.body_text ?? '', at: log.sent_at, stepId: log.step_id ?? null })
+      notesByOpp.set(log.opportunite_id, list)
+    }
   }
 
   const auditByOpp = new Map(
@@ -761,6 +824,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         holdReason: (slot?.reason ?? (enrollment.hold_reason as HoldReason | null)) ?? null,
         rank: slot?.rank ?? null,
         gapMinutes: slot?.gapMinutes ?? null,
+        /** L'étape courante, telle que la séquence la nomme (`s1`, `s2`…). */
+        stepId: step?.id ?? null,
+        variant: readVariant(enrollment.vars),
       }
     }
 
@@ -828,6 +894,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       tasks,
       emailsSent: emailCount.get(opp.id) ?? 0,
       lastExchange: lastExchange.get(opp.id) ?? null,
+      notes: notesByOpp.get(opp.id) ?? [],
       auditReady: audit?.statut === 'ready',
       demoUrl: (opp.entreprise_id != null ? siteByEnt.get(opp.entreprise_id) : undefined) ?? audit?.demo_site_url ?? null,
       state,
