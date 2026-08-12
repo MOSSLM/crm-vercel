@@ -12,6 +12,7 @@ import {
   Mail,
   Linkedin,
   Building2,
+  BookOpen,
   CalendarCheck,
   ThumbsUp,
   Clock,
@@ -103,11 +104,20 @@ export default function AgentDemarchagePage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Démarchage</h1>
-        <p className="text-sm text-muted-foreground">
-          Ta file du jour. Traite un prospect, puis enregistre l&apos;issue de l&apos;échange.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Démarchage</h1>
+          <p className="text-sm text-muted-foreground">
+            Ta file du jour. Traite un prospect, puis enregistre l&apos;issue de l&apos;échange.
+          </p>
+        </div>
+        {/* Le discours est à un clic de la file d'appels — c'est le seul endroit
+            où on le rouvre vraiment. */}
+        <Button asChild variant="outline" size="sm">
+          <Link href="/espace-agent/argumentaire">
+            <BookOpen className="mr-1 h-4 w-4" /> Brief commercial
+          </Link>
+        </Button>
       </div>
 
       {loading && <div className="text-sm text-muted-foreground">Chargement…</div>}
