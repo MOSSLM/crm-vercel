@@ -72,6 +72,7 @@ const noopHandlers: MatrixHandlers = {
   onValidateEnrich: jest.fn(),
   onCreateSite: jest.fn(),
   onRegenerateSite: jest.fn(),
+  onRetirerPhotos: jest.fn(),
   onValidateSite: jest.fn(),
   onCreateAudit: jest.fn(),
   onValidateAudit: jest.fn(),
@@ -104,6 +105,11 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
     onComplete: jest.fn(),
     onValidateEnrich: jest.fn(),
     onCreateSites: jest.fn(),
+    onRegenerateSites: jest.fn(),
+    onRetirerPhotos: jest.fn(),
+    onAnalyserSites: jest.fn(),
+    onMesurerPsi: jest.fn(),
+    onPreparerVignettes: jest.fn(),
     onValidateSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
@@ -135,6 +141,11 @@ function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
     onComplete: jest.fn(),
     onValidateEnrich: jest.fn(),
     onCreateSites: jest.fn(),
+    onRegenerateSites: jest.fn(),
+    onRetirerPhotos: jest.fn(),
+    onAnalyserSites: jest.fn(),
+    onMesurerPsi: jest.fn(),
+    onPreparerVignettes: jest.fn(),
     onValidateSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
@@ -216,6 +227,67 @@ describe("PipelineMatrix — sélection multiple", () => {
     fireEvent.click(bar().getByRole("button", { name: /^Ré-enrichir/ }));
 
     expect((bulk.onEnrich as jest.Mock).mock.calls[0][1]).toBe(true);
+  });
+});
+
+/**
+ * L'étape « Site » recouvre deux travaux qui n'ont ni le même geste ni le même
+ * rythme : créer les sites manquants, et valider ceux qui existent. Sans ce
+ * filtre, il fallait lire ligne à ligne laquelle attendait quoi.
+ */
+const site = (over: { build_stage?: string; is_published?: boolean } = {}) => ({
+  id: "site-x",
+  name: "s",
+  build_stage: over.build_stage ?? "a_faire",
+  is_published: over.is_published ?? false,
+  url: null,
+  is_claude_design: true,
+});
+
+const SITE_ROWS: BoardItem[] = [
+  item({ id: "n0", name: "Sansite", enriched: true, project: project(true) }),
+  item({ id: "n1", name: "Brouillon", enriched: true, project: project(true), site: site() }),
+  item({ id: "n2", name: "Prete", enriched: true, project: project(true), site: site({ build_stage: "pret" }) }),
+  // Publié sans être marqué « prêt » : c'est validé quand même — c'est la règle
+  // qui décide si un lien peut partir chez le prospect.
+  item({ id: "n3", name: "Publiee", enriched: true, project: project(true), site: site({ is_published: true }) }),
+];
+
+describe("PipelineMatrix — sites à créer contre sites à valider", () => {
+  const filtre = () => screen.getByTitle(/Sites à créer/);
+
+  it("ne garde que les lignes sans site", () => {
+    renderRows(SITE_ROWS);
+    fireEvent.change(filtre(), { target: { value: "a-creer" } });
+    expect(rowNames()).toEqual(["Sélectionner Sansite"]);
+  });
+
+  it("ne garde que les sites existants pas encore validés", () => {
+    renderRows(SITE_ROWS);
+    fireEvent.change(filtre(), { target: { value: "a-valider" } });
+    expect(rowNames()).toEqual(["Sélectionner Brouillon"]);
+  });
+
+  it("compte comme validé un site publié comme un site marqué prêt", () => {
+    renderRows(SITE_ROWS);
+    fireEvent.change(filtre(), { target: { value: "valide" } });
+    expect(rowNames()).toEqual(["Sélectionner Prete", "Sélectionner Publiee"]);
+  });
+
+  it("retire au sort les photos des seules lignes qui ont un site", () => {
+    const bulk = renderRows(SITE_ROWS);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(bar().getByRole("button", { name: /Retirer les photos/ }));
+
+    expect((bulk.onRetirerPhotos as jest.Mock).mock.calls[0][0].map((i: BoardItem) => i.id)).toEqual([
+      "n1", "n2", "n3",
+    ]);
+  });
+
+  it("propose le tirage sur la carte d'un site, pas sur une ligne sans site", () => {
+    renderRows(SITE_ROWS);
+    // Une carte par site existant, et aucune pour la ligne qui n'en a pas.
+    expect(screen.getAllByTitle(/Retirer au sort les photos/)).toHaveLength(3);
   });
 });
 

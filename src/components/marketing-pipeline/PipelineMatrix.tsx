@@ -33,6 +33,7 @@ import {
   ListChecks,
   Gauge,
   Share2,
+  Shuffle,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -811,6 +812,14 @@ function StageActions({ item, stage, done, busy, templateId, templateName, agent
             >
               <RefreshCw className="ico-sm" />
             </button>
+            <button
+              className="btn ghost sm icon"
+              disabled={busy || item.entreprise_id == null}
+              title="Retirer au sort les photos de la bande « réalisations », d'après les métiers de l'entreprise"
+              onClick={() => handlers.onRetirerPhotos(item)}
+            >
+              <Shuffle className="ico-sm" />
+            </button>
             <PartagerButton item={item} />
             <NoteButton item={item} subject="site" handlers={handlers} />
             {!done && (
@@ -1108,6 +1117,10 @@ function BulkBar({
   // rafraîchissement des infos de fiche. La distinction change le sens du
   // bouton, donc elle est dite avant de cliquer.
   const toSwapTemplate = toRegenerateSite.filter((r) => templateMismatch(r, templateId));
+  // Même lot que « Refaire les sites » — un tirage n'a de sens que sur un site
+  // existant — mais il vient APRÈS : une refonte repart du modèle et remplace
+  // les overrides, donc le tirage avec.
+  const toRetirerPhotos = toRegenerateSite;
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
   // Analyser le site ACTUEL du prospect ne dépend d'aucune étape du pipeline :
   // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
@@ -1177,6 +1190,19 @@ function BulkBar({
         <RefreshCw className="ico-sm" />
         Refaire les sites
         {ct(toRegenerateSite.length)}
+      </button>
+      <button
+        className="btn sm"
+        disabled={busy || toRetirerPhotos.length === 0}
+        title={
+          "Retirer au sort les photos de la bande « réalisations », d'après les métiers de chaque entreprise. " +
+          "À faire APRÈS « Refaire les sites » — une refonte repart du modèle et écrase le tirage."
+        }
+        onClick={() => bulk.onRetirerPhotos(toRetirerPhotos)}
+      >
+        <Shuffle className="ico-sm" />
+        Retirer les photos
+        {ct(toRetirerPhotos.length)}
       </button>
       <button className="btn sm" disabled={busy || toValidateSite.length === 0} onClick={() => bulk.onValidateSites(toValidateSite)}>
         <Check className="ico-sm" />
@@ -1333,6 +1359,43 @@ type SortMode =
 /** Complétude des variables requises pour créer le site. */
 type DataFilter = "all" | "incomplete" | "complete";
 /**
+ * Où en est le SITE de la ligne — le seul filtre qui sépare les deux travaux
+ * que l'étape « Site » mélange aujourd'hui.
+ *
+ * Ce ne sont pas deux moments d'une même tâche mais deux gestes différents,
+ * faits à des rythmes différents : créer un site part d'un modèle et prend
+ * quelques secondes par ligne ; valider un site existant demande de l'ouvrir,
+ * de regarder ses photos et de le marquer prêt. Sans ce filtre, l'un se fait
+ * toujours au milieu de l'autre — et une colonne de cent lignes ne dit pas
+ * lesquelles attendent quoi.
+ *
+ * « Validé » = publié ou marqué « prêt » (`siteValidated`), la même règle que
+ * l'avancement de l'étape et que `choisirSiteMontrable` : c'est elle qui décide
+ * si un lien part chez le prospect.
+ */
+type SiteFilter = "all" | "a-creer" | "a-valider" | "valide";
+
+const SITE_FILTER_LABELS: Array<[SiteFilter, string]> = [
+  ["all", "Site : tous"],
+  ["a-creer", "Site : à créer"],
+  ["a-valider", "Site : à valider"],
+  ["valide", "Site : validés"],
+];
+
+/** Cette ligne entre-t-elle dans le filtre de site ? */
+function matchesSite(item: BoardItem, filter: SiteFilter): boolean {
+  switch (filter) {
+    case "a-creer":
+      return !item.site;
+    case "a-valider":
+      return !!item.site && !siteValidated(item);
+    case "valide":
+      return siteValidated(item);
+    default:
+      return true;
+  }
+}
+/**
  * Par quoi le prospect est joignable. Les trois derniers sont les segments
  * réels des séquences multicanal — les filtres qu'on veut vraiment, plutôt que
  * de croiser « avec e-mail » et « avec téléphone » à la main.
@@ -1477,6 +1540,7 @@ export function PipelineMatrix({
   const [pipelineFilter, setPipelineFilter] = React.useState("all");
   const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
   const [dataFilter, setDataFilter] = React.useState<DataFilter>("all");
+  const [siteFilter, setSiteFilter] = React.useState<SiteFilter>("all");
   const [canalFilter, setCanalFilter] = React.useState<CanalFilter>("all");
   const [sequenceFilter, setSequenceFilter] = React.useState<string>("all");
   const [ticketFilter, setTicketFilter] = React.useState<TicketFilter>("all");
@@ -1516,6 +1580,7 @@ export function PipelineMatrix({
       if (pipelineFilter !== "all" && it.pipeline_id !== pipelineFilter) return false;
       if (dataFilter === "incomplete" && missingCount(it) === 0) return false;
       if (dataFilter === "complete" && missingCount(it) > 0) return false;
+      if (siteFilter !== "all" && !matchesSite(it, siteFilter)) return false;
       if (canalFilter !== "all" && !matchesCanal(it, canalFilter)) return false;
       if (sequenceFilter === "none" && it.sequence) return false;
       if (sequenceFilter === "any" && !it.sequence) return false;
@@ -1530,7 +1595,7 @@ export function PipelineMatrix({
       }
       return true;
     });
-  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden]);
+  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, siteFilter, canalFilter, sequenceFilter, ticketFilter, hidden]);
 
   const visibleRows = React.useMemo(() => {
     const rows =
@@ -1769,6 +1834,23 @@ export function PipelineMatrix({
           <option value="all">Données : toutes</option>
           <option value="incomplete">Données : incomplètes</option>
           <option value="complete">Données : complètes</option>
+        </select>
+
+        {/* L'étape « Site » recouvre deux travaux distincts : créer les sites
+            qui manquent, et valider ceux qui existent. Les faire dans le même
+            écran sans pouvoir les séparer obligeait à lire ligne à ligne quelle
+            ligne attendait quoi. */}
+        <select
+          className="mp-select"
+          value={siteFilter}
+          onChange={(e) => setSiteFilter(e.target.value as SiteFilter)}
+          title="Sites à créer (la ligne n'en a pas) ou sites existants encore à valider"
+        >
+          {SITE_FILTER_LABELS.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
         </select>
 
         {/* Par quoi le prospect est joignable — le tri qui décide de la

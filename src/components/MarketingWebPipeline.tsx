@@ -762,6 +762,134 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /**
+   * Retire au sort les photos de la bande « réalisations » d'un site.
+   *
+   * POURQUOI CETTE ACTION EXISTE
+   * Créer un site ne tire rien : le clone recopie les `:image_set` du modèle,
+   * composés pour l'entreprise du modèle. Une entreprise dont les métiers
+   * diffèrent retombe alors sur les candidats de repli du tirage, qui parcourent
+   * leur réserve à l'index de l'emplacement — et la même photo ressort deux fois
+   * dans une bande de six. Refaire le site n'y change rien, il recopie le même
+   * tirage figé. Seul un tirage refait POUR l'entreprise du site est protégé
+   * contre le doublon (registre de `drawImageSets`).
+   *
+   * `hiddenSlots` est le renseignement qui compte au retour : le tirage masque
+   * une carte plutôt que d'afficher deux fois la même photo, donc une bande de
+   * cinq signale une médiathèque trop pauvre pour ces métiers — pas un échec.
+   */
+  const retirerPhotosDe = async (
+    item: BoardItem,
+  ): Promise<{ distinct: number; caches: number; sansPhoto: string[] }> => {
+    const r = await authedFetch(`/api/site-builder/designs/${item.site!.id}/auto-images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const body = (await r.json().catch(() => ({}))) as {
+      error?: string;
+      distinctAvailable?: number;
+      hiddenSlots?: number;
+      emptyTags?: string[];
+    };
+    if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+    return {
+      distinct: body.distinctAvailable ?? 0,
+      caches: body.hiddenSlots ?? 0,
+      sansPhoto: body.emptyTags ?? [],
+    };
+  };
+
+  const retirerPhotosUn = async (item: BoardItem) => {
+    if (!item.site) {
+      toast.error("Cette ligne n'a pas encore de site");
+      return;
+    }
+    setWorking("create-site");
+    try {
+      const { caches, sansPhoto } = await retirerPhotosDe(item);
+      if (caches > 0) {
+        toast.warning(
+          `Photos retirées, mais ${caches} emplacement(s) masqué(s) faute de photos` +
+            (sansPhoto.length > 0 ? ` — rien de tagué « ${sansPhoto.join(" », « ")} »` : ""),
+        );
+      } else {
+        toast.success("Photos retirées au sort — la bande est complète.");
+      }
+      await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors du tirage des photos");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
+   * Le même tirage sur un lot. Par paquets, comme la refonte : un tirage
+   * réécrit le contenu de chaque page du site.
+   */
+  const TIRAGE_PAR_PAQUET = 4;
+
+  const retirerPhotos = async (items: BoardItem[]) => {
+    const targets = items.filter((it) => it.site);
+    if (targets.length === 0) {
+      toast.error("Aucun site dans la sélection");
+      return;
+    }
+    const question =
+      `Retirer au sort les photos de ${targets.length} site(s) ?\n\n` +
+      "Chaque bande « réalisations » est refaite d'après les métiers de son entreprise.\n\n" +
+      "À faire APRÈS « Refaire les sites » : une refonte repart du modèle et écraserait ce tirage.";
+    if (typeof window !== "undefined" && !window.confirm(question)) return;
+
+    setWorking("create-site");
+    const suivi = toast.loading(`Tirage des photos sur ${targets.length} site(s)…`);
+    try {
+      let ok = 0;
+      const incomplets: string[] = [];
+      const echecs: string[] = [];
+      for (let i = 0; i < targets.length; i += TIRAGE_PAR_PAQUET) {
+        const paquet = targets.slice(i, i + TIRAGE_PAR_PAQUET);
+        const res = await Promise.allSettled(paquet.map((it) => retirerPhotosDe(it)));
+        res.forEach((r, j) => {
+          if (r.status === "fulfilled") {
+            ok++;
+            // Bande incomplète : la médiathèque ne tient pas les métiers de
+            // cette entreprise. C'est le seul retour qui demande une action,
+            // donc le seul qu'on nomme.
+            if (r.value.caches > 0) incomplets.push(displayName(paquet[j]));
+          } else {
+            echecs.push(displayName(paquet[j]));
+          }
+        });
+        toast.loading(`${ok + echecs.length}/${targets.length} traité(s)…`, { id: suivi });
+      }
+      toast.dismiss(suivi);
+      if (ok > 0) toast.success(`${ok} bande(s) de photos refaite(s).`);
+      // Nommer les incomplets : sur un lot, « 4 bandes incomplètes » ne dit pas
+      // pour quels métiers importer des photos.
+      if (incomplets.length > 0) {
+        const noms = incomplets.slice(0, 5).join(", ");
+        toast.warning(
+          `${incomplets.length} bande(s) incomplète(s), médiathèque trop pauvre : ${noms}` +
+            (incomplets.length > 5 ? `… et ${incomplets.length - 5} autre(s)` : ""),
+        );
+      }
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 5).join(", ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 5 ? `… et ${echecs.length - 5} autre(s)` : ""}`,
+        );
+      }
+      await afterAction();
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors du tirage des photos");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   // Gate: before creating, every target must have its required variables filled.
   // Otherwise open the edit modal on the first incomplete company (requirement
   // mode) instead of creating anything.
@@ -1096,6 +1224,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateEnrich: (item) => validateEnrichment([item]),
     onCreateSite: (item) => createSites([item]),
     onRegenerateSite: (item) => regenerateSite(item),
+    onRetirerPhotos: (item) => retirerPhotosUn(item),
     onValidateSite: (item) => validateSites([item]),
     onCreateAudit: (item) => createAudits([item]),
     onValidateAudit: (item) => validateAudits([item]),
@@ -1125,6 +1254,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateEnrich: (items) => validateEnrichment(items),
     onCreateSites: (items) => createSites(items),
     onRegenerateSites: (items) => regenerateSites(items),
+    onRetirerPhotos: (items) => retirerPhotos(items),
     onAnalyserSites: (items) => analyserSites(items),
     onMesurerPsi: (items) => mesurerPsiSites(items),
     onPreparerVignettes: (items) => preparerVignettes(items),
