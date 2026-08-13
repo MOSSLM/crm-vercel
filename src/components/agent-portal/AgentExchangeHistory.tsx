@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { authedFetch } from "@/utils/authedFetch";
 import { formatDate, type EmailLog } from "@/components/messaging/emailTypes";
-import { Mail, MessageCircle, CheckCircle2, AlertCircle, Quote } from "lucide-react";
+import { Mail, MessageCircle, Linkedin, CheckCircle2, AlertCircle, Quote } from "lucide-react";
 
 /**
  * Compact email + WhatsApp exchange history for a company, shown on the agent's
@@ -39,6 +39,7 @@ export function AgentExchangeHistory({ entrepriseId }: { entrepriseId: number })
     <div className="space-y-2">
       {logs.map((log) => {
         const isWa = log.channel === "whatsapp";
+        const isLinkedin = log.channel === "linkedin";
         // Une note n'est pas un envoi : c'est ce que le prospect a DIT, rapporté
         // depuis le pipeline commercial. Elle se lit à sa date, entre les
         // messages qui l'encadrent — sans quoi on relirait la conversation sans
@@ -56,6 +57,8 @@ export function AgentExchangeHistory({ entrepriseId }: { entrepriseId: number })
               <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             ) : isWa ? (
               <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#25D366]" />
+            ) : isLinkedin ? (
+              <Linkedin className="mt-0.5 h-4 w-4 shrink-0 text-[#0A66C2]" />
             ) : (
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             )}
@@ -64,8 +67,8 @@ export function AgentExchangeHistory({ entrepriseId }: { entrepriseId: number })
                 <span className={"truncate text-sm" + (isNote ? "" : " font-medium")}>
                   {isNote
                     ? log.body_text || log.subject
-                    : isWa
-                      ? log.body_text?.slice(0, 100) || "Message WhatsApp"
+                    : isWa || isLinkedin
+                      ? log.body_text?.slice(0, 100) || "Message"
                       : log.subject}
                 </span>
                 {isNote ? null : log.status === "sent" ? (
@@ -75,7 +78,7 @@ export function AgentExchangeHistory({ entrepriseId }: { entrepriseId: number })
                 )}
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                {isNote ? `Réponse · ${log.subject}` : isWa ? "WhatsApp" : "Email"}
+                {isNote ? `Réponse · ${log.subject}` : isWa ? "WhatsApp" : isLinkedin ? "LinkedIn" : "Email"}
                 {!isNote && (log.to_email ? ` · ${log.to_email}` : log.to_name ? ` · ${log.to_name}` : "")} ·{" "}
                 {formatDate(log.sent_at)}
               </div>

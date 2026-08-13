@@ -62,7 +62,7 @@ export type EmailLogsQuery = z.infer<typeof emailLogsQuerySchema>;
  * `to_email` is repurposed to hold the phone number for whatsapp rows.
  */
 export const messageLogSchema = z.object({
-  channel: z.enum(["email", "whatsapp"]).default("whatsapp"),
+  channel: z.enum(["email", "whatsapp", "linkedin"]).default("whatsapp"),
   contact_id: z.string().optional().nullable(),
   entreprise_id: z.coerce.number().int().positive().optional().nullable(),
   opportunite_id: z.string().uuid().optional().nullable(),
