@@ -21,7 +21,7 @@ export function parseBoardQuery(url: URL, ownerId: string | null) {
     status: status && STATUSES.includes(status) ? status : 'actifs',
     todoOnly: url.searchParams.get('todo') === '1',
     page: Number(url.searchParams.get('page') ?? 0) || 0,
-    perPage: Number(url.searchParams.get('per_page') ?? 8) || 8,
+    perPage: Number(url.searchParams.get('per_page') ?? 100) || 100,
     // Les deux sources des colonnes : la séquence à gauche, le pipeline à droite.
     pipelineId: url.searchParams.get('pipeline') ?? undefined,
     automationId: url.searchParams.get('sequence') ?? undefined,

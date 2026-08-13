@@ -99,7 +99,7 @@ function Avatar({ name }: { name: string }) {
  * controller — the live call surfaces: incoming (answer/reject), outgoing
  * ringing, and in-call (timer, mute, DTMF keypad, hang-up). No Zadarma UI.
  */
-export function SoftphonePanel() {
+export function SoftphonePanel({ hideWhenIdle = false }: { hideWhenIdle?: boolean }) {
   const { phone, dial, hangup, answer, reject, sendDtmf, toggleMute, match } = useTelephony();
 
   const [open, setOpen] = useState(false);
@@ -232,10 +232,12 @@ export function SoftphonePanel() {
     <div className="tel-skin">
       <div className="sp-root">
         {!open ? (
-          <button type="button" className="sp-launch" onClick={() => setOpen(true)}>
-            <Phone className="ico-sm" style={{ width: 18, height: 18 }} />
-            <span className="sp-launch-lb">Téléphone</span>
-          </button>
+          hideWhenIdle ? null : (
+            <button type="button" className="sp-launch" onClick={() => setOpen(true)}>
+              <Phone className="ico-sm" style={{ width: 18, height: 18 }} />
+              <span className="sp-launch-lb">Téléphone</span>
+            </button>
+          )
         ) : (
           <div className="sp-panel">
             {/* Header */}

@@ -502,7 +502,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   { ok: true; data: SalesBoardData } | { ok: false; error: string; status: number }
 > {
   const sb = getServiceClient()
-  const perPage = Math.min(50, Math.max(1, query.perPage ?? 8))
+  const perPage = Math.min(200, Math.max(1, query.perPage ?? 100))
   const page = Math.max(0, query.page ?? 0)
 
   // ── 1. Pipelines, étapes, séquences ──────────────────────────────────────

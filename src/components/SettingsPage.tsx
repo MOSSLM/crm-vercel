@@ -41,6 +41,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
+import { useSoftphoneWidgetHidden } from '@/hooks/useSoftphoneWidgetHidden';
 import { THEME_PRESETS, ThemePreset } from './themePresets';
 import { EnrichmentTagsSettings } from './settings/EnrichmentTagsSettings';
 import { GoogleStatsSettings } from './settings/GoogleStatsSettings';
@@ -52,6 +53,7 @@ import { MediaAutotagSettings } from './settings/MediaAutotagSettings';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [softphoneWidgetHidden, setSoftphoneWidgetHidden] = useSoftphoneWidgetHidden();
   const {
     theme,
     setTheme,
@@ -449,6 +451,28 @@ export const SettingsPage: React.FC = () => {
                   </div>
                 </div>
                 <Switch />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Phone className="h-4 w-4" /> Softphone</CardTitle>
+              <CardDescription>
+                Le bouton d'appel flottant du navigateur
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Masquer le bouton d'appel</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Le bouton flottant reste caché tant qu'aucun appel n'est en cours — pratique si vous appelez
+                    depuis votre téléphone plutôt que depuis le navigateur. Un appel entrant réaffiche toujours le
+                    panneau, sur ce même appareil.
+                  </div>
+                </div>
+                <Switch checked={softphoneWidgetHidden} onCheckedChange={setSoftphoneWidgetHidden} />
               </div>
             </CardContent>
           </Card>
