@@ -1,65 +1,67 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { authedFetch } from "@/utils/authedFetch";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { BookOpen } from "lucide-react";
-import { DemarchageFrise } from "@/components/agent-portal/demarchage/DemarchageFrise";
-import { CompanyHeaderCard } from "@/components/agent-portal/demarchage/CompanyHeaderCard";
-import { ContactsPanel } from "@/components/agent-portal/demarchage/ContactsPanel";
-import { QuickLinksPanel } from "@/components/agent-portal/demarchage/QuickLinksPanel";
-import { StageActionCard } from "@/components/agent-portal/demarchage/StageActionCard";
-import { HistoryTimeline } from "@/components/agent-portal/demarchage/HistoryTimeline";
-import { bucketTasks, firstNonEmptyBucket } from "@/lib/agent-portal/demarchage-buckets";
+import { authedFetch } from "@/utils/authedFetch";
+import { useAuth } from "@/components/AuthContext";
+import { DemRail } from "@/components/agent-portal/demarchage/DemRail";
+import { DemHead } from "@/components/agent-portal/demarchage/DemHead";
+import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
+import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
+import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
+import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
+import { bucketTasks, firstNonEmptyBucket, type DemarchageBucketKey } from "@/lib/agent-portal/demarchage-buckets";
 import type {
   CompanyBundle,
   DemarchagePatchBody,
   DemarchageQueueMeta,
   DemarchageTask,
+  DemAudit,
+  DemTemplates,
 } from "@/components/agent-portal/demarchage/types";
+import "@/components/agent-portal/demarchage/dem-skin.css";
 
 const EMPTY_META: DemarchageQueueMeta = { due_today: 0, done_today: 0 };
 
 /**
- * Poste de travail Démarchage, 3 colonnes façon cockpit d'appel :
- * - gauche : la frise des entreprises en séquence (aujourd'hui, demain…) ;
- * - centre : le titre intégré de l'entreprise sélectionnée, sa carte
- *   d'action (adaptée à son étape de séquence, script d'appel inclus), et
- *   son fil d'historique unique en dessous ;
- * - droite : ce qu'on a à disposition pour cette entreprise — contacts,
- *   site démo, audit, RDV.
+ * Démarchage — l'écran de la maquette SAMA, branché sur les vraies données.
+ *
+ * Trois zones : la file du jour à gauche (jour par jour, relances comprises),
+ * l'entreprise en cours au centre (son dossier en en-tête, sa frise de
+ * séquence, la carte d'action de l'étape, puis tout son historique), et à
+ * droite ce dont on se sert pendant l'échange (démo, audit, RDV, registre).
  */
 export default function AgentDemarchagePage() {
+  const { user } = useAuth();
+
   const [tasks, setTasks] = useState<DemarchageTask[]>([]);
   const [meta, setMeta] = useState<DemarchageQueueMeta>(EMPTY_META);
   const [loadingQueue, setLoadingQueue] = useState(true);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
+
+  const [day, setDay] = useState<DemarchageBucketKey>("today");
+  const [filt, setFilt] = useState("all");
 
   const [company, setCompany] = useState<CompanyBundle | null>(null);
-  const [loadingCompany, setLoadingCompany] = useState(false);
+  const [audit, setAudit] = useState<DemAudit>(null);
+  const [templates, setTemplates] = useState<DemTemplates | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
 
-  // `preferId` : la tâche à privilégier si elle existe encore dans la
-  // nouvelle file (ex. après un simple rafraîchissement). `null` explicite
-  // force le recalcul du premier panier non vide — c'est le cas après une
-  // issue enregistrée, où la tâche traitée vient de sortir de la file.
+  /** `preferId === null` force le recalcul : la tâche traitée a quitté la file. */
   const loadQueue = useCallback(async (preferId?: string | null) => {
     setLoadingQueue(true);
     try {
       const res = await authedFetch("/api/agent/tasks");
       if (!res.ok) return;
       const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
-      const nextTasks = body.tasks ?? [];
-      setTasks(nextTasks);
+      const next = body.tasks ?? [];
+      setTasks(next);
       setMeta(body.meta ?? EMPTY_META);
-
-      setSelectedTaskId((current) => {
+      setSel((current) => {
         const wanted = preferId === undefined ? current : preferId;
-        if (wanted && nextTasks.some((t) => t.id === wanted)) return wanted;
-        return firstNonEmptyBucket(bucketTasks(nextTasks))?.id ?? null;
+        if (wanted && next.some((t) => t.id === wanted)) return wanted;
+        return firstNonEmptyBucket(bucketTasks(next))?.id ?? null;
       });
     } catch {
       toast.error("Impossible de charger la file de démarchage.");
@@ -72,54 +74,93 @@ export default function AgentDemarchagePage() {
     void loadQueue();
   }, [loadQueue]);
 
-  const selectedTask = useMemo(() => tasks.find((t) => t.id === selectedTaskId) ?? null, [tasks, selectedTaskId]);
-
-  const siblingCount = useMemo(() => {
-    if (!selectedTask) return 0;
-    return tasks.filter((t) => t.id !== selectedTask.id && t.entreprise_id === selectedTask.entreprise_id).length;
-  }, [tasks, selectedTask]);
-
+  // La bibliothèque de modèles ne dépend pas du prospect : une seule fois.
   useEffect(() => {
-    const entrepriseId = selectedTask?.entreprise_id;
+    let active = true;
+    void authedFetch("/api/agent/demarchage/templates")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        if (active && b) setTemplates(b as DemTemplates);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const buckets = useMemo(() => bucketTasks(tasks), [tasks]);
+
+  // Le jour affiché suit la tâche sélectionnée : cliquer une relance de demain
+  // dans la file ne doit pas laisser l'onglet sur « aujourd'hui ».
+  const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
+  useEffect(() => {
+    if (!task) return;
+    for (const k of ["overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
+      if (buckets[k].some((t) => t.id === task.id)) {
+        setDay(k);
+        return;
+      }
+    }
+  }, [task, buckets]);
+
+  const shown = useMemo(() => {
+    const list = buckets[day];
+    return list.filter((t) =>
+      filt === "all"
+        ? true
+        : filt === "call"
+          ? t.kind === "call"
+          : filt === "msg"
+            ? t.kind === "whatsapp" || t.kind === "linkedin"
+            : t.kind === "wait",
+    );
+  }, [buckets, day, filt]);
+
+  // Fiche entreprise + audit à chaque changement de prospect.
+  const entrepriseId = task?.entreprise_id ?? null;
+  useEffect(() => {
     if (!entrepriseId) {
       setCompany(null);
+      setAudit(null);
       return;
     }
     let active = true;
-    setLoadingCompany(true);
     (async () => {
-      try {
-        const res = await authedFetch(`/api/agent/demarchage/company?entreprise_id=${entrepriseId}`);
-        if (!res.ok) {
-          if (active) setCompany(null);
-          return;
-        }
-        const body = (await res.json()) as CompanyBundle;
-        if (active) setCompany(body);
-      } finally {
-        if (active) setLoadingCompany(false);
-      }
+      const [cRes, aRes] = await Promise.all([
+        authedFetch(`/api/agent/demarchage/company?entreprise_id=${entrepriseId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        authedFetch(`/api/audit-site/${entrepriseId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      if (!active) return;
+      setCompany((cRes as CompanyBundle) ?? null);
+      setAudit(aRes?.disponible === false ? null : ((aRes?.audit as DemAudit) ?? null));
     })();
     return () => {
       active = false;
     };
-  }, [selectedTask?.entreprise_id]);
+  }, [entrepriseId]);
+
+  const goNext = useCallback(() => {
+    const next = shown.find((t) => t.id !== sel);
+    if (next) setSel(next.id);
+  }, [shown, sel]);
 
   const handlePatch = useCallback(
     async (body: Omit<DemarchagePatchBody, "id">) => {
-      if (!selectedTask) return;
+      if (!task) return;
       setBusy(true);
       try {
         const res = await authedFetch("/api/agent/tasks", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: selectedTask.id, ...body }),
+          body: JSON.stringify({ id: task.id, ...body }),
         });
         if (!res.ok) throw new Error();
         toast.success("Issue enregistrée.");
         setHistoryKey((k) => k + 1);
-        // La tâche traitée vient de sortir de la file (statut done ou
-        // replanifié) : on laisse `loadQueue` choisir la suivante.
         await loadQueue(null);
       } catch {
         toast.error("Action impossible.");
@@ -127,65 +168,86 @@ export default function AgentDemarchagePage() {
         setBusy(false);
       }
     },
-    [selectedTask, loadQueue],
+    [task, loadQueue],
   );
 
-  const handleMessageLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
+  const onLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
+  const onReplied = useCallback(() => void loadQueue(null), [loadQueue]);
+
+  const companyName = company?.entreprise.name ?? "";
 
   return (
-    <div className="grid gap-6 p-4 lg:grid-cols-[320px_1fr_320px] lg:items-start lg:p-6">
-      <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
-        <DemarchageFrise
-          tasks={tasks}
+    <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
+      <div className="dm">
+        <DemRail
+          buckets={buckets}
+          day={day}
+          setDay={setDay}
+          filt={filt}
+          setFilt={setFilt}
+          tasks={shown}
           meta={meta}
+          agentName={user?.name ?? null}
           loading={loadingQueue}
-          selectedId={selectedTaskId}
-          onSelect={(t) => setSelectedTaskId(t.id)}
+          sel={task?.id ?? null}
+          onPick={setSel}
         />
-      </div>
 
-      <div className="min-w-0 space-y-5">
-        <div className="flex justify-end">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/espace-agent/argumentaire">
-              <BookOpen className="mr-1 h-4 w-4" /> Brief commercial
-            </Link>
-          </Button>
-        </div>
-
-        {!loadingQueue && !selectedTask && (
-          <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">
-            File vide 🎉 — aucune entreprise en séquence à traiter pour l&apos;instant.
-          </div>
+        {company && task ? (
+          <DemHead company={company} sequence={task.sequence} audit={audit} />
+        ) : (
+          <header className="dm-head">
+            <div className="dm-hd">
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="nm">Démarchage</div>
+                <div className="sb">
+                  <span className="it">
+                    {loadingQueue ? "Chargement de la file…" : "Aucune entreprise en séquence à traiter."}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </header>
         )}
 
-        {selectedTask && (
-          <>
-            <CompanyHeaderCard company={company} loading={loadingCompany} task={selectedTask} />
-            <StageActionCard
-              key={selectedTask.id}
-              task={selectedTask}
-              company={company}
-              busy={busy}
-              siblingCount={siblingCount}
-              onPatch={handlePatch}
-              onMessageLogged={handleMessageLogged}
-            />
-            {selectedTask.entreprise_id != null && (
-              <HistoryTimeline key={`${selectedTask.entreprise_id}-${historyKey}`} entrepriseId={selectedTask.entreprise_id} />
-            )}
-          </>
+        <main className="dm-main">
+          {task ? (
+            <>
+              <DemSeqStrip sequence={task.sequence} />
+              <DemActionCard
+                key={task.id}
+                task={task}
+                company={company}
+                audit={audit}
+                templates={templates}
+                busy={busy}
+                onPatch={handlePatch}
+                onLogged={onLogged}
+                onNext={task.kind === "wait" ? onReplied : goNext}
+              />
+              {task.entreprise_id != null && (
+                <DemHisto
+                  entrepriseId={task.entreprise_id}
+                  companyName={companyName}
+                  refreshKey={historyKey}
+                />
+              )}
+            </>
+          ) : (
+            !loadingQueue && (
+              <div className="dm-hint">
+                File vide — aucune entreprise en séquence n&apos;attend d&apos;action aujourd&apos;hui.
+              </div>
+            )
+          )}
+        </main>
+
+        {company && task ? (
+          <DemSide company={company} audit={audit} opportuniteId={task.opportunite_id} />
+        ) : (
+          <aside className="dm-side" />
         )}
       </div>
-
-      {selectedTask && company && (
-        <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pl-1">
-          <ContactsPanel key={`contacts-${company.entreprise.id}`} company={company} />
-          <div className="mt-4">
-            <QuickLinksPanel key={`links-${company.entreprise.id}`} company={company} opportuniteId={selectedTask.opportunite_id} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
