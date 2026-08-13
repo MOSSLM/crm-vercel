@@ -52,6 +52,30 @@ type TaskGuardRow = {
   entreprise: { owner_id: string | null } | { owner_id: string | null }[] | null;
 };
 
+/** Ligne d'inscription garée sur une attente-réponse. */
+type WaitEnrollmentRow = {
+  id: string;
+  automation_id: string;
+  current_step: number;
+  contact_id: string | null;
+  entreprise_id: number | null;
+  opportunite_id: string | null;
+  updated_at: string | null;
+  entered_at: string | null;
+  contact: unknown;
+  entreprise: unknown;
+};
+
+/** L'étape d'une séquence, telle que la frise l'affiche. */
+type StepView = { kind: string; day: number; label: string };
+
+const stepViews = (steps: SequenceStep[]): StepView[] =>
+  steps.map((s) => ({
+    kind: s.kind,
+    day: Number(s.day) || 0,
+    label: s.label?.trim() || channelOf(s.kind).label,
+  }));
+
 // Démarchage queue: the pending manual tasks for the prospects this agent
 // owns, STRICTLY scoped to prospects actually enrolled on a sequence
 // (`enrollment_id IS NOT NULL`) — cold-call tasks seeded without a sequence
@@ -83,10 +107,33 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   if (error) return jsonError(error.message, 500, {}, cors);
   const tasks = (data ?? []) as unknown as TaskRow[];
 
-  // Étape de séquence de chaque tâche : un aller-retour groupé par
-  // `automation_id` distinct, pas une requête par tâche.
+  // ── Les attentes de réponse ────────────────────────────────────────────
+  // Une étape « attente de réponse » ne crée AUCUNE tâche : le moteur gare
+  // l'inscription (`hold_reason = 'awaiting_reply'`) et attend qu'un humain
+  // déclare que le prospect a répondu. Sans cette requête, ces entreprises
+  // seraient invisibles ici — et personne ne débloquerait la séquence.
+  const { data: waitRows } = await sc
+    .from("sequence_enrollments")
+    .select(
+      "id, automation_id, current_step, contact_id, entreprise_id, opportunite_id, updated_at, entered_at, " +
+        "contact:contacts(id, first_name, last_name, tel, email), " +
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id)",
+    )
+    .eq("entreprise.owner_id", user.id)
+    .eq("status", "active")
+    .eq("hold_reason", "awaiting_reply")
+    .limit(200);
+  const waitEnrollments = (waitRows ?? []) as unknown as WaitEnrollmentRow[];
+
+  // Étapes de séquence : un seul aller-retour pour TOUTES les automatisations
+  // citées, qu'elles viennent d'une tâche ou d'une attente.
   const automationIds = [
-    ...new Set(tasks.map((t) => t.automation_id as string | null).filter((id): id is string => !!id)),
+    ...new Set(
+      [
+        ...tasks.map((t) => t.automation_id),
+        ...waitEnrollments.map((e) => e.automation_id),
+      ].filter((id): id is string => !!id),
+    ),
   ];
   const stepsByAutomation = new Map<string, { name: string | null; steps: SequenceStep[] }>();
   if (automationIds.length > 0) {
@@ -111,17 +158,61 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
             stepLabel: step?.label?.trim() || channelOf(t.kind).label,
             stepIndex: stepIndex >= 0 ? stepIndex + 1 : null,
             totalSteps: auto.steps.length,
+            // La frise d'étapes de l'écran a besoin de TOUTES les étapes, pas
+            // seulement de celle en cours : c'est ce qui permet de montrer le
+            // chemin parcouru et ce qui reste.
+            steps: stepViews(auto.steps),
           }
         : null,
     };
   });
 
-  // "X sur Y aujourd'hui" : Y = tâches en attente échues aujourd'hui ou avant
-  // (déjà dans `tasks`, en mémoire) ; X = tâches en séquence bouclées
-  // aujourd'hui, même périmètre strict que la file elle-même.
+  const waits = waitEnrollments.map((e) => {
+    const auto = stepsByAutomation.get(e.automation_id);
+    const idx = Number(e.current_step) || 0;
+    const step = auto?.steps[idx] ?? null;
+    return {
+      // Préfixé pour ne jamais entrer en collision avec un id de tâche : les
+      // deux vivent dans la même file côté écran.
+      id: `wait:${e.id}`,
+      kind: "wait" as const,
+      status: "pending" as const,
+      title: step?.label?.trim() ?? "En attente de réponse",
+      due_at: e.updated_at ?? e.entered_at,
+      contact_id: e.contact_id,
+      entreprise_id: e.entreprise_id,
+      opportunite_id: e.opportunite_id,
+      automation_id: e.automation_id,
+      enrollment_id: e.id,
+      step_id: step?.id ?? null,
+      payload: {},
+      contact: e.contact,
+      entreprise: e.entreprise,
+      sequence: auto
+        ? {
+            name: auto.name,
+            stepLabel: step?.label?.trim() || "En attente de réponse",
+            stepIndex: idx + 1,
+            totalSteps: auto.steps.length,
+            steps: stepViews(auto.steps),
+          }
+        : null,
+    };
+  });
+
+  // Une seule file : les tâches et les attentes se lisent dans le même ordre
+  // d'échéance, puisque l'agent les traite dans le même mouvement.
+  const queue = [...enriched, ...waits].sort((a, b) => {
+    const ta = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+    const tb = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+    return ta - tb;
+  });
+
+  // "X sur Y aujourd'hui" : Y = ce qui est échu aujourd'hui ou avant ; X = les
+  // tâches en séquence bouclées aujourd'hui, même périmètre strict que la file.
   const todayStart = dayStartIso();
   const tomorrowStart = new Date(new Date(todayStart).getTime() + 86_400_000).toISOString();
-  const dueToday = tasks.filter((t) => !!t.due_at && t.due_at < tomorrowStart).length;
+  const dueToday = queue.filter((t) => !!t.due_at && t.due_at < tomorrowStart).length;
 
   const { count: doneToday } = await sc
     .from("prospection_tasks")
@@ -132,7 +223,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     .gte("done_at", todayStart);
 
   return json(
-    { tasks: enriched, meta: { due_today: dueToday, done_today: doneToday ?? 0 } },
+    { tasks: queue, meta: { due_today: dueToday, done_today: doneToday ?? 0 } },
     { headers: cors },
   );
 });
