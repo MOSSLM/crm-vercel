@@ -18,6 +18,12 @@ import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured } from "./types"
 
 type Tab = "radar" | "sites" | "beh";
 
+// Le seul morceau vraiment "temps réel" (visites en cours, globe) a besoin
+// d'être rafraîchi tout seul — sans ça la page ne bouge qu'au changement de
+// plage. 45s : assez court pour sentir le direct, assez long pour rester loin
+// des quotas GA4 (25k requêtes/jour/propriété) même laissé ouvert des heures.
+const REFRESH_MS = 45_000;
+
 function useAnalyticsRadar(days: number) {
   const [data, setData] = React.useState<AnalyticsRadarPayload | AnalyticsRadarUnconfigured | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -25,21 +31,35 @@ function useAnalyticsRadar(days: number) {
 
   React.useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    authedFetch(`/api/analytics-radar?days=${days}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((json) => {
-        if (!cancelled) setData(json);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Erreur inconnue");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    let firstLoad = true;
+
+    const load = () => {
+      if (firstLoad) setLoading(true);
+      authedFetch(`/api/analytics-radar?days=${days}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((json) => {
+          if (cancelled) return;
+          setData(json);
+          setError(null);
+        })
+        .catch((e: unknown) => {
+          // Un refresh périodique qui échoue ne doit pas effacer les données déjà
+          // affichées — seul le tout premier chargement bloque sur une erreur.
+          if (cancelled) return;
+          if (firstLoad) setError(e instanceof Error ? e.message : "Erreur inconnue");
+        })
+        .finally(() => {
+          if (cancelled) return;
+          if (firstLoad) setLoading(false);
+          firstLoad = false;
+        });
+    };
+
+    load();
+    const interval = setInterval(load, REFRESH_MS);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [days]);
 
@@ -81,6 +101,16 @@ export function AnalyticsRadarApp() {
   const [tab, setTab] = React.useState<Tab>("radar");
   const [days, setDays] = React.useState(7);
   const { data, error, loading } = useAnalyticsRadar(days);
+
+  // Dérivé du payload temps réel — memoïsé pour ne changer de référence QUE
+  // quand un nouveau snapshot arrive (toutes les REFRESH_MS), pas à chaque
+  // rendu (changement d'onglet, etc.) : c'est ce qui déclenche un ping par
+  // ville dans GlobeStage sans le faire spammer sur chaque interaction.
+  const realtimeVisits = data && "configured" in data && data.configured.ga4 ? (data as AnalyticsRadarPayload).realtime.visits : undefined;
+  const liveCities = React.useMemo(
+    () => Array.from(new Set((realtimeVisits ?? []).map((v) => v.city).filter(Boolean))),
+    [realtimeVisits],
+  );
 
   const TABS: Array<{ k: Tab; n: string; ic: string; nb?: number }> = [
     { k: "radar", n: "Radar mondial", ic: "globe" },
@@ -174,10 +204,16 @@ export function AnalyticsRadarApp() {
 
         {tab === "radar" ? (
           <div className="a-radar">
-            <GlobeStage hubRows={d.hubs} onSelectCity={() => setTab("sites")} rangeLabel={rangeLabel} total={d.kpis.sessions} />
+            <GlobeStage
+              hubRows={d.hubs}
+              onSelectCity={() => setTab("sites")}
+              rangeLabel={rangeLabel}
+              total={d.kpis.sessions}
+              liveCities={liveCities}
+            />
             <div className="a-rail">
               <Panel title="En ce moment" icon="radio" src="GA4 realtime" style={{ flex: 1 }} bodyClass="tight">
-                <RealtimePanel activeUsers={d.realtime.activeUsers} byCountry={d.realtime.byCountry} />
+                <RealtimePanel activeUsers={d.realtime.activeUsers} visits={d.realtime.visits} formActivity={d.realtime.formActivity} />
               </Panel>
               <Panel title="Villes les plus actives" icon="mappin" count={d.hubs.length} style={{ flex: "0 0 auto", maxHeight: 250 }}>
                 <TopCities hubRows={d.hubs} onPick={() => {}} />

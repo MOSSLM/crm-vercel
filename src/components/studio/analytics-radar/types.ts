@@ -43,7 +43,18 @@ export interface AnalyticsRadarPayload {
   heatmap: number[][];
   realtime: {
     activeUsers: number;
-    byCountry: Array<{ country: string; city: string; screenName: string; activeUsers: number }>;
+    visits: Array<{
+      screenName: string;
+      companyName: string | null;
+      hostname: string | null;
+      device: string;
+      city: string;
+      country: string;
+      activeUsers: number;
+      pageViews: number;
+      sinceMinutes: number;
+    }>;
+    formActivity: { starts: number; submits: number };
   };
   clarity: { asOf: string; byDimension: Record<string, Array<Record<string, unknown>>> } | null;
 }

@@ -14,11 +14,15 @@ export function GlobeStage({
   onSelectCity,
   rangeLabel,
   total,
+  liveCities = [],
 }: {
   hubRows: GlobeHubRow[];
   onSelectCity: (city: string) => void;
   rangeLabel: string;
   total: number;
+  /** Villes avec au moins un visiteur actif là, maintenant (GA4 Realtime) —
+   *  chacune déclenche un ping (onde bleue) sur le globe à chaque rafraîchissement. */
+  liveCities?: string[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const globeRef = useRef<AnGlobeHandle | null>(null);
@@ -38,6 +42,19 @@ export function GlobeStage({
   useEffect(() => {
     globeRef.current?.setData(hubRows);
   }, [hubRows]);
+
+  // Un ping par ville active à chaque nouveau snapshot temps réel (cf.
+  // REFRESH_MS dans AnalyticsRadarApp) — seulement pour les villes que le
+  // globe connaît déjà (celles présentes dans hubRows, donc dotées d'un
+  // marqueur). `liveCities` change de référence à chaque poll, donc cet
+  // effet se redéclenche naturellement toutes les 45s sans dépendance cachée.
+  useEffect(() => {
+    if (!liveCities.length) return;
+    const known = new Set(hubRows.map((h) => h.c));
+    liveCities.forEach((c) => {
+      if (known.has(c)) globeRef.current?.ping(c);
+    });
+  }, [liveCities]);
 
   const top = hubRows[0];
   const territoires = new Set(hubRows.map((h) => h.rg)).size;
@@ -137,36 +154,76 @@ export function GlobeStage({
   );
 }
 
+export interface RealtimeVisit {
+  screenName: string;
+  companyName: string | null;
+  hostname: string | null;
+  device: string;
+  city: string;
+  country: string;
+  activeUsers: number;
+  pageViews: number;
+  sinceMinutes: number;
+}
+
 export function RealtimePanel({
   activeUsers,
-  byCountry,
+  visits,
+  formActivity,
 }: {
   activeUsers: number;
-  byCountry: Array<{ country: string; city: string; screenName: string; activeUsers: number }>;
+  visits: RealtimeVisit[];
+  formActivity: { starts: number; submits: number };
 }) {
   if (activeUsers === 0) {
     return <div className="a-empty">Personne sur les sites démo en ce moment.</div>;
   }
   return (
     <div className="a-feed">
-      {byCountry
-        .filter((r) => r.activeUsers > 0)
-        .map((r) => (
-          <div className="a-ev pv" key={r.screenName + r.country + r.city}>
-            <span className="sq">
-              <Icon name="radio" className="ico s" />
-            </span>
-            <div>
-              <div className="t">
-                <b>{r.activeUsers}</b> visiteur{r.activeUsers > 1 ? "s" : ""} sur <b>{r.screenName || "page inconnue"}</b>
-              </div>
-              <div className="m">
-                {r.city ? `${r.city}, ` : ""}
-                {r.country}
-              </div>
+      {(formActivity.starts > 0 || formActivity.submits > 0) && (
+        <div className="a-ev fm">
+          <span className="sq">
+            <Icon name="fileText" className="ico s" />
+          </span>
+          <div>
+            <div className="t">
+              Formulaire en cours quelque part —{" "}
+              <b>
+                {formActivity.starts} testé{formActivity.starts > 1 ? "s" : ""}
+              </b>
+              {formActivity.submits > 0 ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <b>
+                    {formActivity.submits} envoyé{formActivity.submits > 1 ? "s" : ""}
+                  </b>
+                </>
+              ) : null}
+            </div>
+            <div className="m">30 dernières minutes · pas rattachable à une visite précise (limite de l'API temps réel)</div>
+          </div>
+        </div>
+      )}
+      {visits.map((v, i) => (
+        <div className="a-ev pv" key={v.screenName + v.device + v.city + v.country + i}>
+          <span className="sq">
+            <Icon name={v.device === "mobile" ? "phone" : v.device === "tablet" ? "square" : "panel"} className="ico s" />
+          </span>
+          <div>
+            <div className="t">
+              <b>{v.activeUsers}</b> visiteur{v.activeUsers > 1 ? "s" : ""} sur{" "}
+              <b>{v.companyName ?? v.screenName ?? "page inconnue"}</b>
+              {v.companyName ? <span style={{ color: "var(--tx-3)" }}> — {v.screenName}</span> : null}
+            </div>
+            <div className="m">
+              {v.pageViews} page{v.pageViews > 1 ? "s" : ""} vue{v.pageViews > 1 ? "s" : ""} · {v.city ? `${v.city}, ` : ""}
+              {v.country}
+              {v.sinceMinutes > 0 ? ` · depuis ${v.sinceMinutes} min` : ""}
             </div>
           </div>
-        ))}
+        </div>
+      ))}
     </div>
   );
 }
