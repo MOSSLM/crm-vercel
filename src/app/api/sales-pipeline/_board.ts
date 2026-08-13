@@ -24,6 +24,7 @@ import {
   buildColumns,
   cellStatuses,
   defaultHandoffOrdre,
+  estColonneVisible,
   hasInterest,
   isLostStage,
   isPendingTask,
@@ -350,10 +351,13 @@ export function toStateRow(row: StateRow | undefined): SalesStateRow {
  * celle du dernier message parti — c'est lui qui attend une réponse, et c'est ce
  * que l'opérateur doit voir.
  */
-export function visibleStepPosition(steps: { kind: string }[], currentStep: number): number {
+export function visibleStepPosition(
+  steps: { kind: string; waitMode?: string | null }[],
+  currentStep: number,
+): number {
   let count = 0
   for (let i = 0; i < steps.length && i <= currentStep; i++) {
-    if (steps[i].kind !== 'wait') count++
+    if (estColonneVisible(steps[i])) count++
   }
   return count
 }
@@ -586,8 +590,10 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const stepsOfSequence = (automation: Automation | null) => {
     const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
     const steps = Array.isArray(def.steps) ? def.steps : []
-    // Une étape « attente » n'a rien à montrer : elle n'occupe pas de colonne.
-    return steps.filter((s) => s.kind !== 'wait')
+    // Une attente de délai pur s'écoule seule : pas de colonne. Une
+    // attente-RÉPONSE en a une — c'est là qu'on déclare ce que le prospect a
+    // dit (cf. `estColonneVisible`).
+    return steps.filter(estColonneVisible)
   }
   const selectedSteps = stepsOfSequence(selectedSequence)
 
@@ -603,6 +609,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       kind: s.kind,
       day: s.day ?? 0,
       label: s.label ?? null,
+      waitMode: s.waitMode ?? null,
+      replyTimeoutDays: s.replyTimeoutDays ?? null,
       branch: s.branch ?? null,
     })),
     sequenceName: selectedSequence?.name ?? null,
@@ -911,7 +919,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       const automation = automationById.get(enrollment.automation_id)
       const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
       const fullSteps = Array.isArray(def.steps) ? def.steps : []
-      const allSteps = fullSteps.filter((s) => s.kind !== 'wait')
+      const allSteps = fullSteps.filter(estColonneVisible)
       stepsOfEnrollment = allSteps
       // `current_step` compte TOUTES les étapes, attentes comprises ; les
       // colonnes n'en montrent aucune. Sans conversion, un prospect garé après

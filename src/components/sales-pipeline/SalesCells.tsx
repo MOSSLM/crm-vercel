@@ -321,6 +321,40 @@ function ActiveBody({
     )
   }
 
+  // ── Colonne d'attente-réponse ───────────────────────────────────────────
+  // La seule colonne où l'on n'envoie rien : on constate. Elle dit depuis quand
+  // ça dure et dans combien de temps la relance part toute seule — les deux
+  // chiffres qui décident s'il faut intervenir maintenant ou laisser courir.
+  if (column.kind === 'wait') {
+    const seq = row.sequence
+    const relance = seq?.sendAt ? Date.parse(seq.sendAt) - now : null
+    return (
+      <div className="c-body col">
+        {relance != null && relance > 0 ? (
+          <div className="eta">
+            <span className="v">{eta(relance)}</span>
+            <span className="l">avant la relance sans réponse</span>
+          </div>
+        ) : (
+          <div className="eta wait">
+            <span className="v">—:—</span>
+            <span className="l">
+              {seq?.holdReason === 'awaiting_reply'
+                ? 'en attente d’une réponse'
+                : (holdReasonLabel(seq?.holdReason ?? null) ?? 'en attente')}
+            </span>
+          </div>
+        )}
+        <div className="why">
+          <MessageCircle className="ico-xs" />
+          {column.hint === 'jusqu’à réponse'
+            ? 'rien ne repart tant que personne n’a noté la réponse'
+            : 'notez la réponse pour enchaîner tout de suite'}
+        </div>
+      </div>
+    )
+  }
+
   // ── Colonnes de séquence ────────────────────────────────────────────────
   if (column.group === 'sequence') {
     // Vue d'ensemble : on ne sait pas — et on ne peut pas savoir — quelle étape
@@ -775,6 +809,8 @@ export function SalesCell({
   // La colonne d'ensemble ne désigne aucune étape : elle ne peut donc pas en
   // faire valider une. Son seul geste est d'aller voir la séquence.
   const isAnySequence = column.group === 'sequence' && !column.kind
+  /** L'attente-réponse : rien n'en part, donc rien à valider — on note. */
+  const isAttente = column.kind === 'wait'
   const tagLabel = isEntry
     ? 'En attente'
     : isAnySequence
@@ -865,7 +901,7 @@ export function SalesCell({
             Le sélecteur de version se pose juste au-dessus du bouton qui
             ouvre WhatsApp : c'est le dernier instant où quelqu'un regarde le
             message, donc le seul où le choix a du sens. */}
-        {inSequence && column.kind && (
+        {inSequence && column.kind && !isAttente && (
           <VariantPicker
             row={row}
             task={row.tasks.find((t) => t.kind === column.kind) ?? row.tasks[0]}
@@ -874,11 +910,20 @@ export function SalesCell({
           />
         )}
 
+        {/* Sur une attente, le bouton principal EST la déclaration de réponse :
+            il n'y a rien d'autre à ouvrir, et c'est le seul geste qui débloque
+            la suite. Ailleurs, il ouvre le canal (WhatsApp, appel, file). */}
         <button
           className="cta"
           disabled={busy || (isEntry && !canEnroll)}
           title={isEntry && !canEnroll ? 'Aucun contact rattaché à ce prospect' : undefined}
-          onClick={() => (isEntry ? handlers.onEnroll([row]) : handlers.onWork(column, row))}
+          onClick={() =>
+            isEntry
+              ? handlers.onEnroll([row])
+              : isAttente
+                ? handlers.onOutcome(row, column)
+                : handlers.onWork(column, row)
+          }
         >
           <CtaIcon className="ico-sm" />
           {column.cta}
@@ -889,7 +934,7 @@ export function SalesCell({
             jours. Les mettre sur la même ligne de boutons obligeait à choisir
             entre « fait » et « le prospect a réagi » — alors que le cas le plus
             courant, « envoyé, puis il a dit ça », n'était nulle part. */}
-        {inSequence && column.kind && (
+        {inSequence && column.kind && !isAttente && (
           <div className="sp-reply">
             {noteRow && <NoteLine note={noteRow} />}
             <button className="sp-reply-b" disabled={busy} onClick={() => handlers.onOutcome(row, column)}>
@@ -925,6 +970,14 @@ export function SalesCell({
                 Perdu
               </button>
             </>
+          ) : isAttente ? (
+            // Valider une attente à la main ferait sauter la réponse qu'elle
+            // attend — précisément ce que « Fait » semblait promettre, et qui
+            // ne se passait pas. On ne laisse donc que la sortie de secours.
+            <button className="btn sm" onClick={(e) => handlers.onReact(e, row)}>
+              <Bolt className="ico-sm" />
+              Le prospect a réagi
+            </button>
           ) : (
             <>
               <button className="btn ok sm" disabled={busy} onClick={() => handlers.onValidate(row, column.id)}>
