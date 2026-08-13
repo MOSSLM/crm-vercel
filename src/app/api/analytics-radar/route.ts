@@ -13,6 +13,7 @@ import {
   runGa4Report,
 } from "@/lib/analytics-radar/ga4-client";
 import { clarityInfoNumber } from "@/lib/analytics-radar/clarity-client";
+import { scoreIntent, type IntentSignals } from "@/lib/analytics-radar/intent";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const runtime = "nodejs";
@@ -203,6 +204,28 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   const vitrineHostnames = [SITE_DOMAIN, `www.${SITE_DOMAIN}`];
   const scopeHostnames = scope === "vitrine" ? vitrineHostnames : demoHostnames;
 
+  // Signaux CRM qui complètent la mesure GA4 : une séquence en attente de
+  // réponse, ou une séquence relancée parce que le prospect a répondu. Une
+  // lecture ratée ne doit pas faire tomber l'écran : on repart sans ces
+  // signaux plutôt que d'échouer.
+  const awaitingReplyCompanies = new Set<string>();
+  const repliedCompanies = new Set<string>();
+  try {
+    const { data: enrollments } = await sb
+      .from("sequence_enrollments")
+      .select("status, hold_reason, entreprises(name)")
+      .in("status", ["active", "exited"]);
+    (enrollments ?? []).forEach((e) => {
+      const row = e as unknown as { hold_reason: string | null; entreprises: { name: string | null } | null };
+      const name = row.entreprises?.name;
+      if (!name) return;
+      if (row.hold_reason === "awaiting_reply") awaitingReplyCompanies.add(name);
+      else repliedCompanies.add(name);
+    });
+  } catch {
+    // pas de signal CRM ce coup-ci — le score se fera sur GA4 seul
+  }
+
   const ga4 = getGa4Config();
   if (!ga4) {
     return json({
@@ -273,13 +296,18 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     realtimeEventsByMinute,
     realtimeTotal,
     realtimeByCity,
+    byHostDevice,
+    byHostHour,
+    byHostDate,
+    byHostPage,
+    byHostEvent,
   ] = await Promise.all([
     report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
     report(["city", "country"], ["sessions"], 100),
     // Ville × site démo : alimente « combien de sites démo distincts ont été
     // consultés depuis cette ville » dans l'infobulle du globe.
     report(["city", "hostName"], ["sessions"], 500),
-    report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
+    report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate", "totalUsers"], 500),
     report(["deviceCategory"], ["sessions"]),
     report(["sessionSourceMedium"], ["sessions"], 30),
     report(["pagePath"], ["screenPageViews", "userEngagementDuration", "bounceRate"], 50),
@@ -303,6 +331,14 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     // deux requêtes (sans dimension, et par ville) donnent les vrais totaux.
     realtimeReport([], ["activeUsers"]),
     realtimeReport(["city"], ["activeUsers"]),
+    // Signaux d'intention, par site : appareils, heures, jours, pages, et les
+    // événements de formulaire rattachés à leur hôte (le rapport global par
+    // eventName ne dit pas SUR QUEL site le formulaire a été rempli).
+    report(["hostName", "deviceCategory"], ["sessions"], 500),
+    report(["hostName", "hour"], ["sessions"], 1000),
+    report(["hostName", "date"], ["sessions"], 1000),
+    report(["hostName", "pagePath"], ["screenPageViews"], 1000),
+    report(["hostName", "eventName"], ["eventCount"], 1000),
   ]);
 
   // "Accueil — Fluide CPC" → matches the site named "Fluide CPC". Falls back to
@@ -492,6 +528,73 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const notVisited = sites.filter((s) => !visitedHostnames.has(s.hostname));
 
+  // ── Signaux d'intention, par site démo ──────────────────────────────────
+  // Chaque valeur vient d'un rapport GA4 filtré sur les hôtes du site : rien
+  // n'est déduit d'un autre site ni d'une moyenne.
+  const groupByHost = <T>(rows: Ga4Row[], pick: (r: Ga4Row) => T | null) => {
+    const m = new Map<string, T[]>();
+    rows.forEach((r) => {
+      const site = r.hostName ? hostToSite.get(r.hostName) : undefined;
+      if (!site) return;
+      const v = pick(r);
+      if (v == null) return;
+      const arr = m.get(site.hostname) ?? [];
+      arr.push(v);
+      m.set(site.hostname, arr);
+    });
+    return m;
+  };
+  const devicesByHost = groupByHost(byHostDevice, (r) => (num(r.sessions) > 0 ? r.deviceCategory || null : null));
+  const hoursByHost = groupByHost(byHostHour, (r) => (num(r.sessions) > 0 && r.hour !== "" ? Number(r.hour) : null));
+  const daysByHost = groupByHost(byHostDate, (r) => (num(r.sessions) > 0 ? isoDate(r.date) : null));
+  const pagesByHost = groupByHost(byHostPage, (r) => (num(r.screenPageViews) > 0 ? r.pagePath || null : null));
+  const eventsByHost = groupByHost(byHostEvent, (r) => (num(r.eventCount) > 0 ? r.eventName || null : null));
+
+  // Le rapport d'audit vit sur son propre sous-domaine et porte le même tag
+  // GA4 : on sait donc qui a ouvert son audit, par le titre de la page.
+  const auditViewedCompanies = new Set(
+    byPage
+      .filter((r) => NON_DEMO_TITLE.test(r.pagePath || ""))
+      .map((r) => r.pagePath || ""),
+  );
+
+  const usersByHost = new Map(
+    byHost.filter((r) => r.hostName && hostToSite.has(r.hostName)).map((r) => [hostToSite.get(r.hostName)!.hostname, num(r.totalUsers)]),
+  );
+
+  const intent = sitePerf
+    .map((p) => {
+      const events = eventsByHost.get(p.hostname) ?? [];
+      const signals: IntentSignals = {
+        sessions: p.sessions,
+        visitors: usersByHost.get(p.hostname) ?? 0,
+        engagementSec: p.avgEngagementSec * p.sessions,
+        pageViews: p.pageViews,
+        pages: [...new Set(pagesByHost.get(p.hostname) ?? [])],
+        devices: [...new Set(devicesByHost.get(p.hostname) ?? [])],
+        hours: [...new Set(hoursByHost.get(p.hostname) ?? [])],
+        days: [...new Set(daysByHost.get(p.hostname) ?? [])],
+        formStarted: events.includes("analytics_radar_form_start"),
+        formSubmitted: events.includes("analytics_radar_form_submit"),
+        auditViewed: [...auditViewedCompanies].some((t) => t.toLowerCase().includes(p.companyName.toLowerCase())),
+        awaitingReply: awaitingReplyCompanies.has(p.companyName),
+        replied: repliedCompanies.has(p.companyName),
+      };
+      const verdict = scoreIntent(signals);
+      return {
+        hostname: p.hostname,
+        companyName: p.companyName,
+        city: p.city,
+        sessions: p.sessions,
+        pageViews: p.pageViews,
+        engagementSec: Math.round(signals.engagementSec),
+        lastDay: signals.days.slice().sort().pop() ?? null,
+        ...verdict,
+      };
+    })
+    .filter((r) => r.tier !== "none")
+    .sort((a, b) => b.score - a.score);
+
   // Sessions/pageViews/duration/engagement genuinely have no realtime
   // equivalent (GA4 Realtime doesn't expose those metrics at all) — when
   // there's real activity but the standard report hasn't processed it yet,
@@ -560,6 +663,8 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
         .map((r) => ({ date: isoDate(r.date), sessions: num(r.sessions) }))
         .sort((a, b) => a.date.localeCompare(b.date)),
       hubs: hubsWithShare,
+      /** Liste d'appel : le plus chaud d'abord, avec la raison mesurée. */
+      intent: scope === "vitrine" ? [] : intent,
       sites: scope === "vitrine" ? [] : sitePerf,
       notVisitedSites: scope === "vitrine" ? [] : notVisited.map((s) => ({ hostname: s.hostname, companyName: s.companyName })),
       devices: byDevice.map((r) => ({ device: r.deviceCategory, sessions: num(r.sessions) })),

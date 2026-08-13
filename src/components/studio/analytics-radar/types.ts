@@ -4,6 +4,23 @@ import type { GlobeHubRow } from "./Globe";
 /** Les deux périmètres du radar, jamais mélangés (cf. le paramètre `scope`). */
 export type RadarScope = "demos" | "vitrine";
 
+/** Une ligne de la liste d'appel, triée par intention décroissante. */
+export interface AnalyticsRadarIntentRow {
+  hostname: string;
+  companyName: string;
+  city: string | null;
+  sessions: number;
+  pageViews: number;
+  engagementSec: number;
+  lastDay: string | null;
+  score: number;
+  tier: "none" | "tiede" | "chaud" | "tres_chaud" | "brulant";
+  flame: string;
+  callWhen: "maintenant" | "aujourdhui" | "j1" | "j2" | "plus_tard";
+  /** Justifications, chacune adossée à une mesure réelle. */
+  reasons: string[];
+}
+
 export interface AnalyticsRadarSitePerf {
   hostname: string;
   companyName: string;
@@ -53,6 +70,7 @@ export interface AnalyticsRadarPayload {
   };
   timeseries: Array<{ date: string; sessions: number }>;
   hubs: Array<GlobeHubRow & { country: string; share: number; visitedSites: number; citySites: number }>;
+  intent: AnalyticsRadarIntentRow[];
   sites: AnalyticsRadarSitePerf[];
   notVisitedSites: Array<{ hostname: string; companyName: string }>;
   devices: Array<{ device: string; sessions: number }>;
