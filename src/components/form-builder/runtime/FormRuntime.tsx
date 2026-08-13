@@ -460,41 +460,56 @@ export function FormRuntime({
 
   const progressPct = total === 0 ? 0 : Math.min(100, (progressIdx / total) * 100);
 
-  const setAnswer = (qid: string, val: unknown) =>
-    setAnswers((a) => ({ ...a, [qid]: val }));
+  // « Le prospect a commencé à remplir » — déclenché à la première interaction
+  // réelle, quel que soit le mode de rendu. En mode scroll il n'y a pas de
+  // bouton « suivant », donc l'accrocher à `goNext` seul ne remontait jamais
+  // rien pour ces formulaires.
+  const trackStart = useCallback(() => {
+    if (embedded || hasTrackedStart.current) return;
+    hasTrackedStart.current = true;
+    trackFormEvent('analytics_radar_form_start', form.id);
+  }, [embedded, form.id]);
+
+  const setAnswer = useCallback(
+    (qid: string, val: unknown) => {
+      trackStart();
+      setAnswers((a) => ({ ...a, [qid]: val }));
+    },
+    [trackStart],
+  );
+
+  // Envoi, découplé de la navigation : le mode scroll n'a pas d'étape
+  // « dernière question » à franchir, il lui faut donc un envoi appelable
+  // directement. Avant, `goNext` portait les deux rôles et le mode scroll
+  // (qui ne rend aucune barre de navigation) ne pouvait tout simplement pas
+  // être envoyé.
+  const submitForm = useCallback(() => {
+    if (submitted) return;
+    trackStart();
+    setSubmitted(true);
+    const payload = { answers, contact: {} as Record<string, string> };
+    if (embedded) {
+      onSubmit?.(payload);
+      return;
+    }
+    fetch(`/api/forms/${form.id}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        answers,
+        source_url: typeof window !== 'undefined' ? window.location.href : '',
+        site_id: siteId,
+      }),
+    }).catch(console.error);
+    trackFormEvent('analytics_radar_form_submit', form.id);
+    onSubmit?.(payload);
+  }, [submitted, trackStart, answers, embedded, onSubmit, form.id, siteId]);
 
   const goNext = useCallback(() => {
-    if (!embedded && !hasTrackedStart.current) {
-      hasTrackedStart.current = true;
-      trackFormEvent('analytics_radar_form_start', form.id);
-    }
-    if (safeIdx >= flow.length - 1) {
-      // Submit
-      if (submitted) return;
-      setSubmitted(true);
-      const payload = {
-        answers,
-        contact: {} as Record<string, string>,
-      };
-      if (embedded) {
-        onSubmit?.(payload);
-      } else {
-        fetch(`/api/forms/${form.id}/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            answers,
-            source_url: typeof window !== 'undefined' ? window.location.href : '',
-            site_id: siteId,
-          }),
-        }).catch(console.error);
-        trackFormEvent('analytics_radar_form_submit', form.id);
-        onSubmit?.(payload);
-      }
-    } else {
-      setIdx(safeIdx + 1);
-    }
-  }, [safeIdx, flow.length, submitted, answers, embedded, onSubmit, form.id, siteId]);
+    trackStart();
+    if (safeIdx >= flow.length - 1) submitForm();
+    else setIdx(safeIdx + 1);
+  }, [trackStart, safeIdx, flow.length, submitForm]);
 
   const goPrev = useCallback(() => {
     if (safeIdx > 0) setIdx(safeIdx - 1);
@@ -589,7 +604,7 @@ export function FormRuntime({
                   q={q}
                   value={answers[id]}
                   onChange={(v) => setAnswer(id, v)}
-                  onSubmit={() => {}}
+                  onSubmit={submitForm}
                   showNumber={form.settings.showQuestionNumber && !isStruct}
                   total={total}
                   index={i + 1}
@@ -599,6 +614,13 @@ export function FormRuntime({
               </div>
             );
           })}
+          {/* Sans ce bouton, un formulaire en mode scroll n'avait aucun moyen
+              d'être envoyé : la barre de navigation n'existe qu'en mode step. */}
+          <div className="pv-card-block">
+            <button type="button" className="pv-cta" onClick={submitForm} disabled={submitted}>
+              {form.settings.submitLabel || 'Envoyer'}
+            </button>
+          </div>
         </div>
       )}
 

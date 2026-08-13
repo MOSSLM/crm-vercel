@@ -1,6 +1,9 @@
 // types.ts — shape of GET /api/analytics-radar's JSON payload (kept in sync by hand).
 import type { GlobeHubRow } from "./Globe";
 
+/** Les deux périmètres du radar, jamais mélangés (cf. le paramètre `scope`). */
+export type RadarScope = "demos" | "vitrine";
+
 export interface AnalyticsRadarSitePerf {
   hostname: string;
   companyName: string;
@@ -24,6 +27,14 @@ export interface AnalyticsRadarPageRow {
 
 export interface AnalyticsRadarPayload {
   configured: { ga4: boolean; clarity: boolean };
+  /** Périmètre mesuré : sites démo envoyés aux prospects, ou notre vitrine. */
+  scope: RadarScope;
+  /** GA4 Realtime ne sait pas filtrer par domaine : le bloc temps réel est
+   *  classé par titre de page, donc approximatif, contrairement au reste. */
+  realtimeScopeIsApproximate: boolean;
+  /** Non null quand des appels GA4 ont échoué : les chiffres sont incomplets
+   *  et l'UI doit le dire au lieu de les présenter comme des zéros mesurés. */
+  degraded: { failedReports: number } | null;
   range: { days: number };
   totalSites: number;
   kpis: {

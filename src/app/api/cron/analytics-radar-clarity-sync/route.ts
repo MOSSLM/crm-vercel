@@ -23,10 +23,13 @@ const verifyCron = (req: Request): boolean => {
   return (!!cronSecret && auth === `Bearer ${cronSecret}`) || (!!pgCronSecret && pgHeader === pgCronSecret);
 };
 
-// Une dimension par appel : on reste large sous le plafond de 10/jour tout en
-// couvrant les axes dont l'écran a besoin (villes/pays pour le globe, device
-// et source pour l'onglet Comportement).
+// Une dimension par appel, et le plafond Clarity est de 10 appels/jour/projet
+// — DUR, pas indicatif. 3 dimensions × 6 passages/jour = 18 appels : le
+// planificateur doit donc tourner 3×/jour au maximum (cf. la migration SQL,
+// qui a été corrigée en même temps que ce commentaire). Ajouter une dimension
+// ici sans réduire la fréquence remettrait le quota en défaut.
 const DIMENSION_SETS: ClarityDimension[][] = [["Country"], ["Device"], ["Source"]];
+const MAX_CALLS_PER_DAY = 10;
 
 export async function GET(req: Request) {
   if (!verifyCron(req)) return jsonError("Unauthorized", 401);
@@ -61,5 +64,14 @@ export async function GET(req: Request) {
     }
   }
 
-  return json({ synced_at: new Date().toISOString(), results });
+  return json({ synced_at: new Date().toISOString(), results, callsUsed: DIMENSION_SETS.length, maxCallsPerDay: MAX_CALLS_PER_DAY });
 }
+
+/**
+ * pg_cron déclenche cette route avec `net.http_post` (cf. la migration
+ * sql/20260818_analytics_radar_clarity_cache.sql). Sans handler POST, Next
+ * répondait 405 et la synchronisation ne tournait jamais : le cache restait
+ * vide et l'écran affichait « Clarity non configuré » indéfiniment, alors que
+ * le jeton était bon.
+ */
+export const POST = GET;

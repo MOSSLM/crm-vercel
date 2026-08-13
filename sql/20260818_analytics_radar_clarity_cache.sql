@@ -30,23 +30,40 @@ create table if not exists public.analytics_radar_clarity_cache (
 
 alter table public.analytics_radar_clarity_cache enable row level security;
 
+-- Ces lignes couvrent TOUS les prospects. Une policy `using (true)` sur
+-- `authenticated` les rendait lisibles par n'importe quel compte connecté,
+-- rôle `client` compris — ce qui contournait le garde-fou requireStaff posé
+-- sur /api/analytics-radar. On restreint au personnel interne ; la route API
+-- lit de toute façon via la service key, donc elle n'est pas affectée.
 drop policy if exists analytics_radar_clarity_cache_authenticated on public.analytics_radar_clarity_cache;
-create policy analytics_radar_clarity_cache_authenticated
+drop policy if exists analytics_radar_clarity_cache_staff on public.analytics_radar_clarity_cache;
+create policy analytics_radar_clarity_cache_staff
   on public.analytics_radar_clarity_cache
   for select
   to authenticated
-  using (true);
+  using (
+    exists (
+      select 1 from public.user_profiles p
+      where p.id = auth.uid() and p.role in ('admin', 'freelance')
+    )
+  );
 
 commit;
 
--- ── pg_cron : rapatriement toutes les 4h (minute 11, pour ne pas tomber sur
--- un créneau déjà pris par un autre job) ──────────────────────────────────
+-- ── pg_cron : rapatriement 3×/jour ────────────────────────────────────────
+-- Le quota Clarity Data Export est de 10 appels/jour/projet, et la route
+-- consomme 3 appels par passage (une dimension chacun). Toutes les 4h faisait
+-- 6 passages = 18 appels/jour, soit près du double du plafond : les derniers
+-- passages échouaient et le cache restait partiel. 3 passages = 9 appels,
+-- juste sous la limite, avec un appel de marge pour un déclenchement manuel.
+-- La fenêtre Clarity étant de 1 à 3 jours, rafraîchir plus souvent n'apporte
+-- de toute façon rien.
 select cron.unschedule('analytics-radar-clarity-sync')
 where exists (select 1 from cron.job where jobname = 'analytics-radar-clarity-sync');
 
 select cron.schedule(
   'analytics-radar-clarity-sync',
-  '11 */4 * * *',
+  '11 2,10,18 * * *',
   $job$
   select net.http_post(
     url        := 'https://www.samadigitalstudio.fr/api/cron/analytics-radar-clarity-sync',
