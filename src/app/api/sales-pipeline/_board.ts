@@ -38,6 +38,7 @@ import {
   type StepNote,
 } from '@/lib/sales-pipeline/stages'
 import { readVariant } from '@/lib/automations/week'
+import { retourVersLaReponse } from '@/lib/automations/branches'
 import type { MessageVariant } from '@/lib/automations/variables'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
 import { cleanEmail } from '@/lib/automations/regulator-db'
@@ -87,6 +88,15 @@ export interface SalesSequenceInfo {
    * n'a choisi : le moteur tranche alors seul (`pickVariant`).
    */
   variant: MessageVariant | null
+  /**
+   * L'inscription est sur la voie « sans réponse » d'une attente, et une voie
+   * « il a répondu » existe : déclarer une réponse la ramène sur celle-ci.
+   *
+   * Sans ce drapeau, le bouton n'apparaissait que tant que l'inscription était
+   * garée — or un prospect qui répond APRÈS la relance est le cas le plus
+   * fréquent, c'est elle qui l'a réveillé.
+   */
+  rattrapageReponse?: boolean
 }
 
 export interface SalesTaskInfo {
@@ -126,6 +136,28 @@ export interface SalesBoardRow {
   type: string | null
   mrr: number | null
   contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null } | null
+  /**
+   * Par où l'on peut joindre ce prospect — la matière première, pas une liste
+   * déjà triée.
+   *
+   * `numerosDuProspect` (`src/lib/prospects/numeros.ts`) en tire les numéros
+   * dédoublonnés avec leur origine (« Julien Martin · Gérant », « fiche
+   * entreprise »), dans l'ordre que veut l'usage. On envoie les ingrédients
+   * parce que l'ordre dépend de la colonne regardée — mobile d'abord sur
+   * WhatsApp, fixe d'abord à l'appel — et que la colonne n'est connue qu'ici.
+   */
+  joignable: {
+    companyPhones: string[]
+    contacts: {
+      id: string
+      first_name: string | null
+      last_name: string | null
+      tel: string | null
+      email: string | null
+      role_title: string | null
+      is_decision_maker: boolean | null
+    }[]
+  }
   owner: { id: string; name: string } | null
   /** Adresse de repli portée par la fiche entreprise (`entreprises.email`). */
   companyEmail: string | null
@@ -476,7 +508,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const stages = allStages.filter((s) => s.pipeline_id === selectedPipeline.id)
   const lostStage = stages.find((s) => isLostStage(s.nom)) ?? null
 
-  const sequenceRows = (sequencesRes.data ?? []) as Automation[]
+  // Les séquences archivées sortent du tableau : elles pilotent les colonnes,
+  // remplissent le sélecteur de partie et le lanceur, or « archivée » veut
+  // précisément dire « plus dans les listes de choix ». Leurs inscriptions
+  // passées ne disparaissent pas pour autant — `partCounts` se calcule sur les
+  // inscriptions, pas sur cette liste, et les lignes concernées restent
+  // lisibles dans la vue d'ensemble.
+  const sequenceRows = ((sequencesRes.data ?? []) as Automation[]).filter((a) => a.status !== 'archived')
 
   // ── 2. Quelle séquence pilote les colonnes ? ─────────────────────────────
   const { data: activeCounts } = await sb
@@ -509,7 +547,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     defaultHandoffOrdre(stages, (selectedSequence?.trigger_stage_id as number | null) ?? null)
 
   const columns = buildColumns({
-    steps: selectedSteps.map((s) => ({ id: s.id, kind: s.kind, day: s.day ?? 0, label: s.label ?? null })),
+    steps: selectedSteps.map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      day: s.day ?? 0,
+      label: s.label ?? null,
+      branch: s.branch ?? null,
+    })),
     sequenceName: selectedSequence?.name ?? null,
     stages,
     handoffOrdre,
@@ -559,7 +603,12 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     entIds.length > 0
       ? sb
           .from('entreprises')
-          .select('id, name, ville, telephone, email, site_web_canonique, canonical_url, logo_url, owner_id, service_tags')
+          // `telephones` en plus de `telephone` : un prospect porte jusqu'à
+          // quatre numéros répartis sur trois colonnes, et la carte doit dire
+          // lequel elle compose plutôt que d'en montrer un choisi au hasard.
+          .select(
+            'id, name, ville, telephone, telephones, email, site_web_canonique, canonical_url, logo_url, owner_id, service_tags',
+          )
           .in('id', entIds)
       : Promise.resolve({ data: [] as unknown[] }),
     oppIds.length > 0
@@ -614,6 +663,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         name: string | null
         ville: string | null
         telephone: string | null
+        telephones: (string | null)[] | null
         email: string | null
         site_web_canonique: string | null
         canonical_url: string | null
@@ -649,10 +699,17 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   }
   const contactById = new Map(contacts.map((c) => [c.id, c]))
   const contactByEnt = new Map<number, ContactRow>()
+  // TOUS les contacts d'une entreprise, pas seulement celui de l'affaire : c'est
+  // ce qui permet à la carte de dire « à qui » on écrit quand la fiche en porte
+  // plusieurs, et de proposer l'autre numéro plutôt que de choisir en silence.
+  const contactsByEnt = new Map<number, ContactRow[]>()
   for (const c of contacts) {
     if (c.entreprise_id == null) continue
     const current = contactByEnt.get(c.entreprise_id)
     if (!current || (c.is_decision_maker && !current.is_decision_maker)) contactByEnt.set(c.entreprise_id, c)
+    const liste = contactsByEnt.get(c.entreprise_id) ?? []
+    liste.push(c)
+    contactsByEnt.set(c.entreprise_id, liste)
   }
 
   // Inscription retenue : celle de la séquence affichée en priorité, car c'est
@@ -827,6 +884,11 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         /** L'étape courante, telle que la séquence la nomme (`s1`, `s2`…). */
         stepId: step?.id ?? null,
         variant: readVariant(enrollment.vars),
+        // La relance est partie et il répond quand même — le cas le plus
+        // fréquent, puisque c'est elle qui l'a réveillé. L'écran doit alors
+        // proposer « il a répondu » alors que l'inscription n'attend plus rien,
+        // pour la ramener sur la branche de la conversation.
+        rattrapageReponse: retourVersLaReponse(fullSteps, enrollment.current_step) != null,
       }
     }
 
@@ -886,6 +948,25 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
             phone: contact.tel,
           }
         : null,
+      // De quoi recalculer les destinataires côté écran avec `numerosDuProspect`,
+      // la seule définition de « quels numéros a ce prospect ». On envoie la
+      // matière première plutôt qu'une liste déjà cuisinée : l'ordre dépend de
+      // l'usage (mobile d'abord sur WhatsApp, fixe d'abord à l'appel), et la
+      // colonne qu'on regarde n'est connue qu'à l'affichage.
+      joignable: {
+        companyPhones: [ent?.telephone ?? null, ...(ent?.telephones ?? [])].filter(
+          (t): t is string => !!(t ?? '').trim(),
+        ),
+        contacts: (opp.entreprise_id != null ? (contactsByEnt.get(opp.entreprise_id) ?? []) : []).map((c) => ({
+          id: c.id,
+          first_name: c.first_name,
+          last_name: c.last_name,
+          tel: c.tel,
+          email: c.email,
+          role_title: c.role_title,
+          is_decision_maker: c.is_decision_maker,
+        })),
+      },
       owner: ownerId ? { id: ownerId, name: agentNameById.get(ownerId) ?? 'Agent' } : null,
       companyEmail,
       emailMissing,

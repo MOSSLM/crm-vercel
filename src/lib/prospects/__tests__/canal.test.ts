@@ -204,6 +204,37 @@ describe('public visé', () => {
   it('ne suggère rien plutôt que n’importe quoi', () => {
     expect(sequenceSuggeree(canaux('fixe'), TOUTES)).toBeNull()
   })
+
+  // Deux séquences sur le même public, c'est la forme d'un test d'accroche :
+  // « WhatsApp seul » et sa jumelle « site direct » visent exactement les mêmes
+  // fiches. La précision ne les départage plus — il faut une autre règle.
+  describe('deux séquences sur le même public', () => {
+    const JUMELLE = { id: 'wa-direct', requireCanaux: ['mobile' as Canal], excludeCanaux: ['email' as Canal] }
+
+    it('propose celle qui tourne, pas le brouillon, quel que soit l’ordre', () => {
+      const active = { ...WHATSAPP_SEUL, status: 'on' }
+      const brouillon = { ...JUMELLE, status: 'draft' }
+      expect(sequenceSuggeree(canaux('mobile'), [brouillon, active])?.id).toBe('wa')
+      expect(sequenceSuggeree(canaux('mobile'), [active, brouillon])?.id).toBe('wa')
+    })
+
+    it('à égalité complète, la première déclarée l’emporte', () => {
+      const a = { ...WHATSAPP_SEUL, status: 'on' }
+      const b = { ...JUMELLE, status: 'on' }
+      expect(sequenceSuggeree(canaux('mobile'), [a, b])?.id).toBe('wa')
+      expect(sequenceSuggeree(canaux('mobile'), [b, a])?.id).toBe('wa-direct')
+    })
+
+    it('la précision passe avant l’activité — une cible plus juste vaut mieux', () => {
+      const large = { id: 'large', requireCanaux: ['mobile' as Canal], status: 'on' }
+      const precise = { ...JUMELLE, status: 'draft' }
+      expect(sequenceSuggeree(canaux('mobile'), [large, precise])?.id).toBe('wa-direct')
+    })
+
+    it('reste stable quand aucune séquence ne porte de statut', () => {
+      expect(sequenceSuggeree(canaux('mobile'), [WHATSAPP_SEUL, JUMELLE])?.id).toBe('wa')
+    })
+  })
 })
 
 describe('lienWhatsApp', () => {

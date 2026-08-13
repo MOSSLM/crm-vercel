@@ -2,7 +2,12 @@
 import type { Canal } from '@/lib/prospects/canal'
 
 export type AutomationKind = 'workflow' | 'sequence'
-export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error'
+/**
+ * `archived` : rangée, hors des listes où l'on choisit une séquence, mais
+ * gardée en base avec ses inscriptions (cf. `sql/20260816_automations_archivees.sql`).
+ * Comme tout ce qui n'est pas `on`, le moteur n'en fait rien avancer.
+ */
+export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error' | 'archived'
 export type NodeCat = 'trigger' | 'cond' | 'action' | 'delay' | 'manual'
 
 // ── Définition d'un workflow ───────────────────────────────────────────────
@@ -62,6 +67,14 @@ export interface SequenceStep {
    * Absent ou 0 = on attend indéfiniment, le prospect reste garé.
    */
   replyTimeoutDays?: number
+  /**
+   * Cette étape n'appartient qu'à l'une des deux suites d'une attente-réponse.
+   *
+   * Absent = étape du tronc, traversée quoi qu'il arrive. La règle
+   * d'atteignabilité vit dans `src/lib/automations/branches.ts` et nulle part
+   * ailleurs — le moteur, l'éditeur et la prévision s'y réfèrent tous.
+   */
+  branch?: { waitId: string; on: 'reply' | 'timeout' } | null
 }
 
 export interface SequenceSettings {
@@ -216,6 +229,18 @@ export interface ProspectionTaskPayload {
   email?: string
   linkedin?: string
   result?: string
+  /**
+   * Les deux versions du modèle, telles que le moteur les a rendues au moment
+   * de préparer la tâche (cf. `processSequenceEnrollment`).
+   *
+   * Elles voyagent AVEC la tâche plutôt que d'être recalculées au clic : relire
+   * modèle et variables depuis le navigateur, c'est risquer d'afficher autre
+   * chose que ce qui est réellement prêt à partir. `variantAlt` est absent quand
+   * le modèle n'a qu'un texte — et sur toutes les tâches créées avant la
+   * bascule à deux versions, ce qui est exact : elles n'en avaient qu'une.
+   */
+  variant?: 'company' | 'contact'
+  variantAlt?: { variant: 'company' | 'contact'; message: string } | null
   [k: string]: unknown
 }
 

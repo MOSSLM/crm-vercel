@@ -18,9 +18,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getServiceClient } from '@/app/api/_lib/service-client'
-import { advanceEnrollmentAfterReply } from '@/lib/automations/engine'
+import { advanceEnrollmentAfterReply, reprendreSurLaBrancheReponse } from '@/lib/automations/engine'
+import { retourVersLaReponse } from '@/lib/automations/branches'
 import { readReplies } from '@/lib/automations/week'
-import type { SequenceEnrollment } from '@/components/automations/types'
+import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
 
 export type ReplyError = 'introuvable' | 'inactive' | 'pas_en_attente'
 
@@ -29,6 +30,12 @@ export interface ReplyResult {
   error?: ReplyError
   /** Index de l'étape d'attente libérée. */
   stepIndex?: number
+  /**
+   * `true` quand la relance était déjà partie et qu'on a fait demi-tour vers la
+   * branche « il a répondu ». L'appelant le dit à l'écran : ce n'est pas le même
+   * geste que débloquer une attente, et le prospect a reçu un message de plus.
+   */
+  rattrapage?: boolean
 }
 
 /**
@@ -47,21 +54,33 @@ export async function declarerReponse(
 
   const { data } = await sb
     .from('sequence_enrollments')
-    .select('id, status, current_step, hold_reason, vars')
+    .select('id, automation_id, status, current_step, hold_reason, vars')
     .eq('id', enrollmentId)
     .maybeSingle()
   const enrollment = data as Pick<
     SequenceEnrollment,
-    'id' | 'status' | 'current_step' | 'hold_reason' | 'vars'
+    'id' | 'automation_id' | 'status' | 'current_step' | 'hold_reason' | 'vars'
   > | null
 
   if (!enrollment) return { ok: false, error: 'introuvable' }
   if (enrollment.status !== 'active') return { ok: false, error: 'inactive' }
-  // Cliquer deux fois, ou cliquer sur une inscription qui n'attend rien, ne doit
-  // pas la faire sauter une étape : on refuse au lieu d'avancer à l'aveugle.
-  if (enrollment.hold_reason !== 'awaiting_reply') return { ok: false, error: 'pas_en_attente' }
 
   const idx = Number(enrollment.current_step) || 0
+
+  if (enrollment.hold_reason !== 'awaiting_reply') {
+    // Il a répondu APRÈS la relance — le cas le plus fréquent, puisque c'est la
+    // relance qui l'a réveillé. L'inscription est quelque part dans la branche
+    // « sans réponse » : on rejuge l'attente qui l'y a envoyée et on repart sur
+    // la branche « il a répondu », plutôt que de continuer à relancer quelqu'un
+    // qui vient d'écrire.
+    const rattrapage = await rattraperDepuisLeSilence(sb, enrollment, idx)
+    if (rattrapage) return rattrapage
+    // Cliquer deux fois, ou cliquer sur une inscription qui n'attend rien, ne
+    // doit pas la faire sauter une étape : on refuse au lieu d'avancer à
+    // l'aveugle.
+    return { ok: false, error: 'pas_en_attente' }
+  }
+
   const replies = { ...readReplies(enrollment.vars), [String(idx)]: new Date().toISOString() }
   await sb
     .from('sequence_enrollments')
@@ -70,4 +89,40 @@ export async function declarerReponse(
 
   await advanceEnrollmentAfterReply(enrollmentId)
   return { ok: true, stepIndex: idx }
+}
+
+/**
+ * Le demi-tour : de la branche « sans réponse » vers la branche « il a répondu ».
+ *
+ * Rend `null` quand il n'y a rien à rattraper — l'inscription est sur le tronc,
+ * ou l'attente qui la gouverne n'a pas de branche « réponse » écrite. C'est
+ * l'appelant qui décide alors quoi en dire ; ici, on ne fait rien plutôt que
+ * d'avancer d'une étape au hasard.
+ */
+async function rattraperDepuisLeSilence(
+  sb: SupabaseClient,
+  enrollment: Pick<SequenceEnrollment, 'id' | 'automation_id' | 'current_step' | 'vars'>,
+  idx: number,
+): Promise<ReplyResult | null> {
+  const { data: auto } = await sb
+    .from('automations')
+    .select('definition')
+    .eq('id', enrollment.automation_id)
+    .maybeSingle()
+  const def = (auto?.definition as SequenceDefinition) ?? { steps: [] }
+  const steps = (Array.isArray(def.steps) ? def.steps : []) as SequenceStep[]
+
+  const retour = retourVersLaReponse(steps, idx)
+  if (!retour) return null
+
+  // La réponse se note sur l'ATTENTE, pas sur l'étape courante : c'est elle qui
+  // décide de la branche, et c'est elle que `etapeSuivante` relira.
+  const replies = { ...readReplies(enrollment.vars), [String(retour.waitIdx)]: new Date().toISOString() }
+  await sb
+    .from('sequence_enrollments')
+    .update({ vars: { ...(enrollment.vars ?? {}), replies }, hold_reason: null })
+    .eq('id', enrollment.id)
+
+  await reprendreSurLaBrancheReponse(enrollment.id, retour.cible, retour.waitIdx)
+  return { ok: true, stepIndex: retour.waitIdx, rattrapage: true }
 }

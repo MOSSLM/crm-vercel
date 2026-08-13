@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { XI } from './icons'
 import { Avatar } from './regulator/parts'
 import { lienWhatsApp } from '@/lib/prospects/canal'
+import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from '@/lib/automations/variables'
 import { sourceNumeros, useNumeros } from './NumeroPicker'
 import type { UsageNumero } from '@/lib/prospects/numeros'
 import type { ProspectionTaskFull } from './prospection-db'
@@ -168,7 +169,12 @@ function TaskCard({
   onReassign: (assigneeId: string | null) => void
 }) {
   const overdue = new Date(task.due_at).getTime() < Date.now()
-  const message = task.payload?.message ?? ''
+  // Les deux versions du modèle voyagent avec la tâche. Montrer seulement celle
+  // que le moteur a retenue laissait l'agent sans recours quand il connaît le
+  // gérant alors que la fiche n'a pas son prénom.
+  const versions = versionsPreparees(task.payload)
+  const [variant, setVariant] = useState<MessageVariant>(versions[0]?.variant ?? 'company')
+  const message = versions.find((v) => v.variant === variant)?.message ?? task.payload?.message ?? ''
   // Le numéro préparé par le moteur est le défaut — sur une entreprise sans
   // fiche contact, il vient de `entreprises.telephone`. Mais 47 entreprises du
   // parc en ont plusieurs, et l'agent doit pouvoir en essayer un autre sans
@@ -235,8 +241,25 @@ function TaskCard({
           {task.routing_reason}
         </div>
       )}
-      {/* Le choix n'apparaît que s'il y en a un : une carte ne doit pas porter un
-          sélecteur à une seule entrée. */}
+      {/* Deux sélecteurs, même règle : ils n'apparaissent que s'il y a
+          réellement un choix. Une carte ne doit pas porter une liste à une
+          seule entrée — on la cliquerait pour vérifier qu'elle ne fait rien. */}
+      {versions.length > 1 && (
+        <label className="tb-assign">
+          <span>Version</span>
+          <select
+            className="select"
+            value={variant}
+            onChange={(e) => setVariant(e.target.value as MessageVariant)}
+          >
+            {versions.map((v) => (
+              <option key={v.variant} value={v.variant}>
+                {VARIANT_LABELS[v.variant].tab}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {numeros.length > 1 && (task.kind === 'whatsapp' || task.kind === 'call') && (
         <label className="tb-assign">
           <span>Numéro</span>

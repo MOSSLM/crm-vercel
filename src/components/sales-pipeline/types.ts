@@ -2,6 +2,7 @@
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
 import type { CellStatus, SalesColumn, SalesStateRow, SequencePart, StepNote } from '@/lib/sales-pipeline/stages'
 import type { MessageVariant } from '@/lib/automations/variables'
+import type { ContactSource } from '@/lib/prospects/numeros'
 import type { RegulatorQueueRow } from '@/components/automations/regulator/types'
 
 export type {
@@ -32,6 +33,15 @@ export interface SalesSequenceInfo {
   stepId: string | null
   /** Version épinglée à la main, `null` = le moteur choisit. */
   variant: MessageVariant | null
+  /**
+   * L'inscription est sur la voie « sans réponse » d'une attente, et une voie
+   * « il a répondu » existe : déclarer une réponse la ramène sur celle-ci.
+   *
+   * Sans ce drapeau, le bouton n'apparaissait que tant que l'inscription était
+   * garée — or un prospect qui répond APRÈS la relance est le cas le plus
+   * fréquent, c'est elle qui l'a réveillé.
+   */
+  rattrapageReponse?: boolean
 }
 
 export interface SalesTaskInfo {
@@ -64,6 +74,16 @@ export interface SalesBoardRow {
   type: string | null
   mrr: number | null
   contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null } | null
+  /**
+   * Par où l'on peut joindre ce prospect — la matière première, pas une liste
+   * déjà triée. `numerosDuProspect` en tire les numéros dédoublonnés avec leur
+   * origine, dans l'ordre que veut l'usage (mobile d'abord sur WhatsApp, fixe
+   * d'abord à l'appel). Optionnel : une réponse d'API antérieure ne le porte pas.
+   */
+  joignable?: {
+    companyPhones: string[]
+    contacts: ContactSource[]
+  }
   owner: { id: string; name: string } | null
   companyEmail: string | null
   emailMissing: boolean

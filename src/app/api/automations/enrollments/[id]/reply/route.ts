@@ -29,5 +29,8 @@ export const POST = withAuth<undefined, Params>({}, async ({ params, cors }) => 
     const m = MESSAGE[result.error ?? 'introuvable']
     return jsonError(m.text, m.status, {}, cors)
   }
-  return json({ ok: true, step_index: result.stepIndex }, { headers: cors })
+  return json(
+    { ok: true, step_index: result.stepIndex, rattrapage: !!result.rattrapage },
+    { headers: cors },
+  )
 })

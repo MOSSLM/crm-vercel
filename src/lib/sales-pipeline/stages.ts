@@ -158,6 +158,14 @@ export interface SequenceStepRef {
   kind: SeqStepKind
   day: number
   label: string | null
+  /**
+   * L'étape n'appartient qu'à l'une des deux suites d'une attente-réponse.
+   *
+   * La colonne le DIT dans son sous-titre : sans ça, un prospect passé par la
+   * relance se lisait comme ayant sauté la colonne « il a répondu », alors qu'il
+   * n'a jamais été censé la traverser.
+   */
+  branch?: { waitId: string; on: 'reply' | 'timeout' } | null
 }
 
 export interface PipelineStageRef {
@@ -221,11 +229,15 @@ export function buildColumns(opts: {
   } else {
     for (const step of opts.steps) {
       const channel = channelOf(step.kind)
+      const quand = step.day > 0 ? `J+${step.day}` : 'immédiat'
       columns.push({
         id: stepColumnId(step.id),
         group: 'sequence',
         label: step.label?.trim() || channel.label,
-        hint: step.day > 0 ? `J+${step.day}` : 'immédiat',
+        // Une colonne de voie n'est traversée que par la moitié des prospects.
+        // Le dire dans le sous-titre évite de lire une case vide comme une étape
+        // ratée alors qu'elle appartient à l'autre chemin.
+        hint: step.branch ? `${quand} · ${step.branch.on === 'reply' ? 'si réponse' : 'si silence'}` : quand,
         mode: channel.mode,
         color: channel.color,
         kind: step.kind,

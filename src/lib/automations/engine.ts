@@ -7,6 +7,7 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
+import { etapeSuivante } from '@/lib/automations/branches'
 import {
   readReplies,
   readSkippedSteps,
@@ -1111,7 +1112,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   // envoyer. L'inscription continue sa route — annuler un envoi n'a jamais
   // voulu dire sortir le prospect de la séquence.
   if (readSkippedSteps(enrollment.vars).includes(idx)) {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    await avancerApres(sb, enrollment, steps, idx)
     return
   }
 
@@ -1239,7 +1240,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       .from('sequence_enrollments')
       .update({ send_at: null, hold_reason: null, ...(sentAt ? { last_email_at: sentAt } : {}) })
       .eq('id', enrollment.id)
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    await avancerApres(sb, enrollment, steps, idx)
   } else if (stepIsManual(step)) {
     // Le corps d'un script d'appel ne passait PAS par `interpolate` : l'agent
     // lisait « Bonjour, je suis bien avec {{company.name}} ? » à l'écran, en
@@ -1290,7 +1291,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       .update({ next_run_at: null, send_at: null, hold_reason: null })
       .eq('id', enrollment.id)
   } else {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    await avancerApres(sb, enrollment, steps, idx)
   }
 }
 
@@ -1311,7 +1312,7 @@ async function processWaitStep(
   step: SequenceStep,
 ): Promise<void> {
   if (step.waitMode !== 'reply') {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    await avancerApres(sb, enrollment, steps, idx)
     return
   }
 
@@ -1323,7 +1324,7 @@ async function processWaitStep(
   const relanceEchue = enrollment.hold_reason === 'awaiting_reply' && timeoutDays > 0
 
   if (dejaRepondu || relanceEchue) {
-    await scheduleNextStep(sb, enrollment, steps, idx + 1, { reanchor: true })
+    await avancerApres(sb, enrollment, steps, idx, { reanchor: true })
     return
   }
 
@@ -1484,7 +1485,17 @@ export async function cancelEnrollmentWork(
 }
 
 /**
- * Fait avancer une inscription à l'étape `nextIdx` et calcule sa date.
+ * Fait avancer une inscription après l'étape `fromIdx`.
+ *
+ * L'ÉTAPE SUIVANTE N'EST PLUS `fromIdx + 1`
+ * Une attente-réponse à délai ouvre deux suites (cf.
+ * `src/lib/automations/branches.ts`) : celle qui parle à quelqu'un qui vient
+ * d'écrire, celle qui relance un silence. `etapeSuivante` saute donc les étapes
+ * de la branche qu'on n'a pas prise, en lisant l'issue dans `vars.replies` —
+ * aucun état supplémentaire sur l'inscription, donc rien qui puisse diverger de
+ * la définition quand celle-ci est retouchée en cours de route. Sans branche
+ * déclarée nulle part, la fonction rend exactement `fromIdx + 1` : les
+ * séquences existantes ne changent pas de comportement.
  *
  * `reanchor` remet le compteur des J+n à MAINTENANT, sur l'étape qu'on vient de
  * franchir. À poser chaque fois que l'inscription a attendu un humain — tâche
@@ -1493,12 +1504,25 @@ export async function cancelEnrollmentWork(
  * déjà dans le passé. Un envoi automatique, lui, ne réancre pas : il est parti
  * à l'heure prévue, la séquence garde son rythme.
  */
-async function scheduleNextStep(
+async function avancerApres(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  steps: SequenceStep[],
+  fromIdx: number,
+  opts: { reanchor?: boolean } = {},
+): Promise<void> {
+  const replies = readReplies(enrollment.vars)
+  const nextIdx = etapeSuivante(steps, fromIdx, (i) => Boolean(replies[String(i)]))
+  await scheduleStep(sb, enrollment, steps, nextIdx, { ...opts, fromIdx })
+}
+
+/** Pose l'inscription sur une étape précise et calcule sa date de départ. */
+async function scheduleStep(
   sb: SupabaseClient,
   enrollment: SequenceEnrollment,
   steps: SequenceStep[],
   nextIdx: number,
-  opts: { reanchor?: boolean } = {},
+  opts: { reanchor?: boolean; fromIdx?: number } = {},
 ): Promise<void> {
   if (nextIdx >= steps.length) {
     await sb
@@ -1516,8 +1540,11 @@ async function scheduleNextStep(
   }
   const now = Date.now()
   const anchorMs = enrollment.anchor_at ? new Date(enrollment.anchor_at).getTime() : null
+  // L'ancre se pose sur l'étape qu'on vient de FRANCHIR, pas sur `nextIdx - 1` :
+  // avec des branches, celle-ci peut appartenir au chemin qu'on n'a pas pris, et
+  // son `day` servirait alors de zéro à des J+n qui n'ont rien à voir.
   const anchor: StepAnchor = opts.reanchor
-    ? { enteredMs: now, anchorMs: now, anchorStep: Math.max(0, nextIdx - 1) }
+    ? { enteredMs: now, anchorMs: now, anchorStep: Math.max(0, opts.fromIdx ?? nextIdx - 1) }
     : {
         enteredMs: new Date(enrollment.entered_at).getTime(),
         anchorMs: Number.isFinite(anchorMs) ? anchorMs : null,
@@ -1558,7 +1585,7 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
   const { data: autoRow } = await sb.from('automations').select('definition').eq('id', enrollment.automation_id).maybeSingle()
   const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
   const steps = Array.isArray(def.steps) ? def.steps : []
-  await scheduleNextStep(sb, enrollment, steps, enrollment.current_step + 1, { reanchor: true })
+  await avancerApres(sb, enrollment, steps, enrollment.current_step, { reanchor: true })
 }
 
 /**
@@ -1570,4 +1597,37 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
  */
 export async function advanceEnrollmentAfterReply(enrollmentId: string): Promise<void> {
   await advanceEnrollmentAfterTask(enrollmentId)
+}
+
+/**
+ * Repose une inscription au DÉBUT de la branche « il a répondu ».
+ *
+ * Le demi-tour de `declarerReponse` quand la relance est déjà partie : on ne
+ * peut pas se contenter d'avancer, il faut revenir en arrière dans le tableau
+ * d'étapes — la branche réponse précède la branche silence.
+ *
+ * L'ancre se pose sur l'ATTENTE et non sur l'étape qu'on quitte : les J+n de la
+ * branche réponse ont été écrits en partant de là, et les compter depuis une
+ * relance qui n'aurait pas dû partir décalerait toute la suite.
+ */
+export async function reprendreSurLaBrancheReponse(
+  enrollmentId: string,
+  cible: number,
+  waitIdx: number,
+): Promise<void> {
+  const sb = getServiceClient()
+  const { data: enr } = await sb.from('sequence_enrollments').select('*').eq('id', enrollmentId).maybeSingle()
+  const enrollment = enr as SequenceEnrollment | null
+  if (!enrollment || enrollment.status !== 'active') return
+  const { data: autoRow } = await sb
+    .from('automations')
+    .select('definition')
+    .eq('id', enrollment.automation_id)
+    .maybeSingle()
+  const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
+  const steps = Array.isArray(def.steps) ? def.steps : []
+  // Les tâches encore ouvertes de la relance n'ont plus lieu d'être : les
+  // laisser ferait rappeler quelqu'un qui vient d'écrire.
+  await cancelEnrollmentWork(sb, enrollmentId)
+  await scheduleStep(sb, enrollment, steps, cible, { reanchor: true, fromIdx: waitIdx })
 }

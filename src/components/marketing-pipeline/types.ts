@@ -182,12 +182,22 @@ export const sequenceLancable = (s: { status: string }): boolean => s.status ===
  * Ce qui manque à une séquence pour partir, en clair. `null` quand rien ne
  * manque.
  *
- * « Brouillon » et « en pause » ne se réparent pas pareil : le premier n'a
- * jamais été lancé (un bouton Activer suffit), le second a été arrêté
- * volontairement — les confondre enverrait chercher la mauvaise cause.
+ * « Brouillon », « en pause » et « archivée » ne se réparent pas pareil : le
+ * premier n'a jamais été lancé (un bouton Activer suffit), le deuxième a été
+ * arrêté volontairement, la troisième a été RANGÉE — la proposer reviendrait à
+ * défaire un choix. Les confondre enverrait chercher la mauvaise cause.
  */
 export const sequenceEtatLabel = (status: string): string | null =>
-  status === "on" ? null : status === "draft" ? "brouillon" : "en pause";
+  status === "on" ? null : status === "draft" ? "brouillon" : status === "archived" ? "archivée" : "en pause";
+
+/**
+ * Une séquence rangée ne se propose plus.
+ *
+ * Elle reste en base avec ses inscriptions — on lit encore son nom sur les
+ * tâches qu'elle a produites — mais elle sort de tout écran où l'on CHOISIT une
+ * séquence. Sans quoi archiver n'aurait rien rangé du tout.
+ */
+export const sequenceArchivee = (s: { status: string }): boolean => s.status === "archived";
 
 /** Nom de séquence suffixé de son état, pour les listes déroulantes. */
 export const sequenceOptionLabel = (s: { name: string; status: string }): string => {

@@ -14,6 +14,13 @@ import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
 import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
 import { moveStep } from './sequence-steps'
+import {
+  attentesEnAmont,
+  ISSUE_LABEL,
+  planEditeur,
+  positionDInsertion,
+  type IssueAttente,
+} from '@/lib/automations/branches'
 import { MessageEditor } from './MessageEditor'
 import { normalizeWindows } from '@/lib/automations/regulator'
 import {
@@ -22,6 +29,7 @@ import {
   sampleVars,
   variantText,
   VARIABLES,
+  VARIANTS,
   VARIANT_LABELS,
   type MessageVariant,
   type VarBag,
@@ -40,10 +48,16 @@ export function SequenceBuilder({ id }: { id: string }) {
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [settings, setSettings] = useState<SequenceSettings>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [picker, setPicker] = useState(false)
+  /**
+   * `false` fermé · `true` ouvert sur le tronc · `{waitId, on}` ouvert depuis
+   * une voie, où l'étape choisie ira directement.
+   */
+  const [picker, setPicker] = useState<boolean | { waitId: string; on: IssueAttente }>(false)
   const [loading, setLoading] = useState(true)
   const [vars, setVars] = useState<VarBag>(() => sampleVars())
   const [previewOn, setPreviewOn] = useState<string | null>(null)
+  /** Le numéro de la fiche d'aperçu — rempli tout seul, modifiable à la main. */
+  const [previewId, setPreviewId] = useState('')
   const dirty = useRef(false)
 
   useEffect(() => {
@@ -96,21 +110,47 @@ export function SequenceBuilder({ id }: { id: string }) {
    * d'audit n'a pas encore de jeton : sur des valeurs inventées, tout est
    * toujours rempli, et le trou se découvre à l'envoi.
    */
-  const chargerApercu = useCallback(async (entrepriseId: string) => {
-    if (!entrepriseId) {
-      setVars(sampleVars())
-      setPreviewOn(null)
-      return
-    }
-    try {
-      const res = await authedFetch(`/api/automations/preview?entreprise_id=${entrepriseId}`)
-      const payload = (await res.json()) as { vars?: VarBag; company?: string | null }
-      setVars(payload.vars ?? sampleVars())
-      setPreviewOn(payload.company ?? null)
-    } catch {
-      toast.error('Aperçu indisponible — valeurs d’exemple conservées')
-    }
-  }, [])
+  const chargerApercu = useCallback(
+    /**
+     * `null` — « choisis pour moi », le serveur prend une fiche du public visé.
+     * `''`   — le champ a été vidé à la main : valeurs d'exemple, et rien d'autre.
+     * sinon  — la fiche demandée.
+     */
+    async (entrepriseId: string | null) => {
+      try {
+        const q = new URLSearchParams({ automation_id: id })
+        if (entrepriseId) q.set('entreprise_id', entrepriseId)
+        else if (entrepriseId === '') q.set('auto', '0')
+        const res = await authedFetch(`/api/automations/preview?${q}`)
+        const payload = (await res.json()) as {
+          vars?: VarBag
+          company?: string | null
+          entrepriseId?: number | null
+        }
+        setVars(payload.vars ?? sampleVars())
+        setPreviewOn(payload.company ?? null)
+        setPreviewId(payload.entrepriseId != null ? String(payload.entrepriseId) : '')
+      } catch {
+        toast.error('Aperçu indisponible — valeurs d’exemple conservées')
+      }
+    },
+    [id],
+  )
+
+  /**
+   * Une vraie fiche dès l'ouverture, sans rien demander.
+   *
+   * L'aperçu ne servait qu'à qui pensait à coller un numéro d'entreprise dans un
+   * champ replié ; tous les autres relisaient des valeurs d'exemple où tout est
+   * toujours rempli. Le serveur prend donc une fiche du public que la séquence
+   * déclare viser — de préférence une déjà inscrite — et c'est elle qu'on lit.
+   */
+  // `chargerApercu` ne dépend que de `id` : l'effet ne se rejoue donc pas à
+  // chaque frappe, et la fiche choisie à la main n'est jamais écrasée.
+  useEffect(() => {
+    if (loading) return
+    void chargerApercu(null)
+  }, [loading, chargerApercu])
 
   const updateStep = useCallback(
     (sid: string, patch: Partial<SequenceStep>) => {
@@ -147,6 +187,11 @@ export function SequenceBuilder({ id }: { id: string }) {
   const addStep = useCallback(
     (kind: SeqStepKind, preset?: Partial<SequenceStep>) => {
       touch()
+      // Le picker sait s'il a été ouvert depuis une voie : l'étape y entre
+      // directement, insérée à la bonne place plutôt qu'ajoutée à la fin —
+      // recoller ensuite une étape dans la bonne branche à coups de flèches est
+      // exactement ce que la fourche est censée éviter.
+      const cible = typeof picker === 'object' ? picker : null
       setSteps((prev) => {
         let i = prev.length + 1
         while (prev.some((s) => s.id === `s${i}`)) i++
@@ -158,12 +203,38 @@ export function SequenceBuilder({ id }: { id: string }) {
           day: prev.length === 0 ? 0 : lastDay + 2,
           // Pas de `sendAt` : l'heure d'un email appartient au régulateur.
           ...(kind === 'email' ? { trackOpens: true, trackClicks: true } : {}),
+          ...(cible ? { branch: { waitId: cible.waitId, on: cible.on } } : {}),
           ...preset,
         }
         setSelectedId(step.id)
-        return [...prev, step]
+        if (!cible) return [...prev, step]
+        const at = positionDInsertion(prev, cible.waitId, cible.on)
+        return [...prev.slice(0, at), step, ...prev.slice(at)]
       })
       setPicker(false)
+    },
+    [touch, picker],
+  )
+
+  /**
+   * Rattacher une étape existante à une voie, ou la ramener sur le tronc.
+   *
+   * Le déplacement suit : une étape de la voie « sans réponse » doit vivre dans
+   * le tableau après celles de la voie « il a répondu », sinon la fourche se
+   * dessine à l'envers et l'insertion suivante tombe au mauvais endroit.
+   */
+  const setBranche = useCallback(
+    (stepId: string, branch: SequenceStep['branch']) => {
+      touch()
+      setSteps((prev) => {
+        const from = prev.findIndex((s) => s.id === stepId)
+        if (from < 0) return prev
+        const modifiee = { ...prev[from], branch: branch ?? null }
+        const sans = prev.filter((_, i) => i !== from)
+        if (!branch) return [...sans.slice(0, from), modifiee, ...sans.slice(from)]
+        const at = positionDInsertion(sans, branch.waitId, branch.on)
+        return [...sans.slice(0, at), modifiee, ...sans.slice(at)]
+      })
     },
     [touch],
   )
@@ -199,6 +270,8 @@ export function SequenceBuilder({ id }: { id: string }) {
   const selectedStep = steps.find((s) => s.id === selectedId)
   // Plages d'envoi de la séquence. Vide = celles du régulateur s'appliquent.
   const windows = normalizeWindows(settings.sendWindows)
+  // Le plan de la colonne centrale : tronc, fourches, voies — y compris vides.
+  const plan = planEditeur(steps)
 
   return (
     <>
@@ -382,17 +455,30 @@ export function SequenceBuilder({ id }: { id: string }) {
 
           <Section label="Aperçu des messages" defaultOpen={false}>
             <Field label="Entreprise d’essai" hint={previewOn ?? 'valeurs d’exemple'}>
-              <input
-                className="input mono"
-                placeholder="n° entreprise"
-                onBlur={(e) => chargerApercu(e.target.value.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') chargerApercu((e.target as HTMLInputElement).value.trim())
-                }}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="input mono"
+                  placeholder="n° entreprise"
+                  value={previewId}
+                  onChange={(e) => setPreviewId(e.target.value)}
+                  onBlur={(e) => chargerApercu(e.target.value.trim())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') chargerApercu((e.target as HTMLInputElement).value.trim())
+                  }}
+                />
+                <button
+                  className="btn outline sm"
+                  type="button"
+                  title="Reprendre une fiche du public visé"
+                  onClick={() => chargerApercu(null)}
+                >
+                  <XI name="refresh" className="ico-sm" />
+                </button>
+              </div>
               <p className="rg-hint">
-                Les messages de chaque étape se rendent avec les données de cette entreprise — liens du rapport et du
-                site démo compris. Vide, l’aperçu se contente de valeurs d’exemple.
+                Une fiche réelle du public visé est prise à l’ouverture — de préférence une déjà inscrite. Les messages
+                de chaque étape se rendent avec ses données, liens du rapport et du site démo compris : c’est le seul
+                moyen de voir qu’une démo n’est pas prête ou qu’un prénom manque avant que le prospect ne le découvre.
               </p>
             </Field>
           </Section>
@@ -490,40 +576,82 @@ export function SequenceBuilder({ id }: { id: string }) {
               </span>
             </div>
 
-            {steps.map((step, i) => (
-              <Fragment key={step.id}>
-                {/* Ce que la maquette dit sur chaque liaison : le délai, qui
-                    décide l'heure, et si l'étape attend un humain. */}
-                <div className="seq-conn">
-                  <span className="wait-chip">
-                    <XI name="clock" className="ico-xs" />
-                    {step.day > 0 ? `J+${step.day}` : 'immédiat'}
-                  </span>
-                  {step.kind === 'email' && (
-                    <span className="wait-chip accent">
-                      <XI name="settings" className="ico-xs" />
-                      heure décidée par le régulateur
-                    </span>
-                  )}
-                  {step.mode === 'manual' && (
-                    <span className="wait-chip manual">
-                      <XI name="user" className="ico-xs" />
-                      tâche à un humain
-                    </span>
-                  )}
-                </div>
-                <SeqStep
-                  step={step}
-                  index={i + 1}
-                  selected={selectedId === step.id}
-                  canMoveUp={i > 0}
-                  canMoveDown={i < steps.length - 1}
-                  onSelect={() => setSelectedId(step.id)}
-                  onDelete={() => removeStep(step.id)}
-                  onMove={(dir) => reorder(step.id, dir)}
-                />
-              </Fragment>
-            ))}
+            {plan.map((ligne) => {
+              if (ligne.type === 'reprise') {
+                return (
+                  <Fragment key={`reprise-${ligne.waitId}`}>
+                    <div className="seq-conn" />
+                    {/* Les deux chemins se rejoignent : ce qui suit part quoi
+                        qu'il se soit passé. Le dire évite de croire qu'une
+                        étape de tronc appartient encore à la dernière voie. */}
+                    <div className="seq-merge">
+                      <XI name="branch" className="ico-xs" />
+                      les deux chemins se rejoignent
+                    </div>
+                  </Fragment>
+                )
+              }
+              if (ligne.type === 'branche') {
+                return (
+                  <div key={`${ligne.waitId}-${ligne.on}`} className="seq-lane" data-on={ligne.on}>
+                    <div className="seq-lane-hd">
+                      <XI name={ligne.on === 'reply' ? 'check' : 'clock'} className="ico-xs" />
+                      {ISSUE_LABEL[ligne.on].titre}
+                      <span className="hint">{ISSUE_LABEL[ligne.on].aide}</span>
+                    </div>
+                    {ligne.etapes.length === 0 && (
+                      <div className="seq-lane-vide">
+                        Rien d’écrit pour ce cas — la séquence enchaîne directement sur la suite commune.
+                      </div>
+                    )}
+                    {ligne.etapes.map((i) => (
+                      <Fragment key={steps[i].id}>
+                        <ConnStep step={steps[i]} />
+                        <SeqStep
+                          step={steps[i]}
+                          index={i + 1}
+                          selected={selectedId === steps[i].id}
+                          canMoveUp={i > 0}
+                          canMoveDown={i < steps.length - 1}
+                          onSelect={() => setSelectedId(steps[i].id)}
+                          onDelete={() => removeStep(steps[i].id)}
+                          onMove={(dir) => reorder(steps[i].id, dir)}
+                        />
+                      </Fragment>
+                    ))}
+                    <button
+                      type="button"
+                      className="add-step-pill sm"
+                      onClick={() => setPicker({ waitId: ligne.waitId, on: ligne.on })}
+                    >
+                      <XI name="plus" className="ico-sm" />
+                      Ajouter une étape ici
+                    </button>
+                  </div>
+                )
+              }
+              const step = steps[ligne.index]
+              return (
+                <Fragment key={step.id}>
+                  <ConnStep step={step} />
+                  <SeqStep
+                    step={step}
+                    index={ligne.index + 1}
+                    selected={selectedId === step.id}
+                    canMoveUp={ligne.index > 0}
+                    canMoveDown={ligne.index < steps.length - 1}
+                    onSelect={() => setSelectedId(step.id)}
+                    onDelete={() => removeStep(step.id)}
+                    onMove={(dir) => reorder(step.id, dir)}
+                    // Une étape rendue dans le flux principal alors qu'elle
+                    // déclare une voie n'a pas trouvé sa fourche : attente
+                    // supprimée, ou fourche imbriquée que l'éditeur ne dessine
+                    // pas. On la signale plutôt que de la masquer.
+                    orpheline={!!step.branch}
+                  />
+                </Fragment>
+              )
+            })}
 
             <div className="seq-conn" />
             <button type="button" className="add-step-pill" onClick={() => setPicker(true)}>
@@ -544,11 +672,13 @@ export function SequenceBuilder({ id }: { id: string }) {
       {/* RIGHT — inspecteur d'étape */}
       <div className="pane">
         <SeqStepInspector
+          steps={steps}
           step={selectedStep}
           settings={settings}
           vars={vars}
           previewOn={previewOn}
           onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)}
+          onBranche={(b) => selectedStep && setBranche(selectedStep.id, b)}
         />
       </div>
 
@@ -710,6 +840,33 @@ function useStepMeta(step: SequenceStep): StepMeta {
   return { icon: 'task', title: 'Tâche', subtitle: 'Action manuelle' }
 }
 
+/**
+ * Ce que la maquette dit sur chaque liaison : le délai, qui décide l'heure, et
+ * si l'étape attend un humain.
+ */
+function ConnStep({ step }: { step: SequenceStep }) {
+  return (
+    <div className="seq-conn">
+      <span className="wait-chip">
+        <XI name="clock" className="ico-xs" />
+        {step.day > 0 ? `J+${step.day}` : 'immédiat'}
+      </span>
+      {step.kind === 'email' && (
+        <span className="wait-chip accent">
+          <XI name="settings" className="ico-xs" />
+          heure décidée par le régulateur
+        </span>
+      )}
+      {step.mode === 'manual' && (
+        <span className="wait-chip manual">
+          <XI name="user" className="ico-xs" />
+          tâche à un humain
+        </span>
+      )}
+    </div>
+  )
+}
+
 function SeqStep({
   step,
   index,
@@ -719,6 +876,7 @@ function SeqStep({
   onSelect,
   onDelete,
   onMove,
+  orpheline = false,
 }: {
   step: SequenceStep
   index: number
@@ -728,6 +886,12 @@ function SeqStep({
   onSelect: () => void
   onDelete: () => void
   onMove: (dir: -1 | 1) => void
+  /**
+   * Étape qui déclare une voie sans être dessinée dedans — attente supprimée,
+   * ou fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même,
+   * signalée : une étape qu'on ne voit plus est pire qu'une étape mal placée.
+   */
+  orpheline?: boolean
 }) {
   const meta = useStepMeta(step)
   return (
@@ -735,6 +899,7 @@ function SeqStep({
       className="seq-step"
       data-kind={step.kind}
       data-reply={step.kind === 'wait' && step.waitMode === 'reply'}
+      data-orpheline={orpheline || undefined}
       data-selected={selected}
       onClick={(e) => {
         e.stopPropagation()
@@ -795,19 +960,80 @@ function SeqStep({
   )
 }
 
+/**
+ * Sur quel chemin cette étape se trouve.
+ *
+ * N'apparaît que s'il y a réellement une fourche au-dessus d'elle : proposer un
+ * choix entre « tronc » et rien d'autre ferait chercher une branche qui n'existe
+ * pas. Changer de voie DÉPLACE l'étape dans le tableau — la voie « sans
+ * réponse » vient après la voie « il a répondu », sinon la fourche se dessine à
+ * l'envers.
+ */
+function BrancheSection({
+  steps,
+  step,
+  onBranche,
+}: {
+  steps: SequenceStep[]
+  step: SequenceStep
+  onBranche: (branch: SequenceStep['branch']) => void
+}) {
+  const idx = steps.findIndex((s) => s.id === step.id)
+  const attentes = attentesEnAmont(steps, idx < 0 ? steps.length : idx)
+  if (attentes.length === 0) return null
+
+  const courant = step.branch
+  const valeur = courant ? `${courant.waitId}:${courant.on}` : ''
+
+  return (
+    <Section label="Chemin">
+      <Field label="Cette étape part…" hint={courant ? 'sur une voie' : 'toujours'}>
+        <select
+          className="select"
+          value={valeur}
+          onChange={(e) => {
+            const v = e.target.value
+            if (!v) return onBranche(null)
+            const [waitId, on] = v.split(':')
+            onBranche({ waitId, on: on as IssueAttente })
+          }}
+        >
+          <option value="">Toujours — tronc commun</option>
+          {attentes.map((w) =>
+            (['reply', 'timeout'] as const).map((on) => (
+              <option key={`${steps[w].id}:${on}`} value={`${steps[w].id}:${on}`}>
+                Étape {w + 1} · {ISSUE_LABEL[on].titre}
+              </option>
+            )),
+          )}
+        </select>
+        <p className="rg-hint">
+          {courant
+            ? ISSUE_LABEL[courant.on].aide
+            : 'Traversée quoi qu’il arrive. Placez-la sur une voie pour qu’elle ne parte que dans ce cas-là.'}
+        </p>
+      </Field>
+    </Section>
+  )
+}
+
 function SeqStepInspector({
+  steps,
   step,
   settings,
   vars,
   previewOn,
   onUpdate,
+  onBranche,
 }: {
+  steps: SequenceStep[]
   step: SequenceStep | undefined
   settings: SequenceSettings
   /** Valeurs de l'entreprise d'essai, pour rendre les messages tels qu'ils partiront. */
   vars: VarBag
   previewOn: string | null
   onUpdate: (p: Partial<SequenceStep>) => void
+  onBranche: (branch: SequenceStep['branch']) => void
 }) {
   if (!step) {
     return (
@@ -826,6 +1052,7 @@ function SeqStepInspector({
         </div>
       </div>
       <div className="inspector-body">
+        <BrancheSection steps={steps} step={step} onBranche={onBranche} />
         <Section label="Timing">
           <Field label="Jour" hint="depuis le début">
             <input
@@ -1059,16 +1286,19 @@ function EmailTemplatePreview({
   const tpl = useTemplateBody('email_templates', templateId)
   if (!templateId) return null
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
-  const variant = pickVariant([tpl.subject, tpl.body], vars)
   return (
-    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
-      <div className="msg-ed-preview">
-        <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
-        {'\n\n'}
-        {interpolateVars(variantText(tpl.body, variant), vars)}
-      </div>
-      <VariantNote variant={variant} pairs={[tpl.subject, tpl.body]} />
-    </Field>
+    <DeuxVersions
+      pairs={[tpl.subject, tpl.body]}
+      vars={vars}
+      previewOn={previewOn}
+      rendu={(variant) => (
+        <>
+          <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
+          {'\n\n'}
+          {interpolateVars(variantText(tpl.body, variant), vars)}
+        </>
+      )}
+    />
   )
 }
 
@@ -1084,37 +1314,109 @@ function WhatsappTemplatePreview({
 }) {
   const tpl = useTemplateBody('whatsapp_templates', templateId)
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
-  const variant = pickVariant([tpl.body], vars)
   return (
-    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
-      <div className="msg-ed-preview">{interpolateVars(variantText(tpl.body, variant), vars)}</div>
-      <VariantNote variant={variant} pairs={[tpl.body]} />
-      <p className="rg-hint">
-        Ce texte vient des{' '}
-        <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
-          modèles
-        </Link>{' '}
-        — le modifier là-bas le change dans toutes les séquences qui s’en servent.
-      </p>
-    </Field>
+    <DeuxVersions
+      pairs={[tpl.body]}
+      vars={vars}
+      previewOn={previewOn}
+      rendu={(variant) => interpolateVars(variantText(tpl.body, variant), vars)}
+      pied={
+        <p className="rg-hint">
+          Ce texte vient des{' '}
+          <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
+            modèles
+          </Link>{' '}
+          — le modifier là-bas le change dans toutes les séquences qui s’en servent.
+        </p>
+      }
+    />
   )
 }
 
 /**
- * Laquelle des deux versions du modèle est montrée, et pourquoi.
+ * Les DEUX versions du modèle, sur la fiche d'essai, avec celle qui partirait.
  *
- * L'aperçu se calcule sur UN prospect ; sans cette ligne, on croirait que le
- * texte affiché est le seul que la séquence enverra, alors qu'il change d'une
- * fiche à l'autre selon qu'on connaisse ou non la personne.
+ * CE QUE MONTRER UNE SEULE VERSION CACHAIT
+ * `pickVariant` tranche par prospect : la version contact ne part que si TOUTES
+ * les variables du contact qu'elle cite ont une valeur. L'inspecteur n'affichait
+ * donc que le gagnant du jour, et une phrase pour dire que l'autre existait —
+ * on relisait la moitié de ce qui part, sans jamais voir l'autre moitié ni
+ * pouvoir la corriger. Les deux sont maintenant côte à côte, et le badge dit
+ * laquelle cette fiche-là recevrait.
+ *
+ * Un modèle sans version contact n'affiche qu'un bloc, sans onglet : proposer un
+ * choix entre un texte et rien ferait douter de tout l'écran.
  */
-function VariantNote({ variant, pairs }: { variant: MessageVariant; pairs: VariantPair[] }) {
+function DeuxVersions({
+  pairs,
+  vars,
+  previewOn,
+  rendu,
+  pied,
+}: {
+  pairs: VariantPair[]
+  vars: VarBag
+  previewOn: string | null
+  rendu: (variant: MessageVariant) => React.ReactNode
+  pied?: React.ReactNode
+}) {
+  const retenue = pickVariant(pairs, vars)
   const aUneVersionContact = pairs.some((p) => (p.contact ?? '').trim())
-  if (!aUneVersionContact) return null
+  const [montree, setMontree] = useState<MessageVariant>(retenue)
+  // La fiche d'essai change → la version retenue change. Rester sur l'onglet
+  // précédent laisserait croire que c'est celle-là qui partirait.
+  useEffect(() => setMontree(retenue), [retenue])
+
+  if (!aUneVersionContact) {
+    return (
+      <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+        <div className="msg-ed-preview">{rendu('company')}</div>
+        <p className="rg-hint" style={{ marginTop: 4 }}>
+          Une seule version écrite — elle part à tout le monde. La version contact s’ajoute depuis les modèles.
+        </p>
+        {pied}
+      </Field>
+    )
+  }
+
   return (
-    <p className="rg-hint" style={{ marginTop: 4 }}>
-      <XI name="user" className="ico-xs" /> {VARIANT_LABELS[variant].short}, choisie pour ce prospect — l’autre part aux
-      fiches où c’est l’inverse.
-    </p>
+    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+      <div className="seg" style={{ width: '100%', marginBottom: 6 }}>
+        {VARIANTS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            style={{ flex: 1, justifyContent: 'center', gap: 6 }}
+            aria-pressed={montree === v}
+            title={VARIANT_LABELS[v].hint}
+            onClick={() => setMontree(v)}
+          >
+            {VARIANT_LABELS[v].tab}
+            {retenue === v && (
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--ok)',
+                }}
+              >
+                celle-ci
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="msg-ed-preview">{rendu(montree)}</div>
+      <p className="rg-hint" style={{ marginTop: 4 }}>
+        <XI name="user" className="ico-xs" /> Sur cette fiche, c’est la {VARIANT_LABELS[retenue].short} qui part
+        {retenue === 'company'
+          ? ' — la version contact cite une variable que la fiche ne remplit pas.'
+          : ' — la fiche porte tout ce que le texte nomme.'}
+      </p>
+      {pied}
+    </Field>
   )
 }
 

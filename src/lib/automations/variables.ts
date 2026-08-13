@@ -215,6 +215,38 @@ export function pickVariant(
 export const otherVariant = (v: MessageVariant): MessageVariant =>
   v === 'contact' ? 'company' : 'contact'
 
+/** Ce qu'une tâche de démarchage transporte des deux versions. */
+export interface PayloadVersions {
+  message?: string
+  variant?: MessageVariant
+  variantAlt?: { variant: MessageVariant; message: string } | null
+}
+
+/**
+ * Les versions réellement préparées pour une tâche, la retenue en tête.
+ *
+ * Le moteur les rend AU MOMENT de préparer la tâche et les pose dans son
+ * payload : on ne recalcule donc rien à l'écran — relire modèle et variables
+ * depuis le navigateur, c'est risquer d'afficher autre chose que ce qui est prêt
+ * à partir. Une tâche antérieure à la bascule à deux versions n'en porte qu'une,
+ * ce qui est exact : l'écran n'affiche alors aucun choix plutôt qu'un faux.
+ *
+ * Partagée par les trois surfaces où l'on traite une tâche — file de démarchage,
+ * tableau des tâches à la main, pipeline commercial — pour qu'elles ne puissent
+ * pas raconter trois choses différentes du même message.
+ */
+export function versionsPreparees(
+  payload: PayloadVersions | null | undefined,
+): { variant: MessageVariant; message: string }[] {
+  const principale = {
+    variant: payload?.variant === 'contact' ? ('contact' as const) : ('company' as const),
+    message: payload?.message ?? '',
+  }
+  const autre = payload?.variantAlt
+  if (!autre || autre.variant === principale.variant) return [principale]
+  return [principale, { variant: autre.variant, message: autre.message }]
+}
+
 /**
  * Une version peut-elle être envoyée telle quelle à ce prospect ?
  *

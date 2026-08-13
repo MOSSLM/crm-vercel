@@ -47,6 +47,7 @@ import {
 import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
 import { holdReasonLabel } from '@/lib/automations/regulator'
 import { eta, hm, hmd } from '@/components/automations/regulator/parts'
+import { numerosWhatsApp, texteDeLaVersion } from './EnvoiWhatsAppDialog'
 import type { SalesBoardRow, SalesTaskInfo } from './types'
 
 /** Icône d'un canal de séquence. */
@@ -478,6 +479,16 @@ function ActiveBody({
 
     // WhatsApp / LinkedIn / tâche : un message préparé, jamais envoyé seul.
     const task = row.tasks.find((t) => t.kind === column.kind) ?? row.tasks[0]
+    // Le texte montré est celui de la version RETENUE — épingle comprise. La
+    // carte affichait jusqu'ici ce que le moteur avait préparé, même après avoir
+    // basculé sur l'autre version : on lisait un texte, on en envoyait un autre.
+    const variant = row.sequence?.variant ?? task?.variant ?? 'company'
+    const message = texteDeLaVersion(task, variant)
+    // À qui l'on écrit. `numerosDuProspect` est la seule définition de « quels
+    // numéros a ce prospect » ; elle rend aussi leur origine, donc le nom et le
+    // rôle de la personne — ce qu'un numéro nu ne dit pas.
+    const numeros = column.kind === 'whatsapp' ? numerosWhatsApp(row) : []
+    const destinataire = numeros[0] ?? null
     return (
       <div className="c-body col">
         <div className="taskrow">
@@ -490,7 +501,18 @@ function ActiveBody({
             </span>
           )}
         </div>
-        <div className="msgbox">{task?.message || 'Message pré-rédigé par la séquence.'}</div>
+        {column.kind === 'whatsapp' &&
+          (destinataire ? (
+            <div className="sp-dest">
+              <User className="ico-xs" />
+              <span className="who">{destinataire.libelleOrigine}</span>
+              <span className="num mono">{destinataire.affichage}</span>
+              {numeros.length > 1 && <span className="alt">+{numeros.length - 1}</span>}
+            </div>
+          ) : (
+            <div className="muted">Aucun numéro connu</div>
+          ))}
+        <div className="msgbox">{message || 'Message pré-rédigé par la séquence.'}</div>
         {task?.routingReason && (
           <span className="routed">
             <User className="ico-xs" />

@@ -385,7 +385,11 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     if (p.at != null && !nextByAutomation.has(p.automationId)) nextByAutomation.set(p.automationId, p.at)
   }
 
-  const sequences: RegulatorSequenceRow[] = sequencesRaw.map((a) => {
+  // Le tableau de bord du régulateur ne montre que ce qui peut travailler : une
+  // séquence archivée n'a plus ni file ni plage à régler. On filtre la SORTIE et
+  // non la requête — `automationById` doit continuer à résoudre le nom d'une
+  // séquence archivée pour les inscriptions qu'elle a laissées derrière elle.
+  const sequences: RegulatorSequenceRow[] = sequencesRaw.filter((a) => a.status !== 'archived').map((a) => {
     const conf = readSequenceSettings(a.settings)
     const def = (a.definition as SequenceDefinition) || { steps: [] }
     return {

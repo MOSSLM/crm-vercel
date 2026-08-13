@@ -58,20 +58,24 @@ export async function buildWeekView(offset: number, now = Date.now()): Promise<W
 
   const automations = (autoRows ?? []) as Pick<Automation, 'id' | 'name' | 'status' | 'definition' | 'settings'>[]
 
-  const sequences: WeekSequenceInput[] = automations.map((a) => {
-    const def = (a.definition as SequenceDefinition) || { steps: [] }
-    const reg = readSequenceSettings(a.settings)
-    return {
-      id: a.id,
-      name: a.name,
-      status: a.status,
-      steps: (Array.isArray(def.steps) ? def.steps : []) as SequenceStep[],
-      windows: reg.windows,
-      priority: reg.priority,
-      dailyCap: reg.dailyCap,
-      activeEnrollments: 0,
-    }
-  })
+  // Une séquence archivée n'a rien à faire dans la semaine à venir : elle
+  // n'envoie plus rien, et ses vagues passées se lisent dans le journal.
+  const sequences: WeekSequenceInput[] = automations
+    .filter((a) => a.status !== 'archived')
+    .map((a) => {
+      const def = (a.definition as SequenceDefinition) || { steps: [] }
+      const reg = readSequenceSettings(a.settings)
+      return {
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        steps: (Array.isArray(def.steps) ? def.steps : []) as SequenceStep[],
+        windows: reg.windows,
+        priority: reg.priority,
+        dailyCap: reg.dailyCap,
+        activeEnrollments: 0,
+      }
+    })
 
   if (sequences.length === 0) {
     return {

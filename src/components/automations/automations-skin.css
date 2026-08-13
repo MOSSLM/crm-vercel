@@ -929,6 +929,13 @@
 .au-skin .status-dot.paused { background: var(--warn); }
 .au-skin .status-dot.draft  { background: var(--text-4); }
 .au-skin .status-dot.error  { background: var(--danger); }
+/* Archivée : creuse, pour se distinguer du brouillon, qui est plein. Les deux
+   sont gris — ni l'une ni l'autre ne travaille — mais l'un attend d'être lancé
+   quand l'autre a été rangé. */
+.au-skin .status-dot.archived {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--text-4);
+}
 
 /* SEQUENCE Builder */
 .au-skin .seq-host { position: relative; width: 100%; height: 100%; background: var(--bg-2); overflow: auto; }
@@ -1385,7 +1392,7 @@
 /* SEQUENCES list */
 .au-skin .seq-list-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1.5fr) minmax(0, 1fr) 140px 104px 100px 32px;
+  grid-template-columns: 18px 28px minmax(0, 1.5fr) minmax(0, 1fr) 140px 104px 100px 32px;
   align-items: center;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
@@ -1394,6 +1401,64 @@
 }
 .au-skin .seq-list-row:last-child { border-bottom: 0; }
 .au-skin .seq-list-row:hover { background: var(--hover); }
+/* En-tête : mêmes colonnes que les lignes, sinon les titres glissent d'un cran
+   dès qu'une colonne change de largeur. */
+.au-skin .seq-list-row.is-head {
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 8px 14px;
+  cursor: default;
+}
+.au-skin .seq-list-row.is-head:hover { background: var(--bg-2); }
+.au-skin .seq-list-row.is-sel { background: var(--accent-tint); }
+.au-skin .seq-list-row.is-sel:hover { background: var(--accent-tint); }
+/* Archivée : lisible, mais visiblement hors du plan de travail. */
+.au-skin .seq-list-row.is-archived .name,
+.au-skin .seq-list-row.is-archived .kind-ic { opacity: .55; }
+
+.au-skin .seq-check {
+  width: 14px; height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+.au-skin .seq-check:disabled { cursor: default; opacity: .4; }
+
+/* Le « … » ne s'affiche qu'au survol de la ligne, ou quand son menu est
+   ouvert : huit boutons identiques alignés attirent l'œil plus que les
+   chiffres qu'on est venu lire. Il reste atteignable au clavier. */
+.au-skin .seq-list-row .row-more { opacity: 0; color: var(--text-3); }
+.au-skin .seq-list-row:hover .row-more,
+.au-skin .seq-list-row .row-more:focus-visible,
+.au-skin .seq-list-row .row-more[aria-expanded="true"] { opacity: 1; }
+
+.au-skin .seq-bulkbar {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent-tint);
+  border-radius: 10px;
+}
+.au-skin .seq-bulkbar .cnt {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  margin-right: 4px;
+}
+
+/* Menu d'une ligne : porté sur `document.body`, donc positionné en `fixed`. */
+.au-skin .pop.row-pop {
+  position: fixed;
+  min-width: 200px;
+  padding: 4px;
+  z-index: 200;
+}
+.au-skin .pop.row-pop .menu-row { border-radius: 6px; height: 30px; }
 .au-skin .seq-list-row .progress {
   height: 6px;
   border-radius: 999px;
@@ -1924,3 +1989,53 @@
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .au-skin .numero-picker-aucun { font-size: 12px; color: var(--text-3); }
+
+/* ── Les deux suites d'une attente-réponse ─────────────────────────────────
+   Une attente à délai a deux issues, et le message qui suit ne peut pas
+   convenir aux deux : « merci pour votre réponse ! » envoyé à un silence de
+   trois jours se lit comme un robot. Les deux voies sont donc dessinées, y
+   compris celle où rien n'est encore écrit — c'est ce qui rend le trou
+   visible. */
+.au-skin .seq-lane {
+  position: relative;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-2);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  background: var(--surface);
+}
+.au-skin .seq-lane[data-on="reply"]   { border-left-color: var(--ok); background: var(--ok-tint); }
+.au-skin .seq-lane[data-on="timeout"] { border-left-color: var(--warn); background: var(--warn-tint); }
+.au-skin .seq-lane-hd {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 11.5px; font-weight: 600; color: var(--text);
+}
+.au-skin .seq-lane[data-on="reply"] .seq-lane-hd   { color: var(--ok); }
+.au-skin .seq-lane[data-on="timeout"] .seq-lane-hd { color: var(--warn); }
+.au-skin .seq-lane-hd .hint {
+  flex: 1 1 100%; font-weight: 400; font-size: 11px; line-height: 1.45; color: var(--text-3);
+}
+.au-skin .seq-lane-vide {
+  margin-top: 8px;
+  font-size: 11.5px; font-style: italic; color: var(--text-3);
+}
+.au-skin .seq-lane .add-step-pill.sm { margin-top: 10px; height: 26px; font-size: 11.5px; }
+/* Les étapes d'une voie sont posées sur son fond : leur carte reprend la
+   surface pleine pour rester lisible. */
+.au-skin .seq-lane .seq-step { background: var(--surface); }
+
+/* La reprise : ce qui suit part quel que soit le chemin emprunté. */
+.au-skin .seq-merge {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: fit-content; margin: 0 auto;
+  border: 1px dashed var(--border-2); border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-3); background: var(--surface);
+}
+
+/* Étape qui déclare une voie sans être dessinée dedans : attente supprimée, ou
+   fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même —
+   une étape invisible est pire qu'une étape mal placée. */
+.au-skin .seq-step[data-orpheline] { border-style: dashed; border-color: var(--warn); }
