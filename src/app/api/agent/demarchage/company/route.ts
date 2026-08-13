@@ -42,7 +42,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     return jsonError("forbidden", 403, {}, cors);
   }
 
-  const [donneesRes, contactsRes, sitesRes, bookingRes] = await Promise.all([
+  const [donneesRes, contactsRes, sitesRes, bookingRes, oppRes] = await Promise.all([
     sc
       .from("entreprises_donnees_publiques")
       .select(
@@ -72,12 +72,29 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       .order("start_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
+    // L'affaire de l'agent sur cette entreprise : son étape de pipeline est la
+    // pastille affichée à côté du nom, en en-tête.
+    sc
+      .from("opportunites")
+      .select("id, name, montant, stage_id, etape:etapes_pipeline(id, nom)")
+      .eq("entreprise_id", entrepriseId)
+      .eq("owner_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (donneesRes.error) return jsonError(donneesRes.error.message, 500, {}, cors);
   if (contactsRes.error) return jsonError(contactsRes.error.message, 500, {}, cors);
   if (sitesRes.error) return jsonError(sitesRes.error.message, 500, {}, cors);
   if (bookingRes.error) return jsonError(bookingRes.error.message, 500, {}, cors);
+
+  const opp = oppRes.data as
+    | { id: string; name: string | null; montant: number | null; stage_id: number | null; etape: unknown }
+    | null;
+  const etape = (Array.isArray(opp?.etape) ? opp?.etape[0] : opp?.etape) as
+    | { id: number; nom: string | null }
+    | undefined;
 
   return json(
     {
@@ -86,6 +103,9 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       contacts: contactsRes.data ?? [],
       site: sitesRes.data ?? null,
       upcomingBooking: bookingRes.data ?? null,
+      opportunite: opp
+        ? { id: opp.id, name: opp.name, montant: opp.montant, stageNom: etape?.nom ?? null }
+        : null,
     },
     { headers: cors },
   );

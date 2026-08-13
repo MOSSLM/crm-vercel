@@ -3,8 +3,11 @@
 // `GET /api/agent/demarchage/company` : un seul endroit à corriger si l'une
 // des deux routes change de forme.
 
-import type { ProspectionKind, ProspectionStatus, ProspectionTaskPayload } from "@/components/automations/types";
+import type { ProspectionTaskPayload } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
+
+/** Les canaux réellement possibles dans notre file (`wait` = attente-réponse). */
+export type DemKind = "call" | "whatsapp" | "linkedin" | "wait";
 
 export type DemarchageContact = {
   id: string;
@@ -21,11 +24,15 @@ export type DemarchageEntrepriseRef = {
   telephone: string | null;
 };
 
+/** Une étape de séquence, telle que la frise la dessine. */
+export type DemStep = { kind: string; day: number; label: string };
+
 export type DemarchageSequenceInfo = {
   name: string | null;
   stepLabel: string;
   stepIndex: number | null;
   totalSteps: number;
+  steps: DemStep[];
 };
 
 /**
@@ -51,8 +58,8 @@ export type DemarchageIntent = {
 
 export type DemarchageTask = {
   id: string;
-  kind: ProspectionKind;
-  status: ProspectionStatus;
+  kind: DemKind;
+  status: string;
   title: string | null;
   due_at: string | null;
   contact_id: string | null;
@@ -72,7 +79,7 @@ export type DemarchageQueueMeta = { due_today: number; done_today: number };
 
 export type DemarchagePatchBody = {
   id: string;
-  status: ProspectionStatus;
+  status: string;
   opportunite_id?: string;
   outcome?: StageRole;
   step_outcome?: string;
@@ -138,10 +145,33 @@ export type CompanyUpcomingBooking = {
   invitee_name: string;
 } | null;
 
+export type CompanyOpportunite = {
+  id: string;
+  name: string | null;
+  montant: number | null;
+  stageNom: string | null;
+} | null;
+
 export type CompanyBundle = {
   entreprise: CompanyEntreprise;
   donneesPubliques: CompanyDonneesPubliques;
   contacts: CompanyContact[];
   site: CompanySite;
   upcomingBooking: CompanyUpcomingBooking;
+  opportunite: CompanyOpportunite;
+};
+
+/** L'audit, tel que `/api/audit-site/[entrepriseId]` le renvoie. */
+export type DemAudit = {
+  note_globale: number | null;
+  libelle: string | null;
+  axes: { id: string; note: number }[];
+  capture_url: string | null;
+  url_analysee: string | null;
+  injoignable: boolean;
+} | null;
+
+export type DemTemplates = {
+  whatsapp: { id: string; name: string; body: string }[];
+  email: { id: string; name: string; subject: string | null; body: string }[];
 };
