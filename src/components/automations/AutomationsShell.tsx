@@ -30,10 +30,14 @@ function resolveRoute(pathname: string): { tab: TopTab; view: View; inBuilder: b
   const rest = pathname.replace(/^\/automations/, '').replace(/^\//, '')
   const segs = rest.split('/').filter(Boolean)
   if (segs.length === 0) return { tab: 'automations', view: 'list', inBuilder: false, automationId: null }
-  if (segs[0] === 'sequences')
-    return segs.length > 1
-      ? { tab: 'sequences', view: 'builder', inBuilder: true, automationId: segs[1] }
-      : { tab: 'sequences', view: 'list', inBuilder: false, automationId: null }
+  if (segs[0] === 'sequences') {
+    // `stats` n'est pas l'id d'une séquence : c'est le rapport, une vue pleine
+    // largeur au même titre que la liste — pas l'éditeur d'une séquence nommée
+    // « stats ».
+    if (segs.length > 1 && segs[1] !== 'stats')
+      return { tab: 'sequences', view: 'builder', inBuilder: true, automationId: segs[1] }
+    return { tab: 'sequences', view: 'list', inBuilder: false, automationId: null }
+  }
   if (segs[0] === 'modeles') return { tab: 'modeles', view: 'modeles', inBuilder: false, automationId: null }
   if (segs[0] === 'semaine') return { tab: 'semaine', view: 'semaine', inBuilder: false, automationId: null }
   if (segs[0] === 'regulateur') return { tab: 'regulateur', view: 'regulateur', inBuilder: false, automationId: null }

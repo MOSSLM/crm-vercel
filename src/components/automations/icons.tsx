@@ -85,6 +85,7 @@ const ICONS: Record<string, React.ReactNode> = {
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
   cursor: <path d="M3 3l7.07 17 2.51-7.39 7.39-2.51L3 3z" />,
   mouse: <><rect x="6" y="3" width="12" height="18" rx="6" /><line x1="12" y1="7" x2="12" y2="11" /></>,
+  chart: <><line x1="4" y1="20" x2="20" y2="20" /><rect x="5" y="13" width="3" height="7" rx="1" /><rect x="10.5" y="9" width="3" height="11" rx="1" /><rect x="16" y="5" width="3" height="15" rx="1" /></>,
 }
 
 export type IconName = keyof typeof ICONS | string

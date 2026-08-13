@@ -355,6 +355,10 @@ export function SequencesList() {
             Cadences multi-canal alternant emails automatiques et actions manuelles (appels, WhatsApp, LinkedIn).
           </div>
         </div>
+        <Link href="/automations/sequences/stats" className="btn outline">
+          <XI name="chart" className="ico-sm" />
+          Statistiques
+        </Link>
         <button className="btn accent" type="button" onClick={handleCreate} disabled={creating}>
           <XI name="plus" className="ico-sm" />
           Nouvelle séquence
