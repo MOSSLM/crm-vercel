@@ -16,12 +16,14 @@ import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/com
 import { declarerReponse } from '@/lib/automations/reply'
 import {
   isLostStage,
+  isRoleColumn,
   parseColumnId,
   stepColumnId,
   stepOutcome,
   type SalesReactionId,
   type SalesRowState,
 } from './stages'
+import { findStageByRole, type StageRole } from '@/lib/opportunites/stage-roles'
 import type { MessageVariant } from '@/lib/automations/variables'
 
 type StatePatch = {
@@ -458,9 +460,16 @@ export async function advanceStage(
     const { advanceEnrollmentAfterTask } = await import('@/lib/automations/engine')
     for (const id of ids) await advanceEnrollmentAfterTask(id).catch(() => {})
   } else if (parsed?.group === 'pipeline') {
-    const stageId = Number(parsed.ref)
     const { stages } = await pipelineStages(sb, opportuniteId)
     const usable = stages.filter((s) => !isLostStage(s.nom))
+    // En vue fondue, la colonne ne désigne pas une étape mais un RÔLE : les
+    // pipelines ne partagent pas leurs identifiants, seulement leur sens. On
+    // retrouve donc l'étape correspondante DANS le pipeline de cette affaire —
+    // écrire l'étape d'un autre pipeline la déplacerait de pipeline, ce que
+    // `trg_sync_opportunity_pipeline_from_stage` fait sans rien dire.
+    const stageId = isRoleColumn(columnId)
+      ? (findStageByRole(usable, parsed.ref as StageRole)?.id ?? -1)
+      : Number(parsed.ref)
     const at = usable.findIndex((s) => s.id === stageId)
 
     // Valider la dernière étape du pipeline, c'est signer.
