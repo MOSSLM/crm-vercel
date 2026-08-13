@@ -12,8 +12,15 @@ import { useAgentCapabilities } from "@/components/agent-portal/useAgentCapabili
  */
 export function AgentSubNav() {
   const pathname = usePathname() ?? "";
-  const space = getAgentSpaceById(getAgentSpaceFromPath(pathname));
   const { canQualify, canUseMarketingPipeline, loading } = useAgentCapabilities();
+
+  // Stats (cf. AgentRail) vit hors du modèle « section » — pas de sous-nav à
+  // lui associer, plutôt qu'afficher les outils de "pilotage" (le défaut de
+  // getAgentSpaceFromPath) sans qu'aucun n'y soit réellement actif.
+  const isStatsPage = pathname === "/espace-agent/stats" || pathname.startsWith("/espace-agent/stats/");
+  const space = getAgentSpaceById(getAgentSpaceFromPath(pathname));
+
+  if (isStatsPage) return null;
 
   const isActive = (href: string, activeHref?: string) => {
     const target = activeHref ?? href;

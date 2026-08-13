@@ -18,6 +18,9 @@ function initialsOf(name?: string) {
 
 function usePageTitle(pathname: string) {
   const tools = React.useMemo(() => getAllAgentTools(), []);
+  // Outils hors du modèle « section » (icône fixe en bas du rail, cf.
+  // AgentRail) — pas dans AGENT_SPACES, donc absents de getAllAgentTools().
+  if (pathname === "/espace-agent/stats" || pathname.startsWith("/espace-agent/stats/")) return "Stats";
   const match = tools.find(
     (t) => pathname === t.href || pathname.startsWith(t.href + "/"),
   );
