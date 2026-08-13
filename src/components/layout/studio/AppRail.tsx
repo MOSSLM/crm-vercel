@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HelpCircle, Settings, LogOut } from "lucide-react";
+import { HelpCircle, Settings, LogOut, Radar } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/components/AuthContext";
 import { SPACES, getSpaceFromPath } from "@/components/layout/spaces";
@@ -24,6 +24,7 @@ function initialsOf(name?: string) {
 export function AppRail() {
   const pathname = usePathname() ?? "";
   const activeSpace = getSpaceFromPath(pathname);
+  const isRadarActive = pathname === "/radar-analytics" || pathname.startsWith("/radar-analytics/");
   const { user, logout } = useAuth();
 
   return (
@@ -95,6 +96,31 @@ export function AppRail() {
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">Réglages</TooltipContent>
+      </Tooltip>
+
+      {/*
+        Radar analytics vit hors du modèle « espace » : c'est un outil de
+        mesure transverse (trafic des sites démo tous secteurs confondus), pas
+        une étape du cycle commercial. D'où sa place ici, tout en bas, avec une
+        icône qui ne réapparaît nulle part ailleurs dans le rail.
+      */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href="/radar-analytics"
+            aria-label="Radar analytics"
+            aria-current={isRadarActive ? "page" : undefined}
+            className={[
+              "flex h-[38px] w-[38px] items-center justify-center rounded-[9px] transition-colors",
+              isRadarActive
+                ? "bg-white/[0.08] text-white"
+                : "text-white/45 hover:bg-white/5 hover:text-white",
+            ].join(" ")}
+          >
+            <Radar className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">Radar analytics</TooltipContent>
       </Tooltip>
 
       <Tooltip>

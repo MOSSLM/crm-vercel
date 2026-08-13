@@ -7,6 +7,7 @@
 // src/app/api/analytics-radar/route.ts. Il reviendra une fois le lien GA4 →
 // BigQuery Export en place (raw event data), à builder sur ce nouveau socle.
 import React from "react";
+import { authedFetch } from "@/utils/authedFetch";
 import "./analytics-radar.css";
 import { Icon } from "./icons";
 import { Kpi, Panel } from "./parts";
@@ -26,7 +27,7 @@ function useAnalyticsRadar(days: number) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/analytics-radar?days=${days}`)
+    authedFetch(`/api/analytics-radar?days=${days}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((json) => {
         if (!cancelled) setData(json);

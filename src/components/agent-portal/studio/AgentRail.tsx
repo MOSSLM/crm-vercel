@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HelpCircle, Settings, LogOut } from "lucide-react";
+import { HelpCircle, Settings, LogOut, Radar } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/components/AuthContext";
 import { AGENT_SPACES, getAgentSpaceFromPath } from "@/components/agent-portal/agentSpaces";
@@ -24,6 +24,7 @@ function initialsOf(name?: string) {
 export function AgentRail() {
   const pathname = usePathname() ?? "";
   const activeSpace = getAgentSpaceFromPath(pathname);
+  const isRadarActive = pathname === "/espace-agent/stats" || pathname.startsWith("/espace-agent/stats/");
   const { user, logout } = useAuth();
 
   return (
@@ -43,7 +44,11 @@ export function AgentRail() {
       </Tooltip>
 
       {AGENT_SPACES.filter((s) => !s.utility).map((space) => {
-        const isActive = activeSpace === space.id;
+        // Stats vit hors du modèle « section » (cf. plus bas) : sans route
+        // dédiée dans PATH_TO_SPACE, getAgentSpaceFromPath retombe sur son
+        // défaut ("pilotage"), ce qui allumerait Pilotage en même temps que
+        // Stats si on ne l'excluait pas explicitement ici.
+        const isActive = activeSpace === space.id && !isRadarActive;
         const Icon = space.icon;
         return (
           <Tooltip key={space.id}>
@@ -101,6 +106,30 @@ export function AgentRail() {
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">Réglages</TooltipContent>
+      </Tooltip>
+
+      {/*
+        Même stats que côté admin, sans filtre par prospect : un agent voit le
+        trafic de TOUS les sites démo, pas seulement les siens. Icône dédiée,
+        tout en bas — hors du modèle « section » comme sur le rail admin.
+      */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href="/espace-agent/stats"
+            aria-label="Stats"
+            aria-current={isRadarActive ? "page" : undefined}
+            className={[
+              "flex h-[38px] w-[38px] items-center justify-center rounded-[9px] transition-colors",
+              isRadarActive
+                ? "bg-white/[0.08] text-white"
+                : "text-white/45 hover:bg-white/5 hover:text-white",
+            ].join(" ")}
+          >
+            <Radar className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">Stats</TooltipContent>
       </Tooltip>
 
       <Tooltip>
