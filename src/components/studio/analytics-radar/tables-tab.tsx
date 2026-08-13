@@ -72,7 +72,11 @@ export function SitesTab({ data }: { data: AnalyticsRadarPayload }) {
                     </div>
                   </td>
                   <td className="r">{o.pending ? "—" : o.sessions}</td>
-                  <td className="r">{o.pageViews}</td>
+                  {/* Sur une ligne « en cours », pageViews vient du temps réel
+                      (30 dernières minutes) et non de la plage sélectionnée :
+                      l'afficher sous l'en-tête « Pages vues » ferait passer un
+                      chiffre de 30 min pour un total sur 7 ou 30 jours. */}
+                  <td className="r">{o.pending ? "—" : o.pageViews}</td>
                   <td className="r">{o.pending ? "—" : anDur(o.avgEngagementSec)}</td>
                   <td className="r">{o.pending ? "—" : anPct(o.engagementRate)}</td>
                 </tr>
@@ -204,19 +208,27 @@ export function BehaviourTab({ data }: { data: AnalyticsRadarPayload }) {
         </Panel>
         <Panel title="Entonnoir de la démo" icon="target" src="GA4">
           <div className="a-funnel">
-            {funnel.map((x, i) => (
-              <div className="a-fn" key={i}>
-                <i style={{ width: (x.v / Math.max(1, funnel[0].v)) * 100 + "%" }} />
-                <span className="t">{x.t}</span>
-                <span className="n">
-                  {anNum(x.v)}
-                  <u>
-                    {anPct(x.v / Math.max(1, funnel[0].v))}
-                    {i ? ` · ${anPct(x.v / Math.max(1, funnel[i - 1].v))} de l'étape` : ""}
-                  </u>
-                </span>
-              </div>
-            ))}
+            {funnel.map((x, i) => {
+              // Un taux n'a de sens que si la base a été mesurée. Quand la
+              // première étape vaut 0 (rapports GA4 pas encore traités), on
+              // n'affiche AUCUN pourcentage : diviser par max(1, 0) faisait
+              // sortir « 100 % » d'un dénominateur inventé.
+              const base = funnel[0].v;
+              const prev = i ? funnel[i - 1].v : 0;
+              return (
+                <div className="a-fn" key={i}>
+                  <i style={{ width: base > 0 ? Math.min(100, (x.v / base) * 100) + "%" : 0 }} />
+                  <span className="t">{x.t}</span>
+                  <span className="n">
+                    {anNum(x.v)}
+                    <u>
+                      {base > 0 ? anPct(Math.min(1, x.v / base)) : "—"}
+                      {i && prev > 0 ? ` · ${anPct(Math.min(1, x.v / prev))} de l'étape` : ""}
+                    </u>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Panel>
       </div>

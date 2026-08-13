@@ -24,6 +24,9 @@ export interface AnalyticsRadarPageRow {
 
 export interface AnalyticsRadarPayload {
   configured: { ga4: boolean; clarity: boolean };
+  /** Non null quand des appels GA4 ont échoué : les chiffres sont incomplets
+   *  et l'UI doit le dire au lieu de les présenter comme des zéros mesurés. */
+  degraded: { failedReports: number } | null;
   range: { days: number };
   totalSites: number;
   kpis: {

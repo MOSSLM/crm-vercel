@@ -24,9 +24,17 @@ type Tab = "radar" | "sites" | "beh" | "parcours";
 // d'être rafraîchi tout seul — sans ça la page ne bouge qu'au changement de
 // plage. 45s : assez court pour sentir le direct, assez long pour rester loin
 // des quotas GA4 (25k requêtes/jour/propriété) même laissé ouvert des heures.
-const REFRESH_MS = 45_000;
+const REFRESH_MS = 60_000;
 
-function useAnalyticsRadar(days: number) {
+/**
+ * @param live  false = on charge une fois et on arrête de sonder. Chaque cycle
+ *   coûte 15 appels GA4 ; seul l'onglet « Radar mondial » affiche du temps
+ *   réel, donc sonder depuis les autres onglets brûlait le quota de la
+ *   propriété pour des données que personne ne regardait. Idem quand l'onglet
+ *   du navigateur passe en arrière-plan : un tableau de bord laissé ouvert la
+ *   nuit consommait à lui seul des milliers de requêtes.
+ */
+function useAnalyticsRadar(days: number, live: boolean) {
   const [data, setData] = React.useState<AnalyticsRadarPayload | AnalyticsRadarUnconfigured | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -58,12 +66,36 @@ function useAnalyticsRadar(days: number) {
     };
 
     load();
-    const interval = setInterval(load, REFRESH_MS);
+    if (!live) return () => {
+      cancelled = true;
+    };
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (interval == null) interval = setInterval(load, REFRESH_MS);
+    };
+    const stopPolling = () => {
+      if (interval != null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) stopPolling();
+      else {
+        load(); // rattraper ce qu'on a manqué pendant l'absence
+        startPolling();
+      }
+    };
+
+    if (!document.hidden) startPolling();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [days]);
+  }, [days, live]);
 
   return { data, error, loading };
 }
@@ -102,7 +134,9 @@ function NotConfigured({ data }: { data: AnalyticsRadarUnconfigured }) {
 export function AnalyticsRadarApp() {
   const [tab, setTab] = React.useState<Tab>("radar");
   const [days, setDays] = React.useState(7);
-  const { data, error, loading } = useAnalyticsRadar(days);
+  // Seul l'onglet radar montre du temps réel : ailleurs, un rafraîchissement
+  // automatique ne ferait que consommer du quota GA4 sans rien changer à l'écran.
+  const { data, error, loading } = useAnalyticsRadar(days, tab === "radar");
 
   // Dérivé du payload temps réel — memoïsé pour ne changer de référence QUE
   // quand un nouveau snapshot arrive (toutes les REFRESH_MS), pas à chaque
@@ -180,6 +214,19 @@ export function AnalyticsRadarApp() {
             {loading ? <span className="a-live"><i />chargement</span> : null}
           </div>
         </header>
+
+        {d.degraded ? (
+          // Un appel GA4 en échec (quota, panne, droits) renvoyait des tableaux
+          // vides que la page affichait comme des zéros mesurés. On préfère
+          // dire que le chiffre manque plutôt que d'en inventer un.
+          <div
+            className="a-hint"
+            style={{ margin: "0 14px", padding: "9px 12px", border: "1px solid var(--red)", borderRadius: 10, color: "var(--red)" }}
+          >
+            {d.degraded.failedReports} requête{d.degraded.failedReports > 1 ? "s" : ""} GA4 n'{d.degraded.failedReports > 1 ? "ont" : "a"} pas
+            abouti (quota, droits ou panne côté Google). Les chiffres ci-dessous sont incomplets — ce ne sont pas des zéros mesurés.
+          </div>
+        ) : null}
 
         <div className="a-kpis">
           <Kpi tone="ac" icon="globe" label="Sites démo visités" value={d.kpis.sitesVisited} unit={`/ ${d.totalSites}`} />

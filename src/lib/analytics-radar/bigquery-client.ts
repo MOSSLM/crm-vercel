@@ -45,6 +45,10 @@ export interface BigQueryLink {
   projectId: string;
   datasetId: string;
   location: string;
+  /** Tables `events_YYYYMMDD` (jours consolidés). */
+  dailyExport: boolean;
+  /** Tables `events_intraday_YYYYMMDD` (jour en cours, streaming). */
+  streamingExport: boolean;
 }
 
 /** Thrown when the query fails specifically because the export dataset
@@ -70,17 +74,32 @@ export async function getBigQueryLink(propertyId: string, serviceAccountKeyJson:
     const details = await res.text().catch(() => "");
     throw new Error(`GA4 Admin API bigQueryLinks a répondu ${res.status}: ${details.slice(0, 300)}`);
   }
-  const json = (await res.json()) as { bigqueryLinks?: Array<{ project: string; datasetLocation: string }> };
+  const json = (await res.json()) as {
+    bigqueryLinks?: Array<{
+      project: string;
+      datasetLocation: string;
+      dailyExportEnabled?: boolean;
+      streamingExportEnabled?: boolean;
+    }>;
+  };
   const link = json.bigqueryLinks?.[0];
   if (!link) return null;
+  // Les deux exports sont indépendants. Interroger `events_intraday_*` quand
+  // le streaming est désactivé n'est pas un résultat vide mais une ERREUR
+  // BigQuery (un wildcard qui ne correspond à aucune table), donc la requête
+  // doit s'adapter au lieu d'échouer à chaque appel.
   return {
     projectId: link.project.replace(/^projects\//, ""),
     datasetId: `analytics_${propertyId}`,
     location: link.datasetLocation,
+    dailyExport: link.dailyExportEnabled !== false,
+    streamingExport: link.streamingExportEnabled === true,
   };
 }
 
-type BqParamValue = { type: string; value: string };
+type BqParamValue =
+  | { kind: "scalar"; type: string; value: string }
+  | { kind: "array"; type: string; values: string[] };
 
 interface BqField {
   name: string;
@@ -144,11 +163,15 @@ export async function runBigQuery(
       useLegacySql: false,
       location: link.location,
       parameterMode: "NAMED",
-      queryParameters: Object.entries(params).map(([name, p]) => ({
-        name,
-        parameterType: { type: p.type },
-        parameterValue: { value: p.value },
-      })),
+      queryParameters: Object.entries(params).map(([name, p]) =>
+        p.kind === "array"
+          ? {
+              name,
+              parameterType: { type: "ARRAY", arrayType: { type: p.type } },
+              parameterValue: { arrayValues: p.values.map((v) => ({ value: v })) },
+            }
+          : { name, parameterType: { type: p.type }, parameterValue: { value: p.value } },
+      ),
       maximumBytesBilled: MAX_BYTES_BILLED,
       timeoutMs: 20000,
     }),
@@ -176,5 +199,9 @@ export async function runBigQuery(
 }
 
 export function bqStringParam(value: string): BqParamValue {
-  return { type: "STRING", value };
+  return { kind: "scalar", type: "STRING", value };
+}
+
+export function bqStringArrayParam(values: string[]): BqParamValue {
+  return { kind: "array", type: "STRING", values };
 }

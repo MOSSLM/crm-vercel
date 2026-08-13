@@ -30,9 +30,13 @@ type DemoSiteLike = { hostname: string; companyName: string };
 
 // Événements GA4 dignes d'une ligne dans le flux — le reste (user_engagement,
 // scroll…) se déclenche en continu et noierait le flux sous du bruit.
+// Les clés doivent être les noms d'événements RÉELLEMENT émis par
+// FormRuntime.tsx (`analytics_radar_*`) : avec `form_start`/`form_submit`,
+// aucune ligne formulaire n'atteignait jamais le flux, alors que le bandeau
+// juste au-dessus en annonçait depuis la même requête.
 const FEED_EVENT_LABELS: Record<string, { text: string; kind: "pv" | "fm" | "rg" }> = {
-  form_start: { text: "a testé le formulaire", kind: "fm" },
-  form_submit: { text: "a envoyé le formulaire", kind: "fm" },
+  analytics_radar_form_start: { text: "a testé le formulaire", kind: "fm" },
+  analytics_radar_form_submit: { text: "a envoyé le formulaire", kind: "fm" },
   first_visit: { text: "nouvelle visite", kind: "pv" },
 };
 
@@ -58,6 +62,8 @@ function buildRealtime(
   events: Ga4Row[],
   perMinute: Ga4Row[],
   eventsByMinute: Ga4Row[],
+  /** Requête sans dimension : le seul compte d'utilisateurs actifs correct. */
+  totalRows: Ga4Row[],
   matchSite: (screenName: string) => DemoSiteLike | null,
 ) {
   const num = (v: string | undefined) => (v ? Number(v) || 0 : 0);
@@ -144,7 +150,10 @@ function buildRealtime(
   feed.sort((a, b) => a.minutesAgo - b.minutesAgo);
 
   return {
-    activeUsers: visits.reduce((s, v) => s + v.activeUsers, 0),
+    // Surtout PAS visits.reduce(...) : `activeUsers` n'est pas additif entre
+    // les lignes d'une requête multi-dimensions (voir la requête sans
+    // dimension côté appelant).
+    activeUsers: num(totalRows[0]?.activeUsers),
     visits,
     feed: feed.slice(0, 20),
     formActivity: {
@@ -174,7 +183,11 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const sb = getServiceClient();
   const sites = await listDemoSites(sb).catch(() => []);
-  const hostToSite = new Map(sites.map((s) => [s.hostname, s]));
+  // Un site peut répondre sur plusieurs hôtes (sous-domaine + domaine du
+  // client) : la table d'attribution les couvre tous, sinon les visites sur le
+  // domaine personnalisé seraient perdues.
+  const hostToSite = new Map(sites.flatMap((s) => s.hostnames.map((h) => [h, s] as const)));
+  const demoHostnames = [...hostToSite.keys()];
 
   const ga4 = getGa4Config();
   if (!ga4) {
@@ -188,23 +201,44 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const dateRanges = [ga4DateRangeFromDays(days)];
   const { propertyId, serviceAccountKey } = ga4;
+
+  // Un appel GA4 qui échoue ne doit JAMAIS se lire comme « mesuré à zéro ».
+  // On compte les échecs pour les remonter au client (`degraded`), sinon un
+  // quota dépassé afficherait « aucun prospect n'a ouvert sa démo » alors que
+  // GA4 n'a simplement pas répondu.
+  let failedReports = 0;
+
+  // La propriété GA4 reçoit aussi les aperçus (/preview/**) et les rapports
+  // d'audit (rapport.<domaine>), qui portent le même tag. Sans ce filtre, le
+  // trafic interne de l'équipe est compté comme des visites de prospects sur
+  // les sites démo. GA4 filtre côté serveur, donc c'est exact et gratuit.
+  const demoSitesFilter = demoHostnames.length
+    ? { filter: { fieldName: "hostName", inListFilter: { values: demoHostnames } } }
+    : undefined;
+
   const report = (dimensions: string[], metrics: string[], limit = 250) =>
     runGa4Report(propertyId, serviceAccountKey, {
       dateRanges,
       dimensions: dimensions.map((name) => ({ name })),
       metrics: metrics.map((name) => ({ name })),
+      ...(demoSitesFilter ? { dimensionFilter: demoSitesFilter } : {}),
       limit,
     }).then(ga4RowsToObjects).catch((e: unknown) => {
       console.error("[analytics-radar] GA4 report failed", dimensions, e);
+      failedReports += 1;
       return [] as Array<Record<string, string>>;
     });
 
+  // GA4 Realtime n'expose pas `hostName` : impossible d'y appliquer le même
+  // filtre. Les chiffres temps réel restent donc à l'échelle de la propriété,
+  // et l'UI doit le dire plutôt que de les présenter comme du trafic démo.
   const realtimeReport = (dimensions: string[], metrics: string[]) =>
     runGa4RealtimeReport(propertyId, serviceAccountKey, {
       dimensions: dimensions.map((name) => ({ name })),
       metrics: metrics.map((name) => ({ name })),
     }).then(ga4RowsToObjects).catch((e: unknown) => {
       console.error("[analytics-radar] GA4 realtime report failed", dimensions, e);
+      failedReports += 1;
       return [] as Array<Record<string, string>>;
     });
 
@@ -223,6 +257,8 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     realtimeEvents,
     realtimePerMinute,
     realtimeEventsByMinute,
+    realtimeTotal,
+    realtimeByCity,
   ] = await Promise.all([
     report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
     report(["city", "country"], ["sessions"], 100),
@@ -247,13 +283,27 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     // the design's simulated LiveFeed).
     realtimeReport(["unifiedScreenName", "minutesAgo", "city", "deviceCategory"], ["activeUsers"]),
     realtimeReport(["eventName", "minutesAgo"], ["eventCount"]),
+    // `activeUsers` est un compte d'utilisateurs DÉ-DUPLIQUÉ, dédupliqué
+    // seulement à l'intérieur d'une ligne : additionner les lignes d'une
+    // requête à 4 dimensions compte 3 fois un visiteur qui a vu 3 pages. Ces
+    // deux requêtes (sans dimension, et par ville) donnent les vrais totaux.
+    realtimeReport([], ["activeUsers"]),
+    realtimeReport(["city"], ["activeUsers"]),
   ]);
 
   // "Accueil — Fluide CPC" → matches the site named "Fluide CPC". Falls back to
   // null (still shown, just without a site/hostname attached) when the title
   // doesn't carry a recognizable company name (e.g. before the template sets it).
-  const matchSiteByScreenName = (screenName: string) =>
-    sites.find((s) => s.companyName && screenName.toLowerCase().includes(s.companyName.toLowerCase())) ?? null;
+  //
+  // Piège : la page de rapport d'audit (rapport.<domaine>) porte le même tag
+  // GA4 et s'intitule « {Entreprise} — analyse de votre site », avec le MÊME
+  // nom d'entreprise. Sans cette exclusion, relire un audit en interne
+  // comptait comme « le prospect a ouvert sa démo ».
+  const NON_DEMO_TITLE = /analyse de votre site|aperçu|preview/i;
+  const matchSiteByScreenName = (screenName: string) => {
+    if (!screenName || NON_DEMO_TITLE.test(screenName)) return null;
+    return sites.find((s) => s.companyName && screenName.toLowerCase().includes(s.companyName.toLowerCase())) ?? null;
+  };
 
   const totalSessions = daily.reduce((s, r) => s + num(r.sessions), 0);
   const totalPageViews = daily.reduce((s, r) => s + num(r.screenPageViews), 0);
@@ -267,6 +317,7 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     realtimeEvents,
     realtimePerMinute,
     realtimeEventsByMinute,
+    realtimeTotal,
     matchSiteByScreenName,
   );
   // form_start/form_submit are standard GA4 events too, so they're subject to
@@ -324,12 +375,17 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   // standard-report row at all yet, so a city already tracked by `byCity`
   // is never double-counted between the two sources.
   const hubCities = new Set(hubs.map((h) => h.c));
+  // Compte par ville pris sur la requête dédiée `["city"] → activeUsers` :
+  // GA4 y déduplique par ville, alors qu'additionner les lignes de
+  // `realtimeMain` (4 dimensions) compterait plusieurs fois un même visiteur.
+  const realtimeCountryByCity = new Map(realtimeMain.map((r) => [r.city, r.country || ""]));
   const realtimeCityAgg = new Map<string, { country: string; activeUsers: number }>();
-  realtimeMain.forEach((r) => {
+  realtimeByCity.forEach((r) => {
     if (!r.city || num(r.activeUsers) <= 0) return;
-    const cur = realtimeCityAgg.get(r.city) ?? { country: r.country || "", activeUsers: 0 };
-    cur.activeUsers += num(r.activeUsers);
-    realtimeCityAgg.set(r.city, cur);
+    realtimeCityAgg.set(r.city, {
+      country: realtimeCountryByCity.get(r.city) ?? "",
+      activeUsers: num(r.activeUsers),
+    });
   });
   realtimeCityAgg.forEach(({ country, activeUsers }, city) => {
     if (hubCities.has(city)) return;
@@ -447,6 +503,10 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   return json(
     {
       configured: { ga4: true, clarity: clarityConfigured },
+      // Nombre d'appels GA4 qui ont échoué pour cette réponse. Non nul = les
+      // chiffres ci-dessous sont incomplets et l'UI doit le dire : un quota
+      // dépassé ne doit pas s'afficher comme « zéro visite mesurée ».
+      degraded: failedReports > 0 ? { failedReports } : null,
       range: { days },
       totalSites: sites.length,
       kpis: {

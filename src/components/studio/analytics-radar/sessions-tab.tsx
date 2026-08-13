@@ -52,6 +52,8 @@ interface SessionsResponse {
 const REASON_LABEL: Record<string, string> = {
   ga4_not_configured: "GA4 n'est pas configuré.",
   not_linked: "Aucun lien BigQuery trouvé sur cette propriété GA4 (GA4 → Admin → Liens BigQuery).",
+  no_export_enabled:
+    "Le lien BigQuery existe mais aucun export n'est activé : coche « Exportation quotidienne » et/ou « Exportation en flux continu » dans GA4 → Admin → Liens BigQuery.",
   pending_export:
     "Le lien BigQuery vient d'être créé — le premier export n'est pas encore arrivé (jusqu'à 24-48h pour l'export quotidien, souvent plus vite pour le streaming). Réessaie plus tard.",
   error:
@@ -145,7 +147,13 @@ function SessionDetail({ s }: { s: SessionRow | null }) {
   const name = s.companyName ?? s.hostname ?? "Site inconnu";
   const dev = anDeviceLabel(s.deviceCategory);
   const ins = deriveInsights(s);
-  const maxDwell = Math.max(1, ...s.steps.map((st, i) => (s.steps[i + 1] ? s.steps[i + 1].atMs - st.atMs : 0)));
+  // En SECONDES, comme les `dwell` comparés plus bas : mesuré en ms, le
+  // rapport dwell/maxDwell valait ~1/1000 et toutes les barres restaient
+  // collées au plancher de 3 %.
+  const maxDwell = Math.max(
+    1,
+    ...s.steps.map((st, i) => (s.steps[i + 1] ? Math.round((s.steps[i + 1].atMs - st.atMs) / 1000) : 0)),
+  );
 
   return (
     <div className="a-det">

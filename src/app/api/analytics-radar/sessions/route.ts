@@ -5,7 +5,13 @@ import { requireStaff } from "@/app/api/_lib/require-staff";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { listDemoSites } from "@/lib/analytics-radar/demo-sites";
 import { getGa4Config } from "@/lib/analytics-radar/ga4-client";
-import { BigQueryDatasetNotReadyError, bqStringParam, getBigQueryLink, runBigQuery } from "@/lib/analytics-radar/bigquery-client";
+import {
+  BigQueryDatasetNotReadyError,
+  bqStringArrayParam,
+  bqStringParam,
+  getBigQueryLink,
+  runBigQuery,
+} from "@/lib/analytics-radar/bigquery-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,9 +32,13 @@ const yyyymmdd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
 // `TO_JSON_STRING` flattens the per-page timeline into one STRING column —
 // the REST API's row encoding for real nested STRUCT/ARRAY columns is not
 // worth decoding generically for a single query like this.
-const SESSIONS_SQL = (project: string, dataset: string) => `
-WITH events AS (
-  SELECT
+//
+// The daily and intraday arms are assembled separately because the two GA4
+// exports are independent options: pointing a wildcard at `events_intraday_*`
+// when streaming export is off is a hard BigQuery error ("was not found in
+// location"), not an empty result, which used to break the whole tab for any
+// daily-only link.
+const EVENT_COLUMNS = `
     user_pseudo_id,
     (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64)) FROM UNNEST(event_params) WHERE key = 'ga_session_id') AS session_id,
     event_name,
@@ -42,27 +52,23 @@ WITH events AS (
     geo.city AS city,
     geo.country AS country,
     traffic_source.source AS source,
-    traffic_source.medium AS medium
+    traffic_source.medium AS medium`;
+
+const SESSIONS_SQL = (project: string, dataset: string, opts: { daily: boolean; streaming: boolean }) => {
+  const arms: string[] = [];
+  if (opts.daily) {
+    arms.push(`  SELECT${EVENT_COLUMNS}
   FROM \`${project}.${dataset}.events_*\`
-  WHERE _TABLE_SUFFIX BETWEEN @startDate AND @endDate AND _TABLE_SUFFIX != @today
-  UNION ALL
-  SELECT
-    user_pseudo_id,
-    (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64)) FROM UNNEST(event_params) WHERE key = 'ga_session_id') AS session_id,
-    event_name,
-    event_timestamp,
-    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') AS page_location,
-    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') AS page_title,
-    device.category AS device_category,
-    device.operating_system AS os,
-    device.web_info.browser AS browser,
-    device.web_info.hostname AS hostname,
-    geo.city AS city,
-    geo.country AS country,
-    traffic_source.source AS source,
-    traffic_source.medium AS medium
+  WHERE _TABLE_SUFFIX BETWEEN @startDate AND @endDate AND _TABLE_SUFFIX != @today`);
+  }
+  if (opts.streaming) {
+    arms.push(`  SELECT${EVENT_COLUMNS}
   FROM \`${project}.${dataset}.events_intraday_*\`
-  WHERE _TABLE_SUFFIX = @today
+  WHERE _TABLE_SUFFIX = @today`);
+  }
+  return `
+WITH events AS (
+${arms.join("\n  UNION ALL\n")}
 )
 SELECT
   user_pseudo_id,
@@ -83,10 +89,16 @@ SELECT
   TO_JSON_STRING(ARRAY_AGG(STRUCT(event_timestamp, event_name, page_location, page_title) ORDER BY event_timestamp)) AS steps_json
 FROM events
 WHERE session_id IS NOT NULL
+-- Filtre appliqué ICI et pas en JavaScript après coup : avec un LIMIT posé
+-- avant le filtre, 150 sessions de trafic hors sites démo (aperçus, rapports
+-- d'audit) suffisaient à renvoyer une liste vide.
 GROUP BY user_pseudo_id, session_id
+HAVING ANY_VALUE(hostname) IN UNNEST(@demoHosts)
 ORDER BY start_ts DESC
 LIMIT 150
 `;
+};
+
 
 export interface SessionStep {
   atMs: number;
@@ -153,7 +165,12 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const sb = getServiceClient();
   const sites = await listDemoSites(sb).catch(() => []);
-  const hostToSite = new Map(sites.map((s) => [s.hostname, s]));
+  // Domaines personnalisés compris, comme dans /api/analytics-radar.
+  const hostToSite = new Map(sites.flatMap((s) => s.hostnames.map((h) => [h, s] as const)));
+  const demoHosts = [...hostToSite.keys()];
+  if (!demoHosts.length) {
+    return json({ configured: true, reason: null, sessions: [] }, { headers: cors });
+  }
 
   let link;
   try {
@@ -165,6 +182,9 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   if (!link) {
     return json({ configured: false, reason: "not_linked", sessions: [] }, { headers: cors });
   }
+  if (!link.dailyExport && !link.streamingExport) {
+    return json({ configured: false, reason: "no_export_enabled", sessions: [] }, { headers: cors });
+  }
 
   const now = new Date();
   const start = new Date(now);
@@ -172,11 +192,17 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   let rows: Array<Record<string, string | null>>;
   try {
-    rows = await runBigQuery(ga4.serviceAccountKey, link, SESSIONS_SQL(link.projectId, link.datasetId), {
-      startDate: bqStringParam(yyyymmdd(start)),
-      endDate: bqStringParam(yyyymmdd(now)),
-      today: bqStringParam(yyyymmdd(now)),
-    });
+    rows = await runBigQuery(
+      ga4.serviceAccountKey,
+      link,
+      SESSIONS_SQL(link.projectId, link.datasetId, { daily: link.dailyExport, streaming: link.streamingExport }),
+      {
+        startDate: bqStringParam(yyyymmdd(start)),
+        endDate: bqStringParam(yyyymmdd(now)),
+        today: bqStringParam(yyyymmdd(now)),
+        demoHosts: bqStringArrayParam(demoHosts),
+      },
+    );
   } catch (e) {
     if (e instanceof BigQueryDatasetNotReadyError) {
       return json({ configured: false, reason: "pending_export", sessions: [] }, { headers: cors });

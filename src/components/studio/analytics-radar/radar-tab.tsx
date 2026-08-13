@@ -244,7 +244,9 @@ export function RealtimePanel({
               {!e.companyName && e.screenName ? <span style={{ color: "var(--tx-3)" }}> ({e.screenName})</span> : null}
             </div>
             <div className="m">
-              {e.city ? `${e.city}` : "France"}
+              {/* Jamais « France » par défaut : GA4 laisse la ville vide quand
+                  il ne sait pas, ce n'est pas une information sur le pays. */}
+              {e.city || "ville inconnue"}
               {e.device ? ` · ${e.device}` : ""}
             </div>
           </div>
