@@ -213,7 +213,7 @@ export function AnalyticsRadarApp() {
             />
             <div className="a-rail">
               <Panel title="En ce moment" icon="radio" src="GA4 realtime" style={{ flex: 1 }} bodyClass="tight">
-                <RealtimePanel activeUsers={d.realtime.activeUsers} visits={d.realtime.visits} formActivity={d.realtime.formActivity} />
+                <RealtimePanel activeUsers={d.realtime.activeUsers} feed={d.realtime.feed} formActivity={d.realtime.formActivity} />
               </Panel>
               <Panel title="Villes les plus actives" icon="mappin" count={d.hubs.length} style={{ flex: "0 0 auto", maxHeight: 250 }}>
                 <TopCities hubRows={d.hubs} onPick={() => {}} />

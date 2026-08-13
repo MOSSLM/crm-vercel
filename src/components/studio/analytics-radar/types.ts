@@ -54,6 +54,15 @@ export interface AnalyticsRadarPayload {
       pageViews: number;
       sinceMinutes: number;
     }>;
+    feed: Array<{
+      kind: "pv" | "fm" | "rg";
+      text: string;
+      companyName: string | null;
+      screenName: string;
+      city: string;
+      device: string;
+      minutesAgo: number;
+    }>;
     formActivity: { starts: number; submits: number };
   };
   clarity: { asOf: string; byDimension: Record<string, Array<Record<string, unknown>>> } | null;

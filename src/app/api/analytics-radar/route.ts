@@ -27,9 +27,27 @@ const isoDate = (yyyymmdd: string) =>
 type Ga4Row = Record<string, string>;
 type DemoSiteLike = { hostname: string; companyName: string };
 
+// Événements GA4 dignes d'une ligne dans le flux — le reste (user_engagement,
+// scroll…) se déclenche en continu et noierait le flux sous du bruit.
+const FEED_EVENT_LABELS: Record<string, { text: string; kind: "pv" | "fm" | "rg" }> = {
+  form_start: { text: "a testé le formulaire", kind: "fm" },
+  form_submit: { text: "a envoyé le formulaire", kind: "fm" },
+  first_visit: { text: "nouvelle visite", kind: "pv" },
+};
+
+export interface RealtimeFeedItem {
+  kind: "pv" | "fm" | "rg";
+  text: string;
+  companyName: string | null;
+  screenName: string;
+  city: string;
+  device: string;
+  minutesAgo: number;
+}
+
 /**
- * Merges 3 separate GA4 Realtime queries into one "who's here right now" view.
- * Split into 3 because Realtime rejects most dimension combinations together
+ * Merges 5 separate GA4 Realtime queries into one "who's here right now" view.
+ * Split up because Realtime rejects most dimension combinations together
  * (e.g. screenName + eventName in one query 400s) — each query below was
  * verified individually against a live property.
  */
@@ -37,6 +55,8 @@ function buildRealtime(
   main: Ga4Row[],
   minutes: Ga4Row[],
   events: Ga4Row[],
+  perMinute: Ga4Row[],
+  eventsByMinute: Ga4Row[],
   matchSite: (screenName: string) => DemoSiteLike | null,
 ) {
   const num = (v: string | undefined) => (v ? Number(v) || 0 : 0);
@@ -72,9 +92,60 @@ function buildRealtime(
 
   const eventCount = (name: string) => num(events.find((e) => e.eventName === name)?.eventCount);
 
+  // Le flux chronologique (équivalent réel du "LiveFeed" de la maquette) :
+  // une ligne par (page, minute) réellement active, plus une ligne par
+  // événement notable (form_start/submit…) réellement survenu.
+  const feed: RealtimeFeedItem[] = [];
+
+  // minutesAgo → écrans distincts actifs cette minute-là, pour tenter de
+  // rattacher un événement (form_start…) à un site quand un seul candidat
+  // existe à cette minute précise. Au-delà de 1 candidat, on ne devine pas.
+  const screensAtMinute = new Map<string, Set<string>>();
+
+  perMinute.forEach((r) => {
+    const m = Number(r.minutesAgo);
+    if (!Number.isFinite(m) || num(r.activeUsers) <= 0) return;
+    const screen = r.unifiedScreenName || "";
+    const set = screensAtMinute.get(r.minutesAgo) ?? new Set<string>();
+    set.add(screen);
+    screensAtMinute.set(r.minutesAgo, set);
+    const site = matchSite(screen);
+    feed.push({
+      kind: "pv",
+      text: "a consulté",
+      companyName: site?.companyName ?? null,
+      screenName: screen,
+      city: r.city || "",
+      device: r.deviceCategory || "",
+      minutesAgo: m,
+    });
+  });
+
+  eventsByMinute.forEach((r) => {
+    const label = FEED_EVENT_LABELS[r.eventName];
+    if (!label) return;
+    const m = Number(r.minutesAgo);
+    if (!Number.isFinite(m)) return;
+    const candidates = screensAtMinute.get(r.minutesAgo);
+    const screen = candidates && candidates.size === 1 ? [...candidates][0] : "";
+    const site = screen ? matchSite(screen) : null;
+    feed.push({
+      kind: label.kind,
+      text: label.text,
+      companyName: site?.companyName ?? null,
+      screenName: screen,
+      city: "",
+      device: "",
+      minutesAgo: m,
+    });
+  });
+
+  feed.sort((a, b) => a.minutesAgo - b.minutesAgo);
+
   return {
     activeUsers: visits.reduce((s, v) => s + v.activeUsers, 0),
     visits,
+    feed: feed.slice(0, 20),
     formActivity: {
       starts: eventCount("analytics_radar_form_start"),
       submits: eventCount("analytics_radar_form_submit"),
@@ -130,25 +201,42 @@ export const GET = withAuth({}, async ({ req, cors }) => {
       return [] as Array<Record<string, string>>;
     });
 
-  const [daily, byCity, byHost, byDevice, bySource, byPage, byHour, formEvents, realtimeMain, realtimeMinutes, realtimeEvents] =
-    await Promise.all([
-      report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
-      report(["city", "country"], ["sessions"], 100),
-      report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
-      report(["deviceCategory"], ["sessions"]),
-      report(["sessionSourceMedium"], ["sessions"], 30),
-      report(["pagePath"], ["screenPageViews", "userEngagementDuration", "bounceRate"], 50),
-      report(["dayOfWeek", "hour"], ["sessions"], 500),
-      report(["eventName"], ["eventCount"], 20),
-      // GA4 Realtime dimension set is much narrower than the standard Data API
-      // (no hostName, and most dimension combos are rejected together — see the
-      // 3 separate queries below), so "which site" is derived by matching the
-      // page title (unifiedScreenName, e.g. "Accueil — Fluide CPC") against the
-      // real demo sites list rather than queried directly.
-      realtimeReport(["unifiedScreenName", "deviceCategory", "city", "country"], ["activeUsers", "screenPageViews"]),
-      realtimeReport(["unifiedScreenName", "minutesAgo"], ["activeUsers"]),
-      realtimeReport(["eventName"], ["eventCount"]),
-    ]);
+  const [
+    daily,
+    byCity,
+    byHost,
+    byDevice,
+    bySource,
+    byPage,
+    byHour,
+    formEvents,
+    realtimeMain,
+    realtimeMinutes,
+    realtimeEvents,
+    realtimePerMinute,
+    realtimeEventsByMinute,
+  ] = await Promise.all([
+    report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
+    report(["city", "country"], ["sessions"], 100),
+    report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
+    report(["deviceCategory"], ["sessions"]),
+    report(["sessionSourceMedium"], ["sessions"], 30),
+    report(["pagePath"], ["screenPageViews", "userEngagementDuration", "bounceRate"], 50),
+    report(["dayOfWeek", "hour"], ["sessions"], 500),
+    report(["eventName"], ["eventCount"], 20),
+    // GA4 Realtime's dimension set is much narrower than the standard Data API
+    // (no hostName, and most dimension combos are rejected together — see the
+    // 5 separate queries below), so "which site" is derived by matching the
+    // page title (unifiedScreenName, e.g. "Accueil — Fluide CPC") against the
+    // real demo sites list rather than queried directly.
+    realtimeReport(["unifiedScreenName", "deviceCategory", "city", "country"], ["activeUsers", "screenPageViews"]),
+    realtimeReport(["unifiedScreenName", "minutesAgo"], ["activeUsers"]),
+    realtimeReport(["eventName"], ["eventCount"]),
+    // Per-minute breakdown → the chronological "flux" feed (real equivalent of
+    // the design's simulated LiveFeed).
+    realtimeReport(["unifiedScreenName", "minutesAgo", "city", "deviceCategory"], ["activeUsers"]),
+    realtimeReport(["eventName", "minutesAgo"], ["eventCount"]),
+  ]);
 
   // "Accueil — Fluide CPC" → matches the site named "Fluide CPC". Falls back to
   // null (still shown, just without a site/hostname attached) when the title
@@ -258,7 +346,14 @@ export const GET = withAuth({}, async ({ req, cors }) => {
         bounceRate: num(r.bounceRate),
       })),
       heatmap,
-      realtime: buildRealtime(realtimeMain, realtimeMinutes, realtimeEvents, matchSiteByScreenName),
+      realtime: buildRealtime(
+        realtimeMain,
+        realtimeMinutes,
+        realtimeEvents,
+        realtimePerMinute,
+        realtimeEventsByMinute,
+        matchSiteByScreenName,
+      ),
       clarity,
     },
     { headers: cors },
