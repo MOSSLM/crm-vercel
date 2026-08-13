@@ -54,6 +54,8 @@ export interface SalesTaskInfo {
   linkedin: string | null
   assigneeId: string | null
   routingReason: string | null
+  /** L'étape (`step:s3` → `s3`) qui a produit cette tâche, `null` hors moteur. */
+  stepId: string | null
   /** Version que le moteur a préparée pour cette tâche. */
   variant: MessageVariant
   /** L'autre version, déjà rendue — `null` quand le modèle n'en a qu'une. */

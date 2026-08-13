@@ -40,17 +40,42 @@
  * fenêtre ET du bouton « replier ». Une media query seule n'aurait pas permis
  * de replier à la demande sur grand écran, ni de déplier sur petit.
  */
-.mp-scope.sp-scope.sp-dense .topbar { padding: 10px 24px 8px; align-items: center; }
-.mp-scope.sp-scope.sp-dense .kick { margin-bottom: 3px; font-size: 10px; }
-.mp-scope.sp-scope.sp-dense h1.disp { font-size: 19px; line-height: 1.15; }
+.mp-scope.sp-scope.sp-dense .topbar { padding: 5px 20px 4px; align-items: center; }
+/* Le fil d'Ariane (« pipeline commercial · démarchage sortant ») n'apprend
+   rien : on est déjà sur la page. Pur décor, donc le premier sacrifié. */
+.mp-scope.sp-scope.sp-dense .kick { display: none; }
+.mp-scope.sp-scope.sp-dense h1.disp { font-size: 15px; line-height: 1.15; }
 .mp-scope.sp-scope.sp-dense .topbar .sub { display: none; }
-.mp-scope.sp-scope.sp-dense .parts { margin-bottom: 7px; padding-bottom: 7px; }
-.mp-scope.sp-scope.sp-dense .regbar { margin-bottom: 7px; padding: 6px 13px; }
-.mp-scope.sp-scope.sp-dense .mailalert { margin-bottom: 7px; padding: 6px 12px; }
-.mp-scope.sp-scope.sp-dense .toolbar { padding-bottom: 9px; gap: 8px; }
+.mp-scope.sp-scope.sp-dense .parts { margin-bottom: 4px; padding-bottom: 4px; }
+.mp-scope.sp-scope.sp-dense .regbar { margin-bottom: 4px; padding: 4px 10px; }
+.mp-scope.sp-scope.sp-dense .mailalert { margin-bottom: 4px; padding: 4px 10px; }
+.mp-scope.sp-scope.sp-dense .toolbar { padding-bottom: 4px; gap: 8px; }
 /* L'aide sous les onglets répète ce que les onglets disent déjà : c'est la
    première ligne qu'on sacrifie quand la place manque. */
 .mp-scope.sp-scope.sp-dense .parts-hint { display: none; }
+
+/* Le bandeau de groupe et les en-têtes de colonne viennent du socle commun
+ * (Marketing Pipeline), taillés pour une carte à une seule ligne : 30 px de
+ * bandeau + 60 px d'en-tête, alors qu'ici une carte porte un message entier.
+ * Sur les 700-820 px utiles d'un MacBook 13 pouces (fenêtre de navigateur,
+ * pas l'écran entier), ces deux rangées seules valaient déjà 90 px avant
+ * même la barre d'outils — replier le reste sans toucher à celles-ci ne
+ * suffisait pas. */
+.mp-scope.sp-scope.sp-dense .mx-gcorner,
+.mp-scope.sp-scope.sp-dense .mx-group { min-height: 19px; }
+.mp-scope.sp-scope.sp-dense .mx-group { padding: 0 10px; font-size: 9px; gap: 5px; }
+.mp-scope.sp-scope.sp-dense .mx-group .n { font-size: 9px; }
+/* Décalées d'autant que le bandeau au-dessus a rétréci, sous peine de laisser
+   un blanc — ou un recouvrement — au premier défilement vertical. */
+.mp-scope.sp-scope.sp-dense .mx-colhead,
+.mp-scope.sp-scope.sp-dense .mx-corner { top: 19px; min-height: 34px; padding: 4px 10px; }
+.mp-scope.sp-scope.sp-dense .mx-colhead { gap: 1px; }
+.mp-scope.sp-scope.sp-dense .mx-colhead .sw { width: 15px; height: 15px; border-radius: 5px; }
+.mp-scope.sp-scope.sp-dense .mx-colhead .sw .ico { width: 9px; height: 9px; }
+.mp-scope.sp-scope.sp-dense .mx-colhead .nm { font-size: 10.5px; }
+.mp-scope.sp-scope.sp-dense .mx-colhead .meta { font-size: 9px; gap: 4px; }
+.mp-scope.sp-scope.sp-dense .mx-corner .t { font-size: 10.5px; }
+.mp-scope.sp-scope.sp-dense .mx-corner .s { font-size: 9px; margin-top: 1px; }
 
 /* Replier le décor ne suffisait pas : un rang faisait 280 px, donc 1,7 rang
  * visible. On resserre aussi la respiration des cartes — pas leur contenu. Le
