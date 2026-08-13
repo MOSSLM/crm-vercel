@@ -1,6 +1,6 @@
 "use client";
 
-import { Phone, MessageCircle, Linkedin, Building2, Layers, Eye, type LucideIcon } from "lucide-react";
+import { Phone, MessageCircle, Linkedin, Building2, Layers, Eye, AlertTriangle, type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { one } from "@/components/agent-portal/format";
@@ -13,7 +13,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   linkedin: Linkedin,
 };
 
-const BUCKET_ORDER: DemarchageBucketKey[] = ["hot", "overdue", "today", "tomorrow", "week", "later"];
+const BUCKET_ORDER: DemarchageBucketKey[] = ["missed", "hot", "overdue", "today", "tomorrow", "week", "later"];
 
 /** Durée d'engagement, lisible d'un coup d'œil dans la file. */
 function formatDuree(sec: number): string {
@@ -109,6 +109,8 @@ export function DemarchageFrise({
                   // aujourd'hui. La file reste triée par le serveur ; ici on
                   // ne fait que le rendre visible sans avoir à cliquer.
                   const hot = task.intent?.callWhen === "maintenant" || task.intent?.callWhen === "aujourdhui";
+                  // Distinct du simple « chaud » : ici l'occasion se perd.
+                  const missed = task.intent?.missed === true;
                   return (
                     <button
                       key={task.id}
@@ -118,9 +120,11 @@ export function DemarchageFrise({
                         "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors " +
                         (selected
                           ? "border-primary bg-primary/5"
-                          : hot
-                            ? "border-orange-300 bg-orange-50 hover:bg-orange-100"
-                            : "border-transparent bg-muted/40 hover:bg-muted")
+                          : missed
+                            ? "border-red-300 bg-red-50 hover:bg-red-100"
+                            : hot
+                              ? "border-orange-300 bg-orange-50 hover:bg-orange-100"
+                              : "border-transparent bg-muted/40 hover:bg-muted")
                       }
                     >
                       <div className="flex items-center gap-2">
@@ -161,12 +165,23 @@ export function DemarchageFrise({
                           séquence faire son travail — elle doit être lisible
                           sans ouvrir la fiche. */}
                       {task.intent && task.intent.sessions > 0 && (
-                        <div className={"mt-0.5 flex items-center gap-1 pl-8 text-xs " + (hot ? "text-orange-700" : "text-muted-foreground")}>
+                        <div
+                          className={
+                            "mt-0.5 flex items-center gap-1 pl-8 text-xs " +
+                            (missed ? "font-medium text-red-700" : hot ? "text-orange-700" : "text-muted-foreground")
+                          }
+                        >
                           <Eye className="h-3 w-3 shrink-0" />
                           Démo vue {task.intent.sessions}×
                           {task.intent.engagementSec > 0 && ` · ${formatDuree(task.intent.engagementSec)}`}
                           {task.intent.pageViews > 0 && ` · ${task.intent.pageViews} p.`}
                           {task.intent.lastDay && ` · ${jourRelatif(task.intent.lastDay)}`}
+                        </div>
+                      )}
+                      {missed && task.intent?.daysSinceVisit != null && (
+                        <div className="mt-0.5 flex items-center gap-1 pl-8 text-xs font-medium text-red-700">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          Chaud depuis {task.intent.daysSinceVisit} j, jamais rappelé
                         </div>
                       )}
                     </button>

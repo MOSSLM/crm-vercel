@@ -208,3 +208,51 @@ export function scoreIntent(s: IntentSignals): IntentVerdict {
 export function compareIntent(a: { score: number }, b: { score: number }): number {
   return b.score - a.score;
 }
+
+/** Délai au-delà duquel un signal chaud non rappelé devient une fuite. */
+export const MISSED_GRACE_DAYS = 2;
+
+/**
+ * Un signal chaud qui n'a pas été rappelé à temps.
+ *
+ * C'est le cas le plus coûteux du système : le prospect a manifesté une
+ * intention nette, on l'a vu, et personne n'a décroché. Il mérite d'être
+ * distingué d'un simple « chaud » — un chaud est une opportunité, un chaud
+ * manqué est une opportunité en train de refroidir.
+ *
+ * Un appel passé APRÈS la visite ferme le signal : c'est traité, pas manqué.
+ * Un appel passé AVANT la visite ne compte pas — le prospect a bougé depuis,
+ * c'est un nouveau signal.
+ */
+export function isMissedSignal(opts: {
+  callWhen: CallWhen;
+  /** Jour de la dernière visite mesurée (ISO YYYY-MM-DD). */
+  lastVisitDay: string | null;
+  /** Dernier appel réellement effectué sur ce prospect (ISO datetime). */
+  lastCallDoneAt: string | null;
+  now: Date;
+  graceDays?: number;
+}): boolean {
+  const { callWhen, lastVisitDay, lastCallDoneAt, now, graceDays = MISSED_GRACE_DAYS } = opts;
+  if (callWhen !== "maintenant" && callWhen !== "aujourdhui") return false;
+  if (!lastVisitDay) return false;
+
+  const visitMs = Date.parse(`${lastVisitDay}T23:59:59Z`);
+  if (Number.isNaN(visitMs)) return false;
+
+  // Rappelé depuis la visite → le signal a été traité.
+  if (lastCallDoneAt) {
+    const callMs = Date.parse(lastCallDoneAt);
+    if (!Number.isNaN(callMs) && callMs >= visitMs) return false;
+  }
+
+  return now.getTime() - visitMs >= graceDays * 86400000;
+}
+
+/** Jours écoulés depuis la visite, pour dire depuis quand ça traîne. */
+export function daysSince(lastVisitDay: string | null, now: Date): number | null {
+  if (!lastVisitDay) return null;
+  const ms = Date.parse(`${lastVisitDay}T00:00:00Z`);
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.floor((now.getTime() - ms) / 86400000));
+}

@@ -43,6 +43,10 @@ export type DemarchageIntent = {
   pageViews: number;
   engagementSec: number;
   lastDay: string | null;
+  /** Signal chaud jamais rappelé passé le délai de grâce — une fuite. */
+  missed: boolean;
+  /** Jours écoulés depuis la dernière visite mesurée. */
+  daysSinceVisit: number | null;
 };
 
 export type DemarchageTask = {

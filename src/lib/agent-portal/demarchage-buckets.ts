@@ -11,14 +11,15 @@ import { AGENT_TIMEZONE, dayStartIso } from "@/lib/agent-progress";
 export type DemarchageTaskLike = {
   due_at: string | null;
   /** Signal d'intention mesuré (GA4). Absent = aucun site démo ou aucune visite. */
-  intent?: { callWhen: string; score: number } | null;
+  intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 
-export type DemarchageBucketKey = "hot" | "overdue" | "today" | "tomorrow" | "week" | "later";
+export type DemarchageBucketKey = "missed" | "hot" | "overdue" | "today" | "tomorrow" | "week" | "later";
 
 export type DemarchageBuckets<T> = Record<DemarchageBucketKey, T[]>;
 
 export const BUCKET_LABEL: Record<DemarchageBucketKey, string> = {
+  missed: "Signal chaud non rappelé",
   hot: "À appeler maintenant",
   overdue: "En retard",
   today: "Aujourd'hui",
@@ -59,9 +60,15 @@ export function bucketTasks<T extends DemarchageTaskLike>(
   const dayAfterTomorrowStart = tomorrowStart + DAY_MS;
   const weekEnd = todayStart + 7 * DAY_MS;
 
-  const buckets: DemarchageBuckets<T> = { hot: [], overdue: [], today: [], tomorrow: [], week: [], later: [] };
+  const buckets: DemarchageBuckets<T> = { missed: [], hot: [], overdue: [], today: [], tomorrow: [], week: [], later: [] };
 
   for (const task of tasks) {
+    // Un signal chaud non rappelé passe AVANT les chauds du jour : c'est une
+    // opportunité déjà en train de refroidir, pas une opportunité fraîche.
+    if (task.intent?.missed) {
+      buckets.missed.push(task);
+      continue;
+    }
     if (isHot(task)) {
       buckets.hot.push(task);
       continue;
@@ -83,7 +90,7 @@ export function bucketTasks<T extends DemarchageTaskLike>(
 
 /** Le premier panier non vide, dans l'ordre où on veut le proposer par défaut. */
 export function firstNonEmptyBucket<T>(buckets: DemarchageBuckets<T>): T | null {
-  for (const key of ["hot", "overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
+  for (const key of ["missed", "hot", "overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
     const first = buckets[key][0];
     if (first) return first;
   }

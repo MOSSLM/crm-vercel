@@ -1,4 +1,4 @@
-import { compareIntent, hasSeparateVisitTimes, scoreIntent, type IntentSignals } from "../intent";
+import { compareIntent, daysSince, hasSeparateVisitTimes, isMissedSignal, scoreIntent, type IntentSignals } from "../intent";
 
 const base: IntentSignals = {
   sessions: 0,
@@ -131,5 +131,56 @@ describe("hasSeparateVisitTimes", () => {
   });
   it("ne dépend pas de l'ordre", () => {
     expect(hasSeparateVisitTimes([18, 13])).toBe(true);
+  });
+});
+
+describe("isMissedSignal — le chaud qu'on a laissé refroidir", () => {
+  const now = new Date("2026-08-13T12:00:00Z");
+  const call = (o: Partial<Parameters<typeof isMissedSignal>[0]> = {}) =>
+    isMissedSignal({ callWhen: "maintenant", lastVisitDay: "2026-08-10", lastCallDoneAt: null, now, ...o });
+
+  it("signale un chaud jamais rappelé passé le délai de grâce", () => {
+    expect(call()).toBe(true);
+  });
+
+  it("ne signale rien tant qu'on est dans le délai de grâce", () => {
+    expect(call({ lastVisitDay: "2026-08-13" })).toBe(false);
+    expect(call({ lastVisitDay: "2026-08-12" })).toBe(false);
+  });
+
+  it("considère le signal traité si l'appel a eu lieu APRÈS la visite", () => {
+    expect(call({ lastCallDoneAt: "2026-08-11T09:00:00Z" })).toBe(false);
+  });
+
+  it("ne considère PAS traité un appel antérieur à la visite", () => {
+    // Le prospect a rouvert sa démo après ce coup de fil : c'est un signal neuf.
+    expect(call({ lastCallDoneAt: "2026-08-08T09:00:00Z" })).toBe(true);
+  });
+
+  it("ne concerne que les prospects réellement chauds", () => {
+    expect(call({ callWhen: "j1" })).toBe(false);
+    expect(call({ callWhen: "plus_tard" })).toBe(false);
+  });
+
+  it("ne signale rien sans visite mesurée", () => {
+    expect(call({ lastVisitDay: null })).toBe(false);
+  });
+
+  it("tolère des dates invalides plutôt que d'alerter à tort", () => {
+    expect(call({ lastVisitDay: "pas-une-date" })).toBe(false);
+    expect(call({ lastCallDoneAt: "n'importe quoi" })).toBe(true);
+  });
+});
+
+describe("daysSince", () => {
+  const now = new Date("2026-08-13T12:00:00Z");
+  it("compte les jours écoulés", () => {
+    expect(daysSince("2026-08-10", now)).toBe(3);
+    expect(daysSince("2026-08-13", now)).toBe(0);
+  });
+  it("ne renvoie jamais de négatif ni ne casse", () => {
+    expect(daysSince("2026-09-01", now)).toBe(0);
+    expect(daysSince(null, now)).toBeNull();
+    expect(daysSince("bidon", now)).toBeNull();
   });
 });

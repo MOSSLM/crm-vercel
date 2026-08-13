@@ -6,6 +6,7 @@ import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
 import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
+import { daysSince, isMissedSignal } from "@/lib/analytics-radar/intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
@@ -106,6 +107,27 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   // repart sans signal plutôt que d'échouer.
   const intents = await intentByEnterprise(sc).catch(() => new Map());
 
+  // Dernier appel RÉELLEMENT passé par entreprise : c'est ce qui permet de
+  // distinguer un prospect chaud d'un prospect chaud qu'on a laissé filer.
+  const entrepriseIds = [...new Set(tasks.map((t) => t.entreprise_id).filter((id): id is number => id != null))];
+  const lastCallByEnterprise = new Map<number, string>();
+  if (entrepriseIds.length) {
+    const { data: calls } = await sc
+      .from("prospection_tasks")
+      .select("entreprise_id, done_at")
+      .eq("kind", "call")
+      .eq("status", "done")
+      .in("entreprise_id", entrepriseIds)
+      .order("done_at", { ascending: false });
+    (calls ?? []).forEach((c) => {
+      const id = c.entreprise_id as number | null;
+      const at = c.done_at as string | null;
+      if (id == null || !at) return;
+      if (!lastCallByEnterprise.has(id)) lastCallByEnterprise.set(id, at); // trié desc → le premier est le plus récent
+    });
+  }
+  const nowDate = new Date();
+
   const enriched = tasks.map((t) => {
     const auto = t.automation_id ? stepsByAutomation.get(t.automation_id as string) : undefined;
     const stepIndex = auto ? auto.steps.findIndex((s) => s.id === t.step_id) : -1;
@@ -132,6 +154,13 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
             pageViews: intent.pageViews,
             engagementSec: intent.engagementSec,
             lastDay: intent.lastDay,
+            missed: isMissedSignal({
+              callWhen: intent.callWhen,
+              lastVisitDay: intent.lastDay,
+              lastCallDoneAt: t.entreprise_id != null ? lastCallByEnterprise.get(t.entreprise_id) ?? null : null,
+              now: nowDate,
+            }),
+            daysSinceVisit: daysSince(intent.lastDay, nowDate),
           }
         : null,
     };

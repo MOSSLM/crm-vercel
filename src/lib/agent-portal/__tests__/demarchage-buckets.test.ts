@@ -57,3 +57,30 @@ describe("bucketTasks — la file de démarchage", () => {
     expect(firstNonEmptyBucket(b)).toMatchObject({ id: "chaud" });
   });
 });
+
+describe("bucketTasks — le signal chaud non rappelé", () => {
+  const NOW2 = new Date("2026-08-13T10:00:00Z");
+  const iso2 = (d: string) => `${d}T09:00:00.000Z`;
+  const withIntent = (id: string, due: string | null, intent: NonNullable<T["intent"]>): T => ({ id, due_at: due, intent });
+
+  it("passe avant les chauds du jour : l'occasion est déjà en train de refroidir", () => {
+    const b = bucketTasks(
+      [
+        withIntent("chaud", iso2("2026-08-13"), { callWhen: "maintenant", score: 80 }),
+        withIntent("manque", iso2("2026-08-13"), { callWhen: "maintenant", score: 75, missed: true }),
+      ],
+      NOW2,
+      "UTC",
+    );
+    expect(b.missed.map((x) => x.id)).toEqual(["manque"]);
+    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
+    expect(firstNonEmptyBucket(b)).toMatchObject({ id: "manque" });
+  });
+
+  it("ne met pas un prospect à la fois dans manqué et dans chaud", () => {
+    const tasks = [withIntent("m", iso2("2026-08-13"), { callWhen: "maintenant", score: 75, missed: true })];
+    const b = bucketTasks(tasks, NOW2, "UTC");
+    const total = Object.values(b).reduce((n, arr) => n + arr.length, 0);
+    expect(total).toBe(1);
+  });
+});
