@@ -270,7 +270,13 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           toast.error(payload?.message || 'Reprise impossible')
           return
         }
-        toast.success('Séquence reprise — étape suivante planifiée')
+        // Le demi-tour n'est pas le même geste qu'un déblocage, et le prospect a
+        // reçu une relance de plus : le dire évite de croire que rien n'est parti.
+        toast.success(
+          payload?.rattrapage
+            ? 'Demi-tour — la séquence repart sur la suite « il a répondu »'
+            : 'Séquence reprise — étape suivante planifiée',
+        )
         await load(true)
       } catch {
         toast.error('Action impossible')
@@ -877,33 +883,52 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <>
             <div className="mp-scope-pop-scrim" onClick={() => setPopover(null)} />
             <div className="mp-scope-pop" style={{ left: popover.x, top: popover.y, minWidth: 254 }}>
-              {/* La séquence attend une réponse : « il a répondu » la fait
-                  CONTINUER. Les cinq issues du dessous l'arrêtent toutes — il
-                  fallait donc les séparer visiblement, pas les mélanger. */}
-              {popover.row.sequence?.holdReason === 'awaiting_reply' && popover.row.sequence.enrollmentId && (
-                <>
-                  <div className="ph">La séquence attend une réponse</div>
-                  <button
-                    className="pop-item"
-                    onClick={() => {
-                      const row = popover.row
-                      const enrollmentId = row.sequence?.enrollmentId
-                      setPopover(null)
-                      if (enrollmentId) void declarerReponse(row.id, enrollmentId)
-                    }}
-                  >
-                    <span className="ri ok">
-                      <Check className="ico-sm" />
-                    </span>
-                    <span style={{ minWidth: 0 }}>
-                      <span className="l">Il a répondu</span>
-                      <span className="sn">→ on continue · étape suivante planifiée</span>
-                    </span>
-                  </button>
-                  <div className="ph">Ou bien : le prospect a réagi</div>
-                </>
-              )}
-              {popover.row.sequence?.holdReason !== 'awaiting_reply' && <div className="ph">Le prospect a réagi</div>}
+              {/* « Il a répondu » fait CONTINUER la séquence. Les cinq issues du
+                  dessous l'arrêtent toutes — il fallait donc les séparer
+                  visiblement, pas les mélanger.
+
+                  Deux cas l'ouvrent : l'inscription est garée sur une attente,
+                  ou la relance est DÉJÀ partie et il répond quand même — le cas
+                  le plus fréquent, puisque c'est elle qui l'a réveillé. Le
+                  second ramène l'inscription sur la voie de la conversation au
+                  lieu de la laisser dérouler des relances. */}
+              {(() => {
+                const seq = popover.row.sequence
+                const attend = seq?.holdReason === 'awaiting_reply'
+                const rattrapage = !attend && !!seq?.rattrapageReponse
+                if (!seq?.enrollmentId || (!attend && !rattrapage)) return null
+                return (
+                  <>
+                    <div className="ph">
+                      {attend ? 'La séquence attend une réponse' : 'La relance est partie — il a répondu depuis ?'}
+                    </div>
+                    <button
+                      className="pop-item"
+                      onClick={() => {
+                        const row = popover.row
+                        const enrollmentId = row.sequence?.enrollmentId
+                        setPopover(null)
+                        if (enrollmentId) void declarerReponse(row.id, enrollmentId)
+                      }}
+                    >
+                      <span className="ri ok">
+                        <Check className="ico-sm" />
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="l">Il a répondu</span>
+                        <span className="sn">
+                          {attend
+                            ? '→ on continue · étape suivante planifiée'
+                            : '→ demi-tour vers la suite « il a répondu »'}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="ph">Ou bien : le prospect a réagi</div>
+                  </>
+                )
+              })()}
+              {popover.row.sequence?.holdReason !== 'awaiting_reply' &&
+                !popover.row.sequence?.rattrapageReponse && <div className="ph">Le prospect a réagi</div>}
               {SALES_REACTIONS.map((r) => (
                 <button
                   key={r.id}

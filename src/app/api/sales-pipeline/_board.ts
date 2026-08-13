@@ -38,6 +38,7 @@ import {
   type StepNote,
 } from '@/lib/sales-pipeline/stages'
 import { readVariant } from '@/lib/automations/week'
+import { retourVersLaReponse } from '@/lib/automations/branches'
 import type { MessageVariant } from '@/lib/automations/variables'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
 import { cleanEmail } from '@/lib/automations/regulator-db'
@@ -87,6 +88,15 @@ export interface SalesSequenceInfo {
    * n'a choisi : le moteur tranche alors seul (`pickVariant`).
    */
   variant: MessageVariant | null
+  /**
+   * L'inscription est sur la voie « sans réponse » d'une attente, et une voie
+   * « il a répondu » existe : déclarer une réponse la ramène sur celle-ci.
+   *
+   * Sans ce drapeau, le bouton n'apparaissait que tant que l'inscription était
+   * garée — or un prospect qui répond APRÈS la relance est le cas le plus
+   * fréquent, c'est elle qui l'a réveillé.
+   */
+  rattrapageReponse?: boolean
 }
 
 export interface SalesTaskInfo {
@@ -537,7 +547,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     defaultHandoffOrdre(stages, (selectedSequence?.trigger_stage_id as number | null) ?? null)
 
   const columns = buildColumns({
-    steps: selectedSteps.map((s) => ({ id: s.id, kind: s.kind, day: s.day ?? 0, label: s.label ?? null })),
+    steps: selectedSteps.map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      day: s.day ?? 0,
+      label: s.label ?? null,
+      branch: s.branch ?? null,
+    })),
     sequenceName: selectedSequence?.name ?? null,
     stages,
     handoffOrdre,
@@ -868,6 +884,11 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         /** L'étape courante, telle que la séquence la nomme (`s1`, `s2`…). */
         stepId: step?.id ?? null,
         variant: readVariant(enrollment.vars),
+        // La relance est partie et il répond quand même — le cas le plus
+        // fréquent, puisque c'est elle qui l'a réveillé. L'écran doit alors
+        // proposer « il a répondu » alors que l'inscription n'attend plus rien,
+        // pour la ramener sur la branche de la conversation.
+        rattrapageReponse: retourVersLaReponse(fullSteps, enrollment.current_step) != null,
       }
     }
 

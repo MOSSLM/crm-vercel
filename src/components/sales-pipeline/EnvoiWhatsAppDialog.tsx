@@ -20,7 +20,7 @@
 import React, { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MessageCircle, User, Building2, Phone, X, AlertTriangle } from 'lucide-react'
-import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
+import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from '@/lib/automations/variables'
 import { numerosDuProspect, type NumeroProspect } from '@/lib/prospects/numeros'
 import type { SalesBoardRow, SalesTaskInfo } from './types'
 
@@ -28,22 +28,22 @@ import type { SalesBoardRow, SalesTaskInfo } from './types'
  * Le texte réellement retenu pour une version donnée.
  *
  * Les DEUX versions voyagent dans la tâche (`payload.variant` /
- * `payload.variantAlt`), rendues par le moteur au moment de la préparer. On ne
- * recalcule donc rien ici : afficher un texte reconstitué dans le navigateur,
- * c'est risquer de montrer autre chose que ce qui est prêt à partir.
+ * `payload.variantAlt`), rendues par le moteur au moment de la préparer, et
+ * `versionsPreparees` est la seule lecture de ce couple — la file de démarchage
+ * et le tableau des tâches à la main s'en servent aussi. On ne recalcule donc
+ * rien ici : afficher un texte reconstitué dans le navigateur, c'est risquer de
+ * montrer autre chose que ce qui est prêt à partir.
  */
 export function texteDeLaVersion(task: SalesTaskInfo | undefined, variant: MessageVariant): string {
   if (!task) return ''
-  if (task.variant === variant) return task.message
-  if (task.variantAlt?.variant === variant) return task.variantAlt.message
-  return task.message
+  const versions = versionsPreparees(task)
+  return versions.find((v) => v.variant === variant)?.message ?? versions[0]?.message ?? ''
 }
 
 /** Les versions réellement disponibles — une seule quand le modèle n'en a qu'une. */
 export function versionsDisponibles(task: SalesTaskInfo | undefined): MessageVariant[] {
   if (!task) return []
-  const alt = task.variantAlt?.variant
-  return alt && alt !== task.variant ? [task.variant, alt] : [task.variant]
+  return versionsPreparees(task).map((v) => v.variant)
 }
 
 /**

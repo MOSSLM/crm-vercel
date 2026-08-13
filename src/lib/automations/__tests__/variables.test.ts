@@ -14,6 +14,7 @@ import {
   variantIsSendable,
   variantText,
   varsForVariant,
+  versionsPreparees,
 } from '../variables'
 
 describe('canonicalKey', () => {
@@ -295,5 +296,35 @@ describe('catalogue', () => {
       // Un alias qui serait aussi une clé canonique créerait une boucle de sens.
       expect(known.has(alias)).toBe(false)
     }
+  })
+})
+
+/* ── Ce qu'une tâche transporte des deux versions ─────────────────────────── */
+
+describe('versionsPreparees', () => {
+  const deux = {
+    message: 'Bonjour, je suis bien avec Toiture Martin ?',
+    variant: 'company' as const,
+    variantAlt: { variant: 'contact' as const, message: 'Bonjour, je suis bien avec Julien de Toiture Martin ?' },
+  }
+
+  it('rend la version retenue en tête, puis l’autre', () => {
+    expect(versionsPreparees(deux).map((v) => v.variant)).toEqual(['company', 'contact'])
+    expect(versionsPreparees(deux)[1].message).toMatch(/Julien/)
+  })
+
+  it('n’annonce qu’une version quand le modèle n’en a qu’une', () => {
+    // C'est le cas de toutes les tâches créées avant la bascule à deux versions,
+    // et c'est exact : l'écran ne doit pas proposer un choix qui ne change rien.
+    expect(versionsPreparees({ message: 'Bonjour' })).toEqual([{ variant: 'company', message: 'Bonjour' }])
+    expect(versionsPreparees({ ...deux, variantAlt: null })).toHaveLength(1)
+  })
+
+  it('ne double pas une version que la tâche répète', () => {
+    expect(versionsPreparees({ ...deux, variantAlt: { variant: 'company', message: 'idem' } })).toHaveLength(1)
+  })
+
+  it('reste debout sur une tâche sans payload', () => {
+    expect(versionsPreparees(null)).toEqual([{ variant: 'company', message: '' }])
   })
 })

@@ -67,6 +67,14 @@ export interface SequenceStep {
    * Absent ou 0 = on attend indéfiniment, le prospect reste garé.
    */
   replyTimeoutDays?: number
+  /**
+   * Cette étape n'appartient qu'à l'une des deux suites d'une attente-réponse.
+   *
+   * Absent = étape du tronc, traversée quoi qu'il arrive. La règle
+   * d'atteignabilité vit dans `src/lib/automations/branches.ts` et nulle part
+   * ailleurs — le moteur, l'éditeur et la prévision s'y réfèrent tous.
+   */
+  branch?: { waitId: string; on: 'reply' | 'timeout' } | null
 }
 
 export interface SequenceSettings {

@@ -20,10 +20,9 @@ import {
   type ProspectionTaskFull,
 } from './prospection-db'
 import { lienWhatsApp } from '@/lib/prospects/canal'
-import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
+import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from '@/lib/automations/variables'
 import { NumeroPicker, sourceNumeros, useNumeros } from './NumeroPicker'
 import type { NumeroProspect, UsageNumero } from '@/lib/prospects/numeros'
-import type { ProspectionTaskPayload } from './types'
 
 /**
  * L'onglet des séquences garées. Pas dans `TABS` : il ne filtre pas des tâches,
@@ -462,9 +461,9 @@ function ProsDetail({
   // qu'une — celle que le moteur avait retenue — alors que le choix se fait
   // devant le message, au moment de l'envoyer : une fiche sans prénom en base
   // peut très bien avoir un gérant dont on connaît le nom par ailleurs.
-  const versions = versionsDeLaTache(task.payload)
+  const versions = versionsPreparees(task.payload)
   const [variant, setVariant] = useState<MessageVariant>(versions[0]?.variant ?? 'company')
-  useEffect(() => setVariant(versionsDeLaTache(task.payload)[0]?.variant ?? 'company'), [task.id, task.payload])
+  useEffect(() => setVariant(versionsPreparees(task.payload)[0]?.variant ?? 'company'), [task.id, task.payload])
   const message = versions.find((v) => v.variant === variant)?.message ?? task.payload?.message ?? ''
 
   // Tous les numéros du prospect, pas seulement celui du contact lié à la tâche.
@@ -600,24 +599,6 @@ function ProsDetail({
       </div>
     </div>
   )
-}
-
-/**
- * Les versions réellement préparées pour cette tâche, la retenue en tête.
- *
- * Une tâche antérieure à la bascule à deux versions n'en porte qu'une : c'est
- * exact, et l'écran n'affiche alors aucun onglet plutôt qu'un faux choix.
- */
-function versionsDeLaTache(
-  payload: ProspectionTaskPayload | null | undefined,
-): { variant: MessageVariant; message: string }[] {
-  const principale = {
-    variant: (payload?.variant === 'contact' ? 'contact' : 'company') as MessageVariant,
-    message: payload?.message ?? '',
-  }
-  const autre = payload?.variantAlt
-  if (!autre || autre.variant === principale.variant) return [principale]
-  return [principale, { variant: autre.variant, message: autre.message }]
 }
 
 function ProsAction({

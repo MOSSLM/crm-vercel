@@ -33,6 +33,15 @@ export interface SalesSequenceInfo {
   stepId: string | null
   /** Version épinglée à la main, `null` = le moteur choisit. */
   variant: MessageVariant | null
+  /**
+   * L'inscription est sur la voie « sans réponse » d'une attente, et une voie
+   * « il a répondu » existe : déclarer une réponse la ramène sur celle-ci.
+   *
+   * Sans ce drapeau, le bouton n'apparaissait que tant que l'inscription était
+   * garée — or un prospect qui répond APRÈS la relance est le cas le plus
+   * fréquent, c'est elle qui l'a réveillé.
+   */
+  rattrapageReponse?: boolean
 }
 
 export interface SalesTaskInfo {

@@ -734,6 +734,83 @@ describe('étape « attendre une réponse »', () => {
   });
 });
 
+/* ── Les deux suites d'une attente ───────────────────────────────────────── */
+
+describe('branches d’une attente-réponse', () => {
+  let tables: Record<string, any>;
+
+  /**
+   * La séquence WhatsApp branchée : après l'attente, deux suites qui ne disent
+   * pas la même chose — on ne remercie pas un silence de sa réponse.
+   */
+  const BRANCHEE = {
+    id: 'auto-1',
+    name: 'WhatsApp seul',
+    kind: 'sequence',
+    status: 'on',
+    definition: {
+      steps: [
+        { id: 's1', kind: 'whatsapp', day: 0 },
+        { id: 's2', kind: 'wait', day: 0, waitMode: 'reply', replyTimeoutDays: 3 },
+        { id: 's3', kind: 'whatsapp', day: 0, branch: { waitId: 's2', on: 'reply' } },
+        { id: 's4', kind: 'whatsapp', day: 3, branch: { waitId: 's2', on: 'timeout' } },
+        { id: 's5', kind: 'call', day: 5 },
+      ],
+    },
+    settings: {},
+  };
+
+  const wire = () => {
+    tables = {
+      automations: tableChain({ data: BRANCHEE, error: null }),
+      sequence_enrollments: tableChain(),
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (!tables[table]) throw new Error(`unexpected table: ${table}`);
+      return tables[table];
+    });
+  };
+  const updates = () => tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+
+  beforeEach(() => mockFrom.mockReset());
+
+  it('part sur la branche « il a répondu » quand une réponse est déclarée', async () => {
+    wire();
+
+    await processSequenceEnrollment({
+      ...enrollment,
+      current_step: 1,
+      hold_reason: 'awaiting_reply',
+      vars: { replies: { '1': new Date().toISOString() } },
+    });
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  it('part sur la branche « sans réponse » quand le délai s’écoule', async () => {
+    wire();
+
+    // Le ticker réveille une inscription garée : personne n'a répondu.
+    await processSequenceEnrollment({ ...enrollment, current_step: 1, hold_reason: 'awaiting_reply' });
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 3 }));
+  });
+
+  it('ne fait jamais traverser l’autre branche au passage', async () => {
+    wire();
+
+    // Fin de la branche réponse (s3) : la relance du silence (s4) ne doit pas
+    // partir — ce serait relancer quelqu'un qui vient d'écrire.
+    await processSequenceEnrollment({
+      ...enrollment,
+      current_step: 2,
+      vars: { replies: { '1': new Date().toISOString() }, skippedSteps: [2] },
+    });
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 4 }));
+  });
+});
+
 /* ── Ancrage des délais ──────────────────────────────────────────────────── */
 
 describe('advanceEnrollmentAfterTask', () => {

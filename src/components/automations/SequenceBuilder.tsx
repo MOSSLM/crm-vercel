@@ -14,6 +14,13 @@ import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
 import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
 import { moveStep } from './sequence-steps'
+import {
+  attentesEnAmont,
+  ISSUE_LABEL,
+  planEditeur,
+  positionDInsertion,
+  type IssueAttente,
+} from '@/lib/automations/branches'
 import { MessageEditor } from './MessageEditor'
 import { normalizeWindows } from '@/lib/automations/regulator'
 import {
@@ -41,7 +48,11 @@ export function SequenceBuilder({ id }: { id: string }) {
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [settings, setSettings] = useState<SequenceSettings>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [picker, setPicker] = useState(false)
+  /**
+   * `false` fermé · `true` ouvert sur le tronc · `{waitId, on}` ouvert depuis
+   * une voie, où l'étape choisie ira directement.
+   */
+  const [picker, setPicker] = useState<boolean | { waitId: string; on: IssueAttente }>(false)
   const [loading, setLoading] = useState(true)
   const [vars, setVars] = useState<VarBag>(() => sampleVars())
   const [previewOn, setPreviewOn] = useState<string | null>(null)
@@ -176,6 +187,11 @@ export function SequenceBuilder({ id }: { id: string }) {
   const addStep = useCallback(
     (kind: SeqStepKind, preset?: Partial<SequenceStep>) => {
       touch()
+      // Le picker sait s'il a été ouvert depuis une voie : l'étape y entre
+      // directement, insérée à la bonne place plutôt qu'ajoutée à la fin —
+      // recoller ensuite une étape dans la bonne branche à coups de flèches est
+      // exactement ce que la fourche est censée éviter.
+      const cible = typeof picker === 'object' ? picker : null
       setSteps((prev) => {
         let i = prev.length + 1
         while (prev.some((s) => s.id === `s${i}`)) i++
@@ -187,12 +203,38 @@ export function SequenceBuilder({ id }: { id: string }) {
           day: prev.length === 0 ? 0 : lastDay + 2,
           // Pas de `sendAt` : l'heure d'un email appartient au régulateur.
           ...(kind === 'email' ? { trackOpens: true, trackClicks: true } : {}),
+          ...(cible ? { branch: { waitId: cible.waitId, on: cible.on } } : {}),
           ...preset,
         }
         setSelectedId(step.id)
-        return [...prev, step]
+        if (!cible) return [...prev, step]
+        const at = positionDInsertion(prev, cible.waitId, cible.on)
+        return [...prev.slice(0, at), step, ...prev.slice(at)]
       })
       setPicker(false)
+    },
+    [touch, picker],
+  )
+
+  /**
+   * Rattacher une étape existante à une voie, ou la ramener sur le tronc.
+   *
+   * Le déplacement suit : une étape de la voie « sans réponse » doit vivre dans
+   * le tableau après celles de la voie « il a répondu », sinon la fourche se
+   * dessine à l'envers et l'insertion suivante tombe au mauvais endroit.
+   */
+  const setBranche = useCallback(
+    (stepId: string, branch: SequenceStep['branch']) => {
+      touch()
+      setSteps((prev) => {
+        const from = prev.findIndex((s) => s.id === stepId)
+        if (from < 0) return prev
+        const modifiee = { ...prev[from], branch: branch ?? null }
+        const sans = prev.filter((_, i) => i !== from)
+        if (!branch) return [...sans.slice(0, from), modifiee, ...sans.slice(from)]
+        const at = positionDInsertion(sans, branch.waitId, branch.on)
+        return [...sans.slice(0, at), modifiee, ...sans.slice(at)]
+      })
     },
     [touch],
   )
@@ -228,6 +270,8 @@ export function SequenceBuilder({ id }: { id: string }) {
   const selectedStep = steps.find((s) => s.id === selectedId)
   // Plages d'envoi de la séquence. Vide = celles du régulateur s'appliquent.
   const windows = normalizeWindows(settings.sendWindows)
+  // Le plan de la colonne centrale : tronc, fourches, voies — y compris vides.
+  const plan = planEditeur(steps)
 
   return (
     <>
@@ -532,40 +576,82 @@ export function SequenceBuilder({ id }: { id: string }) {
               </span>
             </div>
 
-            {steps.map((step, i) => (
-              <Fragment key={step.id}>
-                {/* Ce que la maquette dit sur chaque liaison : le délai, qui
-                    décide l'heure, et si l'étape attend un humain. */}
-                <div className="seq-conn">
-                  <span className="wait-chip">
-                    <XI name="clock" className="ico-xs" />
-                    {step.day > 0 ? `J+${step.day}` : 'immédiat'}
-                  </span>
-                  {step.kind === 'email' && (
-                    <span className="wait-chip accent">
-                      <XI name="settings" className="ico-xs" />
-                      heure décidée par le régulateur
-                    </span>
-                  )}
-                  {step.mode === 'manual' && (
-                    <span className="wait-chip manual">
-                      <XI name="user" className="ico-xs" />
-                      tâche à un humain
-                    </span>
-                  )}
-                </div>
-                <SeqStep
-                  step={step}
-                  index={i + 1}
-                  selected={selectedId === step.id}
-                  canMoveUp={i > 0}
-                  canMoveDown={i < steps.length - 1}
-                  onSelect={() => setSelectedId(step.id)}
-                  onDelete={() => removeStep(step.id)}
-                  onMove={(dir) => reorder(step.id, dir)}
-                />
-              </Fragment>
-            ))}
+            {plan.map((ligne) => {
+              if (ligne.type === 'reprise') {
+                return (
+                  <Fragment key={`reprise-${ligne.waitId}`}>
+                    <div className="seq-conn" />
+                    {/* Les deux chemins se rejoignent : ce qui suit part quoi
+                        qu'il se soit passé. Le dire évite de croire qu'une
+                        étape de tronc appartient encore à la dernière voie. */}
+                    <div className="seq-merge">
+                      <XI name="branch" className="ico-xs" />
+                      les deux chemins se rejoignent
+                    </div>
+                  </Fragment>
+                )
+              }
+              if (ligne.type === 'branche') {
+                return (
+                  <div key={`${ligne.waitId}-${ligne.on}`} className="seq-lane" data-on={ligne.on}>
+                    <div className="seq-lane-hd">
+                      <XI name={ligne.on === 'reply' ? 'check' : 'clock'} className="ico-xs" />
+                      {ISSUE_LABEL[ligne.on].titre}
+                      <span className="hint">{ISSUE_LABEL[ligne.on].aide}</span>
+                    </div>
+                    {ligne.etapes.length === 0 && (
+                      <div className="seq-lane-vide">
+                        Rien d’écrit pour ce cas — la séquence enchaîne directement sur la suite commune.
+                      </div>
+                    )}
+                    {ligne.etapes.map((i) => (
+                      <Fragment key={steps[i].id}>
+                        <ConnStep step={steps[i]} />
+                        <SeqStep
+                          step={steps[i]}
+                          index={i + 1}
+                          selected={selectedId === steps[i].id}
+                          canMoveUp={i > 0}
+                          canMoveDown={i < steps.length - 1}
+                          onSelect={() => setSelectedId(steps[i].id)}
+                          onDelete={() => removeStep(steps[i].id)}
+                          onMove={(dir) => reorder(steps[i].id, dir)}
+                        />
+                      </Fragment>
+                    ))}
+                    <button
+                      type="button"
+                      className="add-step-pill sm"
+                      onClick={() => setPicker({ waitId: ligne.waitId, on: ligne.on })}
+                    >
+                      <XI name="plus" className="ico-sm" />
+                      Ajouter une étape ici
+                    </button>
+                  </div>
+                )
+              }
+              const step = steps[ligne.index]
+              return (
+                <Fragment key={step.id}>
+                  <ConnStep step={step} />
+                  <SeqStep
+                    step={step}
+                    index={ligne.index + 1}
+                    selected={selectedId === step.id}
+                    canMoveUp={ligne.index > 0}
+                    canMoveDown={ligne.index < steps.length - 1}
+                    onSelect={() => setSelectedId(step.id)}
+                    onDelete={() => removeStep(step.id)}
+                    onMove={(dir) => reorder(step.id, dir)}
+                    // Une étape rendue dans le flux principal alors qu'elle
+                    // déclare une voie n'a pas trouvé sa fourche : attente
+                    // supprimée, ou fourche imbriquée que l'éditeur ne dessine
+                    // pas. On la signale plutôt que de la masquer.
+                    orpheline={!!step.branch}
+                  />
+                </Fragment>
+              )
+            })}
 
             <div className="seq-conn" />
             <button type="button" className="add-step-pill" onClick={() => setPicker(true)}>
@@ -586,11 +672,13 @@ export function SequenceBuilder({ id }: { id: string }) {
       {/* RIGHT — inspecteur d'étape */}
       <div className="pane">
         <SeqStepInspector
+          steps={steps}
           step={selectedStep}
           settings={settings}
           vars={vars}
           previewOn={previewOn}
           onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)}
+          onBranche={(b) => selectedStep && setBranche(selectedStep.id, b)}
         />
       </div>
 
@@ -752,6 +840,33 @@ function useStepMeta(step: SequenceStep): StepMeta {
   return { icon: 'task', title: 'Tâche', subtitle: 'Action manuelle' }
 }
 
+/**
+ * Ce que la maquette dit sur chaque liaison : le délai, qui décide l'heure, et
+ * si l'étape attend un humain.
+ */
+function ConnStep({ step }: { step: SequenceStep }) {
+  return (
+    <div className="seq-conn">
+      <span className="wait-chip">
+        <XI name="clock" className="ico-xs" />
+        {step.day > 0 ? `J+${step.day}` : 'immédiat'}
+      </span>
+      {step.kind === 'email' && (
+        <span className="wait-chip accent">
+          <XI name="settings" className="ico-xs" />
+          heure décidée par le régulateur
+        </span>
+      )}
+      {step.mode === 'manual' && (
+        <span className="wait-chip manual">
+          <XI name="user" className="ico-xs" />
+          tâche à un humain
+        </span>
+      )}
+    </div>
+  )
+}
+
 function SeqStep({
   step,
   index,
@@ -761,6 +876,7 @@ function SeqStep({
   onSelect,
   onDelete,
   onMove,
+  orpheline = false,
 }: {
   step: SequenceStep
   index: number
@@ -770,6 +886,12 @@ function SeqStep({
   onSelect: () => void
   onDelete: () => void
   onMove: (dir: -1 | 1) => void
+  /**
+   * Étape qui déclare une voie sans être dessinée dedans — attente supprimée,
+   * ou fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même,
+   * signalée : une étape qu'on ne voit plus est pire qu'une étape mal placée.
+   */
+  orpheline?: boolean
 }) {
   const meta = useStepMeta(step)
   return (
@@ -777,6 +899,7 @@ function SeqStep({
       className="seq-step"
       data-kind={step.kind}
       data-reply={step.kind === 'wait' && step.waitMode === 'reply'}
+      data-orpheline={orpheline || undefined}
       data-selected={selected}
       onClick={(e) => {
         e.stopPropagation()
@@ -837,19 +960,80 @@ function SeqStep({
   )
 }
 
+/**
+ * Sur quel chemin cette étape se trouve.
+ *
+ * N'apparaît que s'il y a réellement une fourche au-dessus d'elle : proposer un
+ * choix entre « tronc » et rien d'autre ferait chercher une branche qui n'existe
+ * pas. Changer de voie DÉPLACE l'étape dans le tableau — la voie « sans
+ * réponse » vient après la voie « il a répondu », sinon la fourche se dessine à
+ * l'envers.
+ */
+function BrancheSection({
+  steps,
+  step,
+  onBranche,
+}: {
+  steps: SequenceStep[]
+  step: SequenceStep
+  onBranche: (branch: SequenceStep['branch']) => void
+}) {
+  const idx = steps.findIndex((s) => s.id === step.id)
+  const attentes = attentesEnAmont(steps, idx < 0 ? steps.length : idx)
+  if (attentes.length === 0) return null
+
+  const courant = step.branch
+  const valeur = courant ? `${courant.waitId}:${courant.on}` : ''
+
+  return (
+    <Section label="Chemin">
+      <Field label="Cette étape part…" hint={courant ? 'sur une voie' : 'toujours'}>
+        <select
+          className="select"
+          value={valeur}
+          onChange={(e) => {
+            const v = e.target.value
+            if (!v) return onBranche(null)
+            const [waitId, on] = v.split(':')
+            onBranche({ waitId, on: on as IssueAttente })
+          }}
+        >
+          <option value="">Toujours — tronc commun</option>
+          {attentes.map((w) =>
+            (['reply', 'timeout'] as const).map((on) => (
+              <option key={`${steps[w].id}:${on}`} value={`${steps[w].id}:${on}`}>
+                Étape {w + 1} · {ISSUE_LABEL[on].titre}
+              </option>
+            )),
+          )}
+        </select>
+        <p className="rg-hint">
+          {courant
+            ? ISSUE_LABEL[courant.on].aide
+            : 'Traversée quoi qu’il arrive. Placez-la sur une voie pour qu’elle ne parte que dans ce cas-là.'}
+        </p>
+      </Field>
+    </Section>
+  )
+}
+
 function SeqStepInspector({
+  steps,
   step,
   settings,
   vars,
   previewOn,
   onUpdate,
+  onBranche,
 }: {
+  steps: SequenceStep[]
   step: SequenceStep | undefined
   settings: SequenceSettings
   /** Valeurs de l'entreprise d'essai, pour rendre les messages tels qu'ils partiront. */
   vars: VarBag
   previewOn: string | null
   onUpdate: (p: Partial<SequenceStep>) => void
+  onBranche: (branch: SequenceStep['branch']) => void
 }) {
   if (!step) {
     return (
@@ -868,6 +1052,7 @@ function SeqStepInspector({
         </div>
       </div>
       <div className="inspector-body">
+        <BrancheSection steps={steps} step={step} onBranche={onBranche} />
         <Section label="Timing">
           <Field label="Jour" hint="depuis le début">
             <input
