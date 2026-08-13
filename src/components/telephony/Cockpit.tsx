@@ -10,6 +10,7 @@ import { useTelephonyOptional } from "./CallProvider";
 import { CallJournal } from "./CallJournal";
 import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
 import { LeadMagnetsPanel } from "./LeadMagnetsPanel";
+import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
 
 interface QueueItem {
   oppId: string;
@@ -29,13 +30,6 @@ const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
   { id: "repondeur", label: "Répondeur", kind: "info" },
   { id: "absent", label: "Pas de réponse", kind: "muted" },
   { id: "refus", label: "Pas intéressé", kind: "danger" },
-];
-
-const SCRIPT_STEPS = [
-  { title: "Accroche", body: "Bonjour {org}, je vous appelle car j'ai vu votre présence en ligne — 30 secondes ?" },
-  { title: "Découverte", body: "Comment gérez-vous aujourd'hui vos demandes entrantes / votre site ?" },
-  { title: "Valeur", body: "On aide les entreprises de {ville} à convertir plus, sans effort de leur côté." },
-  { title: "Closing RDV", body: "Je vous propose un point de 15 min cette semaine — plutôt mardi ou jeudi ?" },
 ];
 
 const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
