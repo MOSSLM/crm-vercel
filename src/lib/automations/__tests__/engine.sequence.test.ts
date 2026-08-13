@@ -827,14 +827,43 @@ describe('advanceEnrollmentAfterTask', () => {
     { id: 's3', kind: 'whatsapp', day: 4 },
   ];
 
-  const wireAdvance = (enr: Partial<SequenceEnrollment>) => {
-    enrollments = tableChain({
-      data: { ...enrollment, current_step: 1, ...enr },
-      error: null,
+  /**
+   * Comme `tableChain`, mais qui RETIENT l'état entre deux lectures.
+   *
+   * `advanceEnrollmentAfterTask` positionne l'inscription PUIS relit tout de
+   * suite (`traiterEtapeCourante`) pour traiter l'étape sur laquelle elle vient
+   * d'atterrir — sans attendre le prochain tick. Un double statique aurait
+   * renvoyé l'état d'AVANT l'écriture à cette seconde lecture, comme le ferait
+   * un mock qui ignore ses propres `.update()`.
+   */
+  const statefulEnrollments = (initial: Record<string, unknown>) => {
+    const record: Record<string, unknown> = { ...initial };
+    const updates: Record<string, unknown>[] = [];
+    const c: any = { captured: { updates, inserts: [] } };
+    for (const m of ['select', 'eq', 'in', 'not', 'lte', 'gte', 'order']) c[m] = jest.fn(() => c);
+    c.maybeSingle = jest.fn(() => Promise.resolve({ data: { ...record }, error: null }));
+    c.single = c.maybeSingle;
+    c.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: { ...record }, error: null }).then(resolve, reject);
+    c.update = jest.fn((u: Record<string, unknown>) => {
+      updates.push(u);
+      Object.assign(record, u);
+      return c;
     });
+    return c;
+  };
+
+  const wireAdvance = (enr: Partial<SequenceEnrollment>) => {
+    enrollments = statefulEnrollments({ ...enrollment, current_step: 1, ...enr });
     mockFrom.mockImplementation((table: string) => {
       if (table === 'sequence_enrollments') return enrollments;
-      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      if (table === 'automations') return tableChain({ data: { status: 'on', definition: { steps: STEPS } }, error: null });
+      // Traiter tout de suite l'étape suivante (créer sa tâche WhatsApp) irait
+      // consulter entreprises, contacts, modèles… hors du périmètre de ces
+      // tests, qui vérifient l'ANCRAGE. L'appelant rattrape l'échec
+      // (`.catch(() => {})`) sans laisser de trace dans les écritures vérifiées
+      // ci-dessous — c'est exactement ce qui se passe en production quand le
+      // traitement immédiat échoue : le prochain tick s'en charge.
       throw new Error(`unexpected table: ${table}`);
     });
   };
@@ -886,16 +915,22 @@ describe('advanceEnrollmentAfterTask', () => {
   });
 
   it('termine la séquence quand l’étape franchie était la dernière', async () => {
-    enrollments = tableChain({ data: { ...enrollment, current_step: 2 }, error: null });
+    enrollments = statefulEnrollments({ ...enrollment, current_step: 2 });
     mockFrom.mockImplementation((table: string) => {
       if (table === 'sequence_enrollments') return enrollments;
-      if (table === 'automations') return tableChain({ data: { definition: { steps: STEPS } }, error: null });
+      if (table === 'automations') return tableChain({ data: { status: 'on', definition: { steps: STEPS } }, error: null });
       throw new Error(`unexpected table: ${table}`);
     });
 
     await advanceEnrollmentAfterTask('enr-1');
 
-    expect(lastUpdate()).toEqual(expect.objectContaining({ status: 'finished', next_run_at: null }));
+    // Une inscription terminée n'est plus 'active' : la relecture immédiate
+    // (`traiterEtapeCourante`) le voit — grâce au mock désormais à jour — et
+    // s'arrête là. Une seule écriture, pas de traitement fantôme sur l'étape
+    // qu'il n'y a plus.
+    expect(enrollments.captured.updates).toEqual([
+      expect.objectContaining({ status: 'finished', next_run_at: null }),
+    ]);
   });
 
   it('ne touche pas à une inscription qui n’est plus active', async () => {
@@ -904,6 +939,41 @@ describe('advanceEnrollmentAfterTask', () => {
     await advanceEnrollmentAfterTask('enr-1');
 
     expect(enrollments.captured.updates).toHaveLength(0);
+  });
+
+  /**
+   * LA RÉGRESSION SIGNALÉE : cliquer « il a répondu » dans la seconde qui suit
+   * un « Fait » retombait sur « on n'attendait rien à cette étape ».
+   *
+   * `avancerApres` positionnait bien l'inscription sur l'attente-réponse
+   * suivante, mais son `hold_reason` restait NUL jusqu'au prochain tick cron —
+   * le seul endroit qui l'écrivait (`processWaitStep`). Entre les deux,
+   * `declarerReponse` voyait une inscription qui n'a l'air d'attendre rien.
+   *
+   * `traiterEtapeCourante` comble cet écart : elle traite l'étape sur laquelle
+   * on vient d'atterrir DANS LE MÊME APPEL, pas au prochain passage.
+   */
+  it('pose déjà hold_reason=awaiting_reply en atterrissant sur une attente-réponse — sans attendre le prochain tick', async () => {
+    const WAIT_STEPS = [
+      { id: 's1', kind: 'whatsapp', day: 0 },
+      { id: 's2', kind: 'wait', day: 0, waitMode: 'reply', replyTimeoutDays: 0 },
+    ];
+    enrollments = statefulEnrollments({ ...enrollment, current_step: 0 });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'sequence_enrollments') return enrollments;
+      if (table === 'automations') return tableChain({ data: { status: 'on', definition: { steps: WAIT_STEPS } }, error: null });
+      throw new Error(`unexpected table: ${table}`);
+    });
+
+    await advanceEnrollmentAfterTask('enr-1');
+
+    expect(enrollments.captured.updates).toEqual([
+      // 1. avancerApres/scheduleStep positionne l'inscription sur s2.
+      expect.objectContaining({ current_step: 1 }),
+      // 2. traiterEtapeCourante traite s2 dans la foulée : hold_reason posé
+      //    tout de suite, sans qu'un tick n'ait eu besoin de passer.
+      expect.objectContaining({ hold_reason: 'awaiting_reply' }),
+    ]);
   });
 });
 
