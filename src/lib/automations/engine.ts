@@ -1586,6 +1586,40 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
   const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
   const steps = Array.isArray(def.steps) ? def.steps : []
   await avancerApres(sb, enrollment, steps, enrollment.current_step, { reanchor: true })
+  // Best-effort : l'avancement lui-même a réussi, quoi qu'il arrive ici. Rater
+  // le traitement immédiat ne doit jamais se lire comme un échec de la
+  // déclaration qui l'a déclenché — le prochain tick reprendra la main.
+  await traiterEtapeCourante(sb, enrollmentId).catch(() => {})
+}
+
+/**
+ * Traite tout de suite l'étape sur laquelle on vient de poser l'inscription,
+ * plutôt que d'attendre le prochain passage du ticker.
+ *
+ * `avancerApres`/`scheduleStep` ne font que POSITIONNER l'inscription — poser
+ * `current_step` et calculer une date. Ce qui se passe une fois arrivé (créer
+ * la tâche WhatsApp, garer l'inscription sur une attente-réponse avec son
+ * `hold_reason`) attendait jusqu'ici le prochain tick cron : une latence
+ * invisible tant que personne ne regarde, mais bien réelle. Cliquer
+ * « il a répondu » dans la seconde qui suit un « Fait » retombait sur une
+ * attente dont le `hold_reason` n'était pas encore posé, et `declarerReponse`
+ * refusait — « on n'attendait rien à cette étape » — alors que si, le moteur
+ * n'était simplement pas encore passé.
+ *
+ * Un e-mail fait exception : il reste TOUJOURS du ressort du régulateur, jamais
+ * synchrone ici — sans quoi mettre 30 prospects en séquence d'un coup ferait
+ * partir 30 e-mails à la seconde du clic (cf. la même réserve dans les routes
+ * d'inscription agent/admin).
+ */
+async function traiterEtapeCourante(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  const { data: enr } = await sb.from('sequence_enrollments').select('*').eq('id', enrollmentId).maybeSingle()
+  const enrollment = enr as SequenceEnrollment | null
+  if (!enrollment || enrollment.status !== 'active') return
+  const { data: autoRow } = await sb.from('automations').select('definition').eq('id', enrollment.automation_id).maybeSingle()
+  const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
+  const steps = Array.isArray(def.steps) ? def.steps : []
+  if (steps[enrollment.current_step]?.kind === 'email') return
+  await processSequenceEnrollment(enrollment)
 }
 
 /**
@@ -1630,4 +1664,6 @@ export async function reprendreSurLaBrancheReponse(
   // laisser ferait rappeler quelqu'un qui vient d'écrire.
   await cancelEnrollmentWork(sb, enrollmentId)
   await scheduleStep(sb, enrollment, steps, cible, { reanchor: true, fromIdx: waitIdx })
+  // Best-effort, même raison qu'au-dessus.
+  await traiterEtapeCourante(sb, enrollmentId).catch(() => {})
 }
