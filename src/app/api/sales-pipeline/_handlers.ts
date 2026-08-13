@@ -226,7 +226,9 @@ export async function handleSetEmail(
 
 export type EnrollOutcome = {
   opportunite_id: string
-  status: 'enrolled' | 'deja_inscrit' | 'contact_manquant' | 'non_attribue' | 'erreur'
+  /** `sans_canal` : ni e-mail ni téléphone nulle part — le seul refus qui tienne
+   *  encore, et il ne se répare pas en créant une fiche contact vide. */
+  status: 'enrolled' | 'deja_inscrit' | 'contact_manquant' | 'sans_canal' | 'non_attribue' | 'erreur'
 }
 
 /**
@@ -304,8 +306,18 @@ export async function handleEnroll(
       results.push({ opportunite_id: opp.id, status: 'non_attribue' })
       continue
     }
-    const contactId = opp.contact_id ?? (opp.entreprise_id != null ? fallbackContact.get(opp.entreprise_id) : undefined)
-    if (!contactId) {
+    // PAS DE FICHE CONTACT ≠ PAS DE CANAL.
+    //
+    // `enrollInSequence` a cessé d'exiger un contact : il retombe sur le
+    // téléphone de l'ENTREPRISE, mobile d'abord, et ne refuse que s'il n'y a
+    // personne à qui écrire NI téléphoner. La garde ci-dessous, héritée de
+    // l'ancienne règle, refusait ici ce que le moteur accepte — et elle visait
+    // pile le segment de la séquence WhatsApp : « pas d'e-mail, un mobile sur
+    // la fiche entreprise », soit 13 des 27 prospects démarchables d'un agent.
+    // Elles étaient écartées en silence, sous un motif qui plus est faux.
+    const contactId =
+      opp.contact_id ?? (opp.entreprise_id != null ? fallbackContact.get(opp.entreprise_id) ?? null : null)
+    if (!contactId && opp.entreprise_id == null) {
       results.push({ opportunite_id: opp.id, status: 'contact_manquant' })
       continue
     }
@@ -321,7 +333,11 @@ export async function handleEnroll(
         { createdBy: scope.userId },
       )
       if (!enrolled) {
-        results.push({ opportunite_id: opp.id, status: 'deja_inscrit' })
+        // Le moteur répond `false` dans deux cas qu'il ne faut pas confondre :
+        // déjà inscrit — il rend alors l'id de l'inscription en cours — et
+        // aucun canal, où il ne rend rien. Les afficher pareil enverrait
+        // l'opérateur chercher un doublon qui n'existe pas.
+        results.push({ opportunite_id: opp.id, status: enrollmentId ? 'deja_inscrit' : 'sans_canal' })
         continue
       }
 
