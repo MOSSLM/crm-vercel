@@ -1,7 +1,7 @@
 'use client'
 // SequenceBuilder — éditeur de séquence 3 colonnes (réglages / étapes / inspecteur).
 // Porté depuis claude design/automations-sequences.jsx.
-import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -14,13 +14,14 @@ import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
 import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
 import { moveStep } from './sequence-steps'
+import { SequenceCanvas } from './SequenceCanvas'
 import {
   attentesEnAmont,
   ISSUE_LABEL,
-  planEditeur,
   positionDInsertion,
   type IssueAttente,
 } from '@/lib/automations/branches'
+import { deplacerVers, type CibleDepot } from '@/lib/automations/canvas'
 import { MessageEditor } from './MessageEditor'
 import { normalizeWindows } from '@/lib/automations/regulator'
 import {
@@ -217,6 +218,25 @@ export function SequenceBuilder({ id }: { id: string }) {
   )
 
   /**
+   * Une carte tirée puis lâchée sur le plan.
+   *
+   * `deplacerVers` fait tout le travail — nouvel ordre, nouvelle voie — et rend
+   * le tableau INTACT quand le dépôt n'a pas de sens. D'où la comparaison par
+   * identité : on ne marque la séquence à sauvegarder que si elle a vraiment
+   * changé, sinon un aller-retour de la souris déclencherait une écriture.
+   */
+  const deplacer = useCallback(
+    (stepId: string, cible: CibleDepot) => {
+      setSteps((prev) => {
+        const next = deplacerVers(prev, stepId, cible)
+        if (next !== prev) touch()
+        return next
+      })
+    },
+    [touch],
+  )
+
+  /**
    * Rattacher une étape existante à une voie, ou la ramener sur le tronc.
    *
    * Le déplacement suit : une étape de la voie « sans réponse » doit vivre dans
@@ -270,8 +290,6 @@ export function SequenceBuilder({ id }: { id: string }) {
   const selectedStep = steps.find((s) => s.id === selectedId)
   // Plages d'envoi de la séquence. Vide = celles du régulateur s'appliquent.
   const windows = normalizeWindows(settings.sendWindows)
-  // Le plan de la colonne centrale : tronc, fourches, voies — y compris vides.
-  const plan = planEditeur(steps)
 
   return (
     <>
@@ -549,123 +567,28 @@ export function SequenceBuilder({ id }: { id: string }) {
           </div>
         </div>
         <div className="seq-host">
-          <div className="seq-stage">
-            <SequenceSummary name={name} settings={settings} stepCount={steps.length} />
-
-            <div
-              style={{
-                background: 'var(--text)',
-                color: 'var(--bg)',
-                padding: '12px 16px',
-                borderRadius: 10,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                boxShadow: 'var(--shadow-2)',
-              }}
-            >
-              <XI name="bolt" className="ico" />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Entrée — opportunité atteint le stage</div>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.6)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
-                  Pipeline & stage d&apos;entrée configurés à gauche
-                </div>
-              </div>
-              <span className="pill" style={{ background: 'rgba(255,255,255,.16)', color: '#fff' }}>
-                déclencheur
-              </span>
-            </div>
-
-            {plan.map((ligne) => {
-              if (ligne.type === 'reprise') {
-                return (
-                  <Fragment key={`reprise-${ligne.waitId}`}>
-                    <div className="seq-conn" />
-                    {/* Les deux chemins se rejoignent : ce qui suit part quoi
-                        qu'il se soit passé. Le dire évite de croire qu'une
-                        étape de tronc appartient encore à la dernière voie. */}
-                    <div className="seq-merge">
-                      <XI name="branch" className="ico-xs" />
-                      les deux chemins se rejoignent
-                    </div>
-                  </Fragment>
-                )
-              }
-              if (ligne.type === 'branche') {
-                return (
-                  <div key={`${ligne.waitId}-${ligne.on}`} className="seq-lane" data-on={ligne.on}>
-                    <div className="seq-lane-hd">
-                      <XI name={ligne.on === 'reply' ? 'check' : 'clock'} className="ico-xs" />
-                      {ISSUE_LABEL[ligne.on].titre}
-                      <span className="hint">{ISSUE_LABEL[ligne.on].aide}</span>
-                    </div>
-                    {ligne.etapes.length === 0 && (
-                      <div className="seq-lane-vide">
-                        Rien d’écrit pour ce cas — la séquence enchaîne directement sur la suite commune.
-                      </div>
-                    )}
-                    {ligne.etapes.map((i) => (
-                      <Fragment key={steps[i].id}>
-                        <ConnStep step={steps[i]} />
-                        <SeqStep
-                          step={steps[i]}
-                          index={i + 1}
-                          selected={selectedId === steps[i].id}
-                          canMoveUp={i > 0}
-                          canMoveDown={i < steps.length - 1}
-                          onSelect={() => setSelectedId(steps[i].id)}
-                          onDelete={() => removeStep(steps[i].id)}
-                          onMove={(dir) => reorder(steps[i].id, dir)}
-                        />
-                      </Fragment>
-                    ))}
-                    <button
-                      type="button"
-                      className="add-step-pill sm"
-                      onClick={() => setPicker({ waitId: ligne.waitId, on: ligne.on })}
-                    >
-                      <XI name="plus" className="ico-sm" />
-                      Ajouter une étape ici
-                    </button>
-                  </div>
-                )
-              }
-              const step = steps[ligne.index]
-              return (
-                <Fragment key={step.id}>
-                  <ConnStep step={step} />
-                  <SeqStep
-                    step={step}
-                    index={ligne.index + 1}
-                    selected={selectedId === step.id}
-                    canMoveUp={ligne.index > 0}
-                    canMoveDown={ligne.index < steps.length - 1}
-                    onSelect={() => setSelectedId(step.id)}
-                    onDelete={() => removeStep(step.id)}
-                    onMove={(dir) => reorder(step.id, dir)}
-                    // Une étape rendue dans le flux principal alors qu'elle
-                    // déclare une voie n'a pas trouvé sa fourche : attente
-                    // supprimée, ou fourche imbriquée que l'éditeur ne dessine
-                    // pas. On la signale plutôt que de la masquer.
-                    orpheline={!!step.branch}
-                  />
-                </Fragment>
-              )
-            })}
-
-            <div className="seq-conn" />
-            <button type="button" className="add-step-pill" onClick={() => setPicker(true)}>
-              <XI name="plus" className="ico-sm" />
-              Ajouter une étape
-            </button>
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 22 }}>
-              <div className="flow-end">
-                <XI name="flag" className="ico-sm" />
-                Fin de séquence
-              </div>
-            </div>
-          </div>
+          <SequenceSummary name={name} settings={settings} stepCount={steps.length} />
+          <SequenceCanvas
+            steps={steps}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onDelete={removeStep}
+            onMove={reorder}
+            onDeplacer={deplacer}
+            onAjouter={(branch) => setPicker(branch ?? true)}
+            carte={({ step, index, orpheline }) => (
+              <SeqStep step={step} index={index} orpheline={orpheline} />
+            )}
+          />
+          <button
+            type="button"
+            className="seq-ajout"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setPicker(true)}
+          >
+            <XI name="plus" className="ico-sm" />
+            Ajouter une étape
+          </button>
         </div>
       </div>
 
@@ -841,51 +764,22 @@ function useStepMeta(step: SequenceStep): StepMeta {
 }
 
 /**
- * Ce que la maquette dit sur chaque liaison : le délai, qui décide l'heure, et
- * si l'étape attend un humain.
+ * Le contenu d'une carte d'étape. Le plan la place et l'outille (poignée,
+ * flèches, corbeille) ; elle ne s'occupe que de ce qu'il y a à lire.
+ *
+ * Le délai, l'heure décidée par le régulateur et « tâche à un humain » vivaient
+ * jusqu'ici dans le connecteur entre deux cartes. Sur un plan, il n'y a plus
+ * d'interligne où les loger : ils descendent en pied de carte, ce qui les
+ * rattache d'ailleurs à la bonne étape — au-dessus, on lisait le délai de la
+ * suivante.
  */
-function ConnStep({ step }: { step: SequenceStep }) {
-  return (
-    <div className="seq-conn">
-      <span className="wait-chip">
-        <XI name="clock" className="ico-xs" />
-        {step.day > 0 ? `J+${step.day}` : 'immédiat'}
-      </span>
-      {step.kind === 'email' && (
-        <span className="wait-chip accent">
-          <XI name="settings" className="ico-xs" />
-          heure décidée par le régulateur
-        </span>
-      )}
-      {step.mode === 'manual' && (
-        <span className="wait-chip manual">
-          <XI name="user" className="ico-xs" />
-          tâche à un humain
-        </span>
-      )}
-    </div>
-  )
-}
-
 function SeqStep({
   step,
   index,
-  selected,
-  canMoveUp,
-  canMoveDown,
-  onSelect,
-  onDelete,
-  onMove,
   orpheline = false,
 }: {
   step: SequenceStep
   index: number
-  selected: boolean
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onSelect: () => void
-  onDelete: () => void
-  onMove: (dir: -1 | 1) => void
   /**
    * Étape qui déclare une voie sans être dessinée dedans — attente supprimée,
    * ou fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même,
@@ -900,11 +794,6 @@ function SeqStep({
       data-kind={step.kind}
       data-reply={step.kind === 'wait' && step.waitMode === 'reply'}
       data-orpheline={orpheline || undefined}
-      data-selected={selected}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect()
-      }}
     >
       <div className="hd">
         <span className="num">{index}</span>
@@ -915,46 +804,23 @@ function SeqStep({
           <div>{meta.title}</div>
           <div className="sub">{meta.subtitle}</div>
         </div>
-        {step.mode && (
-          <span className={`step-mode-tag ${step.mode}`}>
-            <XI name={step.mode === 'auto' ? 'bolt' : 'cursor'} className="ico-xs" />
-            {step.mode === 'auto' ? 'AUTO' : 'MANUEL'}
+      </div>
+      <div className="ft">
+        <span className="wait-chip">
+          <XI name="clock" className="ico-xs" />
+          {step.day > 0 ? `J+${step.day}` : 'immédiat'}
+        </span>
+        {step.kind === 'email' && (
+          <span className="wait-chip accent">
+            <XI name="settings" className="ico-xs" />
+            régulateur
           </span>
         )}
-        <div className="tools">
-          <button
-            type="button"
-            title="Monter l’étape"
-            disabled={!canMoveUp}
-            onClick={(e) => {
-              e.stopPropagation()
-              onMove(-1)
-            }}
-          >
-            <XI name="chevup" className="ico-sm" />
-          </button>
-          <button
-            type="button"
-            title="Descendre l’étape"
-            disabled={!canMoveDown}
-            onClick={(e) => {
-              e.stopPropagation()
-              onMove(1)
-            }}
-          >
-            <XI name="chevdown" className="ico-sm" />
-          </button>
-          <button
-            type="button"
-            title="Supprimer"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-          >
-            <XI name="trash" className="ico-sm" />
-          </button>
-        </div>
+        {step.mode === 'manual' && (
+          <span className="wait-chip manual">
+            <XI name="user" className="ico-xs" />à la main
+          </span>
+        )}
       </div>
     </div>
   )
