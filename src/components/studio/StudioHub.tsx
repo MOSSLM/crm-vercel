@@ -18,6 +18,7 @@ import {
   GitBranch,
   FolderOpen,
   LayoutDashboard,
+  Radar,
   type LucideIcon,
 } from "lucide-react";
 import { useAppData } from "@/components/AppDataContext";
@@ -77,6 +78,7 @@ export function StudioHub() {
       subtitle: "attirer & capter les leads",
       tools: [
         { title: "Site builder", href: "/site-builder", icon: Globe },
+        { title: "Radar analytics", href: "/site-builder/radar-analytics", icon: Radar },
         { title: "Form builder", href: "/forms", icon: ClipboardList },
         { title: "Nouvelle recherche", href: "/search/new", icon: Search },
         { title: "Réseaux", href: "/networks", icon: Users },

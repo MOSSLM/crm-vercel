@@ -1,10 +1,19 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { Form, FormQuestion } from '@/types';
 import { resolveFlow } from '@/lib/form-builder/evaluate-logic';
 import { ProgressBar } from './ProgressBar';
 import { FormIcon } from './FormIcon';
+
+// Fires GA4 events for the radar analytics dashboard (src/app/api/analytics-radar)
+// to compute "formulaire testé/envoyé". No-op when GA4 isn't loaded (gtag absent)
+// or inside the site-builder editor preview — only real visitor forms count.
+function trackFormEvent(name: 'analytics_radar_form_start' | 'analytics_radar_form_submit', formId: string) {
+  if (typeof window === 'undefined') return;
+  const gtag = (window as unknown as { gtag?: (...args: unknown[]) => void }).gtag;
+  gtag?.('event', name, { form_id: formId });
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -433,6 +442,7 @@ export function FormRuntime({
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [idx, setIdx] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const hasTrackedStart = useRef(false);
 
   const flow = useMemo(() => resolveFlow(form, answers), [form, answers]);
   const safeIdx = Math.min(idx, flow.length - 1);
@@ -454,6 +464,10 @@ export function FormRuntime({
     setAnswers((a) => ({ ...a, [qid]: val }));
 
   const goNext = useCallback(() => {
+    if (!embedded && !hasTrackedStart.current) {
+      hasTrackedStart.current = true;
+      trackFormEvent('analytics_radar_form_start', form.id);
+    }
     if (safeIdx >= flow.length - 1) {
       // Submit
       if (submitted) return;
@@ -474,6 +488,7 @@ export function FormRuntime({
             site_id: siteId,
           }),
         }).catch(console.error);
+        trackFormEvent('analytics_radar_form_submit', form.id);
         onSubmit?.(payload);
       }
     } else {

@@ -38,6 +38,7 @@ import {
   CalendarClock,
   Activity,
   Settings,
+  Radar,
 } from "lucide-react";
 
 /**
@@ -142,6 +143,7 @@ export const SPACES: Space[] = [
     tools: [
       { title: "Pipeline", href: "/marketing-pipeline", icon: GitBranch },
       { title: "Site builder", href: "/site-builder", icon: Globe },
+      { title: "Radar analytics", href: "/site-builder/radar-analytics", icon: Radar },
       { title: "Thèmes", href: "/themes", icon: Palette },
       { title: "Section builder", href: "/sections-library", icon: BookOpen },
       { title: "Form builder", href: "/forms", icon: ClipboardList },
