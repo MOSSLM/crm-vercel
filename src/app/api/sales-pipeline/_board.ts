@@ -476,7 +476,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const stages = allStages.filter((s) => s.pipeline_id === selectedPipeline.id)
   const lostStage = stages.find((s) => isLostStage(s.nom)) ?? null
 
-  const sequenceRows = (sequencesRes.data ?? []) as Automation[]
+  // Les séquences archivées sortent du tableau : elles pilotent les colonnes,
+  // remplissent le sélecteur de partie et le lanceur, or « archivée » veut
+  // précisément dire « plus dans les listes de choix ». Leurs inscriptions
+  // passées ne disparaissent pas pour autant — `partCounts` se calcule sur les
+  // inscriptions, pas sur cette liste, et les lignes concernées restent
+  // lisibles dans la vue d'ensemble.
+  const sequenceRows = ((sequencesRes.data ?? []) as Automation[]).filter((a) => a.status !== 'archived')
 
   // ── 2. Quelle séquence pilote les colonnes ? ─────────────────────────────
   const { data: activeCounts } = await sb

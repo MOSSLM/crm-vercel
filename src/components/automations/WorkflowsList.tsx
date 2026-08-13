@@ -30,7 +30,7 @@ export function WorkflowsList() {
   const [rows, setRows] = useState<Automation[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'on' | 'paused' | 'draft'>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'on' | 'paused' | 'draft' | 'archived'>('all')
   const [filterKind, setFilterKind] = useState<'all' | 'workflow' | 'sequence'>('all')
   const [creating, setCreating] = useState(false)
 
@@ -46,12 +46,27 @@ export function WorkflowsList() {
       on: rows.filter((a) => a.status === 'on').length,
       paused: rows.filter((a) => a.status === 'paused').length,
       draft: rows.filter((a) => a.status === 'draft').length,
+      archived: rows.filter((a) => a.status === 'archived').length,
+      // « Toutes » veut dire « tout le plan de travail », archives exclues :
+      // sinon ranger une automatisation ne la rangerait de nulle part.
+      live: rows.filter((a) => a.status !== 'archived').length,
     }),
     [rows],
   )
 
+  // L'onglet « Archivées » n'apparaît que s'il y a quelque chose dedans : un
+  // onglet vide en permanence occupe la place sans rien dire.
+  type StatusTab = { v: typeof filterStatus; l: string }
+  const statusTabs: StatusTab[] = [
+    { v: 'all', l: `Toutes (${counts.live})` },
+    { v: 'on', l: `Actives (${counts.on})` },
+    { v: 'paused', l: `En pause (${counts.paused})` },
+    { v: 'draft', l: `Brouillons (${counts.draft})` },
+    ...(counts.archived > 0 ? [{ v: 'archived' as const, l: `Archivées (${counts.archived})` }] : []),
+  ]
+
   const filtered = rows.filter((a) => {
-    if (filterStatus !== 'all' && a.status !== filterStatus) return false
+    if (filterStatus === 'all' ? a.status === 'archived' : a.status !== filterStatus) return false
     if (filterKind !== 'all' && a.kind !== filterKind) return false
     if (q && !a.name.toLowerCase().includes(q.toLowerCase())) return false
     return true
@@ -78,7 +93,8 @@ export function WorkflowsList() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1>Automatisations</h1>
           <div className="desc">
-            {rows.length} automatisations · {counts.on} actives · {counts.paused} en pause · {counts.draft} brouillon
+            {counts.live} automatisations · {counts.on} actives · {counts.paused} en pause · {counts.draft} brouillon
+            {counts.archived > 0 && ` · ${counts.archived} archivée${counts.archived > 1 ? 's' : ''}`}
           </div>
         </div>
         <Link href="/automations/connections" className="btn outline sm">
@@ -99,12 +115,7 @@ export function WorkflowsList() {
         <SearchInput value={q} onChange={setQ} placeholder="Rechercher une automatisation…" style={{ flex: 1, maxWidth: 320 }} />
         <div style={{ width: 1, height: 22, background: 'var(--border)', margin: '0 4px' }} />
         <div className="seg">
-          {([
-            { v: 'all', l: `Toutes (${rows.length})` },
-            { v: 'on', l: `Actives (${counts.on})` },
-            { v: 'paused', l: `En pause (${counts.paused})` },
-            { v: 'draft', l: `Brouillons (${counts.draft})` },
-          ] as const).map((o) => (
+          {statusTabs.map((o) => (
             <button key={o.v} type="button" aria-pressed={filterStatus === o.v} onClick={() => setFilterStatus(o.v)}>
               {o.l}
             </button>

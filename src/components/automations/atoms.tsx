@@ -156,7 +156,7 @@ export function SegFull({
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────
-export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error'
+export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error' | 'archived'
 
 export function StatusBadge({ status }: { status: AutomationStatus }) {
   const map: Record<AutomationStatus, { label: string; cls: string }> = {
@@ -164,6 +164,7 @@ export function StatusBadge({ status }: { status: AutomationStatus }) {
     paused: { label: 'En pause', cls: 'paused' },
     draft: { label: 'Brouillon', cls: 'draft' },
     error: { label: 'Erreur', cls: 'error' },
+    archived: { label: 'Archivée', cls: 'archived' },
   }
   const s = map[status] || map.draft
   return (

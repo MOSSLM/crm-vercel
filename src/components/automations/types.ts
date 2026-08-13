@@ -2,7 +2,12 @@
 import type { Canal } from '@/lib/prospects/canal'
 
 export type AutomationKind = 'workflow' | 'sequence'
-export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error'
+/**
+ * `archived` : rangée, hors des listes où l'on choisit une séquence, mais
+ * gardée en base avec ses inscriptions (cf. `sql/20260816_automations_archivees.sql`).
+ * Comme tout ce qui n'est pas `on`, le moteur n'en fait rien avancer.
+ */
+export type AutomationStatus = 'on' | 'paused' | 'draft' | 'error' | 'archived'
 export type NodeCat = 'trigger' | 'cond' | 'action' | 'delay' | 'manual'
 
 // ── Définition d'un workflow ───────────────────────────────────────────────

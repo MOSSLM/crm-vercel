@@ -67,7 +67,14 @@ export function AutomationsShell({ children }: { children: React.ReactNode }) {
         const since = new Date(Date.now() - 7 * 86400000).toISOString()
         const [wf, seq, tasks, activeWf, runs, queued] = await Promise.all([
           supabase.from('automations').select('id', { count: 'exact', head: true }).eq('kind', 'workflow'),
-          supabase.from('automations').select('id', { count: 'exact', head: true }).eq('kind', 'sequence'),
+          // Le badge de l'onglet compte le plan de travail, pas les archives :
+          // ranger une séquence doit faire baisser le nombre, sinon archiver
+          // n'aurait aucun effet visible.
+          supabase
+            .from('automations')
+            .select('id', { count: 'exact', head: true })
+            .eq('kind', 'sequence')
+            .neq('status', 'archived'),
           supabase.from('prospection_tasks').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
           supabase
             .from('automations')

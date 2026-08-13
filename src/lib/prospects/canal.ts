@@ -227,23 +227,33 @@ export function precisionDuPublic(cible: PublicVise): number {
  * Rien n'est codé en dur ici : une séquence créée demain avec ses propres cases
  * entre dans la suggestion sans qu'on retouche cette fonction. `null` quand
  * aucune ne correspond — le déroulant reste ouvert, simplement sans favori.
+ *
+ * DEUX SÉQUENCES SUR LE MÊME PUBLIC, C'EST NORMAL
+ * C'est même la forme d'un test : deux façons d'ouvrir, la même cible, deux
+ * colonnes de chiffres à comparer. Il faut alors départager, et la précision du
+ * public n'y suffit plus puisqu'elle est identique de part et d'autre. Celle qui
+ * TOURNE gagne : proposer un brouillon quand une séquence est en service
+ * enverrait l'inscription contre un 409 `sequence_inactive`, et un brouillon
+ * n'est le bon choix par défaut de personne. À égalité complète, la première
+ * déclarée l'emporte — donc l'ordre d'affichage, pas le hasard du tri SQL.
  */
-export function sequenceSuggeree<T extends PublicVise & { id: string }>(
+export function sequenceSuggeree<T extends PublicVise & { id: string; status?: string }>(
   canaux: Set<Canal>,
   sequences: T[],
 ): T | null {
   let best: T | null = null
   let bestScore = 0
+  let bestActive = false
   for (const seq of sequences) {
     const score = precisionDuPublic(seq)
     if (score === 0) continue
     if (!correspondAuPublic(canaux, seq)) continue
-    // `>` et non `>=` : à égalité de précision, la première déclarée gagne, donc
-    // l'ordre d'affichage des séquences décide — pas le hasard du tri SQL.
-    if (score > bestScore) {
-      best = seq
-      bestScore = score
-    }
+    const active = seq.status === 'on'
+    const gagne = score > bestScore || (score === bestScore && active && !bestActive)
+    if (!gagne) continue
+    best = seq
+    bestScore = score
+    bestActive = active
   }
   return best
 }
