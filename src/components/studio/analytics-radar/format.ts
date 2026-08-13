@@ -9,6 +9,20 @@ export const anDur = (s: number) =>
 
 export const anPct = (x: number, d = 0) => `${(x * 100).toFixed(d)} %`;
 
+/** Local hour:minute for a ms timestamp — used by the sessions timeline. */
+export const anHM = (ms: number) =>
+  new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+/** Relative day label ("aujourd'hui" / "hier" / "lun. 12/08") for a ms timestamp. */
+export const anDayLabel = (ms: number) => {
+  const d = new Date(ms);
+  const now = new Date();
+  const days = Math.floor((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000);
+  if (days === 0) return "aujourd'hui";
+  if (days === 1) return "hier";
+  return d.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+};
+
 export const anNum = (x: number) => x.toLocaleString("fr-FR");
 
 export const anIni = (s: string) =>

@@ -10,6 +10,9 @@ export interface AnalyticsRadarSitePerf {
   pageViews: number;
   avgEngagementSec: number;
   engagementRate: number;
+  /** True when this row only exists thanks to GA4 Realtime — the standard
+   *  report (sessions/duration/engagement) hasn't processed this visit yet. */
+  pending: boolean;
 }
 
 export interface AnalyticsRadarPageRow {
@@ -32,6 +35,10 @@ export interface AnalyticsRadarPayload {
     sitesVisited: number;
     formsStarted: number;
     formsSubmitted: number;
+    /** True when there's real GA4 Realtime activity but the standard report
+     *  hasn't caught up yet — sessions/duration/engagement below are still 0
+     *  because of that latency, not because nothing happened. */
+    processing: boolean;
   };
   timeseries: Array<{ date: string; sessions: number }>;
   hubs: Array<GlobeHubRow & { country: string }>;

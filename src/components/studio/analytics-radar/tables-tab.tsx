@@ -59,15 +59,22 @@ export function SitesTab({ data }: { data: AnalyticsRadarPayload }) {
                     <div className="co">
                       <Av name={o.companyName} color="#2F7AE0" size={26} radius={8} />
                       <div className="t">
-                        <div className="n">{o.companyName}</div>
+                        <div className="n">
+                          {o.companyName}
+                          {o.pending ? (
+                            <span className="a-tag" style={{ marginLeft: 6 }} title="Visite vue à l'instant via GA4 Realtime — le rapport standard (sessions, durée…) n'a pas encore traité cette visite.">
+                              en cours
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="u">{o.hostname}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="r">{o.sessions}</td>
+                  <td className="r">{o.pending ? "—" : o.sessions}</td>
                   <td className="r">{o.pageViews}</td>
-                  <td className="r">{anDur(o.avgEngagementSec)}</td>
-                  <td className="r">{anPct(o.engagementRate)}</td>
+                  <td className="r">{o.pending ? "—" : anDur(o.avgEngagementSec)}</td>
+                  <td className="r">{o.pending ? "—" : anPct(o.engagementRate)}</td>
                 </tr>
               ))}
               {sorted.length === 0 ? (

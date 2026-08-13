@@ -250,20 +250,53 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   const totalEngagementSec = daily.reduce((s, r) => s + num(r.userEngagementDuration), 0);
   const formStarts = formEvents.find((e) => e.eventName === "analytics_radar_form_start");
   const formSubmits = formEvents.find((e) => e.eventName === "analytics_radar_form_submit");
+  const realtime = buildRealtime(
+    realtimeMain,
+    realtimeMinutes,
+    realtimeEvents,
+    realtimePerMinute,
+    realtimeEventsByMinute,
+    matchSiteByScreenName,
+  );
+  // form_start/form_submit are standard GA4 events too, so they're subject to
+  // the exact same processing latency as everything else in `formEvents` —
+  // Realtime already counts them correctly (real GA4 numbers, not derived),
+  // so use whichever source currently has the higher count instead of
+  // waiting on the standard report to catch up.
+  const formsStarted = Math.max(num(formStarts?.eventCount), realtime.formActivity.starts);
+  const formsSubmitted = Math.max(num(formSubmits?.eventCount), realtime.formActivity.submits);
 
-  const hubs = byCity
-    .map((r) => {
-      const geo = geocodeCity(r.city);
-      return {
-        c: r.city || "Inconnue",
-        country: r.country || "",
-        n: num(r.sessions),
-        lat: geo?.lat ?? null,
-        lon: geo?.lon ?? null,
-        rg: geo?.region ?? r.country ?? "",
-      };
-    })
-    .sort((a, b) => b.n - a.n);
+  const hubs = byCity.map((r) => {
+    const geo = geocodeCity(r.city);
+    return {
+      c: r.city || "Inconnue",
+      country: r.country || "",
+      n: num(r.sessions),
+      lat: geo?.lat ?? null,
+      lon: geo?.lon ?? null,
+      rg: geo?.region ?? r.country ?? "",
+    };
+  });
+
+  // Same processing-latency gap as sites above: a city with real active
+  // visitors right now but no standard-report rows yet would otherwise be
+  // completely absent from the globe. Only added when the city has no
+  // standard-report row at all yet, so a city already tracked by `byCity`
+  // is never double-counted between the two sources.
+  const hubCities = new Set(hubs.map((h) => h.c));
+  const realtimeCityAgg = new Map<string, { country: string; activeUsers: number }>();
+  realtimeMain.forEach((r) => {
+    if (!r.city || num(r.activeUsers) <= 0) return;
+    const cur = realtimeCityAgg.get(r.city) ?? { country: r.country || "", activeUsers: 0 };
+    cur.activeUsers += num(r.activeUsers);
+    realtimeCityAgg.set(r.city, cur);
+  });
+  realtimeCityAgg.forEach(({ country, activeUsers }, city) => {
+    if (hubCities.has(city)) return;
+    const geo = geocodeCity(city);
+    hubs.push({ c: city, country, n: activeUsers, lat: geo?.lat ?? null, lon: geo?.lon ?? null, rg: geo?.region ?? country });
+  });
+  hubs.sort((a, b) => b.n - a.n);
 
   const visitedHostnames = new Set<string>();
   const sitePerf = byHost
@@ -280,11 +313,51 @@ export const GET = withAuth({}, async ({ req, cors }) => {
         pageViews: num(r.screenPageViews),
         avgEngagementSec: num(r.sessions) > 0 ? num(r.userEngagementDuration) / num(r.sessions) : 0,
         engagementRate: num(r.engagementRate),
+        pending: false,
       };
     })
     .sort((a, b) => b.sessions - a.sessions);
 
+  // GA4's standard Data API (runReport, used for everything above) has real
+  // processing latency on Google's side — a session from a few minutes ago
+  // can take hours to show up in `byHost`/`daily`/`byCity`. Realtime
+  // (`realtimeMain`) is the only thing that sees it instantly, but only
+  // exposes activeUsers/pageViews — no session count, duration or engagement
+  // rate. Rather than let a just-happened visit read as "not visited" until
+  // Google's pipeline catches up, surface it now with what Realtime actually
+  // knows, clearly marked `pending` so the UI doesn't pass it off as final.
+  const realtimeSiteAgg = new Map<string, { site: (typeof sites)[number]; pageViews: number; activeUsers: number }>();
+  realtimeMain.forEach((r) => {
+    const site = matchSiteByScreenName(r.unifiedScreenName || "");
+    if (!site) return;
+    const cur = realtimeSiteAgg.get(site.hostname) ?? { site, pageViews: 0, activeUsers: 0 };
+    cur.pageViews += num(r.screenPageViews);
+    cur.activeUsers += num(r.activeUsers);
+    realtimeSiteAgg.set(site.hostname, cur);
+  });
+  realtimeSiteAgg.forEach(({ site, pageViews }, hostname) => {
+    visitedHostnames.add(hostname);
+    if (sitePerf.some((s) => s.hostname === hostname)) return; // standard data already landed for this one
+    sitePerf.push({
+      hostname: site.hostname,
+      companyName: site.companyName,
+      city: site.city,
+      sector: site.sector,
+      sessions: 0,
+      pageViews,
+      avgEngagementSec: 0,
+      engagementRate: 0,
+      pending: true,
+    });
+  });
+
   const notVisited = sites.filter((s) => !visitedHostnames.has(s.hostname));
+
+  // Sessions/pageViews/duration/engagement genuinely have no realtime
+  // equivalent (GA4 Realtime doesn't expose those metrics at all) — when
+  // there's real activity but the standard report hasn't processed it yet,
+  // flag it so the UI can say "en cours de traitement" instead of a bare 0.
+  const processing = totalSessions === 0 && (realtime.activeUsers > 0 || realtimeSiteAgg.size > 0);
 
   const heatmap: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
   byHour.forEach((r) => {
@@ -327,9 +400,10 @@ export const GET = withAuth({}, async ({ req, cors }) => {
         pagesPerSession: totalSessions > 0 ? totalPageViews / totalSessions : 0,
         engagementRate: totalSessions > 0 ? totalEngaged / totalSessions : 0,
         avgSessionDurationSec: totalSessions > 0 ? totalEngagementSec / totalSessions : 0,
-        sitesVisited: sitePerf.length,
-        formsStarted: num(formStarts?.eventCount),
-        formsSubmitted: num(formSubmits?.eventCount),
+        sitesVisited: visitedHostnames.size,
+        formsStarted,
+        formsSubmitted,
+        processing,
       },
       timeseries: daily
         .map((r) => ({ date: isoDate(r.date), sessions: num(r.sessions) }))
@@ -346,14 +420,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
         bounceRate: num(r.bounceRate),
       })),
       heatmap,
-      realtime: buildRealtime(
-        realtimeMain,
-        realtimeMinutes,
-        realtimeEvents,
-        realtimePerMinute,
-        realtimeEventsByMinute,
-        matchSiteByScreenName,
-      ),
+      realtime,
       clarity,
     },
     { headers: cors },

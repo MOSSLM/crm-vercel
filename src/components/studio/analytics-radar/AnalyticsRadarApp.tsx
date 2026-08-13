@@ -1,11 +1,12 @@
 "use client";
 // AnalyticsRadarApp.tsx — coque, plage de dates, onglets (port de an-app.jsx)
 //
-// "Parcours détaillés" (liste de sessions, timeline, lecteur d'enregistrement)
-// n'existe plus : ni GA4 Data API ni Clarity Data Export API n'exposent de
-// données session-par-session en agrégat — voir la note dans
-// src/app/api/analytics-radar/route.ts. Il reviendra une fois le lien GA4 →
-// BigQuery Export en place (raw event data), à builder sur ce nouveau socle.
+// "Parcours détaillés" (liste de sessions + timeline par page) est bâti sur
+// GA4 → BigQuery Export (src/app/api/analytics-radar/sessions/route.ts) —
+// ni GA4 Data API ni Clarity Data Export API n'exposent de données
+// session-par-session en agrégat, seul le raw event export le permet. Pas de
+// lecteur d'enregistrement en revanche : Clarity Data Export n'expose que des
+// agrégats par dimension, aucun identifiant de session à recouper avec GA4.
 import React from "react";
 import { authedFetch } from "@/utils/authedFetch";
 import "./analytics-radar.css";
@@ -14,9 +15,10 @@ import { Kpi, Panel } from "./parts";
 import { anDur, anNum, anPct } from "./format";
 import { GlobeStage, RealtimePanel, TopCities, DayTrack } from "./radar-tab";
 import { SitesTab, BehaviourTab } from "./tables-tab";
+import { SessionsTab } from "./sessions-tab";
 import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured } from "./types";
 
-type Tab = "radar" | "sites" | "beh";
+type Tab = "radar" | "sites" | "beh" | "parcours";
 
 // Le seul morceau vraiment "temps réel" (visites en cours, globe) a besoin
 // d'être rafraîchi tout seul — sans ça la page ne bouge qu'au changement de
@@ -116,6 +118,7 @@ export function AnalyticsRadarApp() {
     { k: "radar", n: "Radar mondial", ic: "globe" },
     { k: "sites", n: "Sites démo", ic: "kanban", nb: data && data.configured.ga4 ? (data as AnalyticsRadarPayload).sites.length : undefined },
     { k: "beh", n: "Comportement", ic: "gauge" },
+    { k: "parcours", n: "Parcours détaillés", ic: "activity" },
   ];
 
   if (loading && !data) {
@@ -180,9 +183,26 @@ export function AnalyticsRadarApp() {
 
         <div className="a-kpis">
           <Kpi tone="ac" icon="globe" label="Sites démo visités" value={d.kpis.sitesVisited} unit={`/ ${d.totalSites}`} />
-          <Kpi icon="users" label="Sessions" value={anNum(d.kpis.sessions)} />
-          <Kpi tone="vi" icon="doc" label="Pages / visite" value={d.kpis.pagesPerSession.toFixed(1)} note={<>{anNum(d.kpis.pageViews)} pages vues</>} />
-          <Kpi tone="wn" icon="clock" label="Engagement moy." value={anDur(d.kpis.avgSessionDurationSec)} note={<>taux d'engagement {anPct(d.kpis.engagementRate)}</>} />
+          <Kpi
+            icon="users"
+            label="Sessions"
+            value={d.kpis.processing ? "—" : anNum(d.kpis.sessions)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : undefined}
+          />
+          <Kpi
+            tone="vi"
+            icon="doc"
+            label="Pages / visite"
+            value={d.kpis.processing ? "—" : d.kpis.pagesPerSession.toFixed(1)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : <>{anNum(d.kpis.pageViews)} pages vues</>}
+          />
+          <Kpi
+            tone="wn"
+            icon="clock"
+            label="Engagement moy."
+            value={d.kpis.processing ? "—" : anDur(d.kpis.avgSessionDurationSec)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : <>taux d'engagement {anPct(d.kpis.engagementRate)}</>}
+          />
           <Kpi tone="ok" icon="fileText" label="Formulaire testé" value={d.kpis.formsStarted} note={<><b>{d.kpis.formsSubmitted}</b> envoyés</>} />
           <Kpi icon="flash" label="Visiteurs actifs" value={d.realtime.activeUsers} unit="maintenant" />
           <div className="a-kpi">
@@ -236,6 +256,7 @@ export function AnalyticsRadarApp() {
 
         {tab === "sites" ? <SitesTab data={d} /> : null}
         {tab === "beh" ? <BehaviourTab data={d} /> : null}
+        {tab === "parcours" ? <SessionsTab days={days} active={tab === "parcours"} /> : null}
       </div>
     </div>
   );
