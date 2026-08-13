@@ -28,6 +28,23 @@ export type DemarchageSequenceInfo = {
   totalSteps: number;
 };
 
+/**
+ * Ce que le prospect a fait de sa démo, mesuré par GA4 (cf.
+ * src/lib/analytics-radar/site-intent.ts). `null` quand aucun site démo n'est
+ * rattaché à l'entreprise, ou quand GA4 n'a rien vu — jamais un score inventé.
+ */
+export type DemarchageIntent = {
+  score: number;
+  tier: "none" | "tiede" | "chaud" | "tres_chaud" | "brulant";
+  flame: string;
+  callWhen: "maintenant" | "aujourdhui" | "j1" | "j2" | "plus_tard";
+  reasons: string[];
+  sessions: number;
+  pageViews: number;
+  engagementSec: number;
+  lastDay: string | null;
+};
+
 export type DemarchageTask = {
   id: string;
   kind: ProspectionKind;
@@ -44,6 +61,7 @@ export type DemarchageTask = {
   contact: DemarchageContact | DemarchageContact[] | null;
   entreprise: DemarchageEntrepriseRef | DemarchageEntrepriseRef[] | null;
   sequence: DemarchageSequenceInfo | null;
+  intent: DemarchageIntent | null;
 };
 
 export type DemarchageQueueMeta = { due_today: number; done_today: number };

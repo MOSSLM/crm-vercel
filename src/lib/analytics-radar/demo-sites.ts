@@ -16,6 +16,8 @@ export interface DemoSite {
    */
   hostnames: string[];
   slug: string;
+  /** Entreprise propriétaire — sert à greffer l'intention sur une fiche CRM. */
+  enterpriseId: number | null;
   companyName: string;
   city: string | null;
   sector: string | null;
@@ -56,6 +58,7 @@ export async function listDemoSites(supabase: SupabaseClient): Promise<DemoSite[
       hostname,
       hostnames: [...new Set(hostnames)],
       slug: r.published_subdomain,
+      enterpriseId: r.enterprise_id,
       companyName: r.entreprises?.name || r.published_subdomain,
       city: r.entreprises?.ville ?? null,
       sector,

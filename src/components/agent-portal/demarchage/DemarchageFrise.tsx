@@ -1,6 +1,6 @@
 "use client";
 
-import { Phone, MessageCircle, Linkedin, Building2, Layers, type LucideIcon } from "lucide-react";
+import { Phone, MessageCircle, Linkedin, Building2, Layers, Eye, type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { one } from "@/components/agent-portal/format";
@@ -13,7 +13,25 @@ const KIND_ICON: Record<string, LucideIcon> = {
   linkedin: Linkedin,
 };
 
-const BUCKET_ORDER: DemarchageBucketKey[] = ["overdue", "today", "tomorrow", "week", "later"];
+const BUCKET_ORDER: DemarchageBucketKey[] = ["hot", "overdue", "today", "tomorrow", "week", "later"];
+
+/** Durée d'engagement, lisible d'un coup d'œil dans la file. */
+function formatDuree(sec: number): string {
+  if (sec >= 60) return `${Math.floor(sec / 60)}m${String(Math.round(sec % 60)).padStart(2, "0")}`;
+  return `${Math.round(sec)}s`;
+}
+
+/** « aujourd'hui » / « hier » / « il y a 3 j » à partir d'une date ISO. */
+function jourRelatif(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const now = new Date();
+  const jours = Math.floor(
+    (Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - d.getTime()) / 86400000,
+  );
+  if (jours <= 0) return "aujourd'hui";
+  if (jours === 1) return "hier";
+  return `il y a ${jours} j`;
+}
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
@@ -87,6 +105,10 @@ export function DemarchageFrise({
                     ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || ent?.name
                     : ent?.name;
                   const selected = task.id === selectedId;
+                  // « Chaud » = les signaux mesurés justifient un appel
+                  // aujourd'hui. La file reste triée par le serveur ; ici on
+                  // ne fait que le rendre visible sans avoir à cliquer.
+                  const hot = task.intent?.callWhen === "maintenant" || task.intent?.callWhen === "aujourdhui";
                   return (
                     <button
                       key={task.id}
@@ -96,7 +118,9 @@ export function DemarchageFrise({
                         "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors " +
                         (selected
                           ? "border-primary bg-primary/5"
-                          : "border-transparent bg-muted/40 hover:bg-muted")
+                          : hot
+                            ? "border-orange-300 bg-orange-50 hover:bg-orange-100"
+                            : "border-transparent bg-muted/40 hover:bg-muted")
                       }
                     >
                       <div className="flex items-center gap-2">
@@ -106,7 +130,14 @@ export function DemarchageFrise({
                         >
                           <Icon className="h-3.5 w-3.5" />
                         </span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{name || "Prospect"}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {name || "Prospect"}
+                          {task.intent?.flame ? (
+                            <span className="ml-1 tracking-tighter" title={task.intent.reasons.join(" · ")}>
+                              {task.intent.flame}
+                            </span>
+                          ) : null}
+                        </span>
                         {task.due_at && (
                           <span className="shrink-0 text-xs text-muted-foreground">{formatTime(task.due_at)}</span>
                         )}
@@ -123,6 +154,19 @@ export function DemarchageFrise({
                           {task.sequence.name ?? "Séquence"}
                           {task.sequence.stepIndex != null &&
                             ` · étape ${task.sequence.stepIndex}/${task.sequence.totalSteps}`}
+                        </div>
+                      )}
+                      {/* La démo a-t-elle été ouverte ? C'est l'information qui
+                          décide s'il faut appeler maintenant ou laisser la
+                          séquence faire son travail — elle doit être lisible
+                          sans ouvrir la fiche. */}
+                      {task.intent && task.intent.sessions > 0 && (
+                        <div className={"mt-0.5 flex items-center gap-1 pl-8 text-xs " + (hot ? "text-orange-700" : "text-muted-foreground")}>
+                          <Eye className="h-3 w-3 shrink-0" />
+                          Démo vue {task.intent.sessions}×
+                          {task.intent.engagementSec > 0 && ` · ${formatDuree(task.intent.engagementSec)}`}
+                          {task.intent.pageViews > 0 && ` · ${task.intent.pageViews} p.`}
+                          {task.intent.lastDay && ` · ${jourRelatif(task.intent.lastDay)}`}
                         </div>
                       )}
                     </button>

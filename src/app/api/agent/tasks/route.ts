@@ -5,6 +5,7 @@ import { preflight } from "@/app/api/_lib/cors";
 import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
+import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
@@ -99,10 +100,17 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     }
   }
 
+  // Ce que le prospect a réellement fait de sa démo (GA4), greffé sur sa
+  // tâche. Même moteur que le radar — un prospect ne peut pas être « chaud »
+  // ici et « tiède » là-bas. Une panne GA4 ne doit pas vider la file : on
+  // repart sans signal plutôt que d'échouer.
+  const intents = await intentByEnterprise(sc).catch(() => new Map());
+
   const enriched = tasks.map((t) => {
     const auto = t.automation_id ? stepsByAutomation.get(t.automation_id as string) : undefined;
     const stepIndex = auto ? auto.steps.findIndex((s) => s.id === t.step_id) : -1;
     const step = stepIndex >= 0 ? auto!.steps[stepIndex] : null;
+    const intent = t.entreprise_id != null ? intents.get(t.entreprise_id) : undefined;
     return {
       ...t,
       sequence: auto
@@ -113,7 +121,31 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
             totalSteps: auto.steps.length,
           }
         : null,
+      intent: intent
+        ? {
+            score: intent.score,
+            tier: intent.tier,
+            flame: intent.flame,
+            callWhen: intent.callWhen,
+            reasons: intent.reasons,
+            sessions: intent.sessions,
+            pageViews: intent.pageViews,
+            engagementSec: intent.engagementSec,
+            lastDay: intent.lastDay,
+          }
+        : null,
     };
+  });
+
+  // Les plus chauds d'abord : un prospect qui vient de rouvrir sa démo passe
+  // devant une relance planifiée, sans pour autant sortir de sa séquence —
+  // l'ordre change, pas le parcours. À intensité égale, on garde l'ordre
+  // d'échéance d'origine.
+  enriched.sort((a, b) => {
+    const sa = a.intent?.score ?? -1;
+    const sb2 = b.intent?.score ?? -1;
+    if (sa !== sb2) return sb2 - sa;
+    return String(a.due_at ?? "").localeCompare(String(b.due_at ?? ""));
   });
 
   // "X sur Y aujourd'hui" : Y = tâches en attente échues aujourd'hui ou avant
