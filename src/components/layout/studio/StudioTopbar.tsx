@@ -46,6 +46,7 @@ const TITLE_MAP: Record<string, string> = {
   "/search": "Recherche",
   "/settings": "Paramètres",
   "/site-builder": "Site Builder",
+  "/site-builder/radar-analytics": "Radar analytics",
   "/themes": "Thèmes",
   "/sections-library": "Section builder",
   "/forms": "Form builder",
