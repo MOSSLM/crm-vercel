@@ -166,62 +166,62 @@ export interface RealtimeVisit {
   sinceMinutes: number;
 }
 
+export interface RealtimeFeedItem {
+  kind: "pv" | "fm" | "rg";
+  text: string;
+  companyName: string | null;
+  screenName: string;
+  city: string;
+  device: string;
+  minutesAgo: number;
+}
+
+const deviceIcon = (device: string) => (device === "mobile" ? "phone" : device === "tablet" ? "square" : "panel");
+const agoLabel = (m: number) => (m <= 0 ? "à l'instant" : `il y a ${m} min`);
+
+/**
+ * Équivalent réel du LiveFeed de la maquette (an-radar.jsx) : un flux
+ * chronologique d'activité réelle, construit sur GA4 Realtime au lieu d'un
+ * flux de sessions simulé. Chaque ligne vient d'un vrai snapshot par minute
+ * (page consultée) ou d'un vrai événement (formulaire) — voir buildRealtime
+ * dans route.ts pour le détail de ce qui est mesuré vs. déduit.
+ */
 export function RealtimePanel({
   activeUsers,
-  visits,
+  feed,
   formActivity,
 }: {
   activeUsers: number;
-  visits: RealtimeVisit[];
+  feed: RealtimeFeedItem[];
   formActivity: { starts: number; submits: number };
 }) {
-  if (activeUsers === 0) {
+  if (activeUsers === 0 && feed.length === 0) {
     return <div className="a-empty">Personne sur les sites démo en ce moment.</div>;
   }
   return (
     <div className="a-feed">
       {(formActivity.starts > 0 || formActivity.submits > 0) && (
-        <div className="a-ev fm">
-          <span className="sq">
-            <Icon name="fileText" className="ico s" />
-          </span>
-          <div>
-            <div className="t">
-              Formulaire en cours quelque part —{" "}
-              <b>
-                {formActivity.starts} testé{formActivity.starts > 1 ? "s" : ""}
-              </b>
-              {formActivity.submits > 0 ? (
-                <>
-                  {" "}
-                  ·{" "}
-                  <b>
-                    {formActivity.submits} envoyé{formActivity.submits > 1 ? "s" : ""}
-                  </b>
-                </>
-              ) : null}
-            </div>
-            <div className="m">30 dernières minutes · pas rattachable à une visite précise (limite de l'API temps réel)</div>
-          </div>
+        <div className="a-hint" style={{ padding: "8px 13px", borderBottom: "1px solid var(--line)" }}>
+          30 dernières minutes : <b>{formActivity.starts}</b> formulaire{formActivity.starts > 1 ? "s" : ""} testé
+          {formActivity.starts > 1 ? "s" : ""}, <b>{formActivity.submits}</b> envoyé{formActivity.submits > 1 ? "s" : ""}
         </div>
       )}
-      {visits.map((v, i) => (
-        <div className="a-ev pv" key={v.screenName + v.device + v.city + v.country + i}>
+      {feed.map((e, i) => (
+        <div className={"a-ev " + e.kind} key={e.minutesAgo + e.screenName + e.kind + i}>
           <span className="sq">
-            <Icon name={v.device === "mobile" ? "phone" : v.device === "tablet" ? "square" : "panel"} className="ico s" />
+            <Icon name={e.kind === "fm" ? "fileText" : deviceIcon(e.device)} className="ico s" />
           </span>
           <div>
             <div className="t">
-              <b>{v.activeUsers}</b> visiteur{v.activeUsers > 1 ? "s" : ""} sur{" "}
-              <b>{v.companyName ?? v.screenName ?? "page inconnue"}</b>
-              {v.companyName ? <span style={{ color: "var(--tx-3)" }}> — {v.screenName}</span> : null}
+              <b>{e.companyName ?? e.screenName ?? "un site démo"}</b> — {e.text}
+              {!e.companyName && e.screenName ? <span style={{ color: "var(--tx-3)" }}> ({e.screenName})</span> : null}
             </div>
             <div className="m">
-              {v.pageViews} page{v.pageViews > 1 ? "s" : ""} vue{v.pageViews > 1 ? "s" : ""} · {v.city ? `${v.city}, ` : ""}
-              {v.country}
-              {v.sinceMinutes > 0 ? ` · depuis ${v.sinceMinutes} min` : ""}
+              {e.city ? `${e.city}` : "France"}
+              {e.device ? ` · ${e.device}` : ""}
             </div>
           </div>
+          <span className="h">{agoLabel(e.minutesAgo)}</span>
         </div>
       ))}
     </div>
