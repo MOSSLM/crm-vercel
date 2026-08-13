@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Monitor, Copy, Check, Share2, CalendarClock } from "lucide-react";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
@@ -21,6 +20,12 @@ function formatBookingDate(iso: string): string {
   }
 }
 
+/**
+ * Colonne de droite — "ce qu'on a à disposition pour cette entreprise" :
+ * site démo, rapport d'audit, RDV. Blocs empilés séparés par un simple filet
+ * (façon cockpit d'appel), pas de carte encadrée par section — sauf
+ * `CarteAnalyseSite`, déjà auto-contenue, réutilisée telle quelle.
+ */
 export function QuickLinksPanel({
   company,
   opportuniteId,
@@ -47,47 +52,43 @@ export function QuickLinksPanel({
   const primaryContact = contacts[0] ?? null;
 
   return (
-    <div className="space-y-3">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Monitor className="h-4 w-4 text-muted-foreground" /> Site démo
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {site ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <a
-                href={demoShareUrl(site)}
-                target="_blank"
-                rel="noreferrer"
-                className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
-              >
-                {demoShareUrl(site)}
-              </a>
-              <Button size="sm" variant="outline" className="gap-1" onClick={copyDemoLink}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                Copier
-              </Button>
-              <Button size="sm" className="gap-1" onClick={() => setSharing(true)}>
-                <Share2 className="h-4 w-4" />
-                Partager
-              </Button>
-              <PartagerDemoDialog
-                open={sharing}
-                onOpenChange={setSharing}
-                demo={site}
-                companyName={entreprise.name}
-                phone={primaryContact?.tel ?? entreprise.telephone}
-                entrepriseId={entreprise.id}
-                opportuniteId={opportuniteId}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Aucun site démo publié pour le moment.</p>
-          )}
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      <div className="space-y-2 border-b pb-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Monitor className="h-4 w-4 text-muted-foreground" /> Site démo
+        </div>
+        {site ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={demoShareUrl(site)}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
+            >
+              {demoShareUrl(site)}
+            </a>
+            <Button size="sm" variant="outline" className="gap-1" onClick={copyDemoLink}>
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              Copier
+            </Button>
+            <Button size="sm" className="gap-1" onClick={() => setSharing(true)}>
+              <Share2 className="h-4 w-4" />
+              Partager
+            </Button>
+            <PartagerDemoDialog
+              open={sharing}
+              onOpenChange={setSharing}
+              demo={site}
+              companyName={entreprise.name}
+              phone={primaryContact?.tel ?? entreprise.telephone}
+              entrepriseId={entreprise.id}
+              opportuniteId={opportuniteId}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Aucun site démo publié pour le moment.</p>
+        )}
+      </div>
 
       <CarteAnalyseSite entrepriseId={entreprise.id} />
 
@@ -101,19 +102,15 @@ export function QuickLinksPanel({
         </div>
       )}
 
-      <Card>
-        <CardContent className="p-0">
-          <BookingLinkPanel
-            prospectName={primaryContact ? `${primaryContact.first_name ?? ""} ${primaryContact.last_name ?? ""}`.trim() : entreprise.name}
-            prospectEmail={primaryContact?.email ?? entreprise.email}
-            prospectPhone={primaryContact?.tel ?? entreprise.telephone}
-            entrepriseId={entreprise.id}
-            opportuniteId={opportuniteId}
-            contactId={primaryContact?.id ?? null}
-            contextLabel={entreprise.name}
-          />
-        </CardContent>
-      </Card>
+      <BookingLinkPanel
+        prospectName={primaryContact ? `${primaryContact.first_name ?? ""} ${primaryContact.last_name ?? ""}`.trim() : entreprise.name}
+        prospectEmail={primaryContact?.email ?? entreprise.email}
+        prospectPhone={primaryContact?.tel ?? entreprise.telephone}
+        entrepriseId={entreprise.id}
+        opportuniteId={opportuniteId}
+        contactId={primaryContact?.id ?? null}
+        contextLabel={entreprise.name}
+      />
     </div>
   );
 }

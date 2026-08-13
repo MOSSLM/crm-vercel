@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { BookOpen } from "lucide-react";
 import { DemarchageFrise } from "@/components/agent-portal/demarchage/DemarchageFrise";
 import { CompanyHeaderCard } from "@/components/agent-portal/demarchage/CompanyHeaderCard";
+import { ContactsPanel } from "@/components/agent-portal/demarchage/ContactsPanel";
 import { QuickLinksPanel } from "@/components/agent-portal/demarchage/QuickLinksPanel";
 import { StageActionCard } from "@/components/agent-portal/demarchage/StageActionCard";
-import { HistoryFeed } from "@/components/agent-portal/demarchage/HistoryFeed";
+import { HistoryTimeline } from "@/components/agent-portal/demarchage/HistoryTimeline";
 import { bucketTasks, firstNonEmptyBucket } from "@/lib/agent-portal/demarchage-buckets";
 import type {
   CompanyBundle,
@@ -22,10 +23,13 @@ import type {
 const EMPTY_META: DemarchageQueueMeta = { due_today: 0, done_today: 0 };
 
 /**
- * Poste de travail Démarchage : à gauche la frise des entreprises en
- * séquence (aujourd'hui, demain, cette semaine…), au centre une seule
- * entreprise à la fois — sa fiche, ses raccourcis (démo/audit/RDV), la carte
- * d'action adaptée à son étape de séquence, et tout son historique.
+ * Poste de travail Démarchage, 3 colonnes façon cockpit d'appel :
+ * - gauche : la frise des entreprises en séquence (aujourd'hui, demain…) ;
+ * - centre : le titre intégré de l'entreprise sélectionnée, sa carte
+ *   d'action (adaptée à son étape de séquence, script d'appel inclus), et
+ *   son fil d'historique unique en dessous ;
+ * - droite : ce qu'on a à disposition pour cette entreprise — contacts,
+ *   site démo, audit, RDV.
  */
 export default function AgentDemarchagePage() {
   const [tasks, setTasks] = useState<DemarchageTask[]>([]);
@@ -129,7 +133,7 @@ export default function AgentDemarchagePage() {
   const handleMessageLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
 
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[320px_1fr] lg:items-start lg:p-6">
+    <div className="grid gap-6 p-4 lg:grid-cols-[320px_1fr_320px] lg:items-start lg:p-6">
       <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
         <DemarchageFrise
           tasks={tasks}
@@ -140,14 +144,8 @@ export default function AgentDemarchagePage() {
         />
       </div>
 
-      <div className="min-w-0 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Démarchage</h1>
-            <p className="text-sm text-muted-foreground">
-              Un prospect à la fois — la carte s&apos;adapte à son étape de séquence.
-            </p>
-          </div>
+      <div className="min-w-0 space-y-5">
+        <div className="flex justify-end">
           <Button asChild variant="outline" size="sm">
             <Link href="/espace-agent/argumentaire">
               <BookOpen className="mr-1 h-4 w-4" /> Brief commercial
@@ -163,8 +161,7 @@ export default function AgentDemarchagePage() {
 
         {selectedTask && (
           <>
-            <CompanyHeaderCard company={company} loading={loadingCompany} />
-            {company && <QuickLinksPanel company={company} opportuniteId={selectedTask.opportunite_id} />}
+            <CompanyHeaderCard company={company} loading={loadingCompany} task={selectedTask} />
             <StageActionCard
               key={selectedTask.id}
               task={selectedTask}
@@ -175,11 +172,20 @@ export default function AgentDemarchagePage() {
               onMessageLogged={handleMessageLogged}
             />
             {selectedTask.entreprise_id != null && (
-              <HistoryFeed key={`${selectedTask.entreprise_id}-${historyKey}`} entrepriseId={selectedTask.entreprise_id} />
+              <HistoryTimeline key={`${selectedTask.entreprise_id}-${historyKey}`} entrepriseId={selectedTask.entreprise_id} />
             )}
           </>
         )}
       </div>
+
+      {selectedTask && company && (
+        <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pl-1">
+          <ContactsPanel key={`contacts-${company.entreprise.id}`} company={company} />
+          <div className="mt-4">
+            <QuickLinksPanel key={`links-${company.entreprise.id}`} company={company} opportuniteId={selectedTask.opportunite_id} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,12 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Phone, MessageCircle, Linkedin, Send, Eye, CalendarCheck, Layers } from "lucide-react";
+import { Phone, MessageCircle, Linkedin, Send, Eye, CalendarCheck, FileText } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
+import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
 import { STEP_OUTCOMES, stepOutcome as findStepOutcomeDef, type StepOutcomeId } from "@/lib/sales-pipeline/stages";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 import { one } from "@/components/agent-portal/format";
@@ -63,10 +63,13 @@ export function StageActionCard({
   const [note, setNote] = useState("");
   const [snoozeDate, setSnoozeDate] = useState(tomorrowDateValue());
   const [sending, setSending] = useState(false);
+  const [scriptStep, setScriptStep] = useState(0);
 
   const contact = one(task.contact);
   const entRef = one(task.entreprise);
   const contactName = contact ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() : "";
+  const org = entRef?.name || company?.entreprise.name || "votre entreprise";
+  const ville = entRef?.ville || company?.entreprise.ville || "votre région";
 
   const candidatePhones = useMemo(() => {
     const raw = [task.payload?.phone, ...(company?.contacts.map((c) => c.tel) ?? []), company?.entreprise.telephone, entRef?.telephone].filter(
@@ -191,18 +194,9 @@ export function StageActionCard({
             {KIND_LABEL[task.kind] ?? task.kind}
             {contactName && <span className="text-sm font-normal text-muted-foreground">· {contactName}</span>}
           </CardTitle>
-          <div className="flex items-center gap-2">
-            {task.sequence && (
-              <Badge variant="outline" className="gap-1">
-                <Layers className="h-3 w-3" />
-                {task.sequence.name ?? "Séquence"}
-                {task.sequence.stepIndex != null && ` · ${task.sequence.stepIndex}/${task.sequence.totalSteps}`}
-              </Badge>
-            )}
-            <Button size="sm" disabled={busy} onClick={handleRdv} className="gap-1">
-              <CalendarCheck className="h-4 w-4" /> RDV calé
-            </Button>
-          </div>
+          <Button size="sm" disabled={busy} onClick={handleRdv} className="gap-1">
+            <CalendarCheck className="h-4 w-4" /> RDV calé
+          </Button>
         </div>
         {siblingCount > 0 && (
           <p className="text-xs text-muted-foreground">
@@ -213,18 +207,54 @@ export function StageActionCard({
 
       <CardContent className="space-y-4">
         {task.kind === "call" && (
-          <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-3">
-            <div className="text-sm">
-              <div className="font-medium">{callPhone || "Aucun numéro connu"}</div>
-              <div className="text-xs text-muted-foreground">{entRef?.name}</div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-3">
+              <div className="text-sm">
+                <div className="font-medium">{callPhone || "Aucun numéro connu"}</div>
+                <div className="text-xs text-muted-foreground">{entRef?.name}</div>
+              </div>
+              <ClickToCallButton
+                to={callPhone}
+                contactId={task.contact_id}
+                entrepriseId={task.entreprise_id}
+                opportuniteId={task.opportunite_id}
+                label="Appeler"
+              />
             </div>
-            <ClickToCallButton
-              to={callPhone}
-              contactId={task.contact_id}
-              entrepriseId={task.entreprise_id}
-              opportuniteId={task.opportunite_id}
-              label="Appeler"
-            />
+
+            <div className="rounded-md border px-3 py-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <FileText className="h-4 w-4 text-muted-foreground" /> Argumentaire
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {SCRIPT_STEPS.map((s, i) => (
+                  <button
+                    key={s.title}
+                    type="button"
+                    onClick={() => setScriptStep(i)}
+                    className={
+                      "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors " +
+                      (i === scriptStep
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted" + (i < scriptStep ? " line-through" : ""))
+                    }
+                  >
+                    <span
+                      className={
+                        "flex h-4 w-4 items-center justify-center rounded-full text-[10px] " +
+                        (i === scriptStep ? "bg-primary text-primary-foreground" : "bg-muted")
+                      }
+                    >
+                      {i + 1}
+                    </span>
+                    {s.title}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {SCRIPT_STEPS[scriptStep].body.replace("{org}", org).replace("{ville}", ville)}
+              </p>
+            </div>
           </div>
         )}
 
