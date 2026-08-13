@@ -1,6 +1,8 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { reparerPhotosSupprimees } from "@/lib/site-builder/claude-design/appliquer-tirage";
+import { entreprisesMontrant } from "@/lib/site-builder/claude-design/tirage-entreprise";
 
 export const dynamic = "force-dynamic";
 
@@ -83,11 +85,16 @@ export const DELETE = withAuth({}, async ({ req }) => {
   const supabase = getServiceClient();
   const { data: rows, error: fetchError } = await supabase
     .from("media_library")
-    .select("id, storage_path")
+    .select("id, storage_path, public_url")
     .in("id", body.ids);
   if (fetchError) return jsonError(fetchError.message, 500);
 
   const paths = (rows ?? []).map((r) => r.storage_path).filter(Boolean) as string[];
+  const urls = (rows ?? []).map((r) => (r as { public_url: string | null }).public_url).filter(Boolean) as string[];
+  // Relevé AVANT la suppression, réparé APRÈS — voir la route unitaire
+  // `media/[id]` pour le détail de cet ordre.
+  const concernees = await entreprisesMontrant(supabase, urls);
+
   if (paths.length > 0) {
     await supabase.storage.from("media-library").remove(paths);
   }
@@ -98,5 +105,7 @@ export const DELETE = withAuth({}, async ({ req }) => {
     .in("id", body.ids);
   if (dbError) return jsonError(dbError.message, 500);
 
-  return json({ deleted: body.ids.length });
+  const reparation = await reparerPhotosSupprimees(supabase, concernees);
+
+  return json({ deleted: body.ids.length, reparation });
 });

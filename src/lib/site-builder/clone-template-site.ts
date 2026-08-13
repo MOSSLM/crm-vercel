@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { appliquerTiragePourSite } from "./claude-design/appliquer-tirage";
 
 /**
  * Clones a template site into a new company site (config + style guide + sitemap
@@ -9,6 +10,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *
  * The caller may pass a preloaded template + instances (deploy-batch loads them
  * once for the whole batch); otherwise this loads them itself.
+ *
+ * Les pages clonées arrivent avec les photos DU GABARIT. Si l'entreprise a
+ * déjà un tirage à elle (site refait, deuxième démo), il est reposé aussitôt :
+ * une entreprise dont on a choisi les photos ne doit jamais les reperdre parce
+ * qu'on lui a fabriqué une maquette de plus.
  */
 
 export interface TemplateSlice {
@@ -129,6 +135,13 @@ export async function cloneTemplateSite(
       await supabase.from("sites").delete().eq("id", newSiteId);
       return { ok: false, error: cloneErr.message };
     }
+  }
+
+  // Le tirage de l'entreprise reprend sa place sur les pages neuves. Sans
+  // effet — et sans coût — pour une entreprise jamais tirée ou pour une copie
+  // faite en tant que gabarit : `appliquerTiragePourSite` s'arrête de lui-même.
+  if (!opts.asTemplate && opts.enterpriseId) {
+    await appliquerTiragePourSite(supabase, newSiteId, { entrepriseId: opts.enterpriseId });
   }
 
   return { ok: true, siteId: newSiteId };

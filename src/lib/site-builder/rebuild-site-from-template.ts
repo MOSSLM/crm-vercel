@@ -9,6 +9,7 @@ import {
   type TemplateSlice,
 } from "./clone-template-site";
 import { publishSite } from "./publish-site";
+import { appliquerTiragePourSite } from "./claude-design/appliquer-tirage";
 
 /**
  * Refait un site de démo EXISTANT à partir d'un template — le même qu'avant
@@ -29,6 +30,19 @@ import { publishSite } from "./publish-site";
  *
  * Contrepartie assumée : les retouches faites dans l'éditeur sur ce site
  * (overrides d'instances) sont perdues — on repart du modèle.
+ *
+ * UNE EXCEPTION, ET ELLE A COÛTÉ CHER : le tirage de photos. Le 12/08/2026,
+ * 34 sites ont été refaits ici une heure et demie après leur tirage et se sont
+ * retrouvés avec la bande du gabarit — photos hors métier, doublons de retour,
+ * et deux images entre-temps supprimées de la médiathèque qui pointaient dans
+ * le vide. Personne n'a rien vu passer : la confirmation parle de « retouches
+ * faites dans l'éditeur », ce qu'un tirage lancé en lot depuis le pipeline
+ * n'est pas dans la tête de celui qui l'a lancé.
+ *
+ * Le tirage n'est donc plus une retouche d'éditeur : il appartient à
+ * l'entreprise (`entreprise_tirages_photos`) et il est REPOSÉ ici, sur les
+ * pages neuves, avant la republication — le public ne voit jamais la bande du
+ * gabarit. Voir `claude-design/appliquer-tirage.ts`.
  */
 
 export interface RebuildSiteResult {
@@ -43,6 +57,14 @@ export interface RebuildSiteResult {
   republished?: boolean;
   /** Sous-domaine republié, à revalider côté Next (le caller a le contexte). */
   publishedSubdomain?: string | null;
+  /** Le tirage de photos de l'entreprise a été reposé sur les pages neuves.
+   *  Faux quand elle n'en a pas encore : le site garde alors la bande du
+   *  modèle, ce qui est le comportement voulu pour un site tout juste refait. */
+  tirageRepose?: boolean;
+  /** Emplacements photo repeuplés depuis le tirage enregistré. */
+  emplacementsReposes?: number;
+  /** Photos disparues de la médiathèque, remplacées pendant la repose. */
+  photosRemplacees?: number;
 }
 
 type SiteRow = {
@@ -164,7 +186,15 @@ export async function rebuildSiteFromTemplate(
     return { ok: false, error: insErr.message, status: 500 };
   }
 
-  // 5. Site déjà publié : le public sert l'instantané, pas le site vivant. On
+  // 5. Le tirage de photos de l'entreprise est reposé sur les pages neuves.
+  //    AVANT la republication, sans quoi l'instantané public figerait la bande
+  //    du gabarit — c'est précisément ce qui s'est produit le 12/08/2026, la
+  //    republication ayant suivi la refonte de six minutes.
+  //    Best-effort : une entreprise jamais tirée n'a rien à reposer, et un
+  //    échec ici ne doit pas faire échouer une refonte par ailleurs réussie.
+  const tirage = await appliquerTiragePourSite(supabase, siteId, { entrepriseId: site.enterprise_id });
+
+  // 6. Site déjà publié : le public sert l'instantané, pas le site vivant. On
   //    republie donc sur le même sous-domaine, ce qui embarque aussi les
   //    variables à jour (ville, stats, logo, avis).
   let republished = false;
@@ -183,5 +213,8 @@ export async function rebuildSiteFromTemplate(
     templateChanged,
     republished,
     publishedSubdomain: republished ? site.published_subdomain : null,
+    tirageRepose: tirage.applique,
+    emplacementsReposes: tirage.emplacements,
+    photosRemplacees: tirage.remplacees,
   };
 }

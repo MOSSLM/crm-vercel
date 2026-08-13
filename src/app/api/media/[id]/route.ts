@@ -1,6 +1,8 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { reparerPhotosSupprimees } from "@/lib/site-builder/claude-design/appliquer-tirage";
+import { entreprisesMontrant } from "@/lib/site-builder/claude-design/tirage-entreprise";
 import type { MediaImageType } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -71,19 +73,41 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   return json(data);
 });
 
+/**
+ * Supprime une image de la médiathèque — ET la retire des bandes qui la
+ * montraient.
+ *
+ * Cette route efface aussi le fichier du storage : sans la réparation qui
+ * suit, tout site dont le tirage pointe sur cette URL affiche un cadre cassé,
+ * sans que rien ne le signale. On s'en apercevait en ouvrant les sites un par
+ * un — deux images mortes traînaient ainsi sur le parc en août 2026.
+ *
+ * La réparation part des tirages enregistrés (`entreprise_tirages_photos`),
+ * qui servent d'index inverse url → entreprises, et retire au sort une
+ * remplaçante dans le même métier. Best-effort : la suppression reste un
+ * succès même si une repose échoue, et le compte est renvoyé pour l'affichage.
+ */
 export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
   const { data: asset, error: fetchError } = await supabase
     .from("media_library")
-    .select("storage_path")
+    .select("storage_path, public_url")
     .eq("id", params.id)
     .single();
   if (fetchError || !asset) return jsonError("Image introuvable", 404);
+
+  const url = (asset as { public_url: string | null }).public_url;
+  // Relevé AVANT la suppression : après, plus rien ne relie l'URL à l'image.
+  const concernees = url ? await entreprisesMontrant(supabase, [url]) : [];
 
   await supabase.storage.from("media-library").remove([asset.storage_path]);
 
   const { error: dbError } = await supabase.from("media_library").delete().eq("id", params.id);
   if (dbError) return jsonError(dbError.message, 500);
 
-  return json({ ok: true });
+  // APRÈS la suppression : la repose vérifie les URLs contre la médiathèque,
+  // et ne verrait pas celle-ci comme morte tant que sa ligne existe encore.
+  const reparation = await reparerPhotosSupprimees(supabase, concernees);
+
+  return json({ ok: true, reparation });
 });
