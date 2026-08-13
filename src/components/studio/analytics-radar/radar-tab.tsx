@@ -8,18 +8,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { anNum } from "./format";
 import { createAnGlobe, type AnGlobeHandle, type GlobeHubRow } from "./Globe";
+import { LOW_VOLUME_TOTAL, PER_VISIT_KM, SHADES, SHARE_STOPS } from "./globe-scale";
 
 export function GlobeStage({
   hubRows,
   onSelectCity,
   rangeLabel,
-  total,
   liveCities = [],
 }: {
   hubRows: GlobeHubRow[];
   onSelectCity: (city: string) => void;
   rangeLabel: string;
-  total: number;
   /** Villes avec au moins un visiteur actif là, maintenant (GA4 Realtime) —
    *  chacune déclenche un ping (onde bleue) sur le globe à chaque rafraîchissement. */
   liveCities?: string[];
@@ -58,6 +57,11 @@ export function GlobeStage({
 
   const top = hubRows[0];
   const territoires = new Set(hubRows.map((h) => h.rg)).size;
+  // Même règle que le globe : sous ce volume, l'échelle de nuances n'a pas de
+  // sens statistique et tout s'affiche au plus foncé — la légende doit le dire
+  // plutôt que d'annoncer une graduation qui n'est pas appliquée.
+  const placedTotal = hubRows.reduce((s, h) => (h.lat != null && h.lon != null ? s + h.n : s), 0);
+  const lowVolume = placedTotal < LOW_VOLUME_TOTAL;
 
   return (
     <div className="a-stage">
@@ -67,7 +71,8 @@ export function GlobeStage({
       <div className="a-ghd">
         <div className="t">Connexions mondiales</div>
         <div className="s">
-          {rangeLabel} · {anNum(total)} sessions · relief en cubes de 25 km
+          {rangeLabel} · {anNum(placedTotal)} visite{placedTotal > 1 ? "s" : ""} situé
+          {placedTotal > 1 ? "es" : "e"} · {hubRows.length} ville{hubRows.length > 1 ? "s" : ""}
         </div>
       </div>
       <div className="a-gctl">
@@ -97,8 +102,14 @@ export function GlobeStage({
       </div>
       <div className="a-glg">
         <div className="rw">
-          <span className="ramp" />
-          faible → forte densité de connexions
+          <span style={{ display: "inline-flex", gap: 2, marginRight: 2 }}>
+            {SHADES.map((c) => (
+              <i key={c} style={{ width: 9, height: 7, borderRadius: 2, background: c, display: "block" }} />
+            ))}
+          </span>
+          {lowVolume
+            ? `sous ${LOW_VOLUME_TOTAL} visites : tout au plus foncé`
+            : `part des visites · ${Math.round(SHARE_STOPS[SHARE_STOPS.length - 1] * 100)} % et + = plus foncé`}
         </div>
         <div className="rw">
           <span className="bars">
@@ -106,7 +117,7 @@ export function GlobeStage({
             <i style={{ height: 8 }} />
             <i style={{ height: 14 }} />
           </span>
-          1 cube ≈ 25 km · +100 km de relief par visite
+          +{PER_VISIT_KM} km de relief par visite
         </div>
         <div className="rw">
           <Icon name="drag" className="ico s" />
@@ -135,15 +146,31 @@ export function GlobeStage({
             <Icon name="mappin" className="ico s" />
             {tip.c}
             <span className="a-tag ac" style={{ marginLeft: "auto" }}>
-              {Math.round((tip.n / Math.max(1, total)) * 100)} %
+              {Math.round((tip.share ?? 0) * 100)} %
             </span>
           </div>
           <div className="r">
             <span>{tip.rg}</span>
-            <b>{tip.n} connexions</b>
+            <b>
+              {tip.n} visite{tip.n > 1 ? "s" : ""}
+            </b>
           </div>
           <div className="bar">
             <i style={{ width: Math.min(100, (tip.n / (hubRows[0] ? hubRows[0].n : 1)) * 100) + "%" }} />
+          </div>
+          <div className="r" style={{ marginTop: 5 }}>
+            <span>Sites démo consultés d'ici</span>
+            <b>{tip.visitedSites ?? 0}</b>
+          </div>
+          {tip.citySites ? (
+            <div className="r">
+              <span>Sites démo livrés dans la ville</span>
+              <b>{tip.citySites}</b>
+            </div>
+          ) : null}
+          <div className="r">
+            <span>Relief</span>
+            <b>{anNum(tip.n * PER_VISIT_KM)} km</b>
           </div>
           <div className="r" style={{ marginTop: 6, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".07em" }}>
             <span>cliquer pour voir les sites démo</span>

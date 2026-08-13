@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { geoEquirectangular, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
+import { LOW_VOLUME_TOTAL, reliefKm, SHADES, shadeIndex } from "./globe-scale";
 
 const DEG = Math.PI / 180;
 const KM = 1 / 6371; // 1 km en unités monde (rayon = 1)
@@ -41,19 +42,13 @@ const TH = {
   rim: "#7FB6F5",
   grat: "#9FBCDD",
   gratOp: 0.34,
-  ramp: ["#BBD6F5", "#6FA8EC", "#2F7AE0", "#123E86"],
   arc: "#2F7AE0",
   arcDot: "#123E86",
   ping: "#2F7AE0",
   marker: "#123E86",
 };
 
-const RAMP = TH.ramp.map((c) => new THREE.Color(c));
-function ramp(t: number) {
-  const x = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);
-  const i = Math.floor(x);
-  return i >= RAMP.length - 1 ? RAMP[RAMP.length - 1].clone() : RAMP[i].clone().lerp(RAMP[i + 1], x - i);
-}
+const SHADE_COLORS = SHADES.map((c) => new THREE.Color(c));
 function ll2v(lat: number, lon: number, r = 1, out = new THREE.Vector3()) {
   const la = lat * DEG;
   const lo = lon * DEG;
@@ -80,17 +75,21 @@ function discTexture() {
 // grille fine (Europe / France) et grille monde
 const FINE = { lat0: 32, lat1: 62, lon0: -14, lon1: 28, step: 0.22 }; // ≈ 24 km
 const WORLD = { step: 0.68 }; // ≈ 75 km
-const BASE_KM = 26;
-const PER_VISIT_KM = 98;
-const MAX_KM = 1500;
 const SIGMA_KM = 78;
 
 export interface GlobeHubRow {
   c: string;
   lat: number | null;
   lon: number | null;
+  /** Visites (sessions GA4) rattachées à cette ville. */
   n: number;
   rg?: string;
+  /** Part des visites totales, 0..1 — calculée côté API sur les vraies sessions. */
+  share?: number;
+  /** Sites démo distincts réellement consultés depuis cette ville (GA4). */
+  visitedSites?: number;
+  /** Sites démo publiés pour des entreprises de cette ville (base CRM). */
+  citySites?: number;
 }
 
 export interface AnGlobeHandle {
@@ -107,7 +106,20 @@ export interface AnGlobeHandle {
   dispose(): void;
 }
 
-type Grid = { mesh: THREE.InstancedMesh; lats: Float32Array; lons: Float32Array; wx: Float32Array; wz: Float32Array; n: number; vals: Float32Array };
+type Grid = {
+  mesh: THREE.InstancedMesh;
+  lats: Float32Array;
+  lons: Float32Array;
+  wx: Float32Array;
+  wz: Float32Array;
+  n: number;
+  /** Visites pondérées (somme gaussienne) — pilote la HAUTEUR du cube. */
+  vals: Float32Array;
+  /** Proximité à une ville, 0..1, indépendante du nombre de visites —
+   *  pilote seulement le fondu du bord, pour que la NUANCE reste celle de la
+   *  part de visites et non un simple dégradé radial. */
+  prox: Float32Array;
+};
 type PlacedHubRow = GlobeHubRow & { lat: number; lon: number };
 type Marker = { grp: THREE.Group; pk: THREE.Mesh; h: number; ht: number; data: PlacedHubRow };
 type Arc = { line: THREE.Line; dot: THREE.Sprite; curve: THREE.QuadraticBezierCurve3; t: number; sp: number };
@@ -205,7 +217,7 @@ export function createAnGlobe(): AnGlobeHandle {
       wx[i] = c.wx * inset;
       wz[i] = c.wz * inset;
     });
-    return { mesh, lats, lons, wx, wz, n, vals: new Float32Array(n) };
+    return { mesh, lats, lons, wx, wz, n, vals: new Float32Array(n), prox: new Float32Array(n) };
   }
 
   async function buildLand(parent: THREE.Group) {
@@ -272,29 +284,35 @@ export function createAnGlobe(): AnGlobeHandle {
     const pts = (rows || [])
       .filter((r): r is GlobeHubRow & { lat: number; lon: number } => r.lat != null && r.lon != null)
       .map((r) => ({ v: ll2v(r.lat, r.lon, 1).clone(), n: r.n }));
+    // Total des visites placées sur le globe — la part de chaque ville se
+    // calcule là-dessus, pas sur le total général : une ville sans
+    // coordonnées connues ne peut pas diluer les nuances de celles qu'on
+    // affiche vraiment.
+    const total = pts.reduce((s, p) => s + p.n, 0);
+    const lowVolume = total < LOW_VOLUME_TOTAL;
     const sig = SIGMA_KM * KM;
     const cut = sig * 3.4;
     const cut2 = cut * cut;
-    let maxV = 0;
     grids.forEach((g) => {
       for (let i = 0; i < g.n; i++) {
         ll2v(g.lats[i], g.lons[i], 1, _n);
         let v = 0;
+        let prox = 0;
         for (let k = 0; k < pts.length; k++) {
           const d2 = _n.distanceToSquared(pts[k].v);
           if (d2 > cut2) continue;
-          v += pts[k].n * Math.exp(-d2 / (sig * sig));
+          const falloff = Math.exp(-d2 / (sig * sig));
+          v += pts[k].n * falloff;
+          if (falloff > prox) prox = falloff;
         }
         g.vals[i] = v;
-        if (v > maxV) maxV = v;
+        g.prox[i] = prox;
       }
     });
-    const norm = Math.max(1, maxV);
     grids.forEach((g) => {
       for (let i = 0; i < g.n; i++) {
         const v = g.vals[i];
-        const km = Math.min(MAX_KM, BASE_KM + PER_VISIT_KM * Math.pow(v, 0.82));
-        const h = km * KM;
+        const h = reliefKm(v) * KM; // strictement linéaire : +PER_VISIT_KM par visite
         ll2v(g.lats[i], g.lons[i], 1, _n);
         _e.crossVectors(_Y, _n);
         if (_e.lengthSq() < 1e-8) _e.set(1, 0, 0);
@@ -303,9 +321,18 @@ export function createAnGlobe(): AnGlobeHandle {
         _m.makeBasis(_e.multiplyScalar(g.wx[i]), _n.clone().multiplyScalar(h), _no.multiplyScalar(g.wz[i]));
         _m.setPosition(_n.multiplyScalar(0.999 + h / 2));
         g.mesh.setMatrixAt(i, _m);
-        const t = Math.min(1, v / norm);
-        if (v < 0.05) _c.copy(i % 7 === 0 || i % 11 === 0 ? cAlt : cBase);
-        else _c.copy(cBase).lerp(ramp(Math.pow(t, 0.6)), Math.min(1, 0.25 + t * 1.15));
+
+        if (v < 0.02) {
+          // Terre sans visite — texture neutre, jamais bleue.
+          _c.copy(i % 7 === 0 || i % 11 === 0 ? cAlt : cBase);
+        } else {
+          // La NUANCE vient de la part de visites de la ville (constante sur
+          // toute sa zone) ; seul le fondu vers la terre suit la distance,
+          // pour que le bord ne soit pas un disque à arête franche.
+          const shade = SHADE_COLORS[shadeIndex(total > 0 ? v / total : 0, lowVolume)];
+          const blend = Math.min(1, 0.35 + g.prox[i] * 1.25);
+          _c.copy(cBase).lerp(shade, blend);
+        }
         g.mesh.setColorAt(i, _c);
       }
       g.mesh.instanceMatrix.needsUpdate = true;
@@ -320,13 +347,16 @@ export function createAnGlobe(): AnGlobeHandle {
   }
 
   function cityHeight(v: number) {
-    return Math.min(MAX_KM, BASE_KM + PER_VISIT_KM * Math.pow(v, 0.82)) * KM;
+    return reliefKm(v) * KM;
   }
 
   function setData(rows: GlobeHubRow[]) {
     lastRows = rows || [];
     if (!globe || !dotTex || !pickG) return;
     updateRelief(lastRows);
+    // Même base de calcul que updateRelief : les villes placées sur le globe.
+    const placedTotal = lastRows.reduce((s, r) => (r.lat != null && r.lon != null ? s + r.n : s), 0);
+    const lowVolume = placedTotal < LOW_VOLUME_TOTAL;
     const max = Math.max(1, ...lastRows.map((r) => r.n));
     const seen = new Set<string>();
     lastRows.forEach((r) => {
@@ -335,6 +365,7 @@ export function createAnGlobe(): AnGlobeHandle {
       const lon = r.lon;
       seen.add(r.c);
       const t = Math.pow(r.n / max, 0.62);
+      const shade = SHADE_COLORS[shadeIndex(placedTotal > 0 ? r.n / placedTotal : 0, lowVolume)];
       const h = cityHeight(r.n) + 0.004;
       let m = markers.get(r.c);
       if (!m) {
@@ -367,7 +398,7 @@ export function createAnGlobe(): AnGlobeHandle {
       m.ht = h;
       m.data = { ...r, lat, lon };
       const dotMesh = m.grp.getObjectByName("dot") as THREE.Sprite;
-      (dotMesh.material as THREE.SpriteMaterial).color.copy(ramp(Math.pow(t, 0.6)).lerp(new THREE.Color("#FFFFFF"), 0.15));
+      (dotMesh.material as THREE.SpriteMaterial).color.copy(shade.clone().lerp(new THREE.Color("#FFFFFF"), 0.15));
       (dotMesh.material as THREE.SpriteMaterial).opacity = 0.5 + 0.5 * t;
       (m as Marker & { dotS?: number }).dotS = 0.009 + 0.011 * t;
       m.grp.visible = true;

@@ -1,9 +1,10 @@
 import { json } from "@/app/api/_lib/respond";
 import { preflight } from "@/app/api/_lib/cors";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { requireStaff } from "@/app/api/_lib/require-staff";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { listDemoSites } from "@/lib/analytics-radar/demo-sites";
-import { geocodeCity } from "@/lib/analytics-radar/city-geo";
+import { geocodeCitiesFromCommunes, geocodeCity, type CityGeo } from "@/lib/analytics-radar/city-geo";
 import {
   ga4DateRangeFromDays,
   ga4RowsToObjects,
@@ -161,7 +162,13 @@ function buildRealtime(
  * an honest "not set up yet" state per source instead of zeros that look like
  * real zeros. See .env.example for the credentials this needs.
  */
-export const GET = withAuth({}, async ({ req, cors }) => {
+export const GET = withAuth({}, async ({ req, cors, user }) => {
+  // Cette route expose les analytics de TOUS les sites démo, tous prospects
+  // confondus — donc admin et agents freelance seulement. Un compte `client`
+  // possède un jeton Supabase valide et passerait sans ce garde-fou.
+  const staff = await requireStaff(user, cors);
+  if (!staff.ok) return staff.response;
+
   const url = new URL(req.url);
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days")) || 7));
 
@@ -204,6 +211,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   const [
     daily,
     byCity,
+    byCityHost,
     byHost,
     byDevice,
     bySource,
@@ -218,6 +226,9 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   ] = await Promise.all([
     report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
     report(["city", "country"], ["sessions"], 100),
+    // Ville × site démo : alimente « combien de sites démo distincts ont été
+    // consultés depuis cette ville » dans l'infobulle du globe.
+    report(["city", "hostName"], ["sessions"], 500),
     report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
     report(["deviceCategory"], ["sessions"]),
     report(["sessionSourceMedium"], ["sessions"], 30),
@@ -266,15 +277,44 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   const formsStarted = Math.max(num(formStarts?.eventCount), realtime.formActivity.starts);
   const formsSubmitted = Math.max(num(formSubmits?.eventCount), realtime.formActivity.submits);
 
+  // Sites démo distincts réellement consultés depuis chaque ville (GA4), et
+  // sites démo publiés pour des entreprises basées dans cette ville (base CRM).
+  // Deux chiffres différents et volontairement séparés : « on a livré 4 sites
+  // à des entreprises de Nantes » n'est pas « 2 sites démo ont été ouverts
+  // depuis Nantes » — un prospect peut consulter depuis n'importe où.
+  const visitedSitesByCity = new Map<string, Set<string>>();
+  byCityHost.forEach((r) => {
+    if (!r.hostName || !hostToSite.has(r.hostName)) return;
+    const city = r.city || "Inconnue";
+    const set = visitedSitesByCity.get(city) ?? new Set<string>();
+    set.add(r.hostName);
+    visitedSitesByCity.set(city, set);
+  });
+  const citySiteCount = new Map<string, number>();
+  sites.forEach((s) => {
+    if (!s.city) return;
+    citySiteCount.set(s.city, (citySiteCount.get(s.city) ?? 0) + 1);
+  });
+
+  // Géocodage sur le vrai référentiel des communes (34 900 entrées en base),
+  // pas sur une liste écrite en dur : une visite depuis une petite commune
+  // doit apparaître sur le globe comme n'importe quelle métropole.
+  const cityNames = [...byCity.map((r) => r.city), ...realtimeMain.map((r) => r.city)].filter(Boolean);
+  const geoByCity = await geocodeCitiesFromCommunes(sb, cityNames).catch(() => new Map<string, CityGeo>());
+  const geoFor = (city: string) => geoByCity.get(city) ?? geocodeCity(city);
+
   const hubs = byCity.map((r) => {
-    const geo = geocodeCity(r.city);
+    const geo = geoFor(r.city);
+    const city = r.city || "Inconnue";
     return {
-      c: r.city || "Inconnue",
+      c: city,
       country: r.country || "",
       n: num(r.sessions),
       lat: geo?.lat ?? null,
       lon: geo?.lon ?? null,
       rg: geo?.region ?? r.country ?? "",
+      visitedSites: visitedSitesByCity.get(city)?.size ?? 0,
+      citySites: citySiteCount.get(city) ?? 0,
     };
   });
 
@@ -293,10 +333,25 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   });
   realtimeCityAgg.forEach(({ country, activeUsers }, city) => {
     if (hubCities.has(city)) return;
-    const geo = geocodeCity(city);
-    hubs.push({ c: city, country, n: activeUsers, lat: geo?.lat ?? null, lon: geo?.lon ?? null, rg: geo?.region ?? country });
+    const geo = geoFor(city);
+    hubs.push({
+      c: city,
+      country,
+      n: activeUsers,
+      lat: geo?.lat ?? null,
+      lon: geo?.lon ?? null,
+      rg: geo?.region ?? country,
+      visitedSites: visitedSitesByCity.get(city)?.size ?? 0,
+      citySites: citySiteCount.get(city) ?? 0,
+    });
   });
   hubs.sort((a, b) => b.n - a.n);
+
+  // Part de chaque ville, calculée sur le total des hubs eux-mêmes. Diviser
+  // par kpis.sessions donnerait des pourcentages > 100 % : une ville peut
+  // venir du temps réel alors que le rapport standard compte encore 0 session.
+  const hubTotal = hubs.reduce((s, h) => s + h.n, 0);
+  const hubsWithShare = hubs.map((h) => ({ ...h, share: hubTotal > 0 ? h.n / hubTotal : 0 }));
 
   const visitedHostnames = new Set<string>();
   const sitePerf = byHost
@@ -408,7 +463,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
       timeseries: daily
         .map((r) => ({ date: isoDate(r.date), sessions: num(r.sessions) }))
         .sort((a, b) => a.date.localeCompare(b.date)),
-      hubs,
+      hubs: hubsWithShare,
       sites: sitePerf,
       notVisitedSites: notVisited.map((s) => ({ hostname: s.hostname, companyName: s.companyName })),
       devices: byDevice.map((r) => ({ device: r.deviceCategory, sessions: num(r.sessions) })),
