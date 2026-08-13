@@ -180,9 +180,26 @@ export function AnalyticsRadarApp() {
 
         <div className="a-kpis">
           <Kpi tone="ac" icon="globe" label="Sites démo visités" value={d.kpis.sitesVisited} unit={`/ ${d.totalSites}`} />
-          <Kpi icon="users" label="Sessions" value={anNum(d.kpis.sessions)} />
-          <Kpi tone="vi" icon="doc" label="Pages / visite" value={d.kpis.pagesPerSession.toFixed(1)} note={<>{anNum(d.kpis.pageViews)} pages vues</>} />
-          <Kpi tone="wn" icon="clock" label="Engagement moy." value={anDur(d.kpis.avgSessionDurationSec)} note={<>taux d'engagement {anPct(d.kpis.engagementRate)}</>} />
+          <Kpi
+            icon="users"
+            label="Sessions"
+            value={d.kpis.processing ? "—" : anNum(d.kpis.sessions)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : undefined}
+          />
+          <Kpi
+            tone="vi"
+            icon="doc"
+            label="Pages / visite"
+            value={d.kpis.processing ? "—" : d.kpis.pagesPerSession.toFixed(1)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : <>{anNum(d.kpis.pageViews)} pages vues</>}
+          />
+          <Kpi
+            tone="wn"
+            icon="clock"
+            label="Engagement moy."
+            value={d.kpis.processing ? "—" : anDur(d.kpis.avgSessionDurationSec)}
+            note={d.kpis.processing ? "traitement GA4 en cours" : <>taux d'engagement {anPct(d.kpis.engagementRate)}</>}
+          />
           <Kpi tone="ok" icon="fileText" label="Formulaire testé" value={d.kpis.formsStarted} note={<><b>{d.kpis.formsSubmitted}</b> envoyés</>} />
           <Kpi icon="flash" label="Visiteurs actifs" value={d.realtime.activeUsers} unit="maintenant" />
           <div className="a-kpi">
