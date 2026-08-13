@@ -1,4 +1,5 @@
 import React from "react";
+import { PublicAnalytics } from "@/components/analytics/PublicAnalytics";
 
 /**
  * Root layout for everything served on a CLIENT's domain: published sites
@@ -47,6 +48,7 @@ export default function PublicSiteLayout({ children }: { children: React.ReactNo
     <html lang="fr" suppressHydrationWarning>
       <head>
         <style dangerouslySetInnerHTML={{ __html: PUBLIC_RESET_CSS }} />
+        <PublicAnalytics />
       </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>
