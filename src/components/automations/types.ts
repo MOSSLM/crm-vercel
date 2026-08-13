@@ -221,6 +221,18 @@ export interface ProspectionTaskPayload {
   email?: string
   linkedin?: string
   result?: string
+  /**
+   * Les deux versions du modèle, telles que le moteur les a rendues au moment
+   * de préparer la tâche (cf. `processSequenceEnrollment`).
+   *
+   * Elles voyagent AVEC la tâche plutôt que d'être recalculées au clic : relire
+   * modèle et variables depuis le navigateur, c'est risquer d'afficher autre
+   * chose que ce qui est réellement prêt à partir. `variantAlt` est absent quand
+   * le modèle n'a qu'un texte — et sur toutes les tâches créées avant la
+   * bascule à deux versions, ce qui est exact : elles n'en avaient qu'une.
+   */
+  variant?: 'company' | 'contact'
+  variantAlt?: { variant: 'company' | 'contact'; message: string } | null
   [k: string]: unknown
 }
 

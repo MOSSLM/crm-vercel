@@ -22,6 +22,7 @@ import {
   sampleVars,
   variantText,
   VARIABLES,
+  VARIANTS,
   VARIANT_LABELS,
   type MessageVariant,
   type VarBag,
@@ -44,6 +45,8 @@ export function SequenceBuilder({ id }: { id: string }) {
   const [loading, setLoading] = useState(true)
   const [vars, setVars] = useState<VarBag>(() => sampleVars())
   const [previewOn, setPreviewOn] = useState<string | null>(null)
+  /** Le numéro de la fiche d'aperçu — rempli tout seul, modifiable à la main. */
+  const [previewId, setPreviewId] = useState('')
   const dirty = useRef(false)
 
   useEffect(() => {
@@ -96,21 +99,47 @@ export function SequenceBuilder({ id }: { id: string }) {
    * d'audit n'a pas encore de jeton : sur des valeurs inventées, tout est
    * toujours rempli, et le trou se découvre à l'envoi.
    */
-  const chargerApercu = useCallback(async (entrepriseId: string) => {
-    if (!entrepriseId) {
-      setVars(sampleVars())
-      setPreviewOn(null)
-      return
-    }
-    try {
-      const res = await authedFetch(`/api/automations/preview?entreprise_id=${entrepriseId}`)
-      const payload = (await res.json()) as { vars?: VarBag; company?: string | null }
-      setVars(payload.vars ?? sampleVars())
-      setPreviewOn(payload.company ?? null)
-    } catch {
-      toast.error('Aperçu indisponible — valeurs d’exemple conservées')
-    }
-  }, [])
+  const chargerApercu = useCallback(
+    /**
+     * `null` — « choisis pour moi », le serveur prend une fiche du public visé.
+     * `''`   — le champ a été vidé à la main : valeurs d'exemple, et rien d'autre.
+     * sinon  — la fiche demandée.
+     */
+    async (entrepriseId: string | null) => {
+      try {
+        const q = new URLSearchParams({ automation_id: id })
+        if (entrepriseId) q.set('entreprise_id', entrepriseId)
+        else if (entrepriseId === '') q.set('auto', '0')
+        const res = await authedFetch(`/api/automations/preview?${q}`)
+        const payload = (await res.json()) as {
+          vars?: VarBag
+          company?: string | null
+          entrepriseId?: number | null
+        }
+        setVars(payload.vars ?? sampleVars())
+        setPreviewOn(payload.company ?? null)
+        setPreviewId(payload.entrepriseId != null ? String(payload.entrepriseId) : '')
+      } catch {
+        toast.error('Aperçu indisponible — valeurs d’exemple conservées')
+      }
+    },
+    [id],
+  )
+
+  /**
+   * Une vraie fiche dès l'ouverture, sans rien demander.
+   *
+   * L'aperçu ne servait qu'à qui pensait à coller un numéro d'entreprise dans un
+   * champ replié ; tous les autres relisaient des valeurs d'exemple où tout est
+   * toujours rempli. Le serveur prend donc une fiche du public que la séquence
+   * déclare viser — de préférence une déjà inscrite — et c'est elle qu'on lit.
+   */
+  // `chargerApercu` ne dépend que de `id` : l'effet ne se rejoue donc pas à
+  // chaque frappe, et la fiche choisie à la main n'est jamais écrasée.
+  useEffect(() => {
+    if (loading) return
+    void chargerApercu(null)
+  }, [loading, chargerApercu])
 
   const updateStep = useCallback(
     (sid: string, patch: Partial<SequenceStep>) => {
@@ -382,17 +411,30 @@ export function SequenceBuilder({ id }: { id: string }) {
 
           <Section label="Aperçu des messages" defaultOpen={false}>
             <Field label="Entreprise d’essai" hint={previewOn ?? 'valeurs d’exemple'}>
-              <input
-                className="input mono"
-                placeholder="n° entreprise"
-                onBlur={(e) => chargerApercu(e.target.value.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') chargerApercu((e.target as HTMLInputElement).value.trim())
-                }}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="input mono"
+                  placeholder="n° entreprise"
+                  value={previewId}
+                  onChange={(e) => setPreviewId(e.target.value)}
+                  onBlur={(e) => chargerApercu(e.target.value.trim())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') chargerApercu((e.target as HTMLInputElement).value.trim())
+                  }}
+                />
+                <button
+                  className="btn outline sm"
+                  type="button"
+                  title="Reprendre une fiche du public visé"
+                  onClick={() => chargerApercu(null)}
+                >
+                  <XI name="refresh" className="ico-sm" />
+                </button>
+              </div>
               <p className="rg-hint">
-                Les messages de chaque étape se rendent avec les données de cette entreprise — liens du rapport et du
-                site démo compris. Vide, l’aperçu se contente de valeurs d’exemple.
+                Une fiche réelle du public visé est prise à l’ouverture — de préférence une déjà inscrite. Les messages
+                de chaque étape se rendent avec ses données, liens du rapport et du site démo compris : c’est le seul
+                moyen de voir qu’une démo n’est pas prête ou qu’un prénom manque avant que le prospect ne le découvre.
               </p>
             </Field>
           </Section>
@@ -1059,16 +1101,19 @@ function EmailTemplatePreview({
   const tpl = useTemplateBody('email_templates', templateId)
   if (!templateId) return null
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
-  const variant = pickVariant([tpl.subject, tpl.body], vars)
   return (
-    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
-      <div className="msg-ed-preview">
-        <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
-        {'\n\n'}
-        {interpolateVars(variantText(tpl.body, variant), vars)}
-      </div>
-      <VariantNote variant={variant} pairs={[tpl.subject, tpl.body]} />
-    </Field>
+    <DeuxVersions
+      pairs={[tpl.subject, tpl.body]}
+      vars={vars}
+      previewOn={previewOn}
+      rendu={(variant) => (
+        <>
+          <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
+          {'\n\n'}
+          {interpolateVars(variantText(tpl.body, variant), vars)}
+        </>
+      )}
+    />
   )
 }
 
@@ -1084,37 +1129,109 @@ function WhatsappTemplatePreview({
 }) {
   const tpl = useTemplateBody('whatsapp_templates', templateId)
   if (!tpl) return <div className="empty-row">Chargement du modèle…</div>
-  const variant = pickVariant([tpl.body], vars)
   return (
-    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
-      <div className="msg-ed-preview">{interpolateVars(variantText(tpl.body, variant), vars)}</div>
-      <VariantNote variant={variant} pairs={[tpl.body]} />
-      <p className="rg-hint">
-        Ce texte vient des{' '}
-        <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
-          modèles
-        </Link>{' '}
-        — le modifier là-bas le change dans toutes les séquences qui s’en servent.
-      </p>
-    </Field>
+    <DeuxVersions
+      pairs={[tpl.body]}
+      vars={vars}
+      previewOn={previewOn}
+      rendu={(variant) => interpolateVars(variantText(tpl.body, variant), vars)}
+      pied={
+        <p className="rg-hint">
+          Ce texte vient des{' '}
+          <Link href="/automations/modeles" style={{ color: 'var(--accent-2)' }}>
+            modèles
+          </Link>{' '}
+          — le modifier là-bas le change dans toutes les séquences qui s’en servent.
+        </p>
+      }
+    />
   )
 }
 
 /**
- * Laquelle des deux versions du modèle est montrée, et pourquoi.
+ * Les DEUX versions du modèle, sur la fiche d'essai, avec celle qui partirait.
  *
- * L'aperçu se calcule sur UN prospect ; sans cette ligne, on croirait que le
- * texte affiché est le seul que la séquence enverra, alors qu'il change d'une
- * fiche à l'autre selon qu'on connaisse ou non la personne.
+ * CE QUE MONTRER UNE SEULE VERSION CACHAIT
+ * `pickVariant` tranche par prospect : la version contact ne part que si TOUTES
+ * les variables du contact qu'elle cite ont une valeur. L'inspecteur n'affichait
+ * donc que le gagnant du jour, et une phrase pour dire que l'autre existait —
+ * on relisait la moitié de ce qui part, sans jamais voir l'autre moitié ni
+ * pouvoir la corriger. Les deux sont maintenant côte à côte, et le badge dit
+ * laquelle cette fiche-là recevrait.
+ *
+ * Un modèle sans version contact n'affiche qu'un bloc, sans onglet : proposer un
+ * choix entre un texte et rien ferait douter de tout l'écran.
  */
-function VariantNote({ variant, pairs }: { variant: MessageVariant; pairs: VariantPair[] }) {
+function DeuxVersions({
+  pairs,
+  vars,
+  previewOn,
+  rendu,
+  pied,
+}: {
+  pairs: VariantPair[]
+  vars: VarBag
+  previewOn: string | null
+  rendu: (variant: MessageVariant) => React.ReactNode
+  pied?: React.ReactNode
+}) {
+  const retenue = pickVariant(pairs, vars)
   const aUneVersionContact = pairs.some((p) => (p.contact ?? '').trim())
-  if (!aUneVersionContact) return null
+  const [montree, setMontree] = useState<MessageVariant>(retenue)
+  // La fiche d'essai change → la version retenue change. Rester sur l'onglet
+  // précédent laisserait croire que c'est celle-là qui partirait.
+  useEffect(() => setMontree(retenue), [retenue])
+
+  if (!aUneVersionContact) {
+    return (
+      <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+        <div className="msg-ed-preview">{rendu('company')}</div>
+        <p className="rg-hint" style={{ marginTop: 4 }}>
+          Une seule version écrite — elle part à tout le monde. La version contact s’ajoute depuis les modèles.
+        </p>
+        {pied}
+      </Field>
+    )
+  }
+
   return (
-    <p className="rg-hint" style={{ marginTop: 4 }}>
-      <XI name="user" className="ico-xs" /> {VARIANT_LABELS[variant].short}, choisie pour ce prospect — l’autre part aux
-      fiches où c’est l’inverse.
-    </p>
+    <Field label="Ce que le prospect lira" hint={previewOn ?? 'valeurs d’exemple'}>
+      <div className="seg" style={{ width: '100%', marginBottom: 6 }}>
+        {VARIANTS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            style={{ flex: 1, justifyContent: 'center', gap: 6 }}
+            aria-pressed={montree === v}
+            title={VARIANT_LABELS[v].hint}
+            onClick={() => setMontree(v)}
+          >
+            {VARIANT_LABELS[v].tab}
+            {retenue === v && (
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--ok)',
+                }}
+              >
+                celle-ci
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="msg-ed-preview">{rendu(montree)}</div>
+      <p className="rg-hint" style={{ marginTop: 4 }}>
+        <XI name="user" className="ico-xs" /> Sur cette fiche, c’est la {VARIANT_LABELS[retenue].short} qui part
+        {retenue === 'company'
+          ? ' — la version contact cite une variable que la fiche ne remplit pas.'
+          : ' — la fiche porte tout ce que le texte nomme.'}
+      </p>
+      {pied}
+    </Field>
   )
 }
 

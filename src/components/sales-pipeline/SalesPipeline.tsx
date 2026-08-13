@@ -67,9 +67,12 @@ import {
 import { formatHM } from '@/lib/automations/regulator'
 import { errorLabel } from '@/lib/sales-pipeline/error-labels'
 import type { MessageVariant } from '@/lib/automations/variables'
+import { lienWhatsApp } from '@/lib/prospects/canal'
+import type { NumeroProspect } from '@/lib/prospects/numeros'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
 import { KIND_ICON, SalesCell, columnIcon, columnStepId, eur, rgba, type SalesHandlers } from './SalesCells'
+import { EnvoiWhatsAppDialog } from './EnvoiWhatsAppDialog'
 import type { SalesBoardData, SalesBoardRow, SalesFilters, SalesMissingEmailRow } from './types'
 import './sp-skin.css'
 
@@ -144,6 +147,18 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   /** La moitié « Réponse » d'une carte, ouverte sur une étape précise. */
   const [outcome, setOutcome] = React.useState<{ row: SalesBoardRow; column: SalesColumn } | null>(null)
   const [emailTarget, setEmailTarget] = React.useState<EmailTarget | null>(null)
+  /**
+   * L'écran d'envoi WhatsApp — à qui, sur quel numéro, avec quel texte.
+   *
+   * Interposé entre le bouton et `wa.me` : composer un numéro choisi en silence
+   * et envoyer un texte qu'on n'a pas relu sont deux gestes qu'on ne rattrape
+   * pas une fois la conversation ouverte.
+   *
+   * On garde l'IDENTIFIANT de la ligne, pas la ligne : épingler une version
+   * relance le chargement du tableau, et un objet capturé à l'ouverture
+   * afficherait encore l'état d'avant l'épingle.
+   */
+  const [waSend, setWaSend] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const t = setTimeout(() => setFilters((f) => (f.q === search ? f : { ...f, q: search, page: 0 })), 320)
@@ -378,6 +393,45 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     onSkipEmail: (row) => void skipEmail(row),
   }
 
+  /**
+   * Le geste WhatsApp lui-même, une fois le destinataire et la version choisis.
+   *
+   * `wa.me` n'a pas d'API d'envoi : on ouvre la conversation pré-remplie et on
+   * journalise au clic, pour que l'échange existe dans l'historique du prospect.
+   * Le texte journalisé est CELUI qui a été montré — sans quoi le fil raconterait
+   * une autre version que celle qui est partie.
+   */
+  async function envoyerWhatsApp(
+    row: SalesBoardRow,
+    arg: { numero: NumeroProspect; variant: MessageVariant; message: string },
+  ) {
+    const url = lienWhatsApp(arg.numero.e164, arg.message)
+    if (!url) {
+      toast.error('Ce numéro n’est pas exploitable sur WhatsApp.')
+      return
+    }
+    setWaSend(null)
+    window.open(url, '_blank')
+    // Le contact du numéro composé, pas celui de l'affaire : on peut très bien
+    // écrire au gérant alors que l'opportunité porte l'assistante.
+    const contactId = arg.numero.origine.kind === 'contact' ? arg.numero.origine.contactId : null
+    const nom = arg.numero.origine.kind === 'contact' ? arg.numero.origine.nom : row.companyName
+    await authedFetch('/api/messages/log', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        channel: 'whatsapp',
+        contact_id: contactId ?? row.contact?.id,
+        entreprise_id: row.entrepriseId,
+        opportunite_id: row.id,
+        to_email: arg.numero.affichage,
+        to_name: nom,
+        subject: 'Message WhatsApp',
+        body_text: arg.message,
+      }),
+    }).catch(() => {})
+  }
+
   async function work(column: SalesColumn, row: SalesBoardRow) {
     if (column.group === 'sequence') {
       // Colonne « en séquence » de la vue d'ensemble : elle ne désigne aucune
@@ -402,30 +456,11 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
         else toast.error('Aucun profil LinkedIn connu')
         return
       }
-      // WhatsApp : wa.me n'a pas d'API d'envoi, on ouvre le message pré-rempli
-      // et on journalise au clic pour que l'échange existe dans l'historique.
-      const task = row.tasks.find((t) => t.kind === 'whatsapp') ?? row.tasks[0]
-      const phone = task?.phone ?? row.contact?.phone ?? row.phone
-      const digits = (phone ?? '').replace(/\D/g, '')
-      if (!digits) {
-        toast.error('Aucun numéro pour ce contact')
-        return
-      }
-      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(task?.message ?? '')}`, '_blank')
-      await authedFetch('/api/messages/log', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          channel: 'whatsapp',
-          contact_id: row.contact?.id,
-          entreprise_id: row.entrepriseId,
-          opportunite_id: row.id,
-          to_email: phone,
-          to_name: row.contact?.name,
-          subject: 'Message WhatsApp',
-          body_text: task?.message ?? '',
-        }),
-      }).catch(() => {})
+      // WhatsApp : on passe par l'écran d'envoi. Il montre les numéros connus
+      // du prospect avec leur origine, les deux versions du message, et n'ouvre
+      // `wa.me` qu'avec ce qui est affiché — le sélecteur de version épinglait
+      // jusqu'ici un réglage dont l'effet ne se voyait qu'au message suivant.
+      setWaSend(row.id)
       return
     }
 
@@ -447,6 +482,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const pages = board ? Math.max(1, Math.ceil(board.total / board.perPage)) : 1
   const nextSendIn = board?.regulator.nextSendAt ? Date.parse(board.regulator.nextSendAt) - now : null
   const selected = rows.filter((r) => selection.has(r.id))
+  // Relue à chaque rendu : après une épingle, la modale doit montrer l'état
+  // rechargé, pas celui capturé à l'ouverture.
+  const waSendRow = waSend ? (rows.find((r) => r.id === waSend) ?? null) : null
   /** Ceux de la page qu'on peut encore mettre en séquence. */
   const enrollable = rows.filter((r) => !r.sequence)
   const stockCount = board?.partCounts.noSequence ?? 0
@@ -992,6 +1030,18 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       />
 
       {/* ── Modales ─────────────────────────────────────────────────────── */}
+      {waSendRow && (
+        <EnvoiWhatsAppDialog
+          row={waSendRow}
+          task={waSendRow.tasks.find((t) => t.kind === 'whatsapp') ?? waSendRow.tasks[0]}
+          pinned={waSendRow.sequence?.variant ?? null}
+          busy={busy === waSendRow.id}
+          onClose={() => setWaSend(null)}
+          onSend={(arg) => void envoyerWhatsApp(waSendRow, arg)}
+          onPin={(v) => handlers.onVariant(waSendRow, v)}
+        />
+      )}
+
       {reaction && (
         <ReactionDialog
           row={reaction.row}

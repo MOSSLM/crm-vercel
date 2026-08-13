@@ -20,8 +20,10 @@ import {
   type ProspectionTaskFull,
 } from './prospection-db'
 import { lienWhatsApp } from '@/lib/prospects/canal'
+import { VARIANT_LABELS, type MessageVariant } from '@/lib/automations/variables'
 import { NumeroPicker, sourceNumeros, useNumeros } from './NumeroPicker'
 import type { NumeroProspect, UsageNumero } from '@/lib/prospects/numeros'
+import type { ProspectionTaskPayload } from './types'
 
 /**
  * L'onglet des séquences garées. Pas dans `TABS` : il ne filtre pas des tâches,
@@ -455,7 +457,15 @@ function ProsDetail({
 }) {
   const c = contactName(task)
   const overdue = new Date(task.due_at).getTime() < Date.now()
-  const message = task.payload?.message ?? ''
+
+  // Les deux versions du modèle voyagent avec la tâche. L'écran n'en montrait
+  // qu'une — celle que le moteur avait retenue — alors que le choix se fait
+  // devant le message, au moment de l'envoyer : une fiche sans prénom en base
+  // peut très bien avoir un gérant dont on connaît le nom par ailleurs.
+  const versions = versionsDeLaTache(task.payload)
+  const [variant, setVariant] = useState<MessageVariant>(versions[0]?.variant ?? 'company')
+  useEffect(() => setVariant(versionsDeLaTache(task.payload)[0]?.variant ?? 'company'), [task.id, task.payload])
+  const message = versions.find((v) => v.variant === variant)?.message ?? task.payload?.message ?? ''
 
   // Tous les numéros du prospect, pas seulement celui du contact lié à la tâche.
   const usage: UsageNumero = task.kind === 'call' ? 'appel' : 'whatsapp'
@@ -523,6 +533,10 @@ function ProsDetail({
       {tab === 'action' && (
         <ProsAction
           task={task}
+          message={message}
+          versions={versions}
+          variant={variant}
+          onVariant={setVariant}
           onOpenWhatsApp={openWhatsApp}
           numeros={numeros}
           selection={phone || null}
@@ -588,14 +602,40 @@ function ProsDetail({
   )
 }
 
+/**
+ * Les versions réellement préparées pour cette tâche, la retenue en tête.
+ *
+ * Une tâche antérieure à la bascule à deux versions n'en porte qu'une : c'est
+ * exact, et l'écran n'affiche alors aucun onglet plutôt qu'un faux choix.
+ */
+function versionsDeLaTache(
+  payload: ProspectionTaskPayload | null | undefined,
+): { variant: MessageVariant; message: string }[] {
+  const principale = {
+    variant: (payload?.variant === 'contact' ? 'contact' : 'company') as MessageVariant,
+    message: payload?.message ?? '',
+  }
+  const autre = payload?.variantAlt
+  if (!autre || autre.variant === principale.variant) return [principale]
+  return [principale, { variant: autre.variant, message: autre.message }]
+}
+
 function ProsAction({
   task,
+  message,
+  versions,
+  variant,
+  onVariant,
   onOpenWhatsApp,
   numeros,
   selection,
   onSelect,
 }: {
   task: ProspectionTaskFull
+  message: string
+  versions: { variant: MessageVariant; message: string }[]
+  variant: MessageVariant
+  onVariant: (v: MessageVariant) => void
   onOpenWhatsApp: () => void
   numeros: NumeroProspect[]
   selection: string | null
@@ -640,14 +680,32 @@ function ProsAction({
             <XI name="whatsapp" className="ico-sm" />
             Message à envoyer
           </h3>
+          {versions.length > 1 && (
+            <div className="seg" style={{ width: '100%', marginBottom: 8 }}>
+              {versions.map((v) => (
+                <button
+                  key={v.variant}
+                  type="button"
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  aria-pressed={variant === v.variant}
+                  title={VARIANT_LABELS[v.variant].hint}
+                  onClick={() => onVariant(v.variant)}
+                >
+                  {VARIANT_LABELS[v.variant].tab}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="pros-msg-card">
             <div className="hd">
               <XI name="whatsapp" className="ico-sm" style={{ color: 'var(--ok)' }} />
               <span className="grow">
-                vers {numeros.find((n) => n.e164 === selection)?.affichage ?? '—'}
+                vers {numeros.find((n) => n.e164 === selection)?.libelleOrigine ?? '—'}
+                {' · '}
+                {numeros.find((n) => n.e164 === selection)?.affichage ?? '—'}
               </span>
             </div>
-            <div className="body-msg">{task.payload?.message || 'Aucun message pré-rédigé.'}</div>
+            <div className="body-msg">{message || 'Aucun message pré-rédigé.'}</div>
           </div>
           <NumeroPicker numeros={numeros} selection={selection} onSelect={onSelect} label="Destinataire" />
         </div>
