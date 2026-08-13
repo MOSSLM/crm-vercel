@@ -87,6 +87,22 @@ export const ENTRY_COLUMN_ID = 'entry:start'
  */
 export const SEQ_ANY_COLUMN_ID = 'seq:any'
 
+/**
+ * Cette étape mérite-t-elle une colonne ?
+ *
+ * TOUTES les attentes en étaient exclues, et c'était trop large. Une attente de
+ * délai pur n'a rien à décider : elle s'écoule seule, une colonne n'y offrirait
+ * aucun geste. Une attente-RÉPONSE, si — c'est même le seul endroit du tableau
+ * où l'on dise « il a répondu », « il a pris rendez-vous », « toujours rien ».
+ *
+ * Sans sa colonne, un prospect garé après son accroche WhatsApp restait affiché
+ * sous le message DÉJÀ ENVOYÉ, avec un bouton « Étape faite » qui ne faisait
+ * rien — normal, la séquence attend une réponse — et aucun endroit pour dire
+ * qu'elle était arrivée. On croyait à une panne.
+ */
+export const estColonneVisible = (step: { kind: string; waitMode?: string | null }): boolean =>
+  step.kind !== 'wait' || step.waitMode === 'reply'
+
 export const stepColumnId = (stepId: string) => `step:${stepId}`
 export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
 
@@ -215,6 +231,10 @@ export interface SequenceStepRef {
   kind: SeqStepKind
   day: number
   label: string | null
+  /** `reply` = l'étape attend qu'un humain déclare la réponse. */
+  waitMode?: 'days' | 'reply' | null
+  /** Attente-réponse : au bout de combien de jours la relance part quand même. */
+  replyTimeoutDays?: number | null
   /**
    * L'étape n'appartient qu'à l'une des deux suites d'une attente-réponse.
    *
@@ -287,8 +307,27 @@ export function buildColumns(opts: {
     })
   } else {
     for (const step of opts.steps) {
+      const attente = step.kind === 'wait'
       const channel = channelOf(step.kind)
       const quand = step.day > 0 ? `J+${step.day}` : 'immédiat'
+      // L'attente-réponse n'est pas un canal : rien n'en part. Ce qu'elle
+      // annonce, c'est le délai au bout duquel la séquence relancera SANS
+      // réponse — l'information qui décide s'il faut intervenir maintenant.
+      if (attente) {
+        const jours = Number(step.replyTimeoutDays) || 0
+        columns.push({
+          id: stepColumnId(step.id),
+          group: 'sequence',
+          label: step.label?.trim() || 'En attente de réponse',
+          hint: jours > 0 ? `relance auto à J+${jours}` : 'jusqu’à réponse',
+          mode: 'manual',
+          color: '#A24E86',
+          kind: 'wait',
+          cta: 'Noter la réponse',
+          index: columns.length,
+        })
+        continue
+      }
       columns.push({
         id: stepColumnId(step.id),
         group: 'sequence',
