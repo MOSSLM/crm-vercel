@@ -24,6 +24,64 @@ const num = (v: string | undefined) => (v ? Number(v) || 0 : 0);
 const isoDate = (yyyymmdd: string) =>
   /^\d{8}$/.test(yyyymmdd) ? `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}` : yyyymmdd;
 
+type Ga4Row = Record<string, string>;
+type DemoSiteLike = { hostname: string; companyName: string };
+
+/**
+ * Merges 3 separate GA4 Realtime queries into one "who's here right now" view.
+ * Split into 3 because Realtime rejects most dimension combinations together
+ * (e.g. screenName + eventName in one query 400s) — each query below was
+ * verified individually against a live property.
+ */
+function buildRealtime(
+  main: Ga4Row[],
+  minutes: Ga4Row[],
+  events: Ga4Row[],
+  matchSite: (screenName: string) => DemoSiteLike | null,
+) {
+  const num = (v: string | undefined) => (v ? Number(v) || 0 : 0);
+
+  // "Depuis combien de temps" est une approximation par page, pas par
+  // visiteur individuel (Realtime n'expose pas d'identifiant de session) :
+  // le plus vieux `minutesAgo` où cette page a eu de l'activité.
+  const sinceByScreen = new Map<string, number>();
+  minutes.forEach((r) => {
+    const m = Number(r.minutesAgo);
+    if (!Number.isFinite(m)) return;
+    const prev = sinceByScreen.get(r.unifiedScreenName) ?? 0;
+    if (m > prev) sinceByScreen.set(r.unifiedScreenName, m);
+  });
+
+  const visits = main
+    .map((r) => {
+      const site = matchSite(r.unifiedScreenName || "");
+      return {
+        screenName: r.unifiedScreenName || "",
+        companyName: site?.companyName ?? null,
+        hostname: site?.hostname ?? null,
+        device: r.deviceCategory || "",
+        city: r.city || "",
+        country: r.country || "",
+        activeUsers: num(r.activeUsers),
+        pageViews: num(r.screenPageViews),
+        sinceMinutes: sinceByScreen.get(r.unifiedScreenName) ?? 0,
+      };
+    })
+    .filter((v) => v.activeUsers > 0)
+    .sort((a, b) => b.activeUsers - a.activeUsers);
+
+  const eventCount = (name: string) => num(events.find((e) => e.eventName === name)?.eventCount);
+
+  return {
+    activeUsers: visits.reduce((s, v) => s + v.activeUsers, 0),
+    visits,
+    formActivity: {
+      starts: eventCount("analytics_radar_form_start"),
+      submits: eventCount("analytics_radar_form_submit"),
+    },
+  };
+}
+
 /**
  * GET /api/analytics-radar?days=7|14|30
  *
@@ -63,20 +121,40 @@ export const GET = withAuth({}, async ({ req, cors }) => {
       return [] as Array<Record<string, string>>;
     });
 
-  const [daily, byCity, byHost, byDevice, bySource, byPage, byHour, formEvents, realtime] = await Promise.all([
-    report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
-    report(["city", "country"], ["sessions"], 100),
-    report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
-    report(["deviceCategory"], ["sessions"]),
-    report(["sessionSourceMedium"], ["sessions"], 30),
-    report(["pagePath"], ["screenPageViews", "userEngagementDuration", "bounceRate"], 50),
-    report(["dayOfWeek", "hour"], ["sessions"], 500),
-    report(["eventName"], ["eventCount"], 20),
+  const realtimeReport = (dimensions: string[], metrics: string[]) =>
     runGa4RealtimeReport(propertyId, serviceAccountKey, {
-      dimensions: [{ name: "country" }, { name: "city" }],
-      metrics: [{ name: "activeUsers" }],
-    }).then(ga4RowsToObjects).catch(() => [] as Array<Record<string, string>>),
-  ]);
+      dimensions: dimensions.map((name) => ({ name })),
+      metrics: metrics.map((name) => ({ name })),
+    }).then(ga4RowsToObjects).catch((e: unknown) => {
+      console.error("[analytics-radar] GA4 realtime report failed", dimensions, e);
+      return [] as Array<Record<string, string>>;
+    });
+
+  const [daily, byCity, byHost, byDevice, bySource, byPage, byHour, formEvents, realtimeMain, realtimeMinutes, realtimeEvents] =
+    await Promise.all([
+      report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
+      report(["city", "country"], ["sessions"], 100),
+      report(["hostName"], ["sessions", "screenPageViews", "userEngagementDuration", "engagementRate"], 500),
+      report(["deviceCategory"], ["sessions"]),
+      report(["sessionSourceMedium"], ["sessions"], 30),
+      report(["pagePath"], ["screenPageViews", "userEngagementDuration", "bounceRate"], 50),
+      report(["dayOfWeek", "hour"], ["sessions"], 500),
+      report(["eventName"], ["eventCount"], 20),
+      // GA4 Realtime dimension set is much narrower than the standard Data API
+      // (no hostName, and most dimension combos are rejected together — see the
+      // 3 separate queries below), so "which site" is derived by matching the
+      // page title (unifiedScreenName, e.g. "Accueil — Fluide CPC") against the
+      // real demo sites list rather than queried directly.
+      realtimeReport(["unifiedScreenName", "deviceCategory", "city", "country"], ["activeUsers", "screenPageViews"]),
+      realtimeReport(["unifiedScreenName", "minutesAgo"], ["activeUsers"]),
+      realtimeReport(["eventName"], ["eventCount"]),
+    ]);
+
+  // "Accueil — Fluide CPC" → matches the site named "Fluide CPC". Falls back to
+  // null (still shown, just without a site/hostname attached) when the title
+  // doesn't carry a recognizable company name (e.g. before the template sets it).
+  const matchSiteByScreenName = (screenName: string) =>
+    sites.find((s) => s.companyName && screenName.toLowerCase().includes(s.companyName.toLowerCase())) ?? null;
 
   const totalSessions = daily.reduce((s, r) => s + num(r.sessions), 0);
   const totalPageViews = daily.reduce((s, r) => s + num(r.screenPageViews), 0);
@@ -180,10 +258,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
         bounceRate: num(r.bounceRate),
       })),
       heatmap,
-      realtime: {
-        activeUsers: realtime.reduce((s, r) => s + num(r.activeUsers), 0),
-        byCountry: realtime.map((r) => ({ country: r.country, city: r.city, activeUsers: num(r.activeUsers) })),
-      },
+      realtime: buildRealtime(realtimeMain, realtimeMinutes, realtimeEvents, matchSiteByScreenName),
       clarity,
     },
     { headers: cors },
