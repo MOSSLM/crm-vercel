@@ -464,9 +464,15 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
     const from = item.site.template_name;
     const swapping = !!from && from !== templateName;
+    // Dire ce qui est perdu ET ce qui ne l'est pas. La formule précédente
+    // s'arrêtait à « les retouches faites dans l'éditeur » — personne n'y lit
+    // le tirage de photos lancé en lot depuis ce board, et c'est comme ça
+    // qu'on a refait 34 sites par-dessus leur tirage sans s'en rendre compte.
+    const consequences =
+      "Les retouches faites dans l'éditeur sur ce site seront perdues.\nLe tirage des photos, lui, est conservé et reposé automatiquement.";
     const question = swapping
-      ? `Refaire le site de ${displayName(item)} avec « ${templateName} » à la place de « ${from} » ?\n\nLes retouches faites dans l'éditeur sur ce site seront perdues.`
-      : `Refaire le site de ${displayName(item)} depuis « ${templateName} » et reprendre les infos à jour de la fiche ?\n\nLes retouches faites dans l'éditeur sur ce site seront perdues.`;
+      ? `Refaire le site de ${displayName(item)} avec « ${templateName} » à la place de « ${from} » ?\n\n${consequences}`
+      : `Refaire le site de ${displayName(item)} depuis « ${templateName} » et reprendre les infos à jour de la fiche ?\n\n${consequences}`;
     if (typeof window !== "undefined" && !window.confirm(question)) return;
 
     setWorking("create-site");
@@ -522,7 +528,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       (swapping > 0
         ? `${swapping} d'entre eux changent de modèle, les autres sont rafraîchis avec les infos à jour des fiches.\n\n`
         : "Les infos des fiches seront reprises à jour.\n\n") +
-      "Les retouches faites dans l'éditeur sur ces sites seront perdues.";
+      "Les retouches faites dans l'éditeur sur ces sites seront perdues.\n" +
+      "Le tirage des photos, lui, est conservé et reposé automatiquement.";
     if (typeof window !== "undefined" && !window.confirm(question)) return;
 
     setWorking("create-site");
