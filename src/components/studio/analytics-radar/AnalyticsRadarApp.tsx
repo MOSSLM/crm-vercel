@@ -16,7 +16,7 @@ import { anDur, anNum, anPct } from "./format";
 import { GlobeStage, RealtimePanel, TopCities, DayTrack } from "./radar-tab";
 import { SitesTab, BehaviourTab } from "./tables-tab";
 import { SessionsTab } from "./sessions-tab";
-import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured } from "./types";
+import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured, RadarScope } from "./types";
 
 type Tab = "radar" | "sites" | "beh" | "parcours";
 
@@ -34,7 +34,7 @@ const REFRESH_MS = 60_000;
  *   du navigateur passe en arrière-plan : un tableau de bord laissé ouvert la
  *   nuit consommait à lui seul des milliers de requêtes.
  */
-function useAnalyticsRadar(days: number, live: boolean) {
+function useAnalyticsRadar(days: number, live: boolean, scope: RadarScope) {
   const [data, setData] = React.useState<AnalyticsRadarPayload | AnalyticsRadarUnconfigured | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -45,7 +45,7 @@ function useAnalyticsRadar(days: number, live: boolean) {
 
     const load = () => {
       if (firstLoad) setLoading(true);
-      authedFetch(`/api/analytics-radar?days=${days}`)
+      authedFetch(`/api/analytics-radar?days=${days}&scope=${scope}`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
         .then((json) => {
           if (cancelled) return;
@@ -95,7 +95,7 @@ function useAnalyticsRadar(days: number, live: boolean) {
       stopPolling();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [days, live]);
+  }, [days, live, scope]);
 
   return { data, error, loading };
 }
@@ -134,9 +134,15 @@ function NotConfigured({ data }: { data: AnalyticsRadarUnconfigured }) {
 export function AnalyticsRadarApp() {
   const [tab, setTab] = React.useState<Tab>("radar");
   const [days, setDays] = React.useState(7);
+  const [scope, setScope] = React.useState<RadarScope>("demos");
   // Seul l'onglet radar montre du temps réel : ailleurs, un rafraîchissement
   // automatique ne ferait que consommer du quota GA4 sans rien changer à l'écran.
-  const { data, error, loading } = useAnalyticsRadar(days, tab === "radar");
+  const { data, error, loading } = useAnalyticsRadar(days, tab === "radar", scope);
+
+  // « Sites démo » n'a aucun sens quand on regarde notre propre vitrine.
+  React.useEffect(() => {
+    if (scope === "vitrine" && tab === "sites") setTab("radar");
+  }, [scope, tab]);
 
   // Dérivé du payload temps réel — memoïsé pour ne changer de référence QUE
   // quand un nouveau snapshot arrive (toutes les REFRESH_MS), pas à chaque
@@ -150,7 +156,16 @@ export function AnalyticsRadarApp() {
 
   const TABS: Array<{ k: Tab; n: string; ic: string; nb?: number }> = [
     { k: "radar", n: "Radar mondial", ic: "globe" },
-    { k: "sites", n: "Sites démo", ic: "kanban", nb: data && data.configured.ga4 ? (data as AnalyticsRadarPayload).sites.length : undefined },
+    ...(scope === "demos"
+      ? [
+          {
+            k: "sites" as Tab,
+            n: "Sites démo",
+            ic: "kanban",
+            nb: data && data.configured.ga4 ? (data as AnalyticsRadarPayload).sites.length : undefined,
+          },
+        ]
+      : []),
     { k: "beh", n: "Comportement", ic: "gauge" },
     { k: "parcours", n: "Parcours détaillés", ic: "activity" },
   ];
@@ -203,6 +218,19 @@ export function AnalyticsRadarApp() {
             ))}
           </nav>
           <div className="a-topr">
+            {/* Les deux périmètres s'excluent : le globe, les villes et tous
+                les chiffres basculent d'un jeu de domaines à l'autre. */}
+            <div style={{ display: "flex", gap: 4, marginRight: 8 }}>
+              {([
+                { k: "demos" as RadarScope, n: "Sites démo", ic: "globe" },
+                { k: "vitrine" as RadarScope, n: "Notre site", ic: "star" },
+              ]).map((s) => (
+                <button key={s.k} className="a-btn sm" aria-pressed={scope === s.k} onClick={() => setScope(s.k)}>
+                  <Icon name={s.ic} className="ico s" />
+                  {s.n}
+                </button>
+              ))}
+            </div>
             <span className="a-src">
               <i className="d" />
               GA4
@@ -229,7 +257,11 @@ export function AnalyticsRadarApp() {
         ) : null}
 
         <div className="a-kpis">
-          <Kpi tone="ac" icon="globe" label="Sites démo visités" value={d.kpis.sitesVisited} unit={`/ ${d.totalSites}`} />
+          {scope === "demos" ? (
+            <Kpi tone="ac" icon="globe" label="Sites démo visités" value={d.kpis.sitesVisited} unit={`/ ${d.totalSites}`} />
+          ) : (
+            <Kpi tone="ac" icon="star" label="Périmètre" value="Notre site" note="samadigitalstudio.fr" />
+          )}
           <Kpi
             icon="users"
             label="Sessions"
@@ -279,7 +311,13 @@ export function AnalyticsRadarApp() {
             />
             <div className="a-rail">
               <Panel title="En ce moment" icon="radio" src="GA4 realtime" style={{ flex: 1 }} bodyClass="tight">
-                <RealtimePanel activeUsers={d.realtime.activeUsers} feed={d.realtime.feed} formActivity={d.realtime.formActivity} />
+                <RealtimePanel
+                  activeUsers={d.realtime.activeUsers}
+                  feed={d.realtime.feed}
+                  formActivity={d.realtime.formActivity}
+                  scope={d.scope}
+                  scopeIsApproximate={d.realtimeScopeIsApproximate}
+                />
               </Panel>
               <Panel title="Villes les plus actives" icon="mappin" count={d.hubs.length} style={{ flex: "0 0 auto", maxHeight: 250 }}>
                 <TopCities hubRows={d.hubs} onPick={() => {}} />

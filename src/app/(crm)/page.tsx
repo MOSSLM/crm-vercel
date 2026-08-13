@@ -12,6 +12,7 @@
 import type { Metadata } from "next";
 import "./sama-home.css";
 import SamaHome from "@/components/sama-home/SamaHome";
+import { PublicAnalytics } from "@/components/analytics/PublicAnalytics";
 
 const SITE_URL = "https://samadigitalstudio.fr";
 
@@ -81,6 +82,12 @@ export default function HomePage() {
         // JSON-LD schema.org — objet statique sérialisé, aucune entrée utilisateur.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      {/* Cette page est la vitrine publique (samadigitalstudio.fr), pas l'outil
+          interne : elle mérite le même tag GA4/Clarity que les sites démo.
+          Posé ICI et pas dans (crm)/layout.tsx, qui couvre aussi tout le CRM —
+          on ne veut pas mesurer l'équipe en train de travailler. Le radar sépare
+          ensuite les deux périmètres (voir le sélecteur « Notre site »). */}
+      <PublicAnalytics />
       <SamaHome />
     </>
   );

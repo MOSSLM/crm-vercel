@@ -13,6 +13,7 @@ import {
   runGa4Report,
 } from "@/lib/analytics-radar/ga4-client";
 import { clarityInfoNumber } from "@/lib/analytics-radar/clarity-client";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ const isoDate = (yyyymmdd: string) =>
 
 type Ga4Row = Record<string, string>;
 type DemoSiteLike = { hostname: string; companyName: string };
+export type RadarScope = "demos" | "vitrine";
 
 // Événements GA4 dignes d'une ligne dans le flux — le reste (user_engagement,
 // scroll…) se déclenche en continu et noierait le flux sous du bruit.
@@ -65,6 +67,8 @@ function buildRealtime(
   /** Requête sans dimension : le seul compte d'utilisateurs actifs correct. */
   totalRows: Ga4Row[],
   matchSite: (screenName: string) => DemoSiteLike | null,
+  /** Garde le flux dans le périmètre choisi (démos ou vitrine). */
+  inScope: (screenName: string) => boolean,
 ) {
   const num = (v: string | undefined) => (v ? Number(v) || 0 : 0);
 
@@ -80,6 +84,7 @@ function buildRealtime(
   });
 
   const visits = main
+    .filter((r) => inScope(r.unifiedScreenName || ""))
     .map((r) => {
       const site = matchSite(r.unifiedScreenName || "");
       return {
@@ -113,6 +118,7 @@ function buildRealtime(
     const m = Number(r.minutesAgo);
     if (!Number.isFinite(m) || num(r.activeUsers) <= 0) return;
     const screen = r.unifiedScreenName || "";
+    if (!inScope(screen)) return;
     const set = screensAtMinute.get(r.minutesAgo) ?? new Set<string>();
     set.add(screen);
     screensAtMinute.set(r.minutesAgo, set);
@@ -180,6 +186,10 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const url = new URL(req.url);
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days")) || 7));
+  // Deux périmètres qui ne se mélangent jamais : les sites démo envoyés aux
+  // prospects, ou notre propre vitrine. Le filtre part de l'hôte, donc la
+  // séparation est faite par GA4 lui-même et non par un tri approximatif.
+  const scope: RadarScope = url.searchParams.get("scope") === "vitrine" ? "vitrine" : "demos";
 
   const sb = getServiceClient();
   const sites = await listDemoSites(sb).catch(() => []);
@@ -188,6 +198,10 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   // domaine personnalisé seraient perdues.
   const hostToSite = new Map(sites.flatMap((s) => s.hostnames.map((h) => [h, s] as const)));
   const demoHostnames = [...hostToSite.keys()];
+  // La vitrine, c'est l'apex et son www — surtout pas les sous-domaines, qui
+  // sont justement les sites démo.
+  const vitrineHostnames = [SITE_DOMAIN, `www.${SITE_DOMAIN}`];
+  const scopeHostnames = scope === "vitrine" ? vitrineHostnames : demoHostnames;
 
   const ga4 = getGa4Config();
   if (!ga4) {
@@ -212,8 +226,8 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   // d'audit (rapport.<domaine>), qui portent le même tag. Sans ce filtre, le
   // trafic interne de l'équipe est compté comme des visites de prospects sur
   // les sites démo. GA4 filtre côté serveur, donc c'est exact et gratuit.
-  const demoSitesFilter = demoHostnames.length
-    ? { filter: { fieldName: "hostName", inListFilter: { values: demoHostnames } } }
+  const demoSitesFilter = scopeHostnames.length
+    ? { filter: { fieldName: "hostName", inListFilter: { values: scopeHostnames } } }
     : undefined;
 
   const report = (dimensions: string[], metrics: string[], limit = 250) =>
@@ -300,10 +314,23 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   // nom d'entreprise. Sans cette exclusion, relire un audit en interne
   // comptait comme « le prospect a ouvert sa démo ».
   const NON_DEMO_TITLE = /analyse de votre site|aperçu|preview/i;
-  const matchSiteByScreenName = (screenName: string) => {
+  const demoSiteForTitle = (screenName: string) => {
     if (!screenName || NON_DEMO_TITLE.test(screenName)) return null;
     return sites.find((s) => s.companyName && screenName.toLowerCase().includes(s.companyName.toLowerCase())) ?? null;
   };
+  // GA4 Realtime n'expose PAS `hostName` (vérifié : l'API répond 400), donc le
+  // temps réel ne peut pas être filtré par domaine comme le reste. On classe
+  // chaque ligne par son titre de page : soit elle correspond à un site démo,
+  // soit non — ce qui, en périmètre vitrine, revient à garder tout ce qui n'est
+  // ni une démo ni un rapport d'audit. C'est une approximation, contrairement
+  // au reste de l'écran qui est filtré côté GA4 ; l'UI le signale.
+  const matchSiteByScreenName = (screenName: string) => {
+    const demo = demoSiteForTitle(screenName);
+    if (scope === "vitrine") return null;
+    return demo;
+  };
+  const inScopeRealtime = (screenName: string) =>
+    scope === "vitrine" ? !demoSiteForTitle(screenName) && !NON_DEMO_TITLE.test(screenName) : !!demoSiteForTitle(screenName);
 
   const totalSessions = daily.reduce((s, r) => s + num(r.sessions), 0);
   const totalPageViews = daily.reduce((s, r) => s + num(r.screenPageViews), 0);
@@ -319,6 +346,7 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     realtimeEventsByMinute,
     realtimeTotal,
     matchSiteByScreenName,
+    inScopeRealtime,
   );
   // form_start/form_submit are standard GA4 events too, so they're subject to
   // the exact same processing latency as everything else in `formEvents` —
@@ -503,19 +531,27 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
   return json(
     {
       configured: { ga4: true, clarity: clarityConfigured },
+      scope,
+      // Le temps réel est le seul bloc que GA4 ne sait pas filtrer par
+      // domaine : il est classé par titre de page, donc approximatif. L'écran
+      // doit le dire plutôt que de le présenter au même niveau de certitude
+      // que le reste.
+      realtimeScopeIsApproximate: true,
       // Nombre d'appels GA4 qui ont échoué pour cette réponse. Non nul = les
       // chiffres ci-dessous sont incomplets et l'UI doit le dire : un quota
       // dépassé ne doit pas s'afficher comme « zéro visite mesurée ».
       degraded: failedReports > 0 ? { failedReports } : null,
       range: { days },
-      totalSites: sites.length,
+      // En vue vitrine il n'y a pas de « parc de sites démo » à couvrir : le
+      // dénominateur du KPI « sites visités » n'aurait aucun sens.
+      totalSites: scope === "vitrine" ? 0 : sites.length,
       kpis: {
         sessions: totalSessions,
         pageViews: totalPageViews,
         pagesPerSession: totalSessions > 0 ? totalPageViews / totalSessions : 0,
         engagementRate: totalSessions > 0 ? totalEngaged / totalSessions : 0,
         avgSessionDurationSec: totalSessions > 0 ? totalEngagementSec / totalSessions : 0,
-        sitesVisited: visitedHostnames.size,
+        sitesVisited: scope === "vitrine" ? 0 : visitedHostnames.size,
         formsStarted,
         formsSubmitted,
         processing,
@@ -524,8 +560,8 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
         .map((r) => ({ date: isoDate(r.date), sessions: num(r.sessions) }))
         .sort((a, b) => a.date.localeCompare(b.date)),
       hubs: hubsWithShare,
-      sites: sitePerf,
-      notVisitedSites: notVisited.map((s) => ({ hostname: s.hostname, companyName: s.companyName })),
+      sites: scope === "vitrine" ? [] : sitePerf,
+      notVisitedSites: scope === "vitrine" ? [] : notVisited.map((s) => ({ hostname: s.hostname, companyName: s.companyName })),
       devices: byDevice.map((r) => ({ device: r.deviceCategory, sessions: num(r.sessions) })),
       sources: bySource.map((r) => ({ source: r.sessionSourceMedium, sessions: num(r.sessions) })),
       pages: byPage.map((r) => ({

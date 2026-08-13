@@ -217,16 +217,29 @@ export function RealtimePanel({
   activeUsers,
   feed,
   formActivity,
+  scope = "demos",
+  scopeIsApproximate = false,
 }: {
   activeUsers: number;
   feed: RealtimeFeedItem[];
   formActivity: { starts: number; submits: number };
+  scope?: "demos" | "vitrine";
+  scopeIsApproximate?: boolean;
 }) {
+  const where = scope === "vitrine" ? "sur le site" : "sur les sites démo";
   if (activeUsers === 0 && feed.length === 0) {
-    return <div className="a-empty">Personne sur les sites démo en ce moment.</div>;
+    return <div className="a-empty">Personne {where} en ce moment.</div>;
   }
   return (
     <div className="a-feed">
+      {scopeIsApproximate ? (
+        // GA4 Realtime n'expose pas le domaine : ce classement se fait sur le
+        // titre de la page, contrairement au reste de l'écran qui est filtré
+        // par GA4 lui-même. Autant le dire.
+        <div className="a-hint" style={{ padding: "6px 13px", borderBottom: "1px solid var(--line)", fontSize: 10.5 }}>
+          Tri par titre de page — GA4 temps réel ne distingue pas les domaines.
+        </div>
+      ) : null}
       {(formActivity.starts > 0 || formActivity.submits > 0) && (
         <div className="a-hint" style={{ padding: "8px 13px", borderBottom: "1px solid var(--line)" }}>
           30 dernières minutes : <b>{formActivity.starts}</b> formulaire{formActivity.starts > 1 ? "s" : ""} testé
