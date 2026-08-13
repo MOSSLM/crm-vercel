@@ -143,6 +143,13 @@ export interface SalesBoardData {
   partCounts: { sequences: Record<string, number>; noSequence: number; all: number }
   agents: { id: string; name: string; isAdmin: boolean }[]
   sequences: SalesSequenceOption[]
+  /**
+   * Pourquoi la liste ci-dessus est peut-être courte. `restreint` n'est vrai
+   * que sur la vue agent ; `masquees` compte les séquences que l'admin ne lui
+   * a pas ouvertes. Sans ça, un tableau sans séquence se lit « il n'y en a
+   * aucune » alors qu'il y en a — ailleurs que chez lui.
+   */
+  sequenceAcces?: { restreint: boolean; masquees: number }
   regulator: {
     paused: boolean
     testMode: boolean

@@ -2,7 +2,8 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import type { SequenceDefinition } from "@/components/automations/types";
+import { modeAcces } from "@/lib/automations/acces";
+import type { SequenceDefinition, SequenceSettings } from "@/components/automations/types";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -13,7 +14,7 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
   const [seqRes, assignRes] = await Promise.all([
     sc
       .from("automations")
-      .select("id, name, status, definition")
+      .select("id, name, status, definition, settings")
       .eq("kind", "sequence")
       .order("name"),
     sc.from("sequence_agent_assignments").select("automation_id, agent_id"),
@@ -29,6 +30,10 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
       name: s.name,
       status: s.status,
       steps_count: Array.isArray(def.steps) ? def.steps.length : 0,
+      // Une séquence ouverte à tous n'a pas besoin d'être attribuée : sans ce
+      // champ, ce panneau affichait « Attribuer » sur des séquences que l'agent
+      // voyait déjà, et le clic ne changeait rien de visible.
+      acces: modeAcces(s.settings as SequenceSettings | null),
     };
   });
 

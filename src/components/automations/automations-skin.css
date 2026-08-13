@@ -937,9 +937,18 @@
   box-shadow: inset 0 0 0 2px var(--text-4);
 }
 
-/* SEQUENCE Builder */
-.au-skin .seq-host { position: relative; width: 100%; height: 100%; background: var(--bg-2); overflow: auto; }
-.au-skin .seq-stage { max-width: 720px; margin: 0 auto; padding: 28px 24px 80px; }
+/* SEQUENCE Builder — l'hôte n'a plus de barre de défilement : c'est le plan qui
+   se déplace sous la fenêtre, sinon on aurait deux façons de bouger, l'une
+   annulant l'autre. */
+.au-skin .seq-host {
+  position: relative;
+  width: 100%;
+  flex: 1 1 auto; min-height: 0;
+  background: var(--bg-2);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.au-skin .seq-host > .seq-summary { margin: 16px 18px 0; flex-shrink: 0; }
 .au-skin .seq-summary {
   background: var(--surface);
   border: 1px solid var(--border-2);
@@ -1070,23 +1079,259 @@
 .au-skin .step-mode-tag.auto   { background: var(--info-tint); color: var(--info); }
 .au-skin .step-mode-tag.manual { background: var(--warn-tint); color: var(--warn); }
 
-/* Liaison entre deux étapes : le trait vertical passe derrière, et les
-   étiquettes (délai, qui décide l'heure, qui exécute) s'alignent dessus. */
-.au-skin .seq-conn {
+/* ── LE PLAN ───────────────────────────────────────────────────────────────
+ *
+ * Une surface qu'on déplace, pas une page qu'on fait défiler. Le quadrillage
+ * n'est pas décoratif : sans repère fixe, tirer le fond ne donne aucune
+ * sensation de mouvement et on ne sait plus si on a bougé ou si rien n'a
+ * répondu.
+ */
+.au-skin .seq-canvas {
   position: relative;
-  min-height: 28px;
-  padding: 5px 0;
-  display: flex; align-items: center; justify-content: center;
-  gap: 6px; flex-wrap: wrap;
+  flex: 1; min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background-color: var(--bg-2);
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
-.au-skin .seq-conn::before {
-  content: "";
+.au-skin .seq-canvas.panning { cursor: grabbing; }
+/* Pendant un glisser de carte, plus rien ne doit capter la souris : on suit le
+   curseur, pas les survols des cartes qu'il traverse. */
+.au-skin .seq-canvas.dragging .seq-node { pointer-events: none; }
+.au-skin .seq-canvas.dragging { cursor: grabbing; }
+
+.au-skin .seq-plan {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.au-skin .seq-traits { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.au-skin .seq-lien {
+  fill: none;
+  stroke: var(--border-2);
+  stroke-width: 2;
+  color: var(--border-2);
+}
+.au-skin .seq-lien[data-on="reply"]   { stroke: var(--ok);   color: var(--ok); }
+.au-skin .seq-lien[data-on="timeout"] { stroke: var(--warn); color: var(--warn); }
+
+.au-skin .seq-node { position: absolute; }
+
+.au-skin .seq-entree,
+.au-skin .seq-fin,
+.au-skin .seq-reprise {
+  display: flex; align-items: center; gap: 8px;
+  border-radius: 999px;
+  padding: 0 16px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.au-skin .seq-entree {
+  background: var(--text); color: var(--bg);
+  box-shadow: var(--shadow-2);
+  font-weight: 600;
+}
+.au-skin .seq-entree em {
+  display: block;
+  font-style: normal; font-weight: 400;
+  font-size: 10.5px; font-family: var(--font-mono);
+  color: rgba(255, 255, 255, .55);
+}
+.au-skin .seq-fin {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-3);
+  justify-content: center;
+}
+.au-skin .seq-reprise {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  color: var(--text-3);
+  font-size: 11px;
+  justify-content: center;
+}
+
+/* Une voie : le cadre qui dit « tout ce qui est là-dedans ne part que dans ce
+   cas-là ». Elle est posée SOUS les cartes, qui gardent leur surface pleine. */
+.au-skin .seq-voie {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex; flex-direction: column;
+}
+.au-skin .seq-voie[data-on="reply"]   { border-color: var(--ok);   background: var(--ok-tint); }
+.au-skin .seq-voie[data-on="timeout"] { border-color: var(--warn); background: var(--warn-tint); }
+.au-skin .seq-voie .hd {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 600;
+}
+.au-skin .seq-voie[data-on="reply"] .hd   { color: var(--ok); }
+.au-skin .seq-voie[data-on="timeout"] .hd { color: var(--warn); }
+.au-skin .seq-voie .vide {
+  margin-top: 8px;
+  font-size: 11px; font-style: italic; color: var(--text-3);
+  line-height: 1.45;
+}
+.au-skin .seq-voie .add {
+  margin-top: auto;
+  align-self: flex-start;
+  appearance: none;
+  border: 1px dashed var(--border-strong);
+  background: var(--surface);
+  border-radius: 7px;
+  height: 24px; padding: 0 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-3);
+  cursor: pointer;
+}
+.au-skin .seq-voie .add:hover { color: var(--text); border-color: var(--text-3); }
+
+/* La carte sur le plan : la poignée et les outils n'apparaissent qu'au survol,
+   sinon six boutons identiques par carte noient ce qu'on est venu lire. */
+.au-skin .seq-carte { border-radius: 12px; }
+.au-skin .seq-carte .seq-step {
+  height: 100%;
+  display: flex; flex-direction: column;
+}
+/* Chaque pixel repris ici va au titre : sur 288 px de carte, un numéro et des
+   écarts trop généreux tronquaient « Accroche directe — le site » à moitié. */
+.au-skin .seq-carte .seq-step .hd {
+  flex: 1; min-height: 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px 8px 22px;
+}
+.au-skin .seq-carte .seq-step .hd .num { width: 18px; height: 18px; font-size: 10px; margin-top: 1px; }
+.au-skin .seq-carte .seq-step .hd .ic-wrap { width: 24px; height: 24px; }
+.au-skin .seq-carte .seq-step .hd .title { overflow: hidden; }
+.au-skin .seq-carte .seq-step .hd .title > div {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Les outils flottent sur le coin : le titre passe dessous plutôt que de
+   réserver la place en permanence pour trois boutons qu'on ne voit qu'au
+   survol. */
+.au-skin .seq-carte:hover .seq-step .hd .title { padding-right: 66px; }
+.au-skin .seq-carte[data-selected="true"] .seq-step {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint), var(--shadow-2);
+}
+/* La carte tirée reste à sa place, estompée : la voir disparaître pendant le
+   geste ferait sauter tout le plan sous le curseur. */
+.au-skin .seq-carte[data-fantome] { opacity: .35; }
+
+.au-skin .seq-carte { cursor: grab; }
+.au-skin .seq-carte:active { cursor: grabbing; }
+.au-skin .seq-carte .grip,
+.au-skin .seq-carte .outils button {
+  appearance: none; border: 0; background: transparent;
+  width: 22px; height: 22px;
+  color: var(--text-4); border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .1s;
+}
+.au-skin .seq-carte .outils button { cursor: pointer; color: var(--text-3); }
+/* Simple repère : la carte entière se saisit, ce n'est pas un bouton. */
+.au-skin .seq-carte .grip {
+  position: absolute; z-index: 2;
+  left: 3px; top: 50%; margin-top: -11px;
+  pointer-events: none;
+}
+.au-skin .seq-carte .outils {
+  position: absolute; z-index: 2;
+  right: 6px; top: 6px;
+  display: flex; gap: 1px;
+}
+.au-skin .seq-carte:hover .grip,
+.au-skin .seq-carte:hover .outils button,
+.au-skin .seq-carte:focus-within .grip,
+.au-skin .seq-carte:focus-within .outils button { opacity: 1; }
+.au-skin .seq-carte .outils button:hover { background: var(--hover); color: var(--text); }
+.au-skin .seq-carte .outils button:disabled { opacity: .25; cursor: default; background: transparent; }
+
+/* Le marqueur de dépôt : il dit AVANT le lâcher où la carte ira, et sur quelle
+   voie elle atterrira — c'est la moitié du geste qui manquerait sinon. */
+.au-skin .seq-cible {
   position: absolute;
-  left: 50%; top: 0; bottom: 0;
-  width: 2px; margin-left: -1px;
-  background: var(--border-2);
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
 }
-.au-skin .seq-conn .wait-chip {
+.au-skin .seq-cible span {
+  position: absolute; left: 50%; top: -11px;
+  transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px; font-weight: 600;
+  white-space: nowrap;
+}
+
+.au-skin .seq-zoom {
+  position: absolute; right: 14px; bottom: 14px;
+  display: flex; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+  z-index: 4;
+}
+.au-skin .seq-zoom button {
+  appearance: none; border: 0; background: transparent;
+  height: 28px; width: 28px;
+  color: var(--text-3);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.au-skin .seq-zoom button:hover { background: var(--hover); color: var(--text); }
+.au-skin .seq-zoom .val {
+  width: auto; padding: 0 8px;
+  font-family: var(--font-mono); font-size: 11px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.au-skin .seq-aide {
+  position: absolute; left: 14px; top: 12px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--text-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Ajouter une étape : hors du plan, pour rester atteignable quel que soit
+   l'endroit où l'on a fait glisser la vue. */
+.au-skin .seq-ajout {
+  position: absolute; left: 50%; bottom: 14px;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px;
+  background: var(--text); color: var(--bg);
+  border: 0; border-radius: 999px;
+  box-shadow: var(--shadow-2);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  z-index: 5;
+}
+.au-skin .seq-ajout:hover { opacity: .9; }
+
+/* Le pied de carte reprend ce que portait le connecteur entre deux étapes. */
+.au-skin .seq-step .ft {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  padding: 7px 12px;
+}
+
+/* Étiquettes du pied de carte : le délai, qui décide l'heure, qui exécute. */
+.au-skin .wait-chip {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--border-2);
@@ -1098,15 +1343,15 @@
   display: inline-flex; align-items: center; gap: 5px;
   white-space: nowrap;
 }
-.au-skin .seq-conn .wait-chip svg { color: var(--delay); }
-.au-skin .seq-conn .wait-chip.accent {
+.au-skin .wait-chip svg { color: var(--delay); }
+.au-skin .wait-chip.accent {
   border-color: var(--accent); background: var(--accent-tint); color: var(--accent-2);
 }
-.au-skin .seq-conn .wait-chip.accent svg { color: var(--accent-2); }
-.au-skin .seq-conn .wait-chip.manual {
+.au-skin .wait-chip.accent svg { color: var(--accent-2); }
+.au-skin .wait-chip.manual {
   border-color: var(--warn); background: var(--warn-tint); color: var(--warn);
 }
-.au-skin .seq-conn .wait-chip.manual svg { color: var(--warn); }
+.au-skin .wait-chip.manual svg { color: var(--warn); }
 
 .au-skin .add-step-pill {
   margin: 14px auto 0;
@@ -1436,6 +1681,79 @@
 .au-skin .seq-list-row:hover .row-more,
 .au-skin .seq-list-row .row-more:focus-visible,
 .au-skin .seq-list-row .row-more[aria-expanded="true"] { opacity: 1; }
+
+/* Accès : discret quand il est ouvert (l'état par défaut n'a pas à crier),
+   marqué dès qu'il est restreint, alarmant quand il ne laisse passer personne. */
+.au-skin .seq-acces {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-4);
+  max-width: 100%;
+}
+.au-skin .seq-acces.restreint { color: var(--info); }
+.au-skin .seq-acces.vide { color: var(--warn); }
+
+.au-skin .acces-modes { display: flex; flex-direction: column; gap: 8px; }
+.au-skin .acces-mode {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.au-skin .acces-mode:hover { border-color: var(--border-2); background: var(--hover); }
+.au-skin .acces-mode.on { border-color: var(--accent); background: var(--accent-tint); }
+.au-skin .acces-mode .rad {
+  width: 14px; height: 14px; border-radius: 999px;
+  border: 1.5px solid var(--border-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
+}
+.au-skin .acces-mode.on .rad { border-color: var(--accent); }
+.au-skin .acces-mode .rad > i {
+  width: 7px; height: 7px; border-radius: 999px; background: var(--accent);
+}
+.au-skin .acces-mode .t { display: block; font-size: 12.5px; font-weight: 500; color: var(--text); }
+.au-skin .acces-mode .s { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 2px; line-height: 1.45; }
+
+.au-skin .acces-agents {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.au-skin .acces-agent {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.au-skin .acces-agent:last-child { border-bottom: 0; }
+.au-skin .acces-agent:hover { background: var(--hover); }
+.au-skin .acces-agent .n { display: block; font-size: 12.5px; color: var(--text); }
+.au-skin .acces-agent .e {
+  display: block; font-size: 11px; color: var(--text-4);
+  font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.au-skin .acces-agent .pill {
+  margin-left: auto;
+  font-size: 10px; color: var(--text-3);
+  background: var(--bg-3); border-radius: 999px; padding: 2px 7px;
+  flex-shrink: 0;
+}
+.au-skin .acces-warn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 12px;
+  font-size: 11.5px; color: var(--warn);
+  background: var(--warn-tint);
+  border-top: 1px solid var(--border);
+}
 
 .au-skin .seq-bulkbar {
   display: flex; align-items: center; gap: 8px;
@@ -1989,51 +2307,6 @@
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .au-skin .numero-picker-aucun { font-size: 12px; color: var(--text-3); }
-
-/* ── Les deux suites d'une attente-réponse ─────────────────────────────────
-   Une attente à délai a deux issues, et le message qui suit ne peut pas
-   convenir aux deux : « merci pour votre réponse ! » envoyé à un silence de
-   trois jours se lit comme un robot. Les deux voies sont donc dessinées, y
-   compris celle où rien n'est encore écrit — c'est ce qui rend le trou
-   visible. */
-.au-skin .seq-lane {
-  position: relative;
-  margin-top: 10px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border-2);
-  border-radius: 10px;
-  padding: 10px 12px 12px;
-  background: var(--surface);
-}
-.au-skin .seq-lane[data-on="reply"]   { border-left-color: var(--ok); background: var(--ok-tint); }
-.au-skin .seq-lane[data-on="timeout"] { border-left-color: var(--warn); background: var(--warn-tint); }
-.au-skin .seq-lane-hd {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  font-size: 11.5px; font-weight: 600; color: var(--text);
-}
-.au-skin .seq-lane[data-on="reply"] .seq-lane-hd   { color: var(--ok); }
-.au-skin .seq-lane[data-on="timeout"] .seq-lane-hd { color: var(--warn); }
-.au-skin .seq-lane-hd .hint {
-  flex: 1 1 100%; font-weight: 400; font-size: 11px; line-height: 1.45; color: var(--text-3);
-}
-.au-skin .seq-lane-vide {
-  margin-top: 8px;
-  font-size: 11.5px; font-style: italic; color: var(--text-3);
-}
-.au-skin .seq-lane .add-step-pill.sm { margin-top: 10px; height: 26px; font-size: 11.5px; }
-/* Les étapes d'une voie sont posées sur son fond : leur carte reprend la
-   surface pleine pour rester lisible. */
-.au-skin .seq-lane .seq-step { background: var(--surface); }
-
-/* La reprise : ce qui suit part quel que soit le chemin emprunté. */
-.au-skin .seq-merge {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: fit-content; margin: 0 auto;
-  border: 1px dashed var(--border-2); border-radius: 999px;
-  padding: 3px 12px;
-  font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--text-3); background: var(--surface);
-}
 
 /* Étape qui déclare une voie sans être dessinée dedans : attente supprimée, ou
    fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même —

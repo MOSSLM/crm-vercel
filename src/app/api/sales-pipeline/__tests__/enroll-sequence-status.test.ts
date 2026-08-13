@@ -28,7 +28,12 @@ jest.mock('@/lib/automations/engine', () => ({
 
 type Result = { data: unknown; error: unknown }
 
-/** Un maillon PostgREST : toute méthode de filtre renvoie la même promesse. */
+/**
+ * Un maillon PostgREST : toute méthode de filtre renvoie le même maillon, et le
+ * maillon lui-même est attendable. C'est ce que fait le vrai client — un select
+ * sans filtre s'attend directement (`await sb.from(t).select(c)`), et sans ce
+ * `then` un tel appel rendrait le maillon au lieu de ses données.
+ */
 function chain(result: Result) {
   const link: Record<string, unknown> = {}
   const self = () => link
@@ -39,6 +44,7 @@ function chain(result: Result) {
     in: settle,
     maybeSingle: settle,
     upsert: () => Promise.resolve({ data: null, error: null }),
+    then: (resolve: (v: Result) => unknown) => Promise.resolve(result).then(resolve),
   })
   return link
 }
@@ -59,8 +65,15 @@ const SEQUENCE_WHATSAPP = {
  * fois (le contrôle d'accès, puis les colonnes de travail) : la file rend la
  * bonne réponse à chaque passage.
  */
-function wireTables(automation: Record<string, unknown> | null) {
-  const opportunites = [{ data: [OPP], error: null }, { data: [OPP_ROW], error: null }]
+function wireTables(
+  automation: Record<string, unknown> | null,
+  attributions: { automation_id: string; agent_id: string }[] = [],
+  proprietaire: string | null = null,
+) {
+  const opportunites = [
+    { data: [{ ...OPP, owner_id: proprietaire }], error: null },
+    { data: [OPP_ROW], error: null },
+  ]
   mockFrom.mockImplementation((table: string) => {
     switch (table) {
       case 'opportunites':
@@ -69,6 +82,8 @@ function wireTables(automation: Record<string, unknown> | null) {
         return chain({ data: automation, error: null })
       case 'contacts':
         return chain({ data: [], error: null })
+      case 'sequence_agent_assignments':
+        return chain({ data: attributions, error: null })
       case 'sequence_enrollments':
         return chain({ data: { id: 'enr-1', automation_id: 'seq-wa' }, error: null })
       default:
@@ -139,5 +154,46 @@ describe('handleEnroll — état de la séquence', () => {
 
     // L'e-mail du jour 0 entre dans la file du régulateur, qui choisit l'heure.
     expect(mockProcessSequenceEnrollment).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Le garde d'accès doit dire OUI exactement quand le tableau de l'agent
+ * proposait la séquence. La version d'avant exigeait une attribution nominative
+ * sur toute séquence : la table étant vide en production, elle refusait tout à
+ * tout le monde — un agent ne pouvait mettre personne en séquence.
+ */
+describe('handleEnroll — accès de l’agent', () => {
+  const agent = { ownerId: 'agent-1', userId: 'agent-1' }
+  const ACTIVE = { ...SEQUENCE_WHATSAPP, status: 'on' }
+
+  it('laisse passer une séquence ouverte à tous, sans attribution', async () => {
+    wireTables(ACTIVE, [], agent.ownerId)
+
+    expect((await handleEnroll(body, agent, {})).status).toBe(200)
+  })
+
+  it('refuse une séquence restreinte où l’agent n’est pas nommé', async () => {
+    wireTables(
+      { ...ACTIVE, settings: { acces: 'choisis' } },
+      [{ automation_id: 'seq-wa', agent_id: 'un-autre' }],
+      agent.ownerId,
+    )
+
+    const res = await handleEnroll(body, agent, {})
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({ error: 'sequence_non_assignee' })
+    expect(mockEnrollInSequence).not.toHaveBeenCalled()
+  })
+
+  it('laisse passer une séquence restreinte où l’agent est nommé', async () => {
+    wireTables(
+      { ...ACTIVE, settings: { acces: 'choisis' } },
+      [{ automation_id: 'seq-wa', agent_id: 'agent-1' }],
+      agent.ownerId,
+    )
+
+    expect((await handleEnroll(body, agent, {})).status).toBe(200)
   })
 })

@@ -2,7 +2,12 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
+import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
+import type {
+  SequenceDefinition,
+  SequenceSettings,
+  SequenceStep,
+} from "@/components/automations/types";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -26,18 +31,25 @@ function summarizeSteps(def: SequenceDefinition | null) {
 export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   const sc = getServiceClient();
 
-  const { data: assignRows, error: assignErr } = await sc
-    .from("sequence_agent_assignments")
-    .select("automation_id, automation:automations(id, name, description, kind, status, definition)")
-    .eq("agent_id", user.id);
-  if (assignErr) return jsonError(assignErr.message, 500, {}, cors);
+  // Les séquences ouvertes à cet agent : celles que l'admin laisse à tout le
+  // monde, plus celles où il est nommé (cf. `src/lib/automations/acces.ts`).
+  // Partir de `sequence_agent_assignments` seule, comme avant, montrait une
+  // page vide tant qu'aucune attribution n'existait — c'est-à-dire toujours.
+  const [seqRes, acces] = await Promise.all([
+    sc
+      .from("automations")
+      .select("id, name, description, kind, status, definition, settings")
+      .eq("kind", "sequence")
+      .eq("status", "on"),
+    chargerAcces(sc),
+  ]);
+  if (seqRes.error) return jsonError(seqRes.error.message, 500, {}, cors);
 
-  const assignedSeqs = (assignRows ?? [])
-    .map((r) => (Array.isArray(r.automation) ? r.automation[0] : r.automation))
-    .filter(
-      (a): a is SeqRow & { kind: string; status: string } =>
-        !!a && a.kind === "sequence" && a.status === "on",
-    );
+  const assignedSeqs = filtrerPourAgent(
+    (seqRes.data ?? []) as (SeqRow & { settings: SequenceSettings | null })[],
+    user.id,
+    acces,
+  );
 
   const sequences = assignedSeqs.map((a) => ({
     id: a.id,
