@@ -28,6 +28,8 @@ import {
   isLostStage,
   isPendingTask,
   partKind,
+  ALL_PIPELINES,
+  colonneDeLEtape as colonneDeLEtapeDansLaVue,
   stageColumnId,
   stepColumnId,
   type CellStatus,
@@ -361,11 +363,19 @@ export function derivePosition(opts: {
   sequence: SalesSequenceInfo | null
   steps: { id: string }[]
   stageId: number | null
+  /**
+   * L'identifiant de colonne où ranger cette étape. Injecté parce qu'il dépend
+   * du mode : `stage:<id>` sur un pipeline précis, `role:<rôle>` en vue fondue.
+   * Absent = l'ancien comportement, un pipeline à la fois.
+   */
+  colonneDeLEtape?: (stageId: number) => string | null
 }): string | null {
   const { columns, sequence, steps, stageId } = opts
   if (columns.length === 0) return null
 
-  const stageColumn = stageId != null ? columns.find((c) => c.id === stageColumnId(stageId)) : undefined
+  const viser = opts.colonneDeLEtape ?? ((id: number) => stageColumnId(id))
+  const cible = stageId != null ? viser(stageId) : null
+  const stageColumn = cible ? columns.find((c) => c.id === cible) : undefined
 
   if (sequence && (sequence.status === 'active' || sequence.status === 'paused')) {
     const step = steps[sequence.currentStep - 1]
@@ -503,17 +513,33 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   // les prospects d'un agent restent dans « Streak Mars/Avril » ou le pipeline
   // par défaut : ouvrir le tableau commercial sur « Agent SAMA » afficherait un
   // écran vide à un agent qui a pourtant tout son portefeuille.
-  const busiestPipelineId = query.ownerId ? await busiestPipelineFor(sb, query.ownerId) : null
-  const selectedPipeline =
-    pipelines.find((p) => p.id === query.pipelineId) ??
-    pipelines.find((p) => p.id === busiestPipelineId) ??
-    pipelines.find((p) => /agent sama/i.test(p.nom)) ??
-    pipelines.find((p) => p.isDefault) ??
-    pipelines[0]
+  // « Tous les pipelines » : un seul tableau pour tout le portefeuille. Sans
+  // cette vue, un prospect n'était visible qu'en devinant dans quel pipeline son
+  // affaire vivait — et deux prospects au même stade, dans deux pipelines
+  // différents, ne se voyaient jamais côte à côte.
+  const fusionne = query.pipelineId === ALL_PIPELINES
+  const busiestPipelineId = query.ownerId && !fusionne ? await busiestPipelineFor(sb, query.ownerId) : null
+  const selectedPipeline = fusionne
+    ? null
+    : (pipelines.find((p) => p.id === query.pipelineId) ??
+      pipelines.find((p) => p.id === busiestPipelineId) ??
+      pipelines.find((p) => /agent sama/i.test(p.nom)) ??
+      pipelines.find((p) => p.isDefault) ??
+      pipelines[0])
 
   const allStages = (stagesRes.data ?? []) as (PipelineStageRef & { pipeline_id: string })[]
-  const stages = allStages.filter((s) => s.pipeline_id === selectedPipeline.id)
-  const lostStage = stages.find((s) => isLostStage(s.nom)) ?? null
+  // En vue fondue, les étapes de TOUS les pipelines alimentent la classification
+  // par rôle ; sinon, seulement celles du pipeline regardé.
+  const stages = fusionne ? allStages : allStages.filter((s) => s.pipeline_id === selectedPipeline!.id)
+  /**
+   * Cette étape est-elle l'étape « Perdu » ? Un prédicat plutôt qu'une étape
+   * unique : en vue fondue, chaque pipeline a la sienne, et n'en retenir qu'une
+   * laisserait passer pour actives les affaires perdues des autres.
+   */
+  const etapePerdue = (stageId: number | null) =>
+    stageId != null && stages.some((s) => s.id === stageId && isLostStage(s.nom))
+  /** Où ranger une étape : sa colonne d'étape, ou celle de son rôle. */
+  const colonneDeLEtape = (stageId: number) => colonneDeLEtapeDansLaVue(stageId, allStages, fusionne)
 
   // Toutes les séquences, archives comprises : cette carte-là ne sert pas à
   // CHOISIR mais à RELIRE. Une inscription sur une séquence archivée ou non
@@ -585,6 +611,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     // Vue d'ensemble : une seule colonne « en séquence » à la place des étapes.
     // Le stock, lui, n'a par définition personne en séquence.
     overview: partKind(part) === 'all',
+    parRole: fusionne,
   })
 
   // ── 3. Opportunités du pipeline choisi ───────────────────────────────────
@@ -593,9 +620,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   let oppQuery = sb
     .from('opportunites')
     .select(`${OPP_COLUMNS}, archived_at, archive_reason, archive_note`)
-    .eq('pipeline_id', selectedPipeline.id)
     .order('updated_at', { ascending: false })
     .limit(OPPORTUNITY_LIMIT)
+  if (selectedPipeline) oppQuery = oppQuery.eq('pipeline_id', selectedPipeline.id)
   if (query.ownerId) oppQuery = oppQuery.eq('owner_id', query.ownerId)
 
   const firstTry = await oppQuery
@@ -608,9 +635,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     let fallback = sb
       .from('opportunites')
       .select(OPP_COLUMNS)
-      .eq('pipeline_id', selectedPipeline.id)
       .order('updated_at', { ascending: false })
       .limit(OPPORTUNITY_LIMIT)
+    if (selectedPipeline) fallback = fallback.eq('pipeline_id', selectedPipeline.id)
     if (query.ownerId) fallback = fallback.eq('owner_id', query.ownerId)
     const retry = await fallback
     oppData = retry.data as OppRow[] | null
@@ -921,7 +948,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     let state = toStateRow(stateByOpp.get(opp.id))
     // Une opportunité posée sur l'étape « Perdu » du pipeline est perdue, même
     // si personne n'a cliqué dans le pipeline commercial.
-    if (state.state === 'progress' && lostStage && opp.stage_id === lostStage.id) {
+    if (state.state === 'progress' && etapePerdue(opp.stage_id)) {
       state = { ...state, state: 'lost', stateReason: state.stateReason ?? 'Étape « Perdu » du pipeline' }
     }
 
@@ -930,6 +957,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       sequence,
       steps: sequence && selectedSequence && sequence.automationId === selectedSequence.id ? selectedSteps : stepsOfEnrollment,
       stageId: opp.stage_id,
+      colonneDeLEtape,
     })
     const cells = cellStatuses(columns, position, state)
     const tasks = tasksByOpp.get(opp.id) ?? []
@@ -1151,7 +1179,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       missingEmail,
       sequenceHasEmailStep,
       pipelines,
-      selectedPipelineId: selectedPipeline.id,
+      selectedPipelineId: selectedPipeline?.id ?? ALL_PIPELINES,
       selectedSequenceId: selectedSequence?.id ?? null,
       selectedPart: part,
       partCounts,

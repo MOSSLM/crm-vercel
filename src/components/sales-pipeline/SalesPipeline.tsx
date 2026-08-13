@@ -30,6 +30,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   ChevronsRight,
   Clock,
   Globe,
@@ -52,6 +53,7 @@ import { ArchiveDialog, type ArchiveTarget } from '@/components/archive/ArchiveD
 import { authedFetch } from '@/utils/authedFetch'
 import { getCompanyDisplayName } from '@/utils/displayHelpers'
 import {
+  ALL_PIPELINES,
   ALL_SEQUENCES,
   NO_SEQUENCE,
   SALES_REACTIONS,
@@ -159,6 +161,34 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
    * afficherait encore l'état d'avant l'épingle.
    */
   const [waSend, setWaSend] = React.useState<string | null>(null)
+
+  /**
+   * L'en-tête replié : `null` = on suit la hauteur de la fenêtre, un booléen =
+   * l'utilisateur a tranché.
+   *
+   * Mesuré sur un 13 pouces (1440×900) : le décor mangeait 41 % de la hauteur
+   * et il ne restait qu'UN rang visible sur le tableau. Sous 900 px on replie
+   * donc d'office ; le bouton permet de replier aussi sur grand écran, ou de
+   * déplier quand on veut relire la page.
+   */
+  const [plie, setPlie] = React.useState<boolean | null>(null)
+  const [petitEcran, setPetitEcran] = React.useState(
+    () => typeof window !== 'undefined' && window.innerHeight <= 900,
+  )
+  React.useEffect(() => {
+    // `matchMedia` manque dans jsdom et dans certaines webviews embarquées :
+    // on retombe alors sur `resize`, qui répond à la même question.
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-height: 900px)') : null
+    const suivre = () => setPetitEcran(mq ? mq.matches : window.innerHeight <= 900)
+    suivre()
+    mq?.addEventListener('change', suivre)
+    window.addEventListener('resize', suivre)
+    return () => {
+      mq?.removeEventListener('change', suivre)
+      window.removeEventListener('resize', suivre)
+    }
+  }, [])
+  const dense = plie ?? petitEcran
 
   React.useEffect(() => {
     const t = setTimeout(() => setFilters((f) => (f.q === search ? f : { ...f, q: search, page: 0 })), 320)
@@ -496,7 +526,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const stockCount = board?.partCounts.noSequence ?? 0
 
   return (
-    <div className="mp-scope sp-scope">
+    <div className={'mp-scope sp-scope' + (dense ? ' sp-dense' : '')}>
       {/* ── En-tête ─────────────────────────────────────────────────────── */}
       <div className="topbar">
         <div>
@@ -515,6 +545,15 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           </div>
         </div>
         <div className="topbar-actions">
+          <button
+            className="btn sm sp-plier"
+            onClick={() => setPlie(!dense)}
+            title={dense ? 'Afficher l’en-tête' : 'Replier l’en-tête pour agrandir le tableau'}
+            aria-expanded={!dense}
+          >
+            {dense ? <ChevronDown className="ico-sm" /> : <ChevronUp className="ico-sm" />}
+            {dense ? 'Déplier' : 'Replier'}
+          </button>
           {!isAgent && (
             <Link href="/automations/regulateur" className="btn sm">
               <Bolt className="ico-sm" />
@@ -632,13 +671,19 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
         </div>
 
         {/* La source des colonnes de droite. Celle de gauche — la séquence — se
-            choisit dans les onglets, au-dessus. */}
+            choisit dans les onglets, au-dessus.
+
+            « Tous les pipelines » vient en tête parce que c'est la vue qu'on
+            veut par défaut quand on cherche un prospect : une affaire reste
+            dans le pipeline où elle est née, et regarder un seul pipeline
+            cachait purement et simplement le reste du portefeuille. */}
         <span className="tb-lb">Pipeline</span>
         <select
           className="mp-select"
           value={board?.selectedPipelineId ?? ''}
           onChange={(e) => setFilters((f) => ({ ...f, pipelineId: e.target.value, page: 0 }))}
         >
+          <option value={ALL_PIPELINES}>Tous les pipelines</option>
           {(board?.pipelines ?? []).map((p) => (
             <option key={p.id} value={p.id}>
               {p.nom}

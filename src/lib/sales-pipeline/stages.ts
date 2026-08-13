@@ -26,6 +26,7 @@
 // sert pour le rendu. Une seule définition, donc pas de dérive entre les deux.
 
 import type { SeqStepKind } from '@/components/automations/types'
+import { roleTint, stageRole, type StageRole } from '@/lib/opportunites/stage-roles'
 
 /** Ce qui pilote une colonne. */
 export type ColumnGroup = 'entry' | 'sequence' | 'pipeline'
@@ -89,6 +90,59 @@ export const SEQ_ANY_COLUMN_ID = 'seq:any'
 export const stepColumnId = (stepId: string) => `step:${stepId}`
 export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
 
+/**
+ * « Tous les pipelines » — la valeur du sélecteur qui fond les pipelines en un
+ * seul tableau. Sentinelle et non `null` : `null` veut déjà dire « le serveur
+ * choisit pour moi », et les deux ne donnent pas le même écran.
+ */
+export const ALL_PIPELINES = 'all'
+
+/**
+ * Une colonne de phase commerciale, désignée par son RÔLE et non par une étape.
+ *
+ * POURQUOI ELLE EXISTE
+ * Les colonnes de droite étaient les étapes d'UN pipeline. Or une affaire
+ * attribuée reste dans son pipeline d'origine : le parc en compte plusieurs, et
+ * regarder « Streak Mars/Avril » cachait purement et simplement les prospects
+ * d'« Agent SAMA ». Il fallait changer de pipeline pour les voir, sans jamais
+ * pouvoir comparer.
+ *
+ * Un « RDV calé » de Streak et un « RDV calé » d'Agent SAMA sont pourtant la
+ * même chose. `stageRole` sait déjà le dire — c'est la classification par motif
+ * introduite pour le portail agent, exactement pour ce problème un cran plus
+ * bas. On la remonte ici : en vue fondue, une colonne = un rôle, et chaque
+ * affaire s'y range quel que soit le nom que son pipeline donne à l'étape.
+ */
+export const roleColumnId = (role: StageRole) => `role:${role}`
+export const isRoleColumn = (id: string) => id.startsWith('role:')
+
+/**
+ * L'ordre des phases, du plus tôt au plus tard. « Perdu » n'y est pas : comme
+ * pour les étapes nommées, une affaire perdue sort du tableau plutôt que
+ * d'occuper une colonne que personne ne vise.
+ */
+const ORDRE_ROLES: StageRole[] = [
+  'nouveau',
+  'approche',
+  'contacte',
+  'interesse',
+  'rdv',
+  'propo',
+  'signe',
+]
+
+const LIBELLE_ROLE: Record<StageRole, string> = {
+  nouveau: 'Nouveau',
+  approche: 'Première approche',
+  contacte: 'Contacté',
+  interesse: 'Intéressé',
+  rdv: 'RDV calé',
+  propo: 'Proposition',
+  signe: 'Signé',
+  perdu: 'Perdu',
+  autre: 'Autre étape',
+}
+
 /** Une vraie étape de séquence, par opposition à la colonne d'ensemble. */
 export const isStepColumn = (id: string) => id.startsWith('step:')
 
@@ -100,7 +154,10 @@ export function parseColumnId(id: string): { group: ColumnGroup; ref: string } |
   if (!ref) return null
   if (prefix === 'entry') return { group: 'entry', ref }
   if (prefix === 'step' || prefix === 'seq') return { group: 'sequence', ref }
-  if (prefix === 'stage') return { group: 'pipeline', ref }
+  // `stage` porte un identifiant d'étape, `role` un rôle : les deux désignent
+  // une phase commerciale, mais la seconde doit être résolue dans le pipeline de
+  // l'affaire avant d'être écrite.
+  if (prefix === 'stage' || prefix === 'role') return { group: 'pipeline', ref }
   return null
 }
 
@@ -193,6 +250,8 @@ export function buildColumns(opts: {
   stages: PipelineStageRef[]
   handoffOrdre: number
   overview?: boolean
+  /** Vue fondue : les colonnes de droite sont des rôles, pas des étapes. */
+  parRole?: boolean
 }): SalesColumn[] {
   // Le stock de départ : tout ce qui n'a pas encore été mis en séquence. C'est
   // la colonne où se fait le geste le plus fréquent du tableau, et la seule qui
@@ -247,6 +306,34 @@ export function buildColumns(opts: {
     }
   }
 
+  // Vue fondue : une colonne par RÔLE, et seulement pour les rôles réellement
+  // présents dans le parc. Afficher les sept en permanence donnerait trois
+  // colonnes vides à tout le monde — on montre les phases qui existent.
+  if (opts.parRole) {
+    const presents = new Set(
+      opts.stages.filter((s) => !isLostStage(s.nom)).map((s) => stageRole(s.nom)),
+    )
+    const roles = ORDRE_ROLES.filter((r) => presents.has(r))
+    // `autre` ferme la marche quand des étapes ne rentrent dans aucun motif :
+    // sans elle, les affaires qui s'y trouvent n'auraient aucune colonne.
+    if (presents.has('autre')) roles.push('autre')
+
+    for (const role of roles) {
+      columns.push({
+        id: roleColumnId(role),
+        group: 'pipeline',
+        label: LIBELLE_ROLE[role],
+        hint: 'tous pipelines',
+        mode: 'deal',
+        color: roleTint(LIBELLE_ROLE[role]),
+        kind: null,
+        cta: stageCta(LIBELLE_ROLE[role]),
+        index: columns.length,
+      })
+    }
+    return columns
+  }
+
   const tail = opts.stages
     .filter((s) => s.ordre >= opts.handoffOrdre && !isLostStage(s.nom))
     .sort((a, b) => a.ordre - b.ordre)
@@ -266,6 +353,25 @@ export function buildColumns(opts: {
   })
 
   return columns
+}
+
+/**
+ * La colonne de phase où se range une étape donnée.
+ *
+ * Le seul endroit qui sait traduire un `stage_id` en identifiant de colonne, et
+ * il connaît les deux modes. Sans lui, `derivePosition` composerait toujours
+ * `stage:<id>` et rangerait toutes les lignes de la vue fondue au mauvais
+ * endroit — une colonne `stage:47` qui n'existe pas.
+ */
+export function colonneDeLEtape(
+  stageId: number | null,
+  stages: PipelineStageRef[],
+  parRole: boolean,
+): string | null {
+  if (stageId == null) return null
+  if (!parRole) return stageColumnId(stageId)
+  const stage = stages.find((s) => s.id === stageId)
+  return stage ? roleColumnId(stageRole(stage.nom)) : null
 }
 
 /**
