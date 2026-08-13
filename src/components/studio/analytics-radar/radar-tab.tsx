@@ -137,7 +137,13 @@ export function GlobeStage({
   );
 }
 
-export function RealtimePanel({ activeUsers, byCountry }: { activeUsers: number; byCountry: Array<{ country: string; city: string; activeUsers: number }> }) {
+export function RealtimePanel({
+  activeUsers,
+  byCountry,
+}: {
+  activeUsers: number;
+  byCountry: Array<{ country: string; city: string; screenName: string; activeUsers: number }>;
+}) {
   if (activeUsers === 0) {
     return <div className="a-empty">Personne sur les sites démo en ce moment.</div>;
   }
@@ -146,13 +152,13 @@ export function RealtimePanel({ activeUsers, byCountry }: { activeUsers: number;
       {byCountry
         .filter((r) => r.activeUsers > 0)
         .map((r) => (
-          <div className="a-ev pv" key={r.country + r.city}>
+          <div className="a-ev pv" key={r.screenName + r.country + r.city}>
             <span className="sq">
               <Icon name="radio" className="ico s" />
             </span>
             <div>
               <div className="t">
-                <b>{r.activeUsers}</b> visiteur{r.activeUsers > 1 ? "s" : ""} actif{r.activeUsers > 1 ? "s" : ""}
+                <b>{r.activeUsers}</b> visiteur{r.activeUsers > 1 ? "s" : ""} sur <b>{r.screenName || "page inconnue"}</b>
               </div>
               <div className="m">
                 {r.city ? `${r.city}, ` : ""}

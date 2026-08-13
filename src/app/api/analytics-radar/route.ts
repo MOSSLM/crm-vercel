@@ -73,7 +73,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
     report(["dayOfWeek", "hour"], ["sessions"], 500),
     report(["eventName"], ["eventCount"], 20),
     runGa4RealtimeReport(propertyId, serviceAccountKey, {
-      dimensions: [{ name: "country" }, { name: "city" }],
+      dimensions: [{ name: "unifiedScreenName" }, { name: "country" }, { name: "city" }],
       metrics: [{ name: "activeUsers" }],
     }).then(ga4RowsToObjects).catch(() => [] as Array<Record<string, string>>),
   ]);
@@ -182,7 +182,12 @@ export const GET = withAuth({}, async ({ req, cors }) => {
       heatmap,
       realtime: {
         activeUsers: realtime.reduce((s, r) => s + num(r.activeUsers), 0),
-        byCountry: realtime.map((r) => ({ country: r.country, city: r.city, activeUsers: num(r.activeUsers) })),
+        byCountry: realtime.map((r) => ({
+          country: r.country,
+          city: r.city,
+          screenName: r.unifiedScreenName || "",
+          activeUsers: num(r.activeUsers),
+        })),
       },
       clarity,
     },

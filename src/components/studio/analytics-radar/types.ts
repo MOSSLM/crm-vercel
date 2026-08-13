@@ -41,7 +41,10 @@ export interface AnalyticsRadarPayload {
   sources: Array<{ source: string; sessions: number }>;
   pages: AnalyticsRadarPageRow[];
   heatmap: number[][];
-  realtime: { activeUsers: number; byCountry: Array<{ country: string; city: string; activeUsers: number }> };
+  realtime: {
+    activeUsers: number;
+    byCountry: Array<{ country: string; city: string; screenName: string; activeUsers: number }>;
+  };
   clarity: { asOf: string; byDimension: Record<string, Array<Record<string, unknown>>> } | null;
 }
 
