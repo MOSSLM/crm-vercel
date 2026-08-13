@@ -140,6 +140,16 @@ export function BehaviourTab({ data }: { data: AnalyticsRadarPayload }) {
 
   return (
     <div className="a-beh">
+      {data.kpis.processing ? (
+        // Tout ce qui suit vient des rapports GA4 standard, qui ont un délai
+        // de traitement côté Google. Sans ce bandeau, des panneaux entièrement
+        // à zéro se lisent comme « personne n'est venu » alors que le temps
+        // réel voit des visites en cours.
+        <div className="a-hint" style={{ gridColumn: "1 / -1", padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--panel-2)" }}>
+          Des visites sont en cours, mais GA4 n'a pas encore traité les rapports détaillés (pages, heures,
+          appareils, sources). Ces panneaux se rempliront d'eux-mêmes d'ici quelques heures.
+        </div>
+      ) : null}
       <div className="col">
         <Panel title="Pages du template démo" icon="doc" src="GA4" count={pages.length} bodyClass="tight">
           <div className="a-pgr" style={{ background: "var(--panel-2)", fontFamily: "var(--font-mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--tx-3)" }}>
