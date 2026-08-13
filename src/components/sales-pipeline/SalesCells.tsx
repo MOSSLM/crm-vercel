@@ -116,6 +116,22 @@ export function columnStepId(column: SalesColumn): string | null {
 }
 
 /**
+ * La tâche de CETTE colonne — kind ET étape, jamais kind seul.
+ *
+ * Deux étapes d'une même séquence peuvent partager un canal (deux WhatsApp) ;
+ * sans le filtre sur l'étape, la carte de la seconde retrouvait le message de
+ * la première simplement parce qu'il était en tête de `row.tasks`. Le repli
+ * sur kind seul reste nécessaire pour les tâches hors moteur (ex. « appel »
+ * posée à la main) qui ne portent aucune étape.
+ */
+export function taskForColumn(row: SalesBoardRow, column: SalesColumn): SalesTaskInfo | undefined {
+  if (!column.kind) return undefined
+  const stepId = columnStepId(column)
+  const parEtape = stepId ? row.tasks.find((t) => t.kind === column.kind && t.stepId === stepId) : undefined
+  return parEtape ?? row.tasks.find((t) => t.kind === column.kind)
+}
+
+/**
  * La note de CETTE étape, s'il y en a une.
  *
  * On cherche par étape et non « la dernière note du prospect » : sinon la carte
@@ -370,7 +386,11 @@ function ActiveBody({
         )
       }
       const manual = seq.stepKind != null && seq.stepKind !== 'email' && seq.stepKind !== 'wait'
-      const task = manual ? (row.tasks.find((t) => t.kind === seq.stepKind) ?? row.tasks[0]) : null
+      const task = manual
+        ? (row.tasks.find((t) => t.kind === seq.stepKind && t.stepId === seq.stepId) ??
+          row.tasks.find((t) => t.kind === seq.stepKind) ??
+          row.tasks[0])
+        : null
       const remaining = seq.sendAt ? Date.parse(seq.sendAt) - now : null
       return (
         <div className="c-body col">
@@ -485,7 +505,7 @@ function ActiveBody({
     }
 
     if (column.kind === 'call') {
-      const task = row.tasks.find((t) => t.kind === 'call')
+      const task = taskForColumn(row, column)
       return (
         <div className="c-body col">
           <div className="taskrow">
@@ -512,7 +532,7 @@ function ActiveBody({
     }
 
     // WhatsApp / LinkedIn / tâche : un message préparé, jamais envoyé seul.
-    const task = row.tasks.find((t) => t.kind === column.kind) ?? row.tasks[0]
+    const task = taskForColumn(row, column) ?? row.tasks[0]
     // Le texte montré est celui de la version RETENUE — épingle comprise. La
     // carte affichait jusqu'ici ce que le moteur avait préparé, même après avoir
     // basculé sur l'autre version : on lisait un texte, on en envoyait un autre.
@@ -904,7 +924,7 @@ export function SalesCell({
         {inSequence && column.kind && !isAttente && (
           <VariantPicker
             row={row}
-            task={row.tasks.find((t) => t.kind === column.kind) ?? row.tasks[0]}
+            task={taskForColumn(row, column) ?? row.tasks[0]}
             disabled={busy}
             onPick={(v) => handlers.onVariant(row, v)}
           />

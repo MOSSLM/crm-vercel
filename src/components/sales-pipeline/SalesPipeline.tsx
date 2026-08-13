@@ -73,7 +73,7 @@ import { lienWhatsApp } from '@/lib/prospects/canal'
 import type { NumeroProspect } from '@/lib/prospects/numeros'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
-import { KIND_ICON, SalesCell, columnIcon, columnStepId, eur, rgba, type SalesHandlers } from './SalesCells'
+import { KIND_ICON, SalesCell, columnIcon, columnStepId, eur, rgba, taskForColumn, type SalesHandlers } from './SalesCells'
 import { EnvoiWhatsAppDialog } from './EnvoiWhatsAppDialog'
 import type { SalesBoardData, SalesBoardRow, SalesFilters, SalesMissingEmailRow } from './types'
 import './sp-skin.css'
@@ -160,7 +160,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
    * relance le chargement du tableau, et un objet capturé à l'ouverture
    * afficherait encore l'état d'avant l'épingle.
    */
-  const [waSend, setWaSend] = React.useState<string | null>(null)
+  const [waSend, setWaSend] = React.useState<{ rowId: string; stepId: string | null } | null>(null)
 
   /**
    * L'en-tête replié : `null` = on suit la hauteur de la fenêtre, un booléen =
@@ -505,7 +505,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
         return
       }
       if (column.kind === 'linkedin') {
-        const task = row.tasks.find((t) => t.kind === 'linkedin')
+        const task = taskForColumn(row, column)
         if (task?.linkedin) window.open(task.linkedin, '_blank')
         else toast.error('Aucun profil LinkedIn connu')
         return
@@ -514,7 +514,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       // du prospect avec leur origine, les deux versions du message, et n'ouvre
       // `wa.me` qu'avec ce qui est affiché — le sélecteur de version épinglait
       // jusqu'ici un réglage dont l'effet ne se voyait qu'au message suivant.
-      setWaSend(row.id)
+      setWaSend({ rowId: row.id, stepId: columnStepId(column) })
       return
     }
 
@@ -538,7 +538,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const selected = rows.filter((r) => selection.has(r.id))
   // Relue à chaque rendu : après une épingle, la modale doit montrer l'état
   // rechargé, pas celui capturé à l'ouverture.
-  const waSendRow = waSend ? (rows.find((r) => r.id === waSend) ?? null) : null
+  const waSendRow = waSend ? (rows.find((r) => r.id === waSend.rowId) ?? null) : null
   /** Ceux de la page qu'on peut encore mettre en séquence. */
   const enrollable = rows.filter((r) => !r.sequence)
   const stockCount = board?.partCounts.noSequence ?? 0
@@ -1121,7 +1121,11 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       {waSendRow && (
         <EnvoiWhatsAppDialog
           row={waSendRow}
-          task={waSendRow.tasks.find((t) => t.kind === 'whatsapp') ?? waSendRow.tasks[0]}
+          task={
+            waSendRow.tasks.find((t) => t.kind === 'whatsapp' && t.stepId === waSend?.stepId) ??
+            waSendRow.tasks.find((t) => t.kind === 'whatsapp') ??
+            waSendRow.tasks[0]
+          }
           pinned={waSendRow.sequence?.variant ?? null}
           busy={busy === waSendRow.id}
           onClose={() => setWaSend(null)}

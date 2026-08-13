@@ -113,6 +113,16 @@ export interface SalesTaskInfo {
   linkedin: string | null
   assigneeId: string | null
   routingReason: string | null
+  /**
+   * L'étape (`step:s3` → `s3`) qui a produit cette tâche, `null` pour les
+   * tâches hors moteur de séquence (ex. tâche « appel » créée à la main).
+   *
+   * Sert à distinguer deux tâches du même canal sur des étapes différentes
+   * (deux WhatsApp dans une même séquence) : sans elle, la carte de l'étape 2
+   * pouvait retrouver le message de l'étape 1 simplement parce qu'il était
+   * premier dans la liste.
+   */
+  stepId: string | null
   /** Laquelle des deux versions du modèle le moteur a préparée. */
   variant: MessageVariant
   /**
@@ -684,7 +694,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     oppIds.length > 0
       ? sb
           .from('prospection_tasks')
-          .select('id, kind, status, due_at, payload, opportunite_id, assignee_id, routing_reason')
+          .select('id, kind, status, step_id, due_at, payload, opportunite_id, assignee_id, routing_reason')
           .in('opportunite_id', oppIds)
           .eq('status', 'pending')
       : Promise.resolve({ data: [] as unknown[] }),
@@ -817,6 +827,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   for (const t of (tasksRes.data ?? []) as {
     id: string
     kind: string
+    step_id: string | null
     due_at: string
     payload: Record<string, unknown> | null
     opportunite_id: string | null
@@ -829,6 +840,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     list.push({
       id: t.id,
       kind: t.kind,
+      stepId: t.step_id,
       dueAt: t.due_at,
       message: String(payload.message ?? payload.script ?? ''),
       scriptName: (payload.scriptName as string | undefined) ?? null,

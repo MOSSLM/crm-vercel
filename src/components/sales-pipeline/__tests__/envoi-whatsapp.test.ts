@@ -8,7 +8,8 @@
  *     n'en montrait aucun : impossible de savoir à qui on écrivait.
  */
 import { numerosWhatsApp, texteDeLaVersion, versionsDisponibles } from '../EnvoiWhatsAppDialog'
-import type { SalesBoardRow, SalesTaskInfo } from '../types'
+import { taskForColumn } from '../SalesCells'
+import type { SalesBoardRow, SalesColumn, SalesTaskInfo } from '../types'
 
 const tache = (patch: Partial<SalesTaskInfo> = {}): SalesTaskInfo => ({
   id: 't1',
@@ -20,6 +21,7 @@ const tache = (patch: Partial<SalesTaskInfo> = {}): SalesTaskInfo => ({
   linkedin: null,
   assigneeId: null,
   routingReason: null,
+  stepId: 's1',
   variant: 'company',
   variantAlt: { variant: 'contact', message: 'Bonjour, je suis bien avec Julien de Toiture Martin ?' },
   ...patch,
@@ -34,6 +36,19 @@ const ligne = (patch: Partial<SalesBoardRow> = {}): SalesBoardRow =>
     tasks: [],
     ...patch,
   }) as SalesBoardRow
+
+const colonne = (patch: Partial<SalesColumn> = {}): SalesColumn => ({
+  id: 'step:s3',
+  group: 'sequence',
+  label: 'WhatsApp 2',
+  hint: null,
+  mode: 'manual',
+  color: '#000',
+  kind: 'whatsapp',
+  cta: 'Ouvrir WhatsApp',
+  index: 2,
+  ...patch,
+})
 
 describe('texteDeLaVersion', () => {
   it('rend le texte de la version demandée, pas celui que le moteur a choisi', () => {
@@ -61,6 +76,33 @@ describe('versionsDisponibles', () => {
     // Une tâche mal formée qui porterait deux fois la même version afficherait
     // sinon deux onglets identiques, dont l'un ne change rien.
     expect(versionsDisponibles(tache({ variantAlt: { variant: 'company', message: 'idem' } }))).toEqual(['company'])
+  })
+})
+
+describe('taskForColumn', () => {
+  it('prend la tâche de CETTE étape, pas la première du même canal', () => {
+    // Une séquence à deux WhatsApp (s1 puis s3) : la carte de « WhatsApp 2 »
+    // retrouvait le message de « WhatsApp 1 » simplement parce qu'il était
+    // en tête de `row.tasks` — le prospect voyait « aucun message préparé »
+    // ou, pire, le mauvais texte.
+    const s1 = tache({ id: 't-s1', stepId: 's1', message: 'Accroche' })
+    const s3 = tache({ id: 't-s3', stepId: 's3', message: 'Envoi du site démo' })
+    const row = ligne({ tasks: [s1, s3] })
+    expect(taskForColumn(row, colonne({ id: 'step:s3' }))?.id).toBe('t-s3')
+    expect(taskForColumn(row, colonne({ id: 'step:s1' }))?.id).toBe('t-s1')
+  })
+
+  it('retombe sur le canal seul quand aucune tâche ne porte cette étape', () => {
+    // Tâche hors moteur de séquence (ex. un appel posé à la main) : elle ne
+    // porte pas de `stepId`, mais reste la seule candidate pour ce canal.
+    const call = tache({ id: 't-call', kind: 'call', stepId: null })
+    const row = ligne({ tasks: [call] })
+    expect(taskForColumn(row, colonne({ id: 'step:s2', kind: 'call' }))?.id).toBe('t-call')
+  })
+
+  it('ne renvoie rien pour une colonne hors séquence', () => {
+    const row = ligne({ tasks: [tache()] })
+    expect(taskForColumn(row, colonne({ id: 'entry', kind: null }))).toBeUndefined()
   })
 })
 
