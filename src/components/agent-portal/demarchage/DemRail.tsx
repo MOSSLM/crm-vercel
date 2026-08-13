@@ -6,8 +6,13 @@ import { demCh } from "./channels";
 import type { DemarchageQueueMeta, DemarchageTask } from "./types";
 import type { DemarchageBucketKey, DemarchageBuckets } from "@/lib/agent-portal/demarchage-buckets";
 
-/** Les jours de la file — mêmes libellés que la maquette, dates réelles. */
+/** Les jours de la file — mêmes libellés que la maquette, dates réelles.
+ *  Les deux premiers onglets ne sont pas des jours mais des signaux mesurés :
+ *  un prospect qui vient de rouvrir sa démo prime sur n'importe quelle
+ *  échéance décidée à l'avance. */
 export const DAY_TABS: { id: DemarchageBucketKey; lb: string }[] = [
+  { id: "missed", lb: "Non rappelés" },
+  { id: "hot", lb: "Chauds" },
   { id: "overdue", lb: "Retard" },
   { id: "today", lb: "Aujourd'hui" },
   { id: "tomorrow", lb: "Demain" },
@@ -31,11 +36,27 @@ const hm = (iso: string | null) => {
   }
 };
 
+/** Durée d'engagement, lisible d'un coup d'œil. */
+const dureeCourte = (sec: number) =>
+  sec >= 60 ? `${Math.floor(sec / 60)}m${String(Math.round(sec % 60)).padStart(2, "0")}` : `${Math.round(sec)}s`;
+
+/** « aujourd'hui » / « hier » / « il y a 3 j » à partir d'une date ISO. */
+function jourRelatif(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const now = new Date();
+  const j = Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - d.getTime()) / 86400000);
+  if (j <= 0) return "aujourd'hui";
+  if (j === 1) return "hier";
+  return `il y a ${j} j`;
+}
+
 /** Sous-titre du bloc session : la date réelle du jour regardé. */
 function dayLabel(day: DemarchageBucketKey): string {
   const d = new Date();
   if (day === "tomorrow") d.setDate(d.getDate() + 1);
   const fmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+  if (day === "missed") return "signal chaud jamais rappelé";
+  if (day === "hot") return "signaux d'intention du moment";
   if (day === "overdue") return "à rattraper";
   if (day === "week") return "les 7 prochains jours";
   if (day === "later") return "au-delà";
@@ -160,11 +181,14 @@ export function DemRail({
             `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim() ||
             "Prospect";
           const state = t.id === sel ? "now" : "next";
+          const missed = t.intent?.missed === true;
+          const hot = t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
           return (
             <div
               key={t.id}
               className="dm-tk"
               data-s={state}
+              data-heat={missed ? "missed" : hot ? "hot" : undefined}
               aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
             >
@@ -172,6 +196,11 @@ export function DemRail({
               <div className="bd">
                 <div className="nm">
                   <span className="t">{name}</span>
+                  {t.intent?.flame ? (
+                    <span className="fl" title={t.intent.reasons.join(" · ")}>
+                      {t.intent.flame}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="wy">{t.sequence?.stepLabel || t.title || ch.lb}</div>
                 <div className="mt">
@@ -183,6 +212,19 @@ export function DemRail({
                     <span className="st">étape {t.sequence.stepIndex}</span>
                   )}
                 </div>
+                {/* Ce que le prospect a fait de sa démo : l'information qui
+                    décide s'il faut décrocher maintenant ou laisser la
+                    séquence suivre son cours. Lisible sans ouvrir la fiche. */}
+                {t.intent && t.intent.sessions > 0 && (
+                  <div className="vu" data-heat={missed ? "missed" : hot ? "hot" : undefined}>
+                    <Icon name="eye" className="ico-xs" />
+                    {missed && t.intent.daysSinceVisit != null
+                      ? `Chaud depuis ${t.intent.daysSinceVisit} j, jamais rappelé`
+                      : `Démo vue ${t.intent.sessions}×${
+                          t.intent.engagementSec > 0 ? ` · ${dureeCourte(t.intent.engagementSec)}` : ""
+                        }${t.intent.lastDay ? ` · ${jourRelatif(t.intent.lastDay)}` : ""}`}
+                  </div>
+                )}
               </div>
             </div>
           );

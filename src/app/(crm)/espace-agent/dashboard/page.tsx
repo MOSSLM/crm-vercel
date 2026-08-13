@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CalendarCheck, Trophy, Layers, Inbox, Target, ArrowRight } from "lucide-react";
 import { formatPrice, stageTint } from "@/components/agent-portal/format";
 import AgentProgressPanels from "@/components/agent-portal/AgentProgressPanels";
+import SprintObjectif from "@/components/agent-portal/SprintObjectif";
 
 type DashboardData = {
   total: number;
@@ -76,6 +77,26 @@ export default function AgentDashboardPage() {
     void load();
   }, []);
 
+  // Nombre de prospects que leurs signaux désignent pour un appel immédiat —
+  // même moteur que le panneau « À appeler » du radar, pour que les deux
+  // écrans ne racontent jamais deux histoires différentes.
+  const [aAppeler, setAAppeler] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    authedFetch("/api/analytics-radar?days=7&scope=demos")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j?.intent) return;
+        setAAppeler(
+          (j.intent as Array<{ callWhen: string }>).filter((r) => r.callWhen === "maintenant" || r.callWhen === "aujourdhui").length,
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const displayName = user?.name?.trim().split(" ")[0] || "agent";
 
   return (
@@ -86,6 +107,10 @@ export default function AgentDashboardPage() {
           Voici l&apos;état de ton démarchage CVC pour SAMA.
         </p>
       </div>
+
+      {/* Le sprint passe AVANT le reste : tant qu'un objectif daté est en
+          cours, c'est lui qui décide de ce qu'on fait de sa journée. */}
+      <SprintObjectif aAppeler={aAppeler} />
 
       {loading && <div className="text-sm text-muted-foreground">Chargement…</div>}
       {error && <div className="text-sm text-destructive">{error}</div>}

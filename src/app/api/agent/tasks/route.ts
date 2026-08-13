@@ -5,6 +5,8 @@ import { preflight } from "@/app/api/_lib/cors";
 import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
+import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
+import { daysSince, isMissedSignal } from "@/lib/analytics-radar/intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
@@ -146,10 +148,38 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     }
   }
 
+  // Ce que le prospect a réellement fait de sa démo (GA4), greffé sur sa
+  // tâche. Même moteur que le radar — un prospect ne peut pas être « chaud »
+  // ici et « tiède » là-bas. Une panne GA4 ne doit pas vider la file : on
+  // repart sans signal plutôt que d'échouer.
+  const intents = await intentByEnterprise(sc).catch(() => new Map());
+
+  // Dernier appel RÉELLEMENT passé par entreprise : c'est ce qui permet de
+  // distinguer un prospect chaud d'un prospect chaud qu'on a laissé filer.
+  const entrepriseIds = [...new Set(tasks.map((t) => t.entreprise_id).filter((id): id is number => id != null))];
+  const lastCallByEnterprise = new Map<number, string>();
+  if (entrepriseIds.length) {
+    const { data: calls } = await sc
+      .from("prospection_tasks")
+      .select("entreprise_id, done_at")
+      .eq("kind", "call")
+      .eq("status", "done")
+      .in("entreprise_id", entrepriseIds)
+      .order("done_at", { ascending: false });
+    (calls ?? []).forEach((c) => {
+      const id = c.entreprise_id as number | null;
+      const at = c.done_at as string | null;
+      if (id == null || !at) return;
+      if (!lastCallByEnterprise.has(id)) lastCallByEnterprise.set(id, at); // trié desc → le premier est le plus récent
+    });
+  }
+  const nowDate = new Date();
+
   const enriched = tasks.map((t) => {
     const auto = t.automation_id ? stepsByAutomation.get(t.automation_id as string) : undefined;
     const stepIndex = auto ? auto.steps.findIndex((s) => s.id === t.step_id) : -1;
     const step = stepIndex >= 0 ? auto!.steps[stepIndex] : null;
+    const intent = t.entreprise_id != null ? intents.get(t.entreprise_id) : undefined;
     return {
       ...t,
       sequence: auto
@@ -164,6 +194,26 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
             steps: stepViews(auto.steps),
           }
         : null,
+      intent: intent
+        ? {
+            score: intent.score,
+            tier: intent.tier,
+            flame: intent.flame,
+            callWhen: intent.callWhen,
+            reasons: intent.reasons,
+            sessions: intent.sessions,
+            pageViews: intent.pageViews,
+            engagementSec: intent.engagementSec,
+            lastDay: intent.lastDay,
+            missed: isMissedSignal({
+              callWhen: intent.callWhen,
+              lastVisitDay: intent.lastDay,
+              lastCallDoneAt: t.entreprise_id != null ? lastCallByEnterprise.get(t.entreprise_id) ?? null : null,
+              now: nowDate,
+            }),
+            daysSinceVisit: daysSince(intent.lastDay, nowDate),
+          }
+        : null,
     };
   });
 
@@ -171,6 +221,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     const auto = stepsByAutomation.get(e.automation_id);
     const idx = Number(e.current_step) || 0;
     const step = auto?.steps[idx] ?? null;
+    const intent = e.entreprise_id != null ? intents.get(e.entreprise_id) : undefined;
     return {
       // Préfixé pour ne jamais entrer en collision avec un id de tâche : les
       // deux vivent dans la même file côté écran.
@@ -197,12 +248,41 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
             steps: stepViews(auto.steps),
           }
         : null,
+      // Une attente de réponse mérite l'intention plus que n'importe quelle
+      // autre ligne : « il visite la démo mais ne répond pas » est exactement
+      // le moment où il faut décrocher plutôt que de continuer à écrire.
+      intent: intent
+        ? {
+            score: intent.score,
+            tier: intent.tier,
+            flame: intent.flame,
+            callWhen: intent.callWhen,
+            reasons: intent.reasons,
+            sessions: intent.sessions,
+            pageViews: intent.pageViews,
+            engagementSec: intent.engagementSec,
+            lastDay: intent.lastDay,
+            missed: isMissedSignal({
+              callWhen: intent.callWhen,
+              lastVisitDay: intent.lastDay,
+              lastCallDoneAt: e.entreprise_id != null ? lastCallByEnterprise.get(e.entreprise_id) ?? null : null,
+              now: nowDate,
+            }),
+            daysSinceVisit: daysSince(intent.lastDay, nowDate),
+          }
+        : null,
     };
   });
 
-  // Une seule file : les tâches et les attentes se lisent dans le même ordre
-  // d'échéance, puisque l'agent les traite dans le même mouvement.
+  // Une seule file : tâches et attentes se lisent dans le même mouvement.
+  // Les plus chauds d'abord — un prospect qui vient de rouvrir sa démo passe
+  // devant une relance planifiée, sans sortir de sa séquence pour autant :
+  // l'ordre change, pas le parcours. À intensité égale, on retombe sur
+  // l'échéance, qui reste l'ordre naturel de traitement.
   const queue = [...enriched, ...waits].sort((a, b) => {
+    const sa = a.intent?.score ?? -1;
+    const sb = b.intent?.score ?? -1;
+    if (sa !== sb) return sb - sa;
     const ta = a.due_at ? new Date(a.due_at).getTime() : Infinity;
     const tb = b.due_at ? new Date(b.due_at).getTime() : Infinity;
     return ta - tb;

@@ -39,6 +39,9 @@ export default function AgentDemarchagePage() {
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
 
+  // « Aujourd'hui » par défaut, mais `firstNonEmptyBucket` (au chargement de
+  // la file) bascule sur « Non rappelés » ou « Chauds » dès qu'il y en a :
+  // un signal chaud ne doit pas attendre qu'on pense à changer d'onglet.
   const [day, setDay] = useState<DemarchageBucketKey>("today");
   const [filt, setFilt] = useState("all");
 
@@ -95,7 +98,7 @@ export default function AgentDemarchagePage() {
   const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
   useEffect(() => {
     if (!task) return;
-    for (const k of ["overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
+    for (const k of ["missed", "hot", "overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
       if (buckets[k].some((t) => t.id === task.id)) {
         setDay(k);
         return;

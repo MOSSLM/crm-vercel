@@ -10,19 +10,37 @@ import { AGENT_TIMEZONE, dayStartIso } from "@/lib/agent-progress";
 
 export type DemarchageTaskLike = {
   due_at: string | null;
+  /** Signal d'intention mesuré (GA4). Absent = aucun site démo ou aucune visite. */
+  intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 
-export type DemarchageBucketKey = "overdue" | "today" | "tomorrow" | "week" | "later";
+export type DemarchageBucketKey = "missed" | "hot" | "overdue" | "today" | "tomorrow" | "week" | "later";
 
 export type DemarchageBuckets<T> = Record<DemarchageBucketKey, T[]>;
 
 export const BUCKET_LABEL: Record<DemarchageBucketKey, string> = {
+  missed: "Signal chaud non rappelé",
+  hot: "À appeler maintenant",
   overdue: "En retard",
   today: "Aujourd'hui",
   tomorrow: "Demain",
   week: "Cette semaine",
   later: "Plus tard",
 };
+
+/**
+ * Un prospect dont les signaux mesurés réclament un appel aujourd'hui passe
+ * dans son propre panier, en tête de file, QUELLE QUE SOIT l'échéance prévue
+ * par sa séquence.
+ *
+ * C'est le cœur de l'idée : la séquence planifie le rythme normal, mais une
+ * démo rouverte ce matin est une information plus fraîche que n'importe quel
+ * délai décidé la semaine dernière. La tâche n'est pas dupliquée ni sortie de
+ * sa séquence — elle est seulement remontée. Si l'appel ne donne rien, la
+ * séquence reprend son cours là où elle en était.
+ */
+const isHot = (t: DemarchageTaskLike) =>
+  t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -42,9 +60,19 @@ export function bucketTasks<T extends DemarchageTaskLike>(
   const dayAfterTomorrowStart = tomorrowStart + DAY_MS;
   const weekEnd = todayStart + 7 * DAY_MS;
 
-  const buckets: DemarchageBuckets<T> = { overdue: [], today: [], tomorrow: [], week: [], later: [] };
+  const buckets: DemarchageBuckets<T> = { missed: [], hot: [], overdue: [], today: [], tomorrow: [], week: [], later: [] };
 
   for (const task of tasks) {
+    // Un signal chaud non rappelé passe AVANT les chauds du jour : c'est une
+    // opportunité déjà en train de refroidir, pas une opportunité fraîche.
+    if (task.intent?.missed) {
+      buckets.missed.push(task);
+      continue;
+    }
+    if (isHot(task)) {
+      buckets.hot.push(task);
+      continue;
+    }
     const dueMs = task.due_at ? new Date(task.due_at).getTime() : NaN;
     if (!Number.isFinite(dueMs)) {
       buckets.later.push(task);
@@ -62,7 +90,7 @@ export function bucketTasks<T extends DemarchageTaskLike>(
 
 /** Le premier panier non vide, dans l'ordre où on veut le proposer par défaut. */
 export function firstNonEmptyBucket<T>(buckets: DemarchageBuckets<T>): T | null {
-  for (const key of ["overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
+  for (const key of ["missed", "hot", "overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
     const first = buckets[key][0];
     if (first) return first;
   }

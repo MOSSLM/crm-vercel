@@ -16,6 +16,7 @@ import { anDur, anNum, anPct } from "./format";
 import { GlobeStage, RealtimePanel, TopCities, DayTrack } from "./radar-tab";
 import { SitesTab, BehaviourTab } from "./tables-tab";
 import { SessionsTab } from "./sessions-tab";
+import { IntentPanel } from "./intent-panel";
 import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured, RadarScope } from "./types";
 
 type Tab = "radar" | "sites" | "beh" | "parcours";
@@ -319,6 +320,18 @@ export function AnalyticsRadarApp() {
                   scopeIsApproximate={d.realtimeScopeIsApproximate}
                 />
               </Panel>
+              {scope === "demos" ? (
+                <Panel
+                  title="À appeler"
+                  icon="phone"
+                  src="GA4 + CRM"
+                  count={d.intent.filter((r) => r.callWhen === "maintenant" || r.callWhen === "aujourdhui").length}
+                  style={{ flex: "0 0 auto", maxHeight: 300 }}
+                  bodyClass="tight"
+                >
+                  <IntentPanel rows={d.intent} onPick={() => setTab("sites")} />
+                </Panel>
+              ) : null}
               <Panel title="Villes les plus actives" icon="mappin" count={d.hubs.length} style={{ flex: "0 0 auto", maxHeight: 250 }}>
                 <TopCities hubRows={d.hubs} onPick={() => {}} />
               </Panel>

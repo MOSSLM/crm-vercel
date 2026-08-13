@@ -403,3 +403,15 @@
   .dm-skin .dm-ct{flex-direction:column}
   .dm-skin .dm-outs{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ── Signal d'intention dans la file ──────────────────────────────────────
+   Un prospect qui vient de rouvrir sa démo doit se repérer sans lire : liseré
+   orange s'il est chaud, rouge s'il est chaud ET jamais rappelé — ce
+   deuxième cas est une occasion en train de se perdre, pas une opportunité
+   fraîche, et il ne doit pas se confondre avec le premier. */
+.dm-skin .dm-tk[data-heat="hot"]{border-left-color:#E08A2F;background:rgba(224,138,47,.05)}
+.dm-skin .dm-tk[data-heat="missed"]{border-left-color:#B5322F;background:rgba(181,50,47,.06)}
+.dm-skin .dm-tk .nm .fl{font-size:11px;letter-spacing:-.06em;flex:0 0 auto}
+.dm-skin .dm-tk .vu{display:flex;align-items:center;gap:4px;margin-top:3px;font-family:var(--font-mono);font-size:10px;color:var(--text-3)}
+.dm-skin .dm-tk .vu[data-heat="hot"]{color:#8A5A0E}
+.dm-skin .dm-tk .vu[data-heat="missed"]{color:#B5322F;font-weight:600}
