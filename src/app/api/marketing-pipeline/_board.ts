@@ -4,7 +4,9 @@ import { SITE_DOMAIN } from "@/lib/site-domain";
 import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
 import { lireAudits } from "@/lib/audit-site/lecture";
 import { collecterCanaux, type Canal } from "@/lib/prospects/canal";
+import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
 import type { BoardItem } from "@/components/marketing-pipeline/types";
+import type { SequenceSettings } from "@/components/automations/types";
 import { noteSummaries } from "./_notes";
 
 /**
@@ -247,7 +249,7 @@ type SequenceCanalRow = {
   id: string;
   name: string | null;
   status: string | null;
-  settings: { requireCanaux?: Canal[]; excludeCanaux?: Canal[] } | null;
+  settings: SequenceSettings | null;
 };
 
 type EnrollmentCanalRow = {
@@ -713,7 +715,15 @@ export async function buildBoard(
   }
 
   // ── Séquences et inscriptions en cours ────────────────────────────────────
-  const sequences = ((sequencesRes.data ?? []) as SequenceCanalRow[]).map((s) => ({
+  // Côté agent, on ne garde que les séquences qui lui sont ouvertes : la
+  // suggestion de canal ne doit pas lui désigner une séquence qu'il n'a pas
+  // (cf. `src/lib/automations/acces.ts`).
+  const acces = opts.ownerId ? await chargerAcces(supabase) : new Map<string, Set<string>>();
+  const sequences = filtrerPourAgent(
+    (sequencesRes.data ?? []) as SequenceCanalRow[],
+    opts.ownerId ?? null,
+    acces,
+  ).map((s) => ({
     id: s.id,
     name: s.name ?? "Séquence",
     status: s.status ?? "draft",

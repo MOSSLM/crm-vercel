@@ -39,6 +39,7 @@ import {
 } from '@/lib/sales-pipeline/stages'
 import { readVariant } from '@/lib/automations/week'
 import { retourVersLaReponse } from '@/lib/automations/branches'
+import { chargerAcces, filtrerPourAgent } from '@/lib/automations/acces'
 import type { MessageVariant } from '@/lib/automations/variables'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
 import { cleanEmail } from '@/lib/automations/regulator-db'
@@ -252,6 +253,12 @@ export interface SalesBoardData {
     windows: SendWindow[]
     activeEnrollments: number
   }[]
+  /**
+   * Ce que l'agent ne voit pas, et pourquoi — sans quoi un tableau vide se lit
+   * comme « il n'y a aucune séquence » alors qu'il y en a, simplement pas pour
+   * lui. `restreint` est faux côté admin, où rien n'est filtré.
+   */
+  sequenceAcces: { restreint: boolean; masquees: number }
   regulator: {
     paused: boolean
     testMode: boolean
@@ -508,13 +515,31 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const stages = allStages.filter((s) => s.pipeline_id === selectedPipeline.id)
   const lostStage = stages.find((s) => isLostStage(s.nom)) ?? null
 
-  // Les séquences archivées sortent du tableau : elles pilotent les colonnes,
-  // remplissent le sélecteur de partie et le lanceur, or « archivée » veut
-  // précisément dire « plus dans les listes de choix ». Leurs inscriptions
-  // passées ne disparaissent pas pour autant — `partCounts` se calcule sur les
-  // inscriptions, pas sur cette liste, et les lignes concernées restent
-  // lisibles dans la vue d'ensemble.
-  const sequenceRows = ((sequencesRes.data ?? []) as Automation[]).filter((a) => a.status !== 'archived')
+  // Toutes les séquences, archives comprises : cette carte-là ne sert pas à
+  // CHOISIR mais à RELIRE. Une inscription sur une séquence archivée ou non
+  // attribuée doit garder son nom et ses étapes sur la ligne du prospect —
+  // sinon le travail en cours devient anonyme le jour où l'on range.
+  const toutesLesSequences = (sequencesRes.data ?? []) as Automation[]
+
+  // Ce dans quoi on peut choisir. Deux filtres, pour deux raisons distinctes :
+  //
+  //   · archivée — « plus dans les listes de choix », c'est la définition même
+  //     du statut ;
+  //   · non attribuée — l'agent ne voit que les séquences qui lui sont
+  //     ouvertes (cf. `src/lib/automations/acces.ts`). Sans ce filtre, son
+  //     tableau proposait des séquences que la garde d'inscription refusait
+  //     ensuite en 403 : on ne l'apprenait qu'au clic.
+  //
+  // Les inscriptions passées ne disparaissent pas pour autant : `partCounts` se
+  // calcule sur les inscriptions, pas sur cette liste, et les lignes concernées
+  // restent lisibles dans la vue d'ensemble.
+  const nonArchivees = toutesLesSequences.filter((a) => a.status !== 'archived')
+  const acces = await chargerAcces(sb)
+  const sequenceRows = filtrerPourAgent(nonArchivees, query.ownerId ?? null, acces)
+  const sequenceAcces = {
+    restreint: Boolean(query.ownerId),
+    masquees: nonArchivees.length - sequenceRows.length,
+  }
 
   // ── 2. Quelle séquence pilote les colonnes ? ─────────────────────────────
   const { data: activeCounts } = await sb
@@ -743,7 +768,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     sequencesByOpp.set(e.opportunite_id, seen)
   }
 
-  const automationById = new Map(sequenceRows.map((a) => [a.id, a]))
+  // Volontairement bâtie sur TOUTES les séquences : c'est la carte de relecture.
+  const automationById = new Map(toutesLesSequences.map((a) => [a.id, a]))
 
   /** L'autre version telle que le moteur l'a posée dans la tâche. */
   const readVariantAlt = (raw: unknown): SalesTaskInfo['variantAlt'] => {
@@ -1131,6 +1157,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       partCounts,
       agents,
       sequences,
+      sequenceAcces,
       regulator: {
         paused: regulatorView.settings.paused,
         testMode: regulatorView.settings.testMode,

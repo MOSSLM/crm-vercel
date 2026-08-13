@@ -17,6 +17,7 @@ import {
 } from '@/lib/sales-pipeline/actions'
 import { stepOutcome } from '@/lib/sales-pipeline/stages'
 import { enrollInSequence, processSequenceEnrollment } from '@/lib/automations/engine'
+import { agentPeutVoir, chargerAcces } from '@/lib/automations/acces'
 import type { Automation, SequenceEnrollment } from '@/components/automations/types'
 import type {
   SalesAdvancePayload,
@@ -259,15 +260,15 @@ export async function handleEnroll(
     )
   }
 
-  // Un agent ne lance que les séquences que l'admin lui a attribuées.
+  // Un agent ne lance que les séquences qui lui sont ouvertes — la même règle
+  // que celle qui compose SON tableau, donc jamais un refus sur une séquence
+  // qu'il voyait. La version d'avant exigeait une attribution nominative sur
+  // TOUTE séquence : la table étant vide, elle refusait tout à tout le monde.
   if (scope.ownerId) {
-    const { data: assignment } = await sc
-      .from('sequence_agent_assignments')
-      .select('id')
-      .eq('automation_id', body.automation_id)
-      .eq('agent_id', scope.ownerId)
-      .maybeSingle()
-    if (!assignment) return jsonError('sequence_non_assignee', 403, {}, cors)
+    const acces = await chargerAcces(sc)
+    if (!agentPeutVoir(automation, scope.ownerId, acces)) {
+      return jsonError('sequence_non_assignee', 403, { sequence_name: automation.name }, cors)
+    }
   }
 
   const firstStepKind = (automation.definition as { steps?: { kind?: string }[] } | null)?.steps?.[0]?.kind ?? null

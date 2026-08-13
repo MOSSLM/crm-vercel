@@ -31,9 +31,22 @@ import {
   createAutomation,
   deleteAutomation,
   duplicateAutomation,
+  listAgents,
+  listAttributions,
   listAutomations,
+  setAttribution,
   setAutomationsStatus,
+  setModeAcces,
+  type AgentRef,
 } from './automations-db'
+import {
+  MODE_ACCES_LABEL,
+  agentsParSequence,
+  libelleAcces,
+  modeAcces,
+  type AttributionSequence,
+  type ModeAcces,
+} from '@/lib/automations/acces'
 import { MiniWindows, colorForId, hm } from './regulator/parts'
 import { DEFAULT_WINDOWS, formatHM, normalizeWindows } from '@/lib/automations/regulator'
 import type { RegulatorView } from './regulator/types'
@@ -83,14 +96,23 @@ export function SequencesList() {
   const [selection, setSelection] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<{ id: string; top: number; left: number } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Automation[] | null>(null)
+  const [agents, setAgents] = useState<AgentRef[]>([])
+  const [attributions, setAttributions] = useState<AttributionSequence[]>([])
+  const [confirmAcces, setConfirmAcces] = useState<Automation[] | null>(null)
 
   async function loadSequences() {
-    const [seqs, enr, tasks] = await Promise.all([
+    const [seqs, enr, tasks, ags, attrs] = await Promise.all([
       listAutomations('sequence'),
       supabase.from('sequence_enrollments').select('automation_id,status'),
       supabase.from('prospection_tasks').select('automation_id').eq('status', 'pending'),
+      // Les deux moitiés de l'accès. En échec — table absente, droits — la
+      // liste reste lisible : elle affiche simplement « Tous les agents ».
+      listAgents().catch(() => [] as AgentRef[]),
+      listAttributions().catch(() => [] as AttributionSequence[]),
     ])
     setRows(seqs)
+    setAgents(ags)
+    setAttributions(attrs)
     const map: Record<string, EnrollAgg> = {}
     for (const e of (enr.data ?? []) as { automation_id: string; status: string }[]) {
       const a = (map[e.automation_id] ??= { active: 0, paused: 0, finished: 0, total: 0 })
@@ -237,6 +259,49 @@ export function SequencesList() {
     }
   }
 
+  /**
+   * L'accès enregistré depuis la boîte : le mode sur chaque séquence, puis les
+   * agents cochés/décochés.
+   *
+   * Seuls les DELTAS partent. Deux raisons, et la seconde est la vraie : une
+   * case laissée INDÉTERMINÉE sur un lot panaché (`null`) veut dire « je n'y ai
+   * pas touché ». La réécrire à `false` retirerait, sans que rien ne l'annonce,
+   * un agent des séquences où il était pourtant coché — le prix d'être venu
+   * changer autre chose.
+   */
+  async function handleAcces(
+    cibles: Automation[],
+    mode: ModeAcces,
+    apres: Map<string, boolean | null>,
+    avant: Map<string, boolean | null>,
+  ) {
+    setBusy(true)
+    try {
+      const ids = cibles.map((s) => s.id)
+      await setModeAcces(cibles, mode)
+      for (const agent of agents) {
+        const veut = apres.get(agent.id)
+        if (veut == null || veut === avant.get(agent.id)) continue
+        await setAttribution(ids, agent.id, veut)
+      }
+      await loadSequences()
+      setSelection(new Set())
+      setConfirmAcces(null)
+      const retenus = agents.filter((a) => apres.get(a.id) !== false).length
+      toast.success(
+        mode === 'tous'
+          ? cibles.length === 1
+            ? 'Séquence ouverte à tous les agents'
+            : `${cibles.length} séquences ouvertes à tous les agents`
+          : `Accès réservé à ${libelleAcces('choisis', retenus).toLowerCase()}`,
+      )
+    } catch {
+      toast.error('Enregistrement des accès impossible')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleDuplicate(cibles: Automation[]) {
     setBusy(true)
     try {
@@ -279,6 +344,7 @@ export function SequencesList() {
   }
 
   const menuSeq = menu ? rows.find((r) => r.id === menu.id) ?? null : null
+  const parSequence = useMemo(() => agentsParSequence(attributions), [attributions])
 
   return (
     <div className="alist-page">
@@ -332,6 +398,7 @@ export function SequencesList() {
           busy={busy}
           onStatus={(s) => applyStatus(selected, s)}
           onDuplicate={() => handleDuplicate(selected)}
+          onAcces={() => setConfirmAcces(selected)}
           onDelete={() => setConfirmDelete(selected)}
           onClear={() => setSelection(new Set())}
         />
@@ -450,6 +517,10 @@ export function SequencesList() {
                   <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
                     {regSeq?.nextSendAt ? `prochain ${hm(regSeq.nextSendAt, tz)}` : '—'}
                   </div>
+                  {/* L'accès se lit dans la liste, pas seulement dans la boîte :
+                      c'est la seule façon de repérer d'un coup d'œil celle qu'on
+                      a restreinte à un agent et oubliée. */}
+                  <AccesPill seq={seq} parSequence={parSequence} agents={agents} />
                 </div>
                 <div onClick={(e) => e.stopPropagation()}>
                   <button
@@ -484,7 +555,19 @@ export function SequencesList() {
           onOpen={() => router.push(`/automations/sequences/${menuSeq.id}`)}
           onStatus={(s) => applyStatus([menuSeq], s)}
           onDuplicate={() => handleDuplicate([menuSeq])}
+          onAcces={() => setConfirmAcces([menuSeq])}
           onDelete={() => setConfirmDelete([menuSeq])}
+        />
+      )}
+
+      {confirmAcces && (
+        <AccesDialog
+          cibles={confirmAcces}
+          agents={agents}
+          parSequence={parSequence}
+          busy={busy}
+          onCancel={() => setConfirmAcces(null)}
+          onConfirm={(mode, apres, avant) => handleAcces(confirmAcces, mode, apres, avant)}
         />
       )}
 
@@ -539,6 +622,224 @@ function messageStatut(status: AutomationStatus, n: number): string {
   return `${quoi} mise${n > 1 ? 's' : ''} à jour`
 }
 
+/* ── Qui voit cette séquence ───────────────────────────────────────────────
+ *
+ * Muette quand la séquence est ouverte à tous ET qu'aucun agent n'existe : sur
+ * un CRM sans freelance, la question ne se pose pas et la pastille ne serait
+ * qu'un mot de plus à lire sur chaque ligne. Dès qu'il y a un agent, l'état
+ * ouvert se dit aussi — c'en est un, et il se décide.
+ */
+function AccesPill({
+  seq,
+  parSequence,
+  agents,
+}: {
+  seq: Automation
+  parSequence: Map<string, Set<string>>
+  agents: AgentRef[]
+}) {
+  const mode = modeAcces(seq.settings)
+  const nommes = parSequence.get(seq.id) ?? new Set<string>()
+  // Un agent supprimé garde sa ligne d'attribution (`on delete cascade` ne
+  // joue que sur `user_profiles`) : compter les noms qu'on saurait afficher
+  // évite un « 3 agents » qui n'en montre que deux une fois la boîte ouverte.
+  const n = agents.filter((a) => nommes.has(a.id)).length
+  if (mode === 'tous' && agents.length === 0) return null
+
+  const vide = mode === 'choisis' && n === 0
+  return (
+    <div
+      className={'seq-acces' + (mode === 'choisis' ? ' restreint' : '') + (vide ? ' vide' : '')}
+      title={
+        vide
+          ? 'Restreinte, mais aucun agent coché : personne ne la voit.'
+          : mode === 'tous'
+            ? MODE_ACCES_LABEL.tous.aide
+            : agents
+                .filter((a) => nommes.has(a.id))
+                .map((a) => a.name)
+                .join(', ')
+      }
+    >
+      <XI name={mode === 'tous' ? 'users' : 'user'} className="ico-xs" />
+      {libelleAcces(mode, n)}
+    </div>
+  )
+}
+
+/* ── Boîte « Accès des agents » ────────────────────────────────────────────
+ *
+ * Deux décisions dans le même écran, dans l'ordre où on les prend : d'abord
+ * OUVERT ou RESTREINT, puis — seulement si restreint — à qui. Présenter la
+ * liste des agents en permanence laisserait croire que cocher trois noms suffit
+ * à fermer la séquence aux autres, alors que le mode seul en décide.
+ *
+ * Sur un lot, une case peut être dans un troisième état : cochée sur certaines
+ * séquences et pas sur d'autres. Elle s'affiche alors indéterminée, et n'écrit
+ * RIEN tant qu'on n'y touche pas — sans quoi ouvrir la boîte pour changer le
+ * mode retirerait au passage des agents qu'on n'a jamais décochés.
+ */
+function AccesDialog({
+  cibles,
+  agents,
+  parSequence,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  cibles: Automation[]
+  agents: AgentRef[]
+  parSequence: Map<string, Set<string>>
+  busy: boolean
+  onCancel: () => void
+  onConfirm: (
+    mode: ModeAcces,
+    apres: Map<string, boolean | null>,
+    avant: Map<string, boolean | null>,
+  ) => void
+}) {
+  /** Pour chaque agent : coché partout (`true`), nulle part (`false`), ou entre les deux (`null`). */
+  const initiaux = useMemo(() => {
+    const map = new Map<string, boolean | null>()
+    for (const a of agents) {
+      const n = cibles.filter((s) => parSequence.get(s.id)?.has(a.id)).length
+      map.set(a.id, n === 0 ? false : n === cibles.length ? true : null)
+    }
+    return map
+  }, [agents, cibles, parSequence])
+
+  const [mode, setMode] = useState<ModeAcces>(() => {
+    const modes = new Set(cibles.map((s) => modeAcces(s.settings)))
+    // Lot panaché : on n'invente pas une décision, on part de l'état le plus
+    // ouvert — le seul qui ne ferme rien tant qu'on n'a pas validé.
+    return modes.size === 1 ? [...modes][0] : 'tous'
+  })
+  const [coches, setCoches] = useState<Set<string>>(
+    () => new Set(agents.filter((a) => initiaux.get(a.id) === true).map((a) => a.id)),
+  )
+  /** Ce qu'on n'a pas touché reste indéterminé — et ne part donc pas en écriture. */
+  const [touches, setTouches] = useState<Set<string>>(new Set())
+
+  const bascule = (id: string) => {
+    setTouches((prev) => new Set(prev).add(id))
+    setCoches((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const effectifs = useMemo(() => {
+    const map = new Map<string, boolean | null>()
+    for (const a of agents) map.set(a.id, touches.has(a.id) ? coches.has(a.id) : (initiaux.get(a.id) ?? false))
+    return map
+  }, [agents, coches, initiaux, touches])
+
+  const nbCoches = agents.filter((a) => effectifs.get(a.id) === true).length
+  const nbPartiels = agents.filter((a) => effectifs.get(a.id) === null).length
+  const quoi = cibles.length === 1 ? `« ${cibles[0].name} »` : `${cibles.length} séquences`
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="au-skin">
+      <div className="modal-backdrop" onClick={onCancel}>
+        <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-hd">
+            <div className="grow">
+              <div className="title">Accès des agents — {quoi}</div>
+            </div>
+            <button className="btn ghost sm icon" type="button" onClick={onCancel}>
+              <XI name="x" className="ico-sm" />
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="acces-modes">
+              {(['tous', 'choisis'] as ModeAcces[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={'acces-mode' + (mode === m ? ' on' : '')}
+                  aria-pressed={mode === m}
+                  onClick={() => setMode(m)}
+                >
+                  <span className="rad">{mode === m && <i />}</span>
+                  <span style={{ minWidth: 0 }}>
+                    <span className="t">{MODE_ACCES_LABEL[m].titre}</span>
+                    <span className="s">{MODE_ACCES_LABEL[m].aide}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {mode === 'choisis' && (
+              <div className="acces-agents">
+                {agents.length === 0 && (
+                  <div className="empty-row">
+                    Aucun agent freelance dans le CRM. Restreindre la séquence la rendrait invisible
+                    pour tout le monde.
+                  </div>
+                )}
+                {agents.map((a) => {
+                  const etat = effectifs.get(a.id) ?? false
+                  return (
+                    <label key={a.id} className="acces-agent">
+                      <input
+                        type="checkbox"
+                        className="seq-check"
+                        checked={etat === true}
+                        ref={(el) => {
+                          if (el) el.indeterminate = etat === null
+                        }}
+                        onChange={() => bascule(a.id)}
+                      />
+                      <span style={{ minWidth: 0 }}>
+                        <span className="n">{a.name}</span>
+                        {a.email && <span className="e">{a.email}</span>}
+                      </span>
+                      {etat === null && <span className="pill">sur une partie du lot</span>}
+                    </label>
+                  )
+                })}
+                {nbCoches === 0 && nbPartiels === 0 && agents.length > 0 && (
+                  <div className="acces-warn">
+                    <XI name="warning" className="ico-xs" />
+                    Aucun agent coché : {cibles.length === 1 ? 'cette séquence' : 'ces séquences'} ne
+                    {cibles.length === 1 ? ' sera visible' : ' seront visibles'} que de vous.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 12, lineHeight: 1.5 }}>
+              L’accès vaut pour le pipeline commercial de l’agent, son espace Séquences et le
+              pipeline marketing. Il ne touche pas aux inscriptions déjà lancées : les tâches en
+              cours restent dans sa file.
+            </p>
+          </div>
+          <div className="modal-ft">
+            <button className="btn ghost" type="button" onClick={onCancel}>
+              Annuler
+            </button>
+            <div style={{ flex: 1 }} />
+            <button
+              className="btn accent"
+              type="button"
+              disabled={busy}
+              onClick={() => onConfirm(mode, effectifs, initiaux)}
+            >
+              <XI name="check" className="ico-sm" />
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 /* ── Barre d'actions de masse ──────────────────────────────────────────────
  *
  * Elle ne propose que ce qui a du sens pour le lot : « activer » disparaît si
@@ -550,6 +851,7 @@ function BulkBar({
   busy,
   onStatus,
   onDuplicate,
+  onAcces,
   onDelete,
   onClear,
 }: {
@@ -557,6 +859,7 @@ function BulkBar({
   busy: boolean
   onStatus: (s: AutomationStatus) => void
   onDuplicate: () => void
+  onAcces: () => void
   onDelete: () => void
   onClear: () => void
 }) {
@@ -592,6 +895,10 @@ function BulkBar({
       <button className="btn subtle sm" type="button" disabled={busy} onClick={onDuplicate}>
         <XI name="copyClip" className="ico-sm" />
         Dupliquer
+      </button>
+      <button className="btn subtle sm" type="button" disabled={busy} onClick={onAcces}>
+        <XI name="users" className="ico-sm" />
+        Accès des agents…
       </button>
       {has('archived') ? (
         <button className="btn subtle sm" type="button" disabled={busy} onClick={() => onStatus('archived')}>
@@ -630,6 +937,7 @@ function RowMenu({
   onOpen,
   onStatus,
   onDuplicate,
+  onAcces,
   onDelete,
 }: {
   seq: Automation
@@ -639,6 +947,7 @@ function RowMenu({
   onOpen: () => void
   onStatus: (s: AutomationStatus) => void
   onDuplicate: () => void
+  onAcces: () => void
   onDelete: () => void
 }) {
   const popRef = useRef<HTMLDivElement>(null)
@@ -704,6 +1013,7 @@ function RowMenu({
       <div ref={popRef} className="pop row-pop" role="menu" style={{ top: pos.top, left: pos.left }}>
         {item('edit', 'Modifier', onOpen)}
         {item('copyClip', 'Dupliquer', onDuplicate)}
+        {item('users', 'Accès des agents…', onAcces)}
         <div className="menu-sep" />
         {seq.status !== 'on' && seq.status !== 'archived' && item('playFill', 'Activer', () => onStatus('on'))}
         {seq.status === 'on' && item('pause', 'Mettre en pause', () => onStatus('paused'))}

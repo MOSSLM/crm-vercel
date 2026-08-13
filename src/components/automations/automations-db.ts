@@ -2,6 +2,7 @@
 // automations-db.ts — accès CRUD aux automatisations via le client Supabase
 // navigateur (RLS : authenticated).
 import { supabase } from '@/utils/supabase/client'
+import type { AttributionSequence, ModeAcces } from '@/lib/automations/acces'
 import type {
   Automation,
   AutomationKind,
@@ -85,6 +86,11 @@ export async function setAutomationsStatus(ids: string[], status: AutomationStat
  * la séquence comme un autre, et une copie qui n'a pas le même public ne
  * servirait pas à comparer. Il ne déclenche rien tant que la copie est en
  * brouillon.
+ *
+ * Les agents autorisés suivent aussi. `settings.acces` est recopié avec le
+ * reste : une copie restreinte SANS ses agents serait visible de personne, et
+ * ce vide-là ne se voit qu'en ouvrant la boîte d'accès. Le geste veut dire
+ * « la même », accès compris.
  */
 export async function duplicateAutomation(source: Automation): Promise<Automation> {
   const { data, error } = await supabase
@@ -103,7 +109,122 @@ export async function duplicateAutomation(source: Automation): Promise<Automatio
     .select('*')
     .single()
   if (error) throw error
-  return data as Automation
+  const copie = data as Automation
+
+  // Best-effort : rater la recopie des accès ne doit pas annuler la copie
+  // elle-même, qui est déjà en base et que l'utilisateur voit apparaître.
+  try {
+    const { data: rows } = await supabase
+      .from('sequence_agent_assignments')
+      .select('agent_id')
+      .eq('automation_id', source.id)
+    const agents = (rows ?? []) as { agent_id: string }[]
+    if (agents.length > 0) {
+      const { data: auth } = await supabase.auth.getUser()
+      await supabase.from('sequence_agent_assignments').upsert(
+        agents.map((a) => ({
+          automation_id: copie.id,
+          agent_id: a.agent_id,
+          assigned_by: auth?.user?.id ?? null,
+        })),
+        { onConflict: 'automation_id,agent_id' },
+      )
+    }
+  } catch {
+    /* la copie existe ; ses accès se recochent à la main */
+  }
+
+  return copie
+}
+
+/* ── Accès des agents ──────────────────────────────────────────────────────
+ *
+ * Deux écritures distinctes, parce que ce sont deux décisions distinctes :
+ * le MODE vit dans `automations.settings.acces` (ouvert à tous / restreint),
+ * la LISTE dans `sequence_agent_assignments`. Garder les noms cochés quand on
+ * repasse en « tous » est délibéré : on rouvre souvent le temps d'un essai, et
+ * effacer la liste obligerait à la reconstituer de mémoire au retour.
+ */
+
+export interface AgentRef {
+  id: string
+  name: string
+  email: string | null
+}
+
+/** Les agents freelance — ceux à qui une séquence peut être ouverte. */
+export async function listAgents(): Promise<AgentRef[]> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, email')
+    .eq('role', 'freelance')
+    .order('full_name', { nullsFirst: false })
+  if (error) throw error
+  return ((data ?? []) as { id: string; full_name: string | null; email: string | null }[]).map((a) => ({
+    id: a.id,
+    name: a.full_name?.trim() || a.email || 'Agent',
+    email: a.email,
+  }))
+}
+
+export async function listAttributions(): Promise<AttributionSequence[]> {
+  const { data, error } = await supabase
+    .from('sequence_agent_assignments')
+    .select('automation_id, agent_id')
+  if (error) throw error
+  return (data ?? []) as AttributionSequence[]
+}
+
+/**
+ * Coche ou décoche un agent sur un lot de séquences.
+ *
+ * `upsert` plutôt qu'`insert` : la contrainte d'unicité (automation_id, agent_id)
+ * ferait échouer tout le lot pour une seule ligne déjà présente — cas courant
+ * quand on coche un agent sur une sélection dont la moitié l'avait déjà.
+ */
+export async function setAttribution(
+  automationIds: string[],
+  agentId: string,
+  assigned: boolean,
+): Promise<void> {
+  if (automationIds.length === 0) return
+  if (assigned) {
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = await supabase.from('sequence_agent_assignments').upsert(
+      automationIds.map((automation_id) => ({
+        automation_id,
+        agent_id: agentId,
+        assigned_by: auth?.user?.id ?? null,
+      })),
+      { onConflict: 'automation_id,agent_id' },
+    )
+    if (error) throw error
+    return
+  }
+  const { error } = await supabase
+    .from('sequence_agent_assignments')
+    .delete()
+    .eq('agent_id', agentId)
+    .in('automation_id', automationIds)
+  if (error) throw error
+}
+
+/**
+ * Le mode d'accès, réglage par réglage.
+ *
+ * `settings` est un JSONB écrit en bloc : envoyer `{ acces }` seul EFFACERAIT
+ * les plages d'envoi, le public visé et le reste. On fusionne donc à partir de
+ * ce que la ligne porte déjà — d'où la séquence complète en argument plutôt
+ * qu'un simple identifiant.
+ */
+export async function setModeAcces(sequences: Automation[], acces: ModeAcces): Promise<void> {
+  for (const seq of sequences) {
+    const { error } = await supabase
+      .from('automations')
+      .update({ settings: { ...(seq.settings ?? {}), acces } })
+      .eq('id', seq.id)
+    if (error) throw error
+  }
 }
 
 /**

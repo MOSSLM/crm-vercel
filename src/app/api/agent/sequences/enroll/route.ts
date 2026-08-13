@@ -4,6 +4,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { agentSequenceEnrollSchema } from "@/app/api/_lib/schemas";
 import { enrollInSequence, processSequenceEnrollment } from "@/lib/automations/engine";
+import { agentPeutVoir, chargerAcces } from "@/lib/automations/acces";
 import type { Automation, SequenceEnrollment } from "@/components/automations/types";
 
 export const runtime = "nodejs";
@@ -22,15 +23,6 @@ export const POST = withAuth(
   async ({ user, body, cors }) => {
     const sc = getServiceClient();
 
-    // The sequence must be assigned to this agent by the admin, and be live.
-    const { data: assignment } = await sc
-      .from("sequence_agent_assignments")
-      .select("id")
-      .eq("automation_id", body.automation_id)
-      .eq("agent_id", user.id)
-      .maybeSingle();
-    if (!assignment) return jsonError("sequence_non_assignee", 403, {}, cors);
-
     const { data: autoRow } = await sc
       .from("automations")
       .select("*")
@@ -41,6 +33,13 @@ export const POST = withAuth(
       return jsonError("sequence_introuvable", 404, {}, cors);
     }
     if (automation.status !== "on") return jsonError("sequence_inactive", 409, {}, cors);
+
+    // La séquence doit être ouverte à cet agent — même règle que celle qui
+    // compose sa liste, donc jamais un refus sur ce qu'il vient de choisir.
+    const acces = await chargerAcces(sc);
+    if (!agentPeutVoir(automation, user.id, acces)) {
+      return jsonError("sequence_non_assignee", 403, {}, cors);
+    }
 
     const firstStep = (automation.definition as { steps?: { kind?: string }[] } | null)?.steps?.[0];
     const firstStepKind = firstStep?.kind ?? null;

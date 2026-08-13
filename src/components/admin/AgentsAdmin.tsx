@@ -21,7 +21,14 @@ import {
   type StageOption,
 } from "./agents/ProspectPanels";
 
-type Sequence = { id: string; name: string | null; status: string; steps_count: number };
+type Sequence = {
+  id: string;
+  name: string | null;
+  status: string;
+  steps_count: number;
+  /** `tous` = ouverte à tout le monde, l'attribution nominative ne s'applique pas. */
+  acces?: "tous" | "choisis";
+};
 type SeqAssignment = { automation_id: string; agent_id: string };
 type ClaimRequest = {
   id: string;
@@ -418,7 +425,9 @@ export default function AgentsAdmin() {
             </h2>
             <p className="text-sm text-muted-foreground">
               L&apos;agent sélectionné ci-dessus pourra lancer les séquences attribuées sur ses
-              prospects et exécuter les étapes manuelles (WhatsApp, LinkedIn, appel).
+              prospects et exécuter les étapes manuelles (WhatsApp, LinkedIn, appel). Une séquence
+              ouverte à tous les agents n&apos;a pas besoin d&apos;être attribuée : c&apos;est dans
+              Automatisations › Séquences qu&apos;on la restreint.
             </p>
             {sequences.length === 0 ? (
               <Card>
@@ -451,22 +460,28 @@ export default function AgentsAdmin() {
                             " · visible côté agent seulement quand la séquence est activée"}
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant={assigned ? "outline" : "default"}
-                        disabled={disabled}
-                        onClick={() => toggleSequence(s.id, !assigned)}
-                      >
-                        {assigned ? (
-                          <>
-                            <X className="mr-1 h-4 w-4" /> Retirer
-                          </>
-                        ) : (
-                          <>
-                            <Check className="mr-1 h-4 w-4" /> Attribuer
-                          </>
-                        )}
-                      </Button>
+                      {s.acces === "choisis" ? (
+                        <Button
+                          size="sm"
+                          variant={assigned ? "outline" : "default"}
+                          disabled={disabled}
+                          onClick={() => toggleSequence(s.id, !assigned)}
+                        >
+                          {assigned ? (
+                            <>
+                              <X className="mr-1 h-4 w-4" /> Retirer
+                            </>
+                          ) : (
+                            <>
+                              <Check className="mr-1 h-4 w-4" /> Attribuer
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        // Rien à attribuer : tous les agents l'ont déjà. Un bouton
+                        // « Attribuer » ici cocherait une ligne sans effet visible.
+                        <Badge variant="secondary">Ouverte à tous</Badge>
+                      )}
                     </div>
                   );
                 })}

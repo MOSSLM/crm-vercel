@@ -1259,11 +1259,15 @@ function PartTabs({
         </button>
       </div>
       <span className="parts-hint">
-        {kind === 'one'
-          ? `${steps} colonne${steps > 1 ? 's' : ''} : les étapes de cette séquence`
-          : kind === 'none'
-            ? 'jamais mis en séquence — c’est d’ici qu’on lance'
-            : 'toutes séquences mêlées : leurs étapes ne sont pas comparables, choisissez-en une pour les voir'}
+        {/* Une séquence qu'on ne vous a pas ouverte n'est pas une séquence
+            absente : le dire évite d'aller la chercher dans les filtres. */}
+        {board.sequenceAcces?.restreint && board.sequenceAcces.masquees > 0
+          ? `${board.sequenceAcces.masquees} séquence${board.sequenceAcces.masquees > 1 ? 's' : ''} ne vous ${board.sequenceAcces.masquees > 1 ? 'sont' : 'est'} pas ouverte${board.sequenceAcces.masquees > 1 ? 's' : ''} — demandez-les à l’admin`
+          : kind === 'one'
+            ? `${steps} colonne${steps > 1 ? 's' : ''} : les étapes de cette séquence`
+            : kind === 'none'
+              ? 'jamais mis en séquence — c’est d’ici qu’on lance'
+              : 'toutes séquences mêlées : leurs étapes ne sont pas comparables, choisissez-en une pour les voir'}
       </span>
     </div>
   )
@@ -1557,8 +1561,20 @@ function SequenceDialog({
           <div className="seq-list">
             {board.sequences.length === 0 && (
               <div className="empty" style={{ padding: 24 }}>
-                <div className="t">Aucune séquence</div>
-                <div className="s">Créez-en une dans Automatisations.</div>
+                {board.sequenceAcces?.restreint ? (
+                  <>
+                    <div className="t">Aucune séquence ne vous est ouverte</div>
+                    <div className="s">
+                      L’admin décide, séquence par séquence, qui peut la lancer. Demandez-lui l’accès
+                      à celles dont vous avez besoin.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="t">Aucune séquence</div>
+                    <div className="s">Créez-en une dans Automatisations.</div>
+                  </>
+                )}
               </div>
             )}
             {board.sequences.map((s) => (

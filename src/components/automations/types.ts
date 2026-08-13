@@ -117,6 +117,15 @@ export interface SequenceSettings {
   requireCanaux?: Canal[]
   /** Canaux qui DISQUALIFIENT le prospect (« pas d'adresse e-mail, sinon on écrit »). */
   excludeCanaux?: Canal[]
+  /**
+   * Qui, parmi les agents, voit cette séquence — et donc peut la lancer.
+   *
+   * `tous` (défaut, y compris quand la clé est absente) : elle est dans le
+   * pipeline commercial de tout le monde. `choisis` : seuls les agents inscrits
+   * dans `sequence_agent_assignments` l'ont. La règle complète, avec ce qui l'a
+   * motivée, vit dans `src/lib/automations/acces.ts`.
+   */
+  acces?: 'tous' | 'choisis'
 }
 
 export interface SequenceDefinition {
