@@ -2312,3 +2312,28 @@
    fourche imbriquée que l'éditeur ne dessine pas. On la montre quand même —
    une étape invisible est pire qu'une étape mal placée. */
 .au-skin .seq-step[data-orpheline] { border-style: dashed; border-color: var(--warn); }
+
+/* ── Rapport de séquences (stats) ────────────────────────────────────────
+ * Table dense, pas la grille de lignes de SequencesList : trop de colonnes
+ * numériques pour un layout pensé pour des cartes de séquence. */
+.au-skin .stats-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.au-skin .stats-table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.au-skin .stats-table th, .au-skin .stats-table td { padding: 10px 12px; text-align: left; }
+.au-skin .stats-table thead th {
+  font-size: 11px; font-weight: 500; color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--surface);
+}
+.au-skin .stats-table th.num, .au-skin .stats-table td.num {
+  text-align: right; font-family: var(--font-mono); color: var(--text-2);
+}
+.au-skin .stats-table tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+.au-skin .stats-table tbody tr:hover td { background: var(--hover); }
+.au-skin .stats-seq-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.au-skin .stats-seq-name:hover { color: var(--accent-2); }
+.au-skin .stats-seq-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
