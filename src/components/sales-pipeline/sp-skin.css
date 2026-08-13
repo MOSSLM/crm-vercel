@@ -506,10 +506,13 @@
 .mp-scope .rh-flag .ico { flex-shrink: 0; }
 .mp-scope .rh-flag:hover { border-color: rgba(181,50,47,.35); }
 
-/* ── pied : légende + pagination ── */
+/* ── pied : légende + pagination ──
+   La pagination vit à gauche du pied, avant la légende : à droite, le
+   softphone flottant (bas-droite de l'écran, cf. tel-skin.css `.sp-root`)
+   recouvre les contrôles de pages. */
 .mp-scope .footbar { display: flex; align-items: center; border-top: 1px solid var(--border); background: var(--bg-2); }
 .mp-scope .footbar .legend { border-top: 0; flex: 1; }
-.mp-scope .pager { display: flex; align-items: center; gap: 4px; padding: 7px 24px 7px 0; }
+.mp-scope .pager { display: flex; align-items: center; gap: 4px; padding: 7px 12px; order: -1; }
 .mp-scope .pg {
   min-width: 26px; height: 26px; padding: 0 6px; border-radius: 7px;
   border: 1px solid transparent; background: transparent; font-size: 12px;

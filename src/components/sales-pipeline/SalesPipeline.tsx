@@ -46,6 +46,7 @@ import {
   Play,
   Search,
   Slash,
+  Sparkles,
   User,
   X,
 } from 'lucide-react'
@@ -77,6 +78,7 @@ import { KIND_ICON, SalesCell, columnIcon, columnStepId, eur, rgba, taskForColum
 import { EnvoiWhatsAppDialog } from './EnvoiWhatsAppDialog'
 import type { SalesBoardData, SalesBoardRow, SalesFilters, SalesMissingEmailRow } from './types'
 import './sp-skin.css'
+import '@/components/automations/regulator.css'
 
 export type SalesPipelineVariant = 'admin' | 'agent'
 
@@ -1560,9 +1562,14 @@ function RowHead({
               href={row.companyUrl.startsWith('http') ? row.companyUrl : `https://${row.companyUrl}`}
               target="_blank"
               rel="noopener noreferrer"
-              title={row.companyUrl}
+              title={`Site actuel — ${row.companyUrl}`}
             >
               <Globe className="ico-sm" />
+            </a>
+          )}
+          {row.demoUrl && (
+            <a href={row.demoUrl} target="_blank" rel="noopener noreferrer" title="Voir le site démo">
+              <Sparkles className="ico-sm" />
             </a>
           )}
           {row.phone && (

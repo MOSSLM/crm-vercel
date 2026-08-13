@@ -196,13 +196,16 @@
 .au-skin .rg-sep .rule { flex: 1; height: 1px; background: var(--border-2); }
 .au-skin .rg-empty { padding: 34px 16px; text-align: center; color: var(--text-3); font-size: 12.5px; }
 
-/* ── avatars ── */
-.au-skin .rg-av {
+/* ── avatars ──
+   Non scopé à .au-skin : ce composant Avatar (regulator/parts.tsx) est
+   réutilisé hors des pages Automatisations (pipeline commercial, tableau
+   des tâches) — la portée par ancêtre laissait ces cercles sans style. */
+.rg-av {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 50%; color: #fff;
   font-size: 9px; font-weight: 600; flex-shrink: 0;
 }
-.au-skin .rg-av.none { background: var(--bg-3); color: var(--text-3); }
+.rg-av.none { background: var(--bg-3); color: var(--text-3); }
 
 /* ── réglages ── */
 .au-skin .rg-set { padding: 12px 13px; border-bottom: 1px solid var(--border); }

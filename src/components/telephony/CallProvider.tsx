@@ -18,6 +18,7 @@ import { toE164, phoneSuffix } from "@/lib/telephony/phone";
 import { ZadarmaWidget } from "./ZadarmaWidget";
 import { SoftphonePanel } from "./SoftphonePanel";
 import { webphone, useWebphone, type WebphoneState } from "./zadarmaWebphone";
+import { useSoftphoneWidgetHidden } from "@/hooks/useSoftphoneWidgetHidden";
 
 export interface DialInput {
   to: string;
@@ -108,6 +109,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [calling, setCalling] = useState(false);
   const [match, setMatch] = useState<CallMatch | null>(null);
   const phone = useWebphone();
+  const [widgetHidden] = useSoftphoneWidgetHidden();
 
   // Load the agent's telephony profile (extension + preferred call mode).
   useEffect(() => {
@@ -204,7 +206,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       {profile?.configured && profile?.hasExtension && profile?.sip && (
         <ZadarmaWidget sip={profile.sip} />
       )}
-      <SoftphonePanel />
+      <SoftphonePanel hideWhenIdle={widgetHidden} />
     </TelephonyContext.Provider>
   );
 }
