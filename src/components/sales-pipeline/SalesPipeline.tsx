@@ -255,7 +255,19 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   }, [])
 
   const post = React.useCallback(
-    async (path: string, body: unknown, rowId: string | null, okMessage?: string) => {
+    async (
+      path: string,
+      body: unknown,
+      rowId: string | null,
+      /**
+       * Un texte fixe, ou de quoi le composer À PARTIR de la réponse.
+       *
+       * « Réponse enregistrée » s'affichait même quand la séquence n'avait pas
+       * bougé d'un cran : l'action semblait avoir marché, et on revenait
+       * cliquer. Une action qui n'a pas eu l'effet annoncé doit le dire.
+       */
+      okMessage?: string | ((payload: Record<string, unknown>) => { message: string; alerte?: boolean }),
+    ) => {
       setBusy(rowId)
       try {
         const res = await authedFetch(`${base}/${path}`, {
@@ -268,7 +280,13 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           toast.error(errorLabel(payload?.error))
           return false
         }
-        if (okMessage) toast.success(okMessage)
+        if (typeof okMessage === 'function') {
+          const dit = okMessage(payload ?? {})
+          if (dit.alerte) toast.warning(dit.message)
+          else toast.success(dit.message)
+        } else if (okMessage) {
+          toast.success(okMessage)
+        }
         await load(true)
         return true
       } catch {
@@ -1152,7 +1170,21 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                 ...body,
               },
               outcome.row.id,
-              'Réponse enregistrée',
+              (p) => {
+                if (p.released) return { message: 'Réponse enregistrée — la séquence repart' }
+                // `raison` n'est posée que si l'issue devait libérer une attente
+                // et n'a pas pu : c'est le seul cas où l'on doit tempérer.
+                if (p.raison) {
+                  return {
+                    message:
+                      p.raison === 'pas_en_attente'
+                        ? 'Réponse notée, mais la séquence n’attendait rien à cette étape — elle n’a pas avancé.'
+                        : 'Réponse notée, mais la séquence n’a pas pu repartir.',
+                    alerte: true,
+                  }
+                }
+                return { message: 'Réponse enregistrée' }
+              },
             )
             if (ok) setOutcome(null)
           }}

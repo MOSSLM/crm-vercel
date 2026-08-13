@@ -181,6 +181,12 @@ export interface OutcomeResult {
   stopped: boolean
   /** Une attente-réponse a été libérée : la séquence est repartie. */
   released: boolean
+  /**
+   * Pourquoi elle ne l'a pas été. `null` quand il n'y avait rien à libérer ou
+   * que tout s'est bien passé — c'est ce qui permet à l'écran de dire « noté,
+   * mais la séquence n'a pas bougé » au lieu d'un succès qui n'en est pas un.
+   */
+  raison: string | null
   noteId: string | null
   state: SalesRowState
 }
@@ -263,13 +269,19 @@ export async function recordOutcome(
     .select('id')
     .maybeSingle()
 
-  // Une attente-réponse ne se libère que si l'inscription en attend vraiment
-  // une : `declarerReponse` refuse sinon, et c'est voulu — avancer à l'aveugle
-  // ferait sauter une étape au prospect.
+  // C'est `declarerReponse` qui juge, et lui seul.
+  //
+  // On exigeait ici `hold_reason === 'awaiting_reply'` AVANT même de l'appeler.
+  // Ce garde-fou doublait le sien en plus strict, et rendait inatteignable le
+  // demi-tour qu'il sait faire : quelqu'un qui répond APRÈS la relance — le cas
+  // le plus fréquent, puisque c'est elle qui l'a réveillé — n'est plus en
+  // attente, donc « A répondu » ne faisait RIEN. Sans un mot à l'écran.
   let released = false
-  if (outcome.releasesWait && enrollment && enrollment.hold_reason === 'awaiting_reply') {
-    const r = await declarerReponse(sb, enrollment.id).catch(() => ({ ok: false }))
+  let raison: string | null = null
+  if (outcome.releasesWait && enrollment) {
+    const r = await declarerReponse(sb, enrollment.id).catch(() => ({ ok: false as const, error: 'erreur' }))
     released = r.ok
+    if (!r.ok) raison = 'error' in r ? (r.error ?? null) : null
   }
 
   let state: SalesRowState = 'progress'
@@ -285,7 +297,7 @@ export async function recordOutcome(
     state = applied.state
   }
 
-  return { stopped: outcome.flow === 'stop', released, noteId: inserted?.id ?? null, state }
+  return { stopped: outcome.flow === 'stop', released, raison, noteId: inserted?.id ?? null, state }
 }
 
 /**
