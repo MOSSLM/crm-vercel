@@ -228,7 +228,6 @@ export function AnalyticsRadarApp() {
               hubRows={d.hubs}
               onSelectCity={() => setTab("sites")}
               rangeLabel={rangeLabel}
-              total={d.kpis.sessions}
               liveCities={liveCities}
             />
             <div className="a-rail">

@@ -1,6 +1,7 @@
 import { json } from "@/app/api/_lib/respond";
 import { preflight } from "@/app/api/_lib/cors";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { requireStaff } from "@/app/api/_lib/require-staff";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { listDemoSites } from "@/lib/analytics-radar/demo-sites";
 import { getGa4Config } from "@/lib/analytics-radar/ga4-client";
@@ -135,7 +136,13 @@ function pathFromUrl(url: string | null): string | null {
  * distinctly (not linked / export not run yet / real error) instead of a
  * blank crash — all three are realistic states for a freshly-linked export.
  */
-export const GET = withAuth({}, async ({ req, cors }) => {
+export const GET = withAuth({}, async ({ req, cors, user }) => {
+  // Même périmètre que /api/analytics-radar : tout le parc, donc staff
+  // uniquement. Ici le garde-fou protège aussi la facture BigQuery, facturée
+  // à l'octet scanné à chaque appel.
+  const staff = await requireStaff(user, cors);
+  if (!staff.ok) return staff.response;
+
   const url = new URL(req.url);
   const days = Math.max(1, Math.min(14, Number(url.searchParams.get("days")) || 3));
 

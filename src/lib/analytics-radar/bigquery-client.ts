@@ -112,6 +112,16 @@ async function pollUntilComplete(token: string, link: BigQueryLink, job: BqQuery
   return cur;
 }
 
+/**
+ * Plafond dur d'octets scannés par requête (2 Gio ≈ 1 centime au tarif
+ * on-demand). BigQuery refuse la requête AVANT de l'exécuter si l'estimation
+ * dépasse ce seuil : c'est un garde-fou de facture, pas une optimisation.
+ * L'export GA4 d'un parc de sites démo pèse quelques Mio par jour, donc ce
+ * plafond ne devrait jamais être atteint — s'il l'est, c'est le signal qu'il
+ * faut partitionner la requête plutôt que relever le plafond.
+ */
+const MAX_BYTES_BILLED = String(2 * 1024 * 1024 * 1024);
+
 /** Runs a parametrized query and returns plain objects keyed by column name.
  *  Nested/repeated columns should be pre-flattened to JSON strings in the SQL
  *  itself (`TO_JSON_STRING(...)`) — the BigQuery REST API's row encoding for
@@ -139,6 +149,7 @@ export async function runBigQuery(
         parameterType: { type: p.type },
         parameterValue: { value: p.value },
       })),
+      maximumBytesBilled: MAX_BYTES_BILLED,
       timeoutMs: 20000,
     }),
   });

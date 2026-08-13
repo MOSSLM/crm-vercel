@@ -8,6 +8,9 @@
  * cities it's missing — it intentionally leans French/European since that's
  * this CRM's prospect base.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { geoFromCodePostal } from "@/lib/site-builder/geo-fr";
+
 export interface CityGeo {
   lat: number;
   lon: number;
@@ -61,4 +64,66 @@ export const CITY_GEO: Record<string, CityGeo> = {
 
 export function geocodeCity(city: string): CityGeo | null {
   return CITY_GEO[city] ?? null;
+}
+
+/**
+ * Géocode un lot de villes remontées par GA4, en s'appuyant d'abord sur le
+ * référentiel réel des communes françaises déjà présent dans le CRM
+ * (`communes_fr`, ~34 900 communes chargées depuis geo.api.gouv.fr par
+ * /api/settings/communes-fr), puis sur la table statique ci-dessus pour les
+ * villes étrangères qu'il ne contient pas.
+ *
+ * Sans ça le globe ne montrait QUE les ~40 villes écrites en dur : une visite
+ * réelle depuis une commune de 6 000 habitants n'apparaissait nulle part, ce
+ * qui donnait un globe vide alors que le trafic existait.
+ *
+ * Homonymes : plusieurs communes portent le même nom (Sainte-Marie, Saint-Paul…).
+ * On retient la plus peuplée — c'est le pari le plus probable pour du trafic
+ * web, et GA4 ne donne de toute façon pas de quoi trancher (pas de code INSEE).
+ */
+export async function geocodeCitiesFromCommunes(
+  supabase: SupabaseClient,
+  cities: string[],
+): Promise<Map<string, CityGeo>> {
+  const out = new Map<string, CityGeo>();
+  const wanted = [...new Set(cities.filter((c) => c && c !== "Inconnue"))];
+  if (!wanted.length) return out;
+
+  let rows: CommuneRow[] = [];
+  try {
+    const res = await supabase.from("communes_fr").select("nom, lat, lon, codes_postaux, population").in("nom", wanted);
+    rows = (res.data ?? []) as unknown as CommuneRow[];
+  } catch {
+    // Table absente (migration non appliquée) → on retombe sur la table
+    // statique plus bas, le globe reste fonctionnel en mode dégradé.
+    rows = [];
+  }
+
+  const best = new Map<string, CommuneRow>();
+  rows.forEach((r) => {
+    if (r.lat == null || r.lon == null) return;
+    const prev = best.get(r.nom);
+    if (!prev || (r.population ?? 0) > (prev.population ?? 0)) best.set(r.nom, r);
+  });
+
+  best.forEach((r, nom) => {
+    const cp = Array.isArray(r.codes_postaux) ? r.codes_postaux[0] : null;
+    const geo = cp ? geoFromCodePostal(cp) : null;
+    out.set(nom, { lat: r.lat as number, lon: r.lon as number, region: geo?.region ?? "France" });
+  });
+
+  // Villes hors référentiel français (visiteurs étrangers) → table statique.
+  wanted.forEach((c) => {
+    if (!out.has(c) && CITY_GEO[c]) out.set(c, CITY_GEO[c]);
+  });
+
+  return out;
+}
+
+interface CommuneRow {
+  nom: string;
+  lat: number | null;
+  lon: number | null;
+  codes_postaux: string[] | null;
+  population: number | null;
 }

@@ -41,7 +41,7 @@ export interface AnalyticsRadarPayload {
     processing: boolean;
   };
   timeseries: Array<{ date: string; sessions: number }>;
-  hubs: Array<GlobeHubRow & { country: string }>;
+  hubs: Array<GlobeHubRow & { country: string; share: number; visitedSites: number; citySites: number }>;
   sites: AnalyticsRadarSitePerf[];
   notVisitedSites: Array<{ hostname: string; companyName: string }>;
   devices: Array<{ device: string; sessions: number }>;
