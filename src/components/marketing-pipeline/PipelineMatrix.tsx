@@ -854,7 +854,16 @@ function StageActions({ item, stage, done, busy, templateId, templateName, agent
             ) : null}
             <NoteButton item={item} subject="audit" handlers={handlers} />
             {!done && (
-              <button className="btn ok sm icon" disabled={busy} title="Valider l'audit" onClick={() => handlers.onValidateAudit(item)}>
+              <button
+                className="btn ok sm icon"
+                disabled={busy || !item.audit.prepare}
+                title={
+                  item.audit.prepare
+                    ? "Valider l'audit"
+                    : "Aucun constat rédigé — préparez l'audit avant de le valider"
+                }
+                onClick={() => handlers.onValidateAudit(item)}
+              >
                 <Check className="ico-sm" />
               </button>
             )}
@@ -1165,7 +1174,10 @@ function BulkBar({
   // puisque c'est justement le lien d'aperçu qui part le plus souvent.
   const toVignette = rows.filter((r) => r.site);
   const toCreateAudit = rows.filter((r) => !r.audit);
-  const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
+  // Le lot ne vise que les audits RÉDIGÉS. Le compteur du bouton devient donc le
+  // nombre d'audits réellement prêts à partir, et non le nombre de lignes qui
+  // portent un audit — c'est cette confusion qui a fait valider 67 documents vides.
+  const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready" && r.audit.prepare);
 
   const ct = (n: number) => <span className="ct">{n}</span>;
 

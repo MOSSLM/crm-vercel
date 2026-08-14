@@ -1093,10 +1093,33 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /**
+   * Valider, c'est déclarer un audit envoyable — pas cocher une case.
+   *
+   * LE FILTRE EST ICI, ET PAS SEULEMENT SUR LES BOUTONS. Deux interfaces
+   * appellent cette fonction (la coche d'une ligne et le bouton de lot) et deux
+   * chemins d'écriture en partent (la route agent, l'écriture directe admin).
+   * Un garde-fou posé sur l'un des boutons laisserait les trois autres passages
+   * ouverts ; posé ici, il tient quel que soit l'appelant.
+   *
+   * Le 12/08/2026, 67 audits jamais rédigés sont passés en « validé » d'un seul
+   * clic. Ce n'était pas une erreur de manipulation : rien ne l'empêchait.
+   */
   const validateAudits = async (items: BoardItem[]) => {
-    const auditIds = items.map((it) => it.audit?.id).filter((v): v is string => !!v);
+    const prets = items.filter((it) => it.audit?.prepare);
+    const vides = items.filter((it) => it.audit && !it.audit.prepare);
+
+    if (vides.length > 0) {
+      toast.error(
+        vides.length === 1
+          ? "Cet audit n'a aucun constat rédigé : préparez-le avant de le valider."
+          : `${vides.length} audits n'ont aucun constat rédigé : préparez-les avant de les valider.`,
+      );
+    }
+
+    const auditIds = prets.map((it) => it.audit?.id).filter((v): v is string => !!v);
     if (auditIds.length === 0) {
-      toast.error("Aucun audit à valider");
+      if (vides.length === 0) toast.error("Aucun audit à valider");
       return;
     }
     setWorking("validate-audit");
@@ -1107,7 +1130,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "validate",
-            opportunite_ids: items.filter((it) => it.audit).map((it) => it.id),
+            opportunite_ids: prets.map((it) => it.id),
           }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");

@@ -232,7 +232,32 @@ type AuditRow = {
   opportunite_id: string | null;
   statut: string | null;
   pdf_url: string | null;
+  /**
+   * `content.page3.avant_apres`, et rien d'autre du contenu.
+   *
+   * PostgREST sait descendre dans le JSONB à la sélection, ce qui évite de
+   * rapatrier les six pages d'un document pour répondre à une question binaire :
+   * cet audit a-t-il été rédigé ? Le tableau n'existe que si la route de
+   * préparation l'a écrit — le contenu par défaut n'a pas cette clé du tout.
+   */
+  avant_apres: unknown;
 };
+
+/**
+ * Un audit préparé, c'est-à-dire envoyable.
+ *
+ * LE 12/08/2026, 67 AUDITS ONT ÉTÉ CRÉÉS ET VALIDÉS EN DIX SECONDES. Aucun
+ * n'avait reçu la moindre rédaction : le bouton de validation en lot ne lisait
+ * que `id` et `opportunite_id`, jamais le contenu. « Validé » voulait donc dire
+ * « quelqu'un a cliqué », pas « ce document peut partir chez un prospect ».
+ *
+ * Ce prédicat est le seul juge, et il est volontairement grossier : la finesse
+ * appartient à `validerPreparation`, qui refuse déjà tout constat sans preuve.
+ * Ici on ne vérifie qu'une chose — une rédaction a eu lieu.
+ */
+export function auditPrepare(avantApres: unknown): boolean {
+  return Array.isArray(avantApres) && avantApres.length > 0;
+}
 
 type AgentRow = { id: string; full_name: string | null; email: string | null };
 
@@ -563,7 +588,10 @@ export async function buildBoard(
       .order("name", { ascending: true }),
     fetchDemoSites(supabase, entIds),
     oppIds.length > 0
-      ? supabase.from("audits").select("id, opportunite_id, statut, pdf_url").in("opportunite_id", oppIds)
+      ? supabase
+          .from("audits")
+          .select("id, opportunite_id, statut, pdf_url, avant_apres:content->page3->avant_apres")
+          .in("opportunite_id", oppIds)
       : Promise.resolve({ data: [] as AuditRow[], error: null }),
     supabase.from("user_profiles").select("id, full_name, email").eq("role", "freelance"),
     supabase.from("pipelines").select("id, nom, ordre, is_default").order("ordre", { ascending: true }),
@@ -839,7 +867,14 @@ export async function buildBoard(
                 : null,
           }
         : null,
-      audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
+      audit: audit
+        ? {
+            id: audit.id,
+            statut: audit.statut ?? "draft",
+            pdf_url: audit.pdf_url ?? null,
+            prepare: auditPrepare(audit.avant_apres),
+          }
+        : null,
       note_site: noteSiteDe(notesSite, o.entreprise_id),
       agent: owner ? { id: owner.id, name: owner.name } : null,
       canaux: o.entreprise_id != null ? [...(canauxByEnt.get(o.entreprise_id)?.canaux ?? [])] : [],

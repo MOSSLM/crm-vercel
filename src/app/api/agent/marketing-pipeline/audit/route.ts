@@ -5,6 +5,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
 import { logPipelineStep } from "../_lib";
+import { auditPrepare } from "@/app/api/marketing-pipeline/_board";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,12 +53,29 @@ export const POST = withAuth<Body>(
 
     if (body.action === "validate") {
       const allowedOppIds = allowed.map((o) => o.id as string);
+      /**
+       * On lit le CONTENU, et c'est tout l'objet de ce garde-fou.
+       *
+       * Cette requête ne sélectionnait que `id, opportunite_id` : la route
+       * validait donc sans jamais savoir ce qu'elle validait. Le 12/08/2026,
+       * 67 audits au contenu par défaut sont passés en « prêt » en dix
+       * secondes, et rien en base ne permettait ensuite de les distinguer d'un
+       * document rédigé.
+       *
+       * `avant_apres` n'existe que si `POST /api/audit/preparation` l'a écrit —
+       * le contenu par défaut n'a pas cette clé. PostgREST descend dans le
+       * JSONB à la sélection, donc on ne rapatrie pas les six pages pour
+       * répondre à une question binaire.
+       */
       const { data: audits } = await sc
         .from("audits")
-        .select("id, opportunite_id")
+        .select("id, opportunite_id, avant_apres:content->page3->avant_apres")
         .in("opportunite_id", allowedOppIds);
-      const auditIds = (audits ?? []).map((a) => a.id as string);
-      if (auditIds.length === 0) return jsonError("aucun_audit", 404, {}, cors);
+
+      const prets = (audits ?? []).filter((a) => auditPrepare(a.avant_apres));
+      const auditIds = prets.map((a) => a.id as string);
+      if ((audits ?? []).length === 0) return jsonError("aucun_audit", 404, {}, cors);
+      if (auditIds.length === 0) return jsonError("audit_sans_constat", 422, {}, cors);
 
       const { error } = await sc
         .from("audits")
@@ -65,17 +83,27 @@ export const POST = withAuth<Body>(
         .in("id", auditIds);
       if (error) return jsonError(error.message, 500, {}, cors);
 
+      // Le journal ne consigne que ce qui a été écrit. Y faire figurer les
+      // opportunités écartées ferait mentir la seule trace qu'on ait de qui a
+      // validé quoi — et c'est l'absence de trace fiable qui a rendu le lot du
+      // 12/08 impossible à relire après coup.
+      const validees = new Set(prets.map((a) => a.opportunite_id as string));
       await Promise.all(
-        allowed.map((o) =>
-          logPipelineStep({
-            agentId: user.id,
-            entrepriseId: Number(o.entreprise_id),
-            action: "validate_audit",
-            metadata: { opportunite_id: o.id },
-          }),
-        ),
+        allowed
+          .filter((o) => validees.has(o.id as string))
+          .map((o) =>
+            logPipelineStep({
+              agentId: user.id,
+              entrepriseId: Number(o.entreprise_id),
+              action: "validate_audit",
+              metadata: { opportunite_id: o.id },
+            }),
+          ),
       );
-      return json({ ok: true, validated: auditIds.length }, { headers: cors });
+      return json(
+        { ok: true, validated: auditIds.length, ecartes: (audits ?? []).length - auditIds.length },
+        { headers: cors },
+      );
     }
 
     // action === "create" — on saute les opportunités qui ont déjà un audit.
