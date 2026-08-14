@@ -467,11 +467,31 @@ describe("intégrité catalogue ↔ preuves", () => {
     }
   });
 
-  it("le seul constat sans déclencheur est celui qu'on décide en amont", () => {
-    // `no_site_or_unreachable` ne se déduit pas d'une preuve : il se décide avant
-    // toute mesure, quand rien ne répond ou que la page se déclare en travaux.
-    const sansDeclencheur = AUDIT_ISSUE_CATALOG.filter((c) => !c.declencheurs).map((c) => c.key);
-    expect(sansDeclencheur).toEqual(["no_site_or_unreachable"]);
+  /**
+   * UN CONSTAT SANS DÉCLENCHEUR DOIT DIRE QUI LE RELÈVE.
+   *
+   * L'invariant d'origine n'en tolérait qu'un — `no_site_or_unreachable`, qui se
+   * décide avant toute mesure, quand rien ne répond. Sept constats relevés à la
+   * main l'ont rejoint : une entrée de menu qui tombe dans le vide, un « Titre
+   * de la diapositive » resté dans un bouton, une année vieille de sept ans.
+   * L'analyseur ne voit rien de tout ça.
+   *
+   * Ce que le test protège n'est donc plus « il n'y en a qu'un » mais « aucun
+   * n'y est par oubli » : sans déclencheur ET sans `releve`, un constat ne
+   * pourrait jamais être émis, et personne ne s'en apercevrait.
+   */
+  it("tout constat sans déclencheur déclare qui le relève", () => {
+    const orphelins = AUDIT_ISSUE_CATALOG.filter(
+      (c) => !c.declencheurs && !c.releve && c.key !== "no_site_or_unreachable",
+    ).map((c) => c.key);
+    expect(orphelins).toEqual([]);
+  });
+
+  it("un constat relevé à la main n'a pas de déclencheur automatique", () => {
+    // L'inverse compte autant : un constat qui porte les deux se déclencherait
+    // tout seul ET se relèverait à la main, donc apparaîtrait deux fois.
+    const doubles = AUDIT_ISSUE_CATALOG.filter((c) => c.releve && c.declencheurs).map((c) => c.key);
+    expect(doubles).toEqual([]);
   });
 });
 
