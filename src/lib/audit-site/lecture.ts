@@ -235,9 +235,22 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
       // le JavaScript a réellement été exécuté.
       : { id, note, confiance: "haute", preuves, mesureGoogle: true, constats: constatsDe(categorie) };
 
+  /**
+   * Les axes SANS COLONNE DÉDIÉE se recalculent depuis leurs preuves stockées.
+   *
+   * `popularite` avait déjà ce traitement ; `contenu` l'hérite pour la même
+   * raison, et elle est concrète : un `upsert` qui nomme une colonne absente
+   * échoue ENTIÈREMENT, et les migrations s'appliquent ici à la main. Faire
+   * dépendre l'écriture de toute une ligne d'une migration non passée, c'est la
+   * panne déjà vécue avec `paywall_enabled`. Recalculées à la lecture, ces notes
+   * apparaissent dès que leurs preuves sont là, migration ou pas.
+   */
+  const SANS_COLONNE = new Set<AxeId>(["popularite", "contenu"]);
+
   const axeMaison = (id: AxeId): AxePublie | null => {
-    const note =
-      id === "popularite" ? noteDepuisPreuves(detail.popularite ?? []) : num(row[`note_${id}`]);
+    const note = SANS_COLONNE.has(id)
+      ? noteDepuisPreuves(detail[id] ?? [])
+      : num(row[`note_${id}`]);
     const conf = confiance[id] ?? "faible";
     // La règle, à un seul endroit : sous le seuil de confiance, l'axe n'est pas
     // publié. Le griser reviendrait à publier le chiffre en le décorant.
@@ -318,7 +331,15 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   // Ce que Google ne mesure pas et ne mesurera jamais : est-ce qu'on peut vous
   // joindre, et est-ce qu'on parle de vous. Ces deux axes-là restent les nôtres
   // dans tous les cas — ce sont aussi les deux qui se vendent le mieux.
-  for (const id of ["conversion", "popularite"] as const) publier(axeMaison(id), id);
+  /**
+   * Le contenu et la prise de contact restent NOTRES dans tous les cas.
+   *
+   * Google ne mesure ni l'un ni l'autre, et ne les mesurera pas : ce sont des
+   * comptages — combien de pages, combien de texte, combien de photos, un
+   * formulaire, un numéro cliquable — pas des performances. Ce sont aussi les
+   * deux axes que l'offre répare vraiment, donc les deux qui se vendent.
+   */
+  for (const id of ["contenu", "conversion", "popularite"] as const) publier(axeMaison(id), id);
 
   const noteGlobale = num(row.note_globale);
 

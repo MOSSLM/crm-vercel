@@ -484,3 +484,66 @@ describe("libelleDeNote", () => {
     expect(libelleDeNote(10)).toBe("Critique");
   });
 });
+
+/**
+ * L'axe contenu — celui qui répond au site vide qui charge vite.
+ *
+ * LE DÉFAUT QU'IL CORRIGE, mesuré sur le parc : PageSpeed récompense
+ * mécaniquement le vide. Moins de pages, moins d'images, moins de scripts, donc
+ * meilleur affichage. Un site de trois pages bâclé battait un vrai site de
+ * quarante, et nos axes maison ne rattrapaient rien — ce sont des contrôles de
+ * présence qu'un site squelettique passe haut la main.
+ */
+describe("l'axe contenu", () => {
+  const site = (over: Partial<SignauxSite> = {}): SignauxSite =>
+    ({
+      joignable: true,
+      coquille: false,
+      nbPagesSitemap: 24,
+      longueurTexteVisible: 4200,
+      nbImages: 14,
+      avisDansLaPage: true,
+      widgetAvis: null,
+      ...over,
+    }) as unknown as SignauxSite;
+
+  const contenu = (s: SignauxSite, ctx = { nombreAvis: 62 }) =>
+    scorer(s, ctx).axes.contenu;
+
+  it("note haut un site fourni", () => {
+    expect(contenu(site()).note).toBeGreaterThanOrEqual(85);
+  });
+
+  it("effondre la note d'un site vide, même impeccable par ailleurs", () => {
+    const vide = site({ nbPagesSitemap: 3, longueurTexteVisible: 400, nbImages: 1, avisDansLaPage: false });
+    expect(contenu(vide).note).toBeLessThan(30);
+  });
+
+  it("ne reproche pas des avis absents à qui n'en a pas reçu", () => {
+    // Même règle que l'axe conversion : on ne reproche pas de ne pas montrer ce
+    // qu'on n'a pas. Sans avis Google connus, la preuve sort du dénominateur.
+    const sansAvisNulle = site({ avisDansLaPage: false });
+    const avec = contenu(sansAvisNulle, { nombreAvis: 0 });
+    const sans = contenu(sansAvisNulle, { nombreAvis: 62 });
+    expect(avec.note).toBeGreaterThan(sans.note);
+  });
+
+  it("ne conclut pas sans plan du site : une absence de plan n'est pas une absence de pages", () => {
+    const sansPlan = contenu(site({ nbPagesSitemap: null }));
+    expect(sansPlan.preuves.find((p) => p.cle === "pages_site")?.verdict).toBe("inconnu");
+  });
+
+  it("passe en confiance faible sur une coquille", () => {
+    // Une page rendue côté JavaScript n'a presque pas de texte servi : compter
+    // ce qu'on n'a pas reçu donnerait 10/100 à des sites très corrects.
+    expect(contenu(site({ coquille: true })).confiance).toBe("faible");
+  });
+
+  it("dit le texte en mots, pas en caractères", () => {
+    // « 1 500 caractères » ne dit rien à personne ; « environ 250 mots » se
+    // compare à une page qu'on a déjà lue.
+    const p = contenu(site({ longueurTexteVisible: 600 })).preuves.find((x) => x.cle === "texte_accueil");
+    expect(p?.valeur).toMatch(/mots?$/);
+    expect(p?.seuil).toMatch(/mots?$/);
+  });
+});

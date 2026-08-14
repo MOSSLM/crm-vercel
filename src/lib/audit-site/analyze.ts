@@ -102,6 +102,7 @@ export function analyser(c: CollecteSite, contexte: ContexteEntreprise = {}): Si
     noindex: false,
     robotsTxt: c.robotsTxt,
     sitemapXml: c.sitemapXml,
+    nbPagesSitemap: c.nbPagesSitemap,
     jsonLdLocalBusiness: false,
     napNom: false,
     napAdresse: false,

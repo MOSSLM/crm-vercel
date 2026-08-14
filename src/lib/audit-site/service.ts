@@ -158,6 +158,7 @@ function signauxSansSite(): SignauxSite {
     noindex: false,
     robotsTxt: null,
     sitemapXml: null,
+    nbPagesSitemap: null,
     jsonLdLocalBusiness: false,
     napNom: false,
     napAdresse: false,

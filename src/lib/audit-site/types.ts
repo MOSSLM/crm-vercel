@@ -31,7 +31,7 @@ export type Confiance = "haute" | "moyenne" | "faible";
  * constats vendables, et il pèse ZÉRO dans la note globale — sinon
  * « votre site : 62/100 » inclurait des choses qui ne sont pas le site.
  */
-export type AxeId = "vitesse" | "seo" | "mobile" | "conversion" | "popularite";
+export type AxeId = "vitesse" | "seo" | "mobile" | "contenu" | "conversion" | "popularite";
 
 /**
  * Un signal mesuré, avec ce qui le rend opposable : la valeur constatée et le
@@ -225,6 +225,19 @@ export interface CollecteSite {
   /** null quand la vérification n'a pas pu aboutir — distinct de `false`. */
   robotsTxt: boolean | null;
   sitemapXml: boolean | null;
+  /**
+   * Combien de pages le site déclare, d'après son propre plan.
+   *
+   * LE SEUL SIGNAL DE CONTENU QUI NE COÛTE RIEN. On téléchargeait déjà
+   * `sitemap.xml` pour n'en garder qu'un booléen ; en compter les `<loc>`
+   * distingue un site de quatre pages d'un site de quarante, gratuitement et
+   * sans jugement. C'est la mesure qui répond au site vide qui charge vite :
+   * PageSpeed récompense le vide, ce comptage le constate.
+   *
+   * `null` quand le plan est absent, illisible, ou qu'aucune URL n'a pu être
+   * lue — une absence de plan n'est pas une absence de pages.
+   */
+  nbPagesSitemap: number | null;
 }
 
 /** Les signaux bruts extraits du HTML. Aucun jugement ici : que des faits. */
@@ -278,6 +291,14 @@ export interface SignauxSite {
   noindex: boolean;
   robotsTxt: boolean | null;
   sitemapXml: boolean | null;
+  /**
+   * Combien de pages le site déclare, d'après son propre plan.
+   *
+   * Le seul signal de contenu qui ne coûte rien : on téléchargeait déjà
+   * `sitemap.xml` pour n'en garder qu'un booléen. `null` quand le plan est
+   * absent ou illisible — une absence de plan n'est pas une absence de pages.
+   */
+  nbPagesSitemap: number | null;
   jsonLdLocalBusiness: boolean;
   napNom: boolean;
   napAdresse: boolean;
