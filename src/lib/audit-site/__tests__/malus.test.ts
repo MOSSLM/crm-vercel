@@ -1,4 +1,11 @@
-import { noteDocument, baseDocument, PLAFOND_SANS_CONTENU, POIDS_DOCUMENT } from "../malus";
+import {
+  noteDocument,
+  baseDocument,
+  PLAFOND_SANS_CONTENU,
+  PLAFOND_ILLISIBLE,
+  AUDITS_LISIBILITE,
+  POIDS_DOCUMENT,
+} from "../malus";
 import type { SignauxSite } from "../types";
 
 /**
@@ -213,5 +220,89 @@ describe("la base : moyenne pondérée des axes AFFICHÉS", () => {
     expect(POIDS_DOCUMENT.contenu + POIDS_DOCUMENT.conversion).toBe(40);
     expect(POIDS_DOCUMENT.popularite).toBe(0);
     expect(POIDS_DOCUMENT.bonnes_pratiques).toBe(0);
+  });
+});
+
+/**
+ * La dilution, un étage plus bas — et le plafond qui la rattrape.
+ *
+ * On a corrigé une note globale qui valait la moyenne d'une seule catégorie ;
+ * le même travers vit DANS les catégories. Sur Doussot, Lighthouse relève
+ * dix-sept défauts — douze liens non explorables, dix-neuf éléments aux
+ * attributs ARIA interdits, deux liens sans nom — et les axes affichent
+ * référencement 92 et accessibilité 88, parce que leurs vingt autres contrôles
+ * passent. Une moyenne de catégorie noie ce qu'un visiteur subit.
+ */
+const defauts = (n: number, id = "unused-css-rules") =>
+  Array.from({ length: n }, (_, i) => ({ id: `${id}-${i}`, verdict: "probleme" }));
+
+describe("les défauts confirmés par Google", () => {
+  it("ne coûte rien tant qu'ils restent rares", () => {
+    // Tout site en a. En compter dès le premier reviendrait à punir l'existence.
+    const r = noteDocument(80, siteImpeccable(), {}, null, defauts(5));
+    expect(r.note).toBe(80);
+    expect(r.lignes).toEqual([]);
+  });
+
+  it("retire un point par défaut au-delà du seuil", () => {
+    const r = noteDocument(80, siteImpeccable(), {}, null, defauts(9));
+    expect(r.note).toBe(76);
+    expect(r.lignes).toContainEqual({ libelle: "9 défauts relevés par Google", points: 4 });
+  });
+
+  it("plafonne la ponction : un ajustement, pas un second barème", () => {
+    const r = noteDocument(80, siteImpeccable(), {}, null, defauts(60));
+    expect(r.lignes[0].points).toBe(12);
+  });
+
+  it("tient en UNE ligne, pas dix-sept", () => {
+    // La soustraction se lit à voix haute en rendez-vous ; dix-sept lignes ne se
+    // lisent pas, et la demi-page qui les porte ne les contiendrait pas.
+    const r = noteDocument(80, siteImpeccable(), {}, null, defauts(17));
+    expect(r.lignes).toHaveLength(1);
+    expect(r.lignes[0].libelle).toBe("17 défauts relevés par Google");
+  });
+
+  it("ignore ce que Google note en orange : seuls les échecs comptent", () => {
+    const tiedes = Array.from({ length: 20 }, (_, i) => ({ id: `x-${i}`, verdict: "moyen" }));
+    expect(noteDocument(80, siteImpeccable(), {}, null, tiedes).lignes).toEqual([]);
+  });
+});
+
+describe("le plafond de lisibilité", () => {
+  /**
+   * Le cas que Matteo décrivait : un site de 2010, texte ton sur ton, tout
+   * concentré sur un écran de bureau. Techniquement propre, rapide parce que
+   * léger, et illisible. Aucune pondération ne dit ça aussi clairement qu'un
+   * plafond.
+   */
+  it("plafonne un site illisible, quoi que disent ses autres axes", () => {
+    const r = noteDocument(94, siteImpeccable(), {}, null, [
+      { id: "color-contrast", verdict: "probleme" },
+    ]);
+    expect(r.note).toBe(PLAFOND_ILLISIBLE);
+    expect(r.plafondAtteint).toBe(true);
+  });
+
+  it.each(AUDITS_LISIBILITE)("se déclenche sur « %s » seul", (id) => {
+    expect(noteDocument(94, siteImpeccable(), {}, null, [{ id, verdict: "probleme" }]).note).toBe(
+      PLAFOND_ILLISIBLE,
+    );
+  });
+
+  it("ne se déclenche pas sur un défaut qui n'empêche pas de lire", () => {
+    const r = noteDocument(94, siteImpeccable(), {}, null, [
+      { id: "unused-css-rules", verdict: "probleme" },
+    ]);
+    expect(r.note).toBe(94);
+    expect(r.plafondAtteint).toBe(false);
+  });
+
+  it("ne remonte jamais une note : c'est un plafond, pas une cible", () => {
+    // Un site déjà bas reste bas. Le plafond borne, il ne normalise pas.
+    const r = noteDocument(40, siteImpeccable(), {}, null, [
+      { id: "tap-targets", verdict: "probleme" },
+    ]);
+    expect(r.note).toBe(40);
   });
 });

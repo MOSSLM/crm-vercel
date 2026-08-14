@@ -475,6 +475,9 @@ export function versAuditLu(row: Record<string, unknown>): AuditLu {
             ville: null,
           },
           noteContenu,
+          // Les constats de Google, tels qu'ils seront affichés : le décompte
+          // qui pèse est exactement celui que le prospect peut recompter.
+          psiFraiche && Array.isArray(detail.google) ? detail.google : [],
         )
       : { note: null, base: null, lignes: [], plafondAtteint: false };
 

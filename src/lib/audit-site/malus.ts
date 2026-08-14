@@ -106,6 +106,53 @@ export const SEUIL_CONTENU_MAUVAIS = 50;
 export const PLAFOND_SANS_CONTENU = 50;
 
 /**
+ * LES DÉFAUTS CONFIRMÉS PAR GOOGLE PÈSENT, un par un.
+ *
+ * LA DILUTION, UN ÉTAGE PLUS BAS. On a corrigé ce matin une note globale qui
+ * était la moyenne d'une seule catégorie ; le même travers vit dans les
+ * catégories elles-mêmes. Sur Doussot, Lighthouse relève DIX-SEPT défauts —
+ * douze liens non explorables, dix-neuf éléments aux attributs ARIA interdits,
+ * deux liens sans nom, la valeur `[lang]` invalide — et les axes affichent
+ * référencement 92 et accessibilité 88, parce que leurs vingt autres contrôles
+ * passent. Une moyenne de catégorie noie ce qu'un visiteur subit.
+ *
+ * CINQ DÉFAUTS SONT TOLÉRÉS SANS RIEN COÛTER. Tout site en a ; en compter dès
+ * le premier reviendrait à punir l'existence. Au-delà, chacun retire un point,
+ * et le total est plafonné : ces malus ajustent une mesure, ils ne la remplacent
+ * pas.
+ *
+ * CE QUI REND LA LIGNE OPPOSABLE : le prospect retrouve les dix-sept constats
+ * sur pagespeed.web.dev, dans les mots de Google, en trente secondes. On ne lui
+ * demande de nous croire sur rien.
+ */
+export const DEFAUTS_TOLERES = 5;
+export const MALUS_MAX_DEFAUTS = 12;
+
+/**
+ * Les quatre audits qui décident si une page est UTILISABLE, pas si elle est
+ * parfaite.
+ *
+ * Texte sur fond de même valeur, police minuscule, boutons trop serrés pour un
+ * pouce, mise en page pensée pour un écran de bureau de 2010 : ce sont les
+ * quatre choses qui font qu'un visiteur repart sans avoir lu. Google les mesure
+ * à chaque passage et les noie ensuite dans une moyenne d'accessibilité.
+ *
+ * En rater une seule plafonne la note, quoi que disent les autres axes — même
+ * logique que le plafond « contenu » : un site rapide, techniquement propre et
+ * illisible n'est pas un bon site, et aucune pondération ne peut le dire aussi
+ * clairement qu'un plafond.
+ */
+export const AUDITS_LISIBILITE = [
+  "color-contrast",
+  "font-size",
+  "tap-targets",
+  "viewport",
+  "content-width",
+] as const;
+
+export const PLAFOND_ILLISIBLE = 59;
+
+/**
  * La moyenne pondérée des axes RÉELLEMENT PUBLIÉS.
  *
  * Normalisée sur les axes présents : un axe absent — Google n'a pas rendu sa
@@ -173,6 +220,7 @@ export function noteDocument(
   s: SignauxSite,
   ctx: ContexteEntreprise = {},
   noteContenu: number | null = null,
+  constatsGoogle: ReadonlyArray<{ id: string; verdict: string }> = [],
 ): NoteDocument {
   if (base == null || !Number.isFinite(base) || !s.joignable) {
     return { note: null, base: null, lignes: [], plafondAtteint: false };
@@ -187,14 +235,41 @@ export function noteDocument(
     }
   }).map(({ libelle, points }) => ({ libelle, points }));
 
+  /**
+   * Une SEULE ligne pour les défauts de Google, et non dix-sept.
+   *
+   * La soustraction se lit à voix haute en rendez-vous ; dix-sept lignes ne se
+   * lisent pas, et la demi-page qui les porte ne les contiendrait pas. Le
+   * décompte suffit à situer, et les constats eux-mêmes s'affichent déjà, dans
+   * les mots de Google, là où ils comptent.
+   */
+  const confirmes = constatsGoogle.filter((c) => c.verdict === "probleme").length;
+  const excedent = Math.min(MALUS_MAX_DEFAUTS, Math.max(0, confirmes - DEFAUTS_TOLERES));
+  if (excedent > 0) {
+    lignes.push({
+      libelle: `${confirmes} défauts relevés par Google`,
+      points: excedent,
+    });
+  }
+
   const total = lignes.reduce((somme, l) => somme + l.points, 0);
   const brute = Math.max(0, base - total);
-  const plafonne = noteContenu != null && noteContenu < SEUIL_CONTENU_MAUVAIS;
+
+  const sansContenu = noteContenu != null && noteContenu < SEUIL_CONTENU_MAUVAIS;
+  const illisible = constatsGoogle.some(
+    (c) => c.verdict === "probleme" && (AUDITS_LISIBILITE as readonly string[]).includes(c.id),
+  );
+
+  const plafond = illisible
+    ? PLAFOND_ILLISIBLE
+    : sansContenu
+      ? PLAFOND_SANS_CONTENU
+      : null;
 
   return {
-    note: plafonne ? Math.min(PLAFOND_SANS_CONTENU, brute) : brute,
+    note: plafond == null ? brute : Math.min(plafond, brute),
     base,
     lignes,
-    plafondAtteint: plafonne && brute > PLAFOND_SANS_CONTENU,
+    plafondAtteint: plafond != null && brute > plafond,
   };
 }
