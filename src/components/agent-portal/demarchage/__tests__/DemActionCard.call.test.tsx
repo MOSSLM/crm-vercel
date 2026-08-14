@@ -46,11 +46,11 @@ const renderCard = (payload: DemarchageTask["payload"]) =>
       task={callTask(payload)}
       company={null}
       audit={null}
-      templates={null}
       busy={false}
       onPatch={jest.fn()}
       onLogged={jest.fn()}
       onNext={jest.fn()}
+      onReplied={jest.fn()}
     />,
   );
 
