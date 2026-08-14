@@ -377,6 +377,11 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .score-val b{font-size:34px}
 .rail{height:14px}
 .ba-side{min-height:52px}
+.ax-grid.ax-n7{grid-template-columns:repeat(4,1fr)}
+.ax-grid.ax-n7 .ax-nm{font-size:7.5px}
+.ax-grid.ax-n7 .ax-niv{font-size:8px;padding:2px 7px}
+.recu-row{padding:14px 20px}
+.recu-label{font-size:21px}
 .half-score .sheet-foot{padding-top:7px}
 .lg small{font-size:7.5px}
 .ax-v{font-size:10px;margin-top:6px}

@@ -227,7 +227,15 @@ function cartesAxes(m: MesuresAudit): string {
 ${a.valeur ? `<div class="ax-v">${esc(a.valeur)}</div>` : ''}</div>`;
     })
     .join('');
-  return `<div class="ax-grid${m.axes.length === 4 ? ' ax-n4' : ''}">${cartes}</div>`;
+  /*
+   * LE NOMBRE DE COLONNES SUIT LE NOMBRE D'AXES, parce que la demi-page ne
+   * s'étire pas. Quatre axes dans une grille de trois laissent un orphelin sur
+   * une ligne vide ; sept en réclament une troisième, soit soixante pixels que
+   * la boîte n'a pas — mesuré sur le dossier Doussot, sept axes une fois
+   * PageSpeed passé. Quatre colonnes les rangent en deux lignes.
+   */
+  const colonnes = m.axes.length === 4 ? ' ax-n4' : m.axes.length >= 7 ? ' ax-n7' : '';
+  return `<div class="ax-grid${colonnes}">${cartes}</div>`;
 }
 
 function cReleve(c: AuditContent, m: MesuresAudit): string {

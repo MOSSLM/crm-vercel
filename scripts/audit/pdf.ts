@@ -111,6 +111,19 @@ async function main(): Promise<void> {
     corpsCompact(contenu, mesures),
   );
 
+  /**
+   * Le HTML exact, sur demande — pour le passer au mesureur de débordement.
+   *
+   * Mesurer un cas fabriqué prouve que la mise en page tient EN GÉNÉRAL ;
+   * mesurer le document d'un vrai prospect prouve qu'elle tient POUR LUI. Les
+   * deux servent, et le second est le seul qu'on puisse montrer.
+   */
+  const sortieHtml = process.argv[3];
+  if (sortieHtml) {
+    require("fs").writeFileSync(sortieHtml, html, "utf8");
+    console.log(`${sortieHtml} — HTML du document`);
+  }
+
   const pdf = await renduPdf(html);
 
   const chemin = `${entrepriseId}/audit-${new Date().toISOString().slice(0, 10)}.pdf`;
