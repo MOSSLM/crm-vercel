@@ -6,6 +6,7 @@ import { Icon, Pill } from "./DemIcon";
 import { demCh, isMessageKind } from "./channels";
 import { DEM_OBJECTIONS } from "./DemObjections";
 import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
+import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from "@/lib/automations/variables";
 import { STEP_OUTCOMES, stepOutcome as findOutcome, type StepOutcomeId } from "@/lib/sales-pipeline/stages";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 import { authedFetch } from "@/utils/authedFetch";
@@ -221,10 +222,35 @@ export function DemActionCard({
   const [scriptStep, setScriptStep] = useState(0);
   const [ob, setOb] = useState<number | null>(null);
   const [calling, setCalling] = useState(false);
+
+  /**
+   * Ce que la SÉQUENCE a préparé pour cet appel-là, et rien d'autre.
+   *
+   * Le moteur rend le script au moment de créer la tâche et pose les DEUX
+   * versions dans son payload (`versionsPreparees` est la seule lecture de ce
+   * couple, partagée avec le pipeline commercial et le tableau des tâches à la
+   * main). On ne recalcule donc rien ici : afficher un texte reconstitué dans
+   * le navigateur, c'est risquer de faire lire autre chose que ce qui a été
+   * préparé.
+   *
+   * La carte s'ouvre sur ce texte seul. L'argumentaire générique et les
+   * objections — les mêmes pour tous les prospects — passent derrière un
+   * onglet : ils aident quand on cale, ils ne sont pas ce qu'on lit en
+   * décrochant.
+   */
+  const callVersions = useMemo(() => versionsPreparees(task.payload), [task.payload]);
+  const [callVariant, setCallVariant] = useState<MessageVariant>(callVersions[0]?.variant ?? "company");
+  const [callTab, setCallTab] = useState<"script" | "aide">("script");
   useEffect(() => {
     setScriptStep(0);
     setOb(null);
-  }, [task.id]);
+    setCallVariant(callVersions[0]?.variant ?? "company");
+    setCallTab("script");
+  }, [task.id, callVersions]);
+
+  const callScript =
+    callVersions.find((v) => v.variant === callVariant)?.message ?? callVersions[0]?.message ?? "";
+  const scriptName = typeof task.payload?.scriptName === "string" ? task.payload.scriptName : null;
 
   const callPhone = (task.payload?.phone as string | undefined) || phones[0] || null;
   const call = async () => {
@@ -448,28 +474,94 @@ export function DemActionCard({
               Appeler{firstName ? ` ${firstName}` : ""}
             </button>
 
-            <div className="dm-scr">
-              {SCRIPT_STEPS.map((s, i) => (
-                <div className="r" key={s.title} onClick={() => setScriptStep(i)}>
-                  <span className="k">{s.title}</span>
-                  <span className="v" style={i === scriptStep ? { color: "var(--text)" } : undefined}>
-                    <ScriptLine text={s.body.replace(/\{(\w+)\}/g, "{{$1}}")} vars={vars} />
-                  </span>
-                </div>
-              ))}
+            <div className="dm-tabs" role="tablist" aria-label="Contenu de l'appel">
+              <button
+                type="button"
+                role="tab"
+                className="dm-tab"
+                aria-selected={callTab === "script"}
+                onClick={() => setCallTab("script")}
+              >
+                <Icon name="flow" className="ico-xs" />
+                Script de l&apos;étape
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="dm-tab"
+                aria-selected={callTab === "aide"}
+                onClick={() => setCallTab("aide")}
+              >
+                <Icon name="layers" className="ico-xs" />
+                Trame &amp; objections
+                <span className="n">{SCRIPT_STEPS.length + DEM_OBJECTIONS.length}</span>
+              </button>
             </div>
 
-            <div className="dm-objs">
-              {DEM_OBJECTIONS.map((o, i) => (
-                <div className="dm-ob" key={o.q} onClick={() => setOb(ob === i ? null : i)}>
-                  <div className="q">
-                    {o.q}
-                    <Icon name={ob === i ? "minus" : "plus"} className="ico-xs" />
-                  </div>
-                  {ob === i && <div className="a">{o.a}</div>}
+            {callTab === "script" ? (
+              <div className="dm-say">
+                <div className="hd">
+                  <Icon name="phone" className="ico-xs" style={{ color: ch.c }} />
+                  <span className="ti">Ce que la séquence a préparé</span>
+                  {scriptName && <span className="src">{scriptName}</span>}
                 </div>
-              ))}
-            </div>
+
+                {/* La bascule change le texte SOUS LES YEUX : elle ne règle pas
+                    quelque chose dont on verrait l'effet au prochain appel. */}
+                {callVersions.length > 1 && (
+                  <div className="dm-variant" role="group" aria-label="Version du script">
+                    {callVersions.map((v) => (
+                      <button
+                        key={v.variant}
+                        type="button"
+                        className="dm-variant-b"
+                        aria-pressed={callVariant === v.variant}
+                        title={VARIANT_LABELS[v.variant].hint}
+                        onClick={() => setCallVariant(v.variant)}
+                      >
+                        <Icon name={v.variant === "contact" ? "user" : "building"} className="ico-xs" />
+                        {VARIANT_LABELS[v.variant].tab}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {callScript.trim() ? (
+                  <p className="tx">{callScript}</p>
+                ) : (
+                  <div className="dm-hint warn">
+                    <Icon name="warning" className="ico-sm" />
+                    Cette étape n&apos;a aucun script préparé. Ouvre la trame générique dans l&apos;onglet
+                    à côté, ou ajoute un texte à l&apos;étape dans la séquence.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="dm-scr">
+                  {SCRIPT_STEPS.map((s, i) => (
+                    <div className="r" key={s.title} onClick={() => setScriptStep(i)}>
+                      <span className="k">{s.title}</span>
+                      <span className="v" style={i === scriptStep ? { color: "var(--text)" } : undefined}>
+                        <ScriptLine text={s.body.replace(/\{(\w+)\}/g, "{{$1}}")} vars={vars} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="dm-objs">
+                  {DEM_OBJECTIONS.map((o, i) => (
+                    <div className="dm-ob" key={o.q} onClick={() => setOb(ob === i ? null : i)}>
+                      <div className="q">
+                        {o.q}
+                        <Icon name={ob === i ? "minus" : "plus"} className="ico-xs" />
+                      </div>
+                      {ob === i && <div className="a">{o.a}</div>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 

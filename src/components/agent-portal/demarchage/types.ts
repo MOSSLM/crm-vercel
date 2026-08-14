@@ -75,7 +75,15 @@ export type DemarchageTask = {
   intent: DemarchageIntent | null;
 };
 
-export type DemarchageQueueMeta = { due_today: number; done_today: number };
+/**
+ * Ce que la file annonce en tête de rail. `done_today_by_kind` alimente le plan
+ * du jour (cf. `demarchage-buckets`) : une tâche déjà bouclée a consommé une
+ * place de la cadence quotidienne de son canal.
+ */
+export type DemarchageQueueMeta = {
+  done_today: number;
+  done_today_by_kind: Record<string, number>;
+};
 
 export type DemarchagePatchBody = {
   id: string;

@@ -288,22 +288,33 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     return ta - tb;
   });
 
-  // "X sur Y aujourd'hui" : Y = ce qui est échu aujourd'hui ou avant ; X = les
-  // tâches en séquence bouclées aujourd'hui, même périmètre strict que la file.
+  // Ce qui a été bouclé aujourd'hui — total ET détail par canal.
+  //
+  // Le détail n'est pas décoratif : la file répartit les tâches restantes par
+  // CADENCE quotidienne (cf. `demarchage-buckets`), et une tâche déjà faite a
+  // consommé une place du jour. Sans ce compte, la journée se rechargerait à
+  // chaque tâche traitée — vingt WhatsApp faits, vingt autres qui remontent —
+  // et le compteur « aujourd'hui » n'atteindrait jamais zéro.
   const todayStart = dayStartIso();
-  const tomorrowStart = new Date(new Date(todayStart).getTime() + 86_400_000).toISOString();
-  const dueToday = queue.filter((t) => !!t.due_at && t.due_at < tomorrowStart).length;
 
-  const { count: doneToday } = await sc
+  const { data: doneRows } = await sc
     .from("prospection_tasks")
-    .select("id, entreprise:entreprises!inner(owner_id)", { count: "exact", head: true })
+    .select("kind, entreprise:entreprises!inner(owner_id)")
     .eq("entreprise.owner_id", user.id)
     .eq("status", "done")
     .not("enrollment_id", "is", null)
-    .gte("done_at", todayStart);
+    .gte("done_at", todayStart)
+    .limit(1000);
+
+  const doneByKind: Record<string, number> = {};
+  for (const row of (doneRows ?? []) as { kind: string | null }[]) {
+    const k = row.kind ?? "";
+    doneByKind[k] = (doneByKind[k] ?? 0) + 1;
+  }
+  const doneToday = (doneRows ?? []).length;
 
   return json(
-    { tasks: queue, meta: { due_today: dueToday, done_today: doneToday ?? 0 } },
+    { tasks: queue, meta: { done_today: doneToday, done_today_by_kind: doneByKind } },
     { headers: cors },
   );
 });

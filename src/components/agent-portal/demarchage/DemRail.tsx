@@ -4,16 +4,25 @@ import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
 import type { DemarchageQueueMeta, DemarchageTask } from "./types";
-import type { DemarchageBucketKey, DemarchageBuckets } from "@/lib/agent-portal/demarchage-buckets";
+import {
+  DAILY_QUOTA,
+  countByKind,
+  isLate,
+  type DemarchageBucketKey,
+  type DemarchageBuckets,
+} from "@/lib/agent-portal/demarchage-buckets";
 
 /** Les jours de la file — mêmes libellés que la maquette, dates réelles.
  *  Les deux premiers onglets ne sont pas des jours mais des signaux mesurés :
  *  un prospect qui vient de rouvrir sa démo prime sur n'importe quelle
- *  échéance décidée à l'avance. */
+ *  échéance décidée à l'avance.
+ *
+ *  Il n'y a PLUS d'onglet « Retard » : la file ne planifie plus à l'heure mais
+ *  à la cadence, et une relance en retard repart simplement en tête du plan du
+ *  jour. Le retard reste dit, mais sur la ligne concernée. */
 export const DAY_TABS: { id: DemarchageBucketKey; lb: string }[] = [
   { id: "missed", lb: "Non rappelés" },
   { id: "hot", lb: "Chauds" },
-  { id: "overdue", lb: "Retard" },
   { id: "today", lb: "Aujourd'hui" },
   { id: "tomorrow", lb: "Demain" },
   { id: "week", lb: "Cette semaine" },
@@ -27,14 +36,8 @@ const FILTERS: [string, string][] = [
   ["wait", "Attentes"],
 ];
 
-const hm = (iso: string | null) => {
-  if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-  } catch {
-    return "—";
-  }
-};
+/** Les jours que le plan remplit — les deux paniers de signal ignorent la cadence. */
+const PLANNED: DemarchageBucketKey[] = ["today", "tomorrow", "week", "later"];
 
 /** Durée d'engagement, lisible d'un coup d'œil. */
 const dureeCourte = (sec: number) =>
@@ -57,10 +60,47 @@ function dayLabel(day: DemarchageBucketKey): string {
   const fmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" });
   if (day === "missed") return "signal chaud jamais rappelé";
   if (day === "hot") return "signaux d'intention du moment";
-  if (day === "overdue") return "à rattraper";
   if (day === "week") return "les 7 prochains jours";
   if (day === "later") return "au-delà";
   return fmt.format(d);
+}
+
+/**
+ * Une tuile de cadence : ce que le jour regardé contient RÉELLEMENT pour ce
+ * canal, et la cadence de référence quand il y en a une.
+ *
+ * Le nombre est toujours celui des tâches présentes — jamais le quota. Aucun
+ * appel en séquence aujourd'hui, la tuile affiche 0 : c'est l'information, pas
+ * un trou à combler.
+ */
+function QuotaTile({
+  ic,
+  lb,
+  n,
+  quota,
+  reste,
+}: {
+  ic: string;
+  lb: string;
+  n: number;
+  /** Cadence quotidienne du canal, `null` quand il n'a pas de plafond. */
+  quota: number | null;
+  /** Tâches du même canal renvoyées aux jours suivants, faute de place. */
+  reste: number;
+}) {
+  return (
+    <div data-empty={n === 0 ? "1" : undefined}>
+      <span className="k">
+        <Icon name={ic} className="ico-xs" />
+        {lb}
+      </span>
+      <div className="n">
+        {n}
+        {quota != null && n > 0 && <span className="q">/{quota}</span>}
+      </div>
+      {reste > 0 && <div className="r">+{reste} reportés</div>}
+    </div>
+  );
 }
 
 export function DemRail({
@@ -81,6 +121,7 @@ export function DemRail({
   setDay: (d: DemarchageBucketKey) => void;
   filt: string;
   setFilt: (f: string) => void;
+  /** La liste RÉELLEMENT affichée : le panier du jour, passé au filtre de canal. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
   agentName: string | null;
@@ -88,9 +129,24 @@ export function DemRail({
   sel: string | null;
   onPick: (id: string) => void;
 }) {
-  const tot = meta.due_today;
+  // Les tuiles comptent le panier ENTIER, pas la liste filtrée : cliquer
+  // « Appels » ne doit pas faire tomber le compteur Messages à zéro.
+  const dayTasks = buckets[day];
+  const parCanal = countByKind(dayTasks);
+  const planifie = PLANNED.includes(day);
+
+  // Ce qui, du même canal, a été renvoyé aux jours suivants faute de place —
+  // la moitié de l'explication du chiffre affiché.
+  const apres = PLANNED.slice(PLANNED.indexOf(day) + 1);
+  const reporte = planifie ? countByKind(apres.flatMap((k) => buckets[k])) : {};
+
   const nb = meta.done_today;
-  const cnt = (fn: (t: DemarchageTask) => boolean) => tasks.filter(fn).length;
+  // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui —
+  // signaux compris, eux aussi se traitent le jour même.
+  const tot = nb + buckets.today.length + buckets.hot.length + buckets.missed.length;
+
+  const nbLinkedin = parCanal.linkedin ?? 0;
+  const nbWait = parCanal.wait ?? 0;
 
   return (
     <aside className="dm-rail">
@@ -107,45 +163,60 @@ export function DemRail({
           <i style={{ width: `${tot ? Math.min(100, (nb / tot) * 100) : 0}%` }} />
         </div>
         <div className="mini">
-          <div>
-            <span className="k">
-              <Icon name="phone" className="ico-xs" />
-              Appels
-            </span>
-            <div className="n">{cnt((t) => t.kind === "call")}</div>
-          </div>
-          <div>
-            <span className="k">
-              <Icon name="whatsapp" className="ico-xs" />
-              Messages
-            </span>
-            <div className="n">{cnt((t) => t.kind === "whatsapp" || t.kind === "linkedin")}</div>
-          </div>
-          <div>
-            <span className="k">
-              <Icon name="clock" className="ico-xs" />
-              Attentes
-            </span>
-            <div className="n">{cnt((t) => t.kind === "wait")}</div>
-          </div>
+          <QuotaTile
+            ic="phone"
+            lb="Appels"
+            n={parCanal.call ?? 0}
+            quota={planifie ? DAILY_QUOTA.call : null}
+            reste={reporte.call ?? 0}
+          />
+          <QuotaTile
+            ic="whatsapp"
+            lb="WhatsApp"
+            n={parCanal.whatsapp ?? 0}
+            quota={planifie ? DAILY_QUOTA.whatsapp : null}
+            reste={reporte.whatsapp ?? 0}
+          />
+          {/* LinkedIn et les attentes n'apparaissent que s'il y en a : une
+              tuile vide sur un canal qu'on n'utilise pas est du bruit. */}
+          {nbLinkedin > 0 && (
+            <QuotaTile
+              ic="linkedin"
+              lb="LinkedIn"
+              n={nbLinkedin}
+              quota={planifie ? DAILY_QUOTA.linkedin : null}
+              reste={reporte.linkedin ?? 0}
+            />
+          )}
+          {nbWait > 0 && <QuotaTile ic="clock" lb="Attentes" n={nbWait} quota={null} reste={0} />}
         </div>
+        {planifie && (
+          <div className="cad">
+            <Icon name="info" className="ico-xs" />
+            cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} WhatsApp par jour — le surplus part
+            au lendemain
+          </div>
+        )}
       </div>
 
       <div className="dm-days" role="tablist" aria-label="Jour de la file">
-        {DAY_TABS.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            role="tab"
-            className="dm-day"
-            aria-selected={day === d.id}
-            data-late={d.id === "overdue" ? "1" : undefined}
-            onClick={() => setDay(d.id)}
-          >
-            <span className="l">{d.lb}</span>
-            <span className="n">{buckets[d.id].length} act.</span>
-          </button>
-        ))}
+        {DAY_TABS.map((d) => {
+          const n = buckets[d.id].length;
+          return (
+            <button
+              key={d.id}
+              type="button"
+              role="tab"
+              className="dm-day"
+              aria-selected={day === d.id}
+              onClick={() => setDay(d.id)}
+            >
+              <span className="l">{d.lb}</span>
+              {/* Rien à faire ce jour-là : on l'écrit « — », pas « 0 act. ». */}
+              <span className="n">{n > 0 ? `${n} act.` : "—"}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="dm-filt">
@@ -158,7 +229,7 @@ export function DemRail({
 
       <div className="dm-fr">
         <div className="dm-fr-h">
-          <Icon name="clock" className="ico-xs" />
+          <Icon name="layers" className="ico-xs" />
           ordre de passage
           <span className="ln" />
         </div>
@@ -172,7 +243,7 @@ export function DemRail({
           </div>
         )}
 
-        {tasks.map((t) => {
+        {tasks.map((t, i) => {
           const ent = one(t.entreprise);
           const contact = one(t.contact);
           const ch = demCh(t.kind);
@@ -183,21 +254,28 @@ export function DemRail({
           const state = t.id === sel ? "now" : "next";
           const missed = t.intent?.missed === true;
           const hot = t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
+          const heat = missed ? "missed" : hot ? "hot" : undefined;
+          const late = isLate(t);
           return (
             <div
               key={t.id}
               className="dm-tk"
               data-s={state}
-              data-heat={missed ? "missed" : hot ? "hot" : undefined}
+              data-heat={heat}
               aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
             >
-              <span className="tm">{hm(t.due_at)}</span>
+              {/* Le rang dans la journée, pas une heure : une tâche manuelle se
+                  fait « en troisième », jamais « à 9 h 04 ». */}
+              <span className="tm">{i + 1}</span>
               <div className="bd">
                 <div className="nm">
                   <span className="t">{name}</span>
+                  {/* Le signal a sa propre case, à l'écart du nom : collé au
+                      texte, il se lisait comme une partie de la raison sociale
+                      et ne sautait plus aux yeux. */}
                   {t.intent?.flame ? (
-                    <span className="fl" title={t.intent.reasons.join(" · ")}>
+                    <span className="fl" data-heat={heat} title={t.intent.reasons.join(" · ")}>
                       {t.intent.flame}
                     </span>
                   ) : null}
@@ -211,12 +289,13 @@ export function DemRail({
                   {t.sequence?.stepIndex != null && (
                     <span className="st">étape {t.sequence.stepIndex}</span>
                   )}
+                  {late && <span className="st late">échéance passée</span>}
                 </div>
                 {/* Ce que le prospect a fait de sa démo : l'information qui
                     décide s'il faut décrocher maintenant ou laisser la
                     séquence suivre son cours. Lisible sans ouvrir la fiche. */}
                 {t.intent && t.intent.sessions > 0 && (
-                  <div className="vu" data-heat={missed ? "missed" : hot ? "hot" : undefined}>
+                  <div className="vu" data-heat={heat}>
                     <Icon name="eye" className="ico-xs" />
                     {missed && t.intent.daysSinceVisit != null
                       ? `Chaud depuis ${t.intent.daysSinceVisit} j, jamais rappelé`
