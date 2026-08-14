@@ -168,7 +168,15 @@ export async function lireAudits(
   return out;
 }
 
-function versAuditLu(row: Record<string, unknown>): AuditLu {
+/**
+ * Une ligne brute → l'audit tel que tout le produit le lit.
+ *
+ * Exportée pour que `lireMedianeParc` puisse s'en servir : la médiane doit
+ * porter sur le MÊME instrument que le repère du prospect, et la seule façon
+ * d'en être certain est de passer par la même fonction plutôt que d'en
+ * réimplémenter la formule ailleurs.
+ */
+export function versAuditLu(row: Record<string, unknown>): AuditLu {
   const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
     google?: ConstatGoogle[];
     observations?: unknown[];

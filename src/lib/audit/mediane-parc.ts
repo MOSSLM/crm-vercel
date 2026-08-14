@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EchantillonMediane } from "./mesures";
+import { versAuditLu } from "@/lib/audit-site/lecture";
 
 /**
  * La médiane des notes du parc — le repère central de la réglette.
@@ -8,17 +9,28 @@ import type { EchantillonMediane } from "./mesures";
  * POURQUOI PAS UNE REQUÊTE SQL. `percentile_cont` demanderait une fonction RPC,
  * donc une migration ; or elles s'appliquent à la main ici, et un appel à une
  * fonction absente échoue au moment le plus coûteux — pendant la préparation
- * d'un audit. On rapatrie donc les notes et on médiane en mémoire. À 430 lignes
- * c'est quelques kilo-octets ; le cache ci-dessous évite d'y revenir à chaque
- * rendu.
+ * d'un audit. On rapatrie donc les lignes et on médiane en mémoire ; le cache
+ * ci-dessous évite d'y revenir à chaque rendu.
  *
- * SUR QUOI PORTE LA MÉDIANE, et c'est le point délicat : sur `note_globale`,
- * c'est-à-dire sur NOTRE barème pondéré — celui-là même qui donne la note du
- * prospect, que Google ait mesuré ou non. Les deux repères sortent donc du même
- * instrument, ce qui est la seule condition pour qu'ils puissent partager un axe.
- * Comparer une note PageSpeed de performance à une médiane maison ferait
- * apparaître n'importe quel prospect très en dessous du parc sans que rien ne
- * l'ait mesuré.
+ * SUR QUOI PORTE LA MÉDIANE — le point délicat, et un bug vécu.
+ *
+ * Elle portait sur `note_globale`, notre barème de tri. Le repère du prospect,
+ * lui, était passé à `note_document` sans que la médiane suive : la réglette
+ * comparait donc une note fondée sur la mesure de Google à une médiane fondée
+ * sur nos heuristiques. Mesuré sur le parc : médiane maison 77, médiane des
+ * performances PageSpeed 66, et jusqu'à quarante points d'écart sur un même
+ * site. N'importe quel prospect apparaissait très en dessous du parc sans que
+ * rien ne l'ait mesuré — le commentaire qui vivait ici l'interdisait déjà, en
+ * décrivant exactement ce qui s'est produit.
+ *
+ * D'où le passage par `versAuditLu`, LA MÊME FONCTION que celle qui calcule la
+ * note du prospect. Même instrument par construction, et non par vigilance :
+ * une formule réimplémentée ici aurait recommencé à diverger au premier
+ * changement de barème.
+ *
+ * CE QUE ÇA COÛTE : la ligne entière au lieu d'une colonne, `signaux` et
+ * `detail` compris — quelques mégaoctets sur le parc, une fois toutes les dix
+ * minutes. C'est le prix d'une comparaison qui veut dire quelque chose.
  */
 
 /** Dix minutes : assez pour une session de préparation, trop court pour figer. */
@@ -45,13 +57,17 @@ export async function lireMedianeParc(
 
   const { data, error } = await sb
     .from("entreprises_audit_site")
-    .select("note_globale")
+    .select("*")
     .not("note_globale", "is", null);
 
   if (error || !data) return vide;
 
-  const notes = (data as Array<{ note_globale: number | null }>)
-    .map((r) => r.note_globale)
+  // Les lignes sans note publiable — site injoignable, aucun axe assez sûr —
+  // sortent de l'échantillon plutôt que d'y entrer à zéro. Une médiane tirée
+  // vers le bas par des sites qu'on n'a pas su mesurer flatterait tous les
+  // autres, ce qui est le sens de biais le plus coûteux ici.
+  const notes = (data as Array<Record<string, unknown>>)
+    .map((row) => versAuditLu(row).note_document)
     .filter((n): n is number => typeof n === "number")
     .sort((a, b) => a - b);
 
