@@ -9,6 +9,7 @@ import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
 import { daysSince, isMissedSignal } from "@/lib/analytics-radar/intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
 import { readReplies } from "@/lib/automations/week";
+import { stepIsInConversation } from "@/lib/agent-portal/conversation";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
@@ -53,6 +54,14 @@ type TaskGuardRow = {
   enrollment_id: string | null;
   assignee_id: string | null;
   entreprise: { owner_id: string | null } | { owner_id: string | null }[] | null;
+};
+
+/** Une tâche bouclée aujourd'hui — juste de quoi la classer et la compter. */
+type DoneRow = {
+  kind: string | null;
+  step_id: string | null;
+  automation_id: string | null;
+  enrollment_id: string | null;
 };
 
 /** Ligne d'inscription garée sur une attente-réponse. */
@@ -128,13 +137,30 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     .limit(200);
   const waitEnrollments = (waitRows ?? []) as unknown as WaitEnrollmentRow[];
 
+  // ── Ce qui a été bouclé aujourd'hui ────────────────────────────────────
+  // Lu ICI, et pas en fin de route, parce que le classement premier contact /
+  // discussion a besoin des mêmes séquences et des mêmes inscriptions que la
+  // file : un seul aller-retour pour les deux.
+  const todayStart = dayStartIso();
+  const { data: doneRows } = await sc
+    .from("prospection_tasks")
+    .select("kind, step_id, automation_id, enrollment_id, entreprise:entreprises!inner(owner_id)")
+    .eq("entreprise.owner_id", user.id)
+    .eq("status", "done")
+    .not("enrollment_id", "is", null)
+    .gte("done_at", todayStart)
+    .limit(1000);
+  const done = (doneRows ?? []) as unknown as DoneRow[];
+
   // Étapes de séquence : un seul aller-retour pour TOUTES les automatisations
-  // citées, qu'elles viennent d'une tâche ou d'une attente.
+  // citées, qu'elles viennent d'une tâche, d'une attente ou d'une tâche bouclée
+  // aujourd'hui.
   const automationIds = [
     ...new Set(
       [
         ...tasks.map((t) => t.automation_id),
         ...waitEnrollments.map((e) => e.automation_id),
+        ...done.map((d) => d.automation_id),
       ].filter((id): id is string => !!id),
     ),
   ];
@@ -174,30 +200,48 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
       if (!lastCallByEnterprise.has(id)) lastCallByEnterprise.set(id, at); // trié desc → le premier est le plus récent
     });
   }
-  // Quelles inscriptions ont DÉJÀ enregistré une réponse du prospect.
+  // ── Premier contact, ou message dans une discussion ouverte ? ──────────
   //
-  // C'est la frontière entre « premier contact » et « discussion » : le quota
-  // quotidien plafonne les prospects qu'on démarche, pas les échanges avec ceux
-  // qui ont répondu. Sans cette distinction, l'étape déclenchée par une réponse
-  // — typiquement l'envoi du site démo — était repoussée au lendemain dès que
-  // les vingt places du jour étaient prises, c'est-à-dire précisément quand la
-  // journée s'était bien passée.
+  // C'est la frontière que la cadence quotidienne plafonne : vingt entreprises
+  // ABORDÉES par jour. Les échanges avec celles qui ont répondu n'en font pas
+  // partie — sans quoi l'étape déclenchée par une réponse (typiquement l'envoi
+  // du site démo) est repoussée au lendemain dès que les vingt places du jour
+  // sont prises, c'est-à-dire précisément quand la journée s'est bien passée.
   //
-  // `vars.replies` est la trace posée par `declarerReponse` : un index d'étape
-  // d'attente → l'instant du clic. Non vide ⇒ la conversation est ouverte.
+  // Le classement se fait sur la POSITION de l'étape dans sa séquence, pas sur
+  // l'état de l'inscription à l'instant T (cf. `stepIsInConversation`) : un
+  // premier contact envoyé ce matin doit rester un premier contact même si le
+  // prospect répond cet après-midi, sinon la journée se rouvre toute seule.
   const enrollmentIds = [
-    ...new Set(tasks.map((t) => t.enrollment_id).filter((id): id is string => !!id)),
+    ...new Set(
+      [...tasks.map((t) => t.enrollment_id), ...done.map((d) => d.enrollment_id)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
   ];
-  const enConversation = new Set<string>();
+  const repliesByEnrollment = new Map<string, Record<string, string>>();
   if (enrollmentIds.length) {
     const { data: enrolls } = await sc
       .from("sequence_enrollments")
       .select("id, vars")
       .in("id", enrollmentIds);
     for (const e of (enrolls ?? []) as { id: string; vars: unknown }[]) {
-      if (Object.keys(readReplies(e.vars)).length > 0) enConversation.add(e.id);
+      repliesByEnrollment.set(e.id, readReplies(e.vars));
     }
   }
+
+  /** Cette tâche (en file ou déjà bouclée) est-elle un message de discussion ? */
+  const enDiscussion = (row: {
+    automation_id: string | null;
+    step_id: string | null;
+    enrollment_id: string | null;
+  }): boolean => {
+    const auto = row.automation_id ? stepsByAutomation.get(row.automation_id) : undefined;
+    if (!auto) return false;
+    const idx = auto.steps.findIndex((s) => s.id === row.step_id);
+    const replies = row.enrollment_id ? repliesByEnrollment.get(row.enrollment_id) ?? {} : {};
+    return stepIsInConversation(auto.steps, idx, replies);
+  };
 
   const nowDate = new Date();
 
@@ -208,7 +252,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     const intent = t.entreprise_id != null ? intents.get(t.entreprise_id) : undefined;
     return {
       ...t,
-      in_conversation: !!t.enrollment_id && enConversation.has(t.enrollment_id),
+      in_conversation: enDiscussion(t),
       sequence: auto
         ? {
             name: auto.name,
@@ -319,33 +363,32 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     return ta - tb;
   });
 
-  // Ce qui a été bouclé aujourd'hui — total ET détail par canal.
+  // Le décompte de la journée, séparé en deux — c'est toute la nuance.
   //
-  // Le détail n'est pas décoratif : la file répartit les tâches restantes par
-  // CADENCE quotidienne (cf. `demarchage-buckets`), et une tâche déjà faite a
-  // consommé une place du jour. Sans ce compte, la journée se rechargerait à
-  // chaque tâche traitée — vingt WhatsApp faits, vingt autres qui remontent —
-  // et le compteur « aujourd'hui » n'atteindrait jamais zéro.
-  const todayStart = dayStartIso();
-
-  const { data: doneRows } = await sc
-    .from("prospection_tasks")
-    .select("kind, entreprise:entreprises!inner(owner_id)")
-    .eq("entreprise.owner_id", user.id)
-    .eq("status", "done")
-    .not("enrollment_id", "is", null)
-    .gte("done_at", todayStart)
-    .limit(1000);
-
+  // `done_today_by_kind` ne compte QUE les premiers contacts : c'est lui qui
+  // consomme la cadence, et qui fait avancer le compteur « 3/20 ». Un message
+  // de discussion bouclé aujourd'hui n'y entre pas, sinon répondre à trois
+  // prospects amputerait de trois le démarchage du jour.
   const doneByKind: Record<string, number> = {};
-  for (const row of (doneRows ?? []) as { kind: string | null }[]) {
+  let doneConversation = 0;
+  for (const row of done) {
+    if (enDiscussion(row)) {
+      doneConversation += 1;
+      continue;
+    }
     const k = row.kind ?? "";
     doneByKind[k] = (doneByKind[k] ?? 0) + 1;
   }
-  const doneToday = (doneRows ?? []).length;
 
   return json(
-    { tasks: queue, meta: { done_today: doneToday, done_today_by_kind: doneByKind } },
+    {
+      tasks: queue,
+      meta: {
+        done_today: done.length,
+        done_today_by_kind: doneByKind,
+        done_today_conversation: doneConversation,
+      },
+    },
     { headers: cors },
   );
 });

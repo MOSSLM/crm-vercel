@@ -42,7 +42,11 @@ const lot = (kind: DemarchageTask["kind"], n: number) =>
 
 function renderRail(
   tasks: DemarchageTask[],
-  { day = "today" as DemarchageBucketKey, doneToday = {} as Record<string, number> } = {},
+  {
+    day = "today" as DemarchageBucketKey,
+    doneToday = {} as Record<string, number>,
+    doneConversation = 0,
+  } = {},
 ) {
   const buckets = bucketTasks(tasks, { now: NOW, timeZone: "UTC", doneToday });
   const { container } = render(
@@ -53,7 +57,11 @@ function renderRail(
       filt="all"
       setFilt={jest.fn()}
       tasks={buckets[day]}
-      meta={{ done_today: 0, done_today_by_kind: doneToday }}
+      meta={{
+        done_today: 0,
+        done_today_by_kind: doneToday,
+        done_today_conversation: doneConversation,
+      }}
       agentName="Bilal"
       loading={false}
       sel={null}
@@ -84,32 +92,54 @@ describe("DemRail — la cadence du jour", () => {
     expect(rangs).toEqual(["1", "2", "3"]);
   });
 
-  it("plafonne le jour au quota et annonce ce qui part au lendemain", () => {
+  it("démarre la journée à 0/20 et non à 20/20", () => {
+    // Le compteur du jour mesure l'AVANCEMENT, pas la charge : au matin rien
+    // n'est fait, il affiche 0 — et les 20 à faire sont dits juste en dessous.
     const { tuile } = renderRail(lot("whatsapp", 25));
-    const wa = tuile("WhatsApp");
-    expect(within(wa).getByText(String(DAILY_QUOTA.whatsapp))).toBeInTheDocument();
+    const wa = tuile("WhatsApp 1er contact");
+    expect(within(wa).getByText("0")).toBeInTheDocument();
     expect(within(wa).getByText(`/${DAILY_QUOTA.whatsapp}`)).toBeInTheDocument();
-    expect(within(wa).getByText(`+${25 - DAILY_QUOTA.whatsapp} reportés`)).toBeInTheDocument();
+    expect(within(wa).getByText(`${DAILY_QUOTA.whatsapp} à faire`)).toBeInTheDocument();
   });
 
-  it("laisse un canal sans tâche à 0 plutôt que d'inventer son quota", () => {
+  it("s'incrémente au fil des envois", () => {
+    const { tuile } = renderRail(lot("whatsapp", 25), { doneToday: { whatsapp: 3 } });
+    const wa = tuile("WhatsApp 1er contact");
+    expect(within(wa).getByText("3")).toBeInTheDocument();
+    expect(within(wa).getByText("17 à faire")).toBeInTheDocument();
+  });
+
+  it("annonce sur demain ce qui a débordé du jour", () => {
+    const { tuile } = renderRail(lot("whatsapp", 25), { day: "tomorrow" });
+    const wa = tuile("WhatsApp 1er contact");
+    expect(within(wa).getByText(String(25 - DAILY_QUOTA.whatsapp))).toBeInTheDocument();
+  });
+
+  it("laisse un canal sans tâche à 0, sans inventer son quota", () => {
     // Aucune séquence à l'étape appel : la tuile Appels reste à 0, en grisé.
     const { tuile } = renderRail(lot("whatsapp", 25));
     const appels = tuile("Appels");
     expect(appels).toHaveAttribute("data-empty", "1");
     expect(within(appels).getByText("0")).toBeInTheDocument();
-    expect(within(appels).queryByText(`/${DAILY_QUOTA.call}`)).toBeNull();
+    expect(within(appels).queryByText(/à faire/)).toBeNull();
   });
 
   it("compte le panier entier, pas la liste filtrée", () => {
-    const { tuile } = renderRail([...lot("call", 4), ...lot("whatsapp", 6)]);
-    expect(within(tuile("Appels")).getByText("4")).toBeInTheDocument();
-    expect(within(tuile("WhatsApp")).getByText("6")).toBeInTheDocument();
+    const { tuile } = renderRail([...lot("call", 4), ...lot("whatsapp", 6)], { day: "tomorrow" });
+    // Rien demain : les deux canaux tiennent aujourd'hui.
+    expect(within(tuile("Appels")).getByText("0")).toBeInTheDocument();
+    const auj = renderRail([...lot("call", 4), ...lot("whatsapp", 6)]);
+    expect(within(auj.tuile("Appels")).getByText("4 à faire")).toBeInTheDocument();
+    expect(within(auj.tuile("WhatsApp 1er contact")).getByText("6 à faire")).toBeInTheDocument();
   });
 
-  it("décompte ce qui a déjà été fait aujourd'hui", () => {
-    const { tuile } = renderRail(lot("whatsapp", 25), { doneToday: { whatsapp: 18 } });
-    expect(within(tuile("WhatsApp")).getByText("2")).toBeInTheDocument();
+  it("laisse le reste à faire tomber à zéro quand la journée est bouclée", () => {
+    const { tuile } = renderRail(lot("whatsapp", DAILY_QUOTA.whatsapp), {
+      doneToday: { whatsapp: DAILY_QUOTA.whatsapp },
+    });
+    const wa = tuile("WhatsApp 1er contact");
+    expect(within(wa).getByText(String(DAILY_QUOTA.whatsapp))).toBeInTheDocument();
+    expect(within(wa).queryByText(/à faire/)).toBeNull();
   });
 
   it("écrit « — » pour un jour vide plutôt que « 0 act. »", () => {
@@ -128,23 +158,34 @@ describe("DemRail — la cadence du jour", () => {
 describe("DemRail — le panier « En discussion »", () => {
   const enDiscussion = (id: string) => ({ ...task({ id }), in_conversation: true });
 
-  it("sort les discussions du plan et n'y affiche aucun quota", () => {
-    const { tuile, frise } = renderRail(
+  it("a sa propre tuile, séparée du compteur de premiers contacts", () => {
+    const { tuile } = renderRail([...lot("whatsapp", 25), enDiscussion("d1"), enDiscussion("d2")]);
+    const disc = tuile("Discussion en cours");
+    expect(within(disc).getByText("2")).toBeInTheDocument();
+    // Aucun plafond affiché : on répond à ce qui vient.
+    expect(within(disc).queryByText(/^\/\d+$/)).toBeNull();
+  });
+
+  it("dit combien de discussions ont déjà été traitées aujourd'hui", () => {
+    const { tuile } = renderRail([enDiscussion("d1")], { doneConversation: 4 });
+    expect(within(tuile("Discussion en cours")).getByText("4 traitées")).toBeInTheDocument();
+  });
+
+  it("sort les discussions du plan", () => {
+    const { frise } = renderRail(
       [...lot("whatsapp", 25), enDiscussion("d1"), enDiscussion("d2")],
       { day: "conversation" },
     );
     expect(frise.querySelectorAll(".dm-tk")).toHaveLength(2);
-    // Pas de cadence sur ce panier : on répond à ce qui vient.
-    expect(within(tuile("WhatsApp")).queryByText(`/${DAILY_QUOTA.whatsapp}`)).toBeNull();
     expect(screen.getByText(/sans plafond ni report/)).toBeInTheDocument();
   });
 
-  it("ne fait pas déborder la cadence du jour", () => {
+  it("ne consomme aucune place du démarchage du jour", () => {
     // 20 premiers contacts tiennent toujours aujourd'hui : la discussion ne
     // leur a pris aucune place.
     const { tuile } = renderRail([...lot("whatsapp", DAILY_QUOTA.whatsapp), enDiscussion("d1")]);
-    expect(within(tuile("WhatsApp")).getByText(String(DAILY_QUOTA.whatsapp))).toBeInTheDocument();
-    expect(within(tuile("WhatsApp")).queryByText(/reportés/)).toBeNull();
+    expect(within(tuile("WhatsApp 1er contact")).getByText(`${DAILY_QUOTA.whatsapp} à faire`)).toBeInTheDocument();
+    expect(within(tuile("WhatsApp 1er contact")).queryByText(/reportés/)).toBeNull();
   });
 
   it("dit que le quota ne porte que sur les premiers contacts", () => {

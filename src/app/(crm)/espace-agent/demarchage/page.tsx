@@ -25,7 +25,11 @@ import type {
 } from "@/components/agent-portal/demarchage/types";
 import "@/components/agent-portal/demarchage/dem-skin.css";
 
-const EMPTY_META: DemarchageQueueMeta = { done_today: 0, done_today_by_kind: {} };
+const EMPTY_META: DemarchageQueueMeta = {
+  done_today: 0,
+  done_today_by_kind: {},
+  done_today_conversation: 0,
+};
 
 /**
  * Démarchage — l'écran de la maquette SAMA, branché sur les vraies données.
