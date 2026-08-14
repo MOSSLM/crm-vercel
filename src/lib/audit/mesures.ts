@@ -62,6 +62,39 @@ export const NOM_AXE: Record<AxePublieId, string> = {
   netlinking: "Sites qui parlent de vous",
 };
 
+/**
+ * Le niveau d'un axe — ce que le document montre à la place du chiffre.
+ *
+ * POURQUOI LES NOTES PAR AXE DISPARAISSENT DE LA PAGE. Six nombres sur 100
+ * autour d'un septième invitent à une addition, et cette addition ne retombait
+ * pas — c'est ce qui a fait perdre confiance dans tout le relevé. La note
+ * globale reste, seule et recalculable ; les axes disent où ça coince, ce qui
+ * est leur vrai travail.
+ *
+ * ET SURTOUT, LA RÈGLE EST STRUCTURELLE : soit tous les axes portent un chiffre,
+ * soit aucun. Retirer la note des seuls axes flatteurs ferait du document un
+ * argumentaire — le prospect s'en aperçoit à la première question.
+ *
+ * Les paliers sont ceux de `libelleDeNote`, qui sert déjà au badge du CRM :
+ * un seul barème, deux vocabulaires, jamais deux découpages.
+ */
+export type NiveauAxe = "bon" | "correct" | "mediocre" | "mauvais";
+
+export function niveauDeNote(note: number): NiveauAxe {
+  if (note >= 85) return "bon";
+  if (note >= 70) return "correct";
+  if (note >= 50) return "mediocre";
+  return "mauvais";
+}
+
+/** Le mot montré au prospect. Le niveau technique ne sort jamais du code. */
+export const LIBELLE_NIVEAU: Record<NiveauAxe, string> = {
+  bon: "Bon",
+  correct: "Correct",
+  mediocre: "Médiocre",
+  mauvais: "Mauvais",
+};
+
 export interface AxeMesure {
   id: AxePublieId;
   nom: string;

@@ -1,6 +1,6 @@
 import type { AuditContent } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
-import { LIBELLE_DEMO, detailNote, sousTitreNote } from '@/lib/audit/mesures';
+import { LIBELLE_DEMO, LIBELLE_NIVEAU, detailNote, niveauDeNote, sousTitreNote } from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
 import { C } from '@/components/audit/AuditShared';
 
@@ -200,19 +200,30 @@ function soustraction(m: MesuresAudit): string {
 /**
  * Une carte par axe mesuré. Quatre à six selon que Google a mesuré.
  *
- * La mention « mesuré par Google » est la seule chose qui distingue un relevé
- * opposable d'une opinion d'agence, et elle passe donc en pastille sous le nom
- * de l'axe. Elle sortait jusqu'ici en `<u>` collé au nom — « RAPIDITÉMESURÉ PAR
- * GOOGLE », souligné, sur deux lignes, la carte déformée.
+ * UN SEUL NOMBRE SUR LA PAGE, ET C'EST LA NOTE GLOBALE. Les axes portaient
+ * chacun leur note sur 100 : six chiffres autour d'un septième, qui invitaient
+ * à une addition ne retombant jamais sur le grand nombre. Le prospect fait cette
+ * addition — c'est même la première chose qu'il fait — et à ce moment-là il
+ * cesse de croire le relevé entier.
+ *
+ * Les axes disent donc désormais OÙ ça coince, pas de combien : un niveau coloré
+ * et la mesure qui le décide. Et la règle est structurelle — soit tous les axes
+ * portent un chiffre, soit aucun. Le retirer des seuls axes flatteurs ferait du
+ * document un argumentaire, ce qui se voit à la première question posée.
+ *
+ * La barre de dix segments disparaît avec : elle ne faisait que redessiner le
+ * chiffre qu'on vient d'enlever, et elle coûtait seize pixels par carte sur une
+ * demi-page qui débordait déjà de quatre-vingt-six.
+ *
+ * La mention « mesuré par Google » reste : c'est la seule chose qui distingue un
+ * relevé opposable d'une opinion d'agence.
  */
 function cartesAxes(m: MesuresAudit): string {
   const cartes = m.axes
     .map((a) => {
-      const remplies = Math.round(a.note / 10);
-      const barres = Array.from({ length: 10 }, (_, i) => `<i class="${i < remplies ? 'on' : ''}"></i>`).join('');
+      const niveau = niveauDeNote(a.note);
       return `<div class="ax-card">
-<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<span class="ax-src">mesuré par Google</span>' : ''}</div><div class="ax-note">${a.note}<s>/100</s></div></div>
-<div class="ax-bar">${barres}</div>
+<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<span class="ax-src">mesuré par Google</span>' : ''}</div><span class="ax-niv niv-${niveau}">${esc(LIBELLE_NIVEAU[niveau])}</span></div>
 ${a.valeur ? `<div class="ax-v">${esc(a.valeur)}</div>` : ''}</div>`;
     })
     .join('');

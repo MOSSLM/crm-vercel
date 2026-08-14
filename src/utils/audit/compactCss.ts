@@ -313,12 +313,18 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
    souligné, qui passait à la ligne et déformait la carte. Ce que cette mention
    doit dire — c'est Google qui l'a relevé, pas nous — mérite d'être lisible. */
 .ax-src{display:block;margin-top:3px;font-size:7px;letter-spacing:.1em;color:var(--azur);font-weight:500}
-.ax-note{font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:300;line-height:1;color:var(--nuit);white-space:nowrap}
-.ax-note s{text-decoration:none;font-size:8.5px;color:rgba(${NUIT},.32);margin-left:1px}
-.ax-bar{display:flex;gap:1.5px;margin:6px 0 7px}
-.ax-bar i{flex:1;height:3px;background:rgba(${NUIT},.09)}
-.ax-bar i.on{background:var(--azur)}
-.ax-v{font-size:10.5px;font-weight:500;color:var(--nuit);line-height:1.35}
+/* Le NIVEAU remplace la note par axe. Un seul nombre vit sur cette page, et
+   c'est la note globale : six chiffres sur 100 autour d'un septième invitaient
+   à une addition qui ne retombait pas dessus.
+   Les quatre teintes sont fermées et lisibles à l'impression comme à l'écran ;
+   elles ne réutilisent pas l'azur de marque, qui signale l'action et non l'état. */
+.ax-niv{font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 9px;border-radius:20px;white-space:nowrap;border:1px solid}
+.niv-bon{background:#E8F3EC;color:#1F6B45;border-color:#BBDCC8}
+.niv-correct{background:#FBF3DC;color:#7A5B10;border-color:#EBDBAE}
+.niv-mediocre{background:#FBEBDD;color:#8A4A15;border-color:#EDCBAB}
+.niv-mauvais{background:#FAE6E2;color:#8C2E1C;border-color:#EDC0B7}
+.ax-v{font-size:10.5px;font-weight:500;color:var(--nuit);line-height:1.35;margin-top:7px}
 .ax-e{font-size:8.8px;line-height:1.45;color:rgba(${NUIT},.5);margin-top:4px}
 .verdict-strip{padding:9px 17px;border-left:2px solid var(--azur);background:rgba(${AZUR},.045);border-radius:0 4px 4px 0}
 .verdict-strip p{font-family:'Cormorant Garamond',serif;font-size:14px;font-weight:300;font-style:italic;line-height:1.4;color:var(--nuit)}
@@ -339,7 +345,44 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .plus-n{font-family:'Cormorant Garamond',serif;font-size:25px;font-weight:300;line-height:1;color:var(--azur)}
 .plus-t{font-size:10.5px;font-weight:500;color:var(--nuit)}
 .plus-l{font-size:9px;color:rgba(${NUIT},.45);margin-top:4px;line-height:1.55}
-.plus-c{font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:rgba(${NUIT},.33);font-weight:500;text-align:right;white-space:nowrap}`;
+.plus-c{font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:rgba(${NUIT},.33);font-weight:500;text-align:right;white-space:nowrap}
+/* ── Densité : ce qui fait tenir chaque demi-page dans sa boîte ──────
+   La propriété overflow:hidden coupe en silence — la feuille le dit plus haut —
+   et trois demi-pages sur six débordaient : couverture −7 px, relevé −86,
+   constats −27. Mesuré, pas supposé : scripts/audit/mesurer-debordement.ts rejoue le pire
+   cas réaliste (six axes, trois lignes avant/après) dans un vrai moteur et
+   compare, demi-page par demi-page, la hauteur du contenu à celle de sa boîte.
+   Les valeurs ci-dessous sont le résultat de cette boucle. Les toucher sans
+   relancer la mesure, c'est réintroduire une coupe qu'on ne verra que sur le
+   PDF, devant le prospect. */
+.half-score .panel-body{gap:8px;padding:8px 0 0}
+.score-num{padding:9px 14px}
+.score-val b{font-size:38px}
+.score-rail{padding:7px 14px 6px}
+.rail-legend{margin-top:5px;padding-top:6px;gap:10px}
+.lg small{line-height:1.3;margin-top:1px}
+.ax-grid{gap:8px}
+.ax-card{padding:7px 10px}
+.verdict-strip{padding:7px 14px}
+.verdict-strip p{font-size:13px;line-height:1.35}
+.verdict-strip span{margin-top:4px}
+.ba-stack{gap:7px}
+.ba-side{min-height:58px;padding:11px 16px 12px}
+.cover-big{padding:30px 54px 24px}
+.shot-screen{height:168px}
+.half-cover{padding:32px 54px 26px}
+.mockup-screen{height:122px}
+.half-score .panel-title{font-size:26px;margin-top:8px}
+.half-score .panel-intro{font-size:10.5px;line-height:1.6;margin-top:6px}
+.score-val b{font-size:34px}
+.rail{height:14px}
+.ba-side{min-height:52px}
+.half-score .sheet-foot{padding-top:7px}
+.lg small{font-size:7.5px}
+.ax-v{font-size:10px;margin-top:6px}
+.verdict-strip p{font-size:12.5px}
+.plus-strip{padding:9px 15px}
+.ba-d{margin-top:5px}`;
 
 /**
  * Ce que l'APERÇU ajoute au document, et que l'export n'emporte jamais.
