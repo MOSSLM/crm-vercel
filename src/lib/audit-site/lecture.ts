@@ -3,6 +3,7 @@ import type { AxeId, Confiance, ConstatGoogle, Preuve, SignauxSite } from "./typ
 import { libelleDeNote, noteDepuisPreuves } from "./score";
 import { baseDocument, noteDocument } from "./malus";
 import { psiEstFraiche } from "./pagespeed";
+import { netlinkingEstFrais } from "./netlinking";
 
 /**
  * Lire une analyse, et savoir dire « pas disponible » sans faire croire à une
@@ -171,6 +172,9 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
     google?: ConstatGoogle[];
     observations?: unknown[];
+    /** Preuves d'Open PageRank, et la date à laquelle elles ont été relevées. */
+    netlinking?: Preuve[];
+    netlinking_le?: string;
   };
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
 
@@ -340,6 +344,26 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    * deux axes que l'offre répare vraiment, donc les deux qui se vendent.
    */
   for (const id of ["contenu", "conversion", "popularite"] as const) publier(axeMaison(id), id);
+
+  /**
+   * Le netlinking, s'il a été mesuré et qu'il n'a pas péri.
+   *
+   * Il ne vit ni dans une colonne ni dans `SignauxSite` : il ne se lit pas dans
+   * la page, il se demande à Open PageRank. Ses preuves sont donc écrites telles
+   * quelles dans `detail.netlinking`, avec leur date à côté, et la note se
+   * recalcule ici — sans migration, comme `contenu` et `popularite`.
+   *
+   * Périmé, il DISPARAÎT au lieu de vieillir : Common Crawl se rafraîchit tous
+   * les mois, et un rang de trois mois affirmerait quelque chose que plus rien
+   * ne soutient.
+   */
+  const preuvesNet = Array.isArray(detail.netlinking) ? detail.netlinking : [];
+  if (preuvesNet.length > 0 && netlinkingEstFrais(detail.netlinking_le)) {
+    const note = noteDepuisPreuves(preuvesNet);
+    if (note != null) {
+      axes.push({ id: "netlinking", note, confiance: "haute", preuves: preuvesNet });
+    }
+  }
 
   const noteGlobale = num(row.note_globale);
 
