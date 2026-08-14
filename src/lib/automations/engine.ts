@@ -47,7 +47,7 @@ import { SITE_DOMAIN } from '@/lib/site-domain'
 import { getAppUrl } from '@/lib/app-url'
 import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
-import { aDesMesuresAudit, assurerJetonRapport } from '@/lib/audit-site/rapport'
+import { rapportEnvoyable, assurerJetonRapport } from '@/lib/audit-site/rapport'
 import { choisirSiteMontrable, urlPubliqueDuSite } from '@/lib/site-builder/demo-share-url'
 
 const DAY_MS = 86_400_000
@@ -516,7 +516,7 @@ export async function etapePromettUnAuditAbsent(
   if (entrepriseId == null) return false
   const texte = await stepRawText(sb, step, vars, forced)
   if (!usedVariables(texte).includes('company.audit_url')) return false
-  return !(await aDesMesuresAudit(sb, entrepriseId))
+  return !(await rapportEnvoyable(sb, entrepriseId))
 }
 
 /**

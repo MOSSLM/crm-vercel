@@ -6,6 +6,7 @@ import { validerPreparation, type CartePreparee } from "@/lib/audit/preparation"
 import { construirePage5 } from "@/lib/audit/offres-audit";
 import { classerParForce } from "@/lib/audit/autres-ameliorations";
 import { lireAudit, type AuditLu } from "@/lib/audit-site/lecture";
+import { activerJetonRapport } from "@/lib/audit-site/rapport";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
 import { problemsFromKeys, AUDIT_ISSUE_CATALOG, APRES_PAR_AXE } from "@/data/auditIssues";
 import type { AuditAvantApres, AuditContent } from "@/types";
@@ -128,11 +129,26 @@ export async function POST(req: Request): Promise<Response> {
 
   if (error) return jsonError(`Écriture impossible : ${error.message}`, 500);
 
+  /**
+   * L'audit est rédigé : son lien public s'ouvre.
+   *
+   * C'EST LE SEUL ENDROIT QUI RÉACTIVE UN JETON, et c'est ce qui rend la règle
+   * tenable sans surveillance — un lien vit exactement quand il mène à un
+   * document rédigé. Le 12/08, 37 jetons pointaient vers le contenu par défaut ;
+   * ils ont été révoqués en masse, et seule une vraie préparation les rouvre.
+   *
+   * L'échec ne fait pas échouer la préparation : le texte est écrit, il vaut
+   * mieux qu'un opérateur rouvre le lien à la main que de perdre la rédaction.
+   * Il est donc rapporté dans la réponse plutôt que levé.
+   */
+  const { erreur: erreurJeton } = await activerJetonRapport(sb, entrepriseId, auth.user.id);
+
   return json({
     applique: true,
     cartes: cles,
     offres: p.offres,
     accroche: p.accroche ?? null,
+    lien_rouvert: !erreurJeton,
     // Nommés même en cas de succès partiel : une carte silencieusement écartée
     // se remarque trois semaines plus tard, devant un prospect.
     rejets: verdict.rejets,

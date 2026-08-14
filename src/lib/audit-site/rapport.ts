@@ -295,3 +295,84 @@ export async function aDesMesuresAudit(sb: SupabaseClient, entrepriseId: number)
     return false;
   }
 }
+
+/**
+ * Le jeton de cette entreprise, existant ou créé, et RENDU ACTIF.
+ *
+ * `assurerJetonRapport` rend le jeton tel qu'il est, `actif` compris — ce qui
+ * convient au dialogue de partage, qui affiche un état, et pas du tout à qui
+ * s'apprête à envoyer. Après la révocation en masse du 14/08, le moteur aurait
+ * interpolé `{{company.audit_url}}` avec 37 jetons que la page publique refuse :
+ * des liens partis vivants, arrivés morts.
+ *
+ * D'où cette fonction, et d'où son unique appelant — la route de préparation.
+ * **Un lien s'ouvre quand l'audit est rédigé, et à ce moment-là seulement.** La
+ * règle tient sans surveillance parce que le seul chemin qui rédige est aussi le
+ * seul qui réactive.
+ */
+export async function activerJetonRapport(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  userId: string | null = null,
+): Promise<{ jeton?: JetonRapport; erreur?: { code?: string; message: string } }> {
+  const res = await assurerJetonRapport(sb, entrepriseId, userId);
+  if (res.erreur || !res.jeton) return res;
+  if (res.jeton.actif) return res;
+
+  const { data, error } = await sb
+    .from("entreprises_rapport_public")
+    .update({ actif: true })
+    .eq("entreprise_id", entrepriseId)
+    .select("entreprise_id, token, actif, vues, vu_le")
+    .single();
+
+  if (error) return { erreur: error };
+  return { jeton: data as JetonRapport };
+}
+
+/**
+ * Ce lien mène-t-il à quelque chose qu'on assume d'envoyer ?
+ *
+ * TROIS CONDITIONS, ET AUCUNE N'EST REDONDANTE. Le site doit avoir été mesuré,
+ * sinon la page est la trame par défaut au nom de l'entreprise. L'audit doit
+ * avoir été RÉDIGÉ, sinon le prospect reçoit le catalogue générique — c'est ce
+ * qui est arrivé le 12/08 à 67 dossiers. Et le jeton doit être actif, sinon la
+ * page répond « revoqué » à quelqu'un qu'on vient d'inviter à cliquer.
+ *
+ * Remplace `aDesMesuresAudit` dans le garde-fou d'envoi : la présence d'une
+ * ligne de mesure est vraie de tout site analysé, préparé ou non, donc elle
+ * n'arrêtait pas le seul cas qu'on voulait arrêter.
+ */
+export async function rapportEnvoyable(sb: SupabaseClient, entrepriseId: number): Promise<boolean> {
+  try {
+    if (!(await aDesMesuresAudit(sb, entrepriseId))) return false;
+
+    const { data: jeton } = await sb
+      .from("entreprises_rapport_public")
+      .select("actif")
+      .eq("entreprise_id", entrepriseId)
+      .maybeSingle();
+    // Pas de jeton du tout : il sera créé à l'interpolation, donc actif par
+    // défaut. C'est un jeton EXISTANT et révoqué qui doit retenir l'envoi.
+    if (jeton && (jeton as { actif: boolean }).actif === false) return false;
+
+    const { data: opps } = await sb
+      .from("opportunites")
+      .select("id")
+      .eq("entreprise_id", entrepriseId);
+    const oppIds = (opps ?? []).map((o) => (o as { id: string }).id);
+    if (oppIds.length === 0) return false;
+
+    const { data: audits } = await sb
+      .from("audits")
+      .select("avant_apres:content->page3->avant_apres")
+      .in("opportunite_id", oppIds);
+
+    return (audits ?? []).some((a) => {
+      const lignes = (a as { avant_apres?: unknown }).avant_apres;
+      return Array.isArray(lignes) && lignes.length > 0;
+    });
+  } catch {
+    return false;
+  }
+}
