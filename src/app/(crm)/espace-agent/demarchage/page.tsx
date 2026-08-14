@@ -10,7 +10,12 @@ import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
 import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
 import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
-import { bucketTasks, firstNonEmptyBucket, type DemarchageBucketKey } from "@/lib/agent-portal/demarchage-buckets";
+import {
+  bucketOfTask,
+  bucketTasks,
+  firstNonEmptyBucket,
+  type DemarchageBucketKey,
+} from "@/lib/agent-portal/demarchage-buckets";
 import type {
   CompanyBundle,
   DemarchagePatchBody,
@@ -21,7 +26,7 @@ import type {
 } from "@/components/agent-portal/demarchage/types";
 import "@/components/agent-portal/demarchage/dem-skin.css";
 
-const EMPTY_META: DemarchageQueueMeta = { due_today: 0, done_today: 0 };
+const EMPTY_META: DemarchageQueueMeta = { done_today: 0, done_today_by_kind: {} };
 
 /**
  * Démarchage — l'écran de la maquette SAMA, branché sur les vraies données.
@@ -59,12 +64,15 @@ export default function AgentDemarchagePage() {
       if (!res.ok) return;
       const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
       const next = body.tasks ?? [];
+      const nextMeta = body.meta ?? EMPTY_META;
       setTasks(next);
-      setMeta(body.meta ?? EMPTY_META);
+      setMeta(nextMeta);
       setSel((current) => {
         const wanted = preferId === undefined ? current : preferId;
         if (wanted && next.some((t) => t.id === wanted)) return wanted;
-        return firstNonEmptyBucket(bucketTasks(next))?.id ?? null;
+        return (
+          firstNonEmptyBucket(bucketTasks(next, { doneToday: nextMeta.done_today_by_kind }))?.id ?? null
+        );
       });
     } catch {
       toast.error("Impossible de charger la file de démarchage.");
@@ -91,19 +99,21 @@ export default function AgentDemarchagePage() {
     };
   }, []);
 
-  const buckets = useMemo(() => bucketTasks(tasks), [tasks]);
+  // Le plan du jour : ce qui reste à faire, réparti à la cadence quotidienne de
+  // chaque canal. `done_today_by_kind` est indispensable — sans lui, la journée
+  // se rechargerait à chaque tâche bouclée.
+  const buckets = useMemo(
+    () => bucketTasks(tasks, { doneToday: meta.done_today_by_kind }),
+    [tasks, meta.done_today_by_kind],
+  );
 
   // Le jour affiché suit la tâche sélectionnée : cliquer une relance de demain
   // dans la file ne doit pas laisser l'onglet sur « aujourd'hui ».
   const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
   useEffect(() => {
     if (!task) return;
-    for (const k of ["missed", "hot", "overdue", "today", "tomorrow", "week", "later"] as DemarchageBucketKey[]) {
-      if (buckets[k].some((t) => t.id === task.id)) {
-        setDay(k);
-        return;
-      }
-    }
+    const k = bucketOfTask(buckets, task.id);
+    if (k) setDay(k);
   }, [task, buckets]);
 
   const shown = useMemo(() => {
