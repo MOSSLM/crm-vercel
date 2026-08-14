@@ -478,6 +478,10 @@ export function versAuditLu(row: Record<string, unknown>): AuditLu {
           // Les constats de Google, tels qu'ils seront affichés : le décompte
           // qui pèse est exactement celui que le prospect peut recompter.
           psiFraiche && Array.isArray(detail.google) ? detail.google : [],
+          // Nos signaux ne valent que si la page s'est laissé lire. Refoulés par
+          // une protection anti-robot, ils sont tous à faux par défaut : les
+          // compter reviendrait à reprocher au site ce qu'on n'a pas su voir.
+          signaux.joignable === true,
         )
       : { note: null, base: null, lignes: [], plafondAtteint: false };
 

@@ -50,8 +50,31 @@ describe("la note part de la moyenne des axes affichés", () => {
     expect(noteDocument(undefined, siteImpeccable()).note).toBeNull();
   });
 
-  it("ne note pas un site injoignable", () => {
-    expect(noteDocument(80, { ...siteImpeccable(), joignable: false }).note).toBeNull();
+  /**
+   * « INJOIGNABLE » EST UN VERDICT SUR NOTRE MESURE, PAS SUR LE SITE.
+   *
+   * Trouvé en passant cinq dossiers d'affilée : Thermiclim répond 503 à notre
+   * analyseur — protection anti-robot — et le Chrome de Google passe et mesure
+   * une performance de 100. Le document sortait avec cinq cartes d'axes et
+   * aucune note, sur un site parfaitement en ligne.
+   *
+   * Sans axe publiable, en revanche, il n'y a toujours rien à publier : c'est
+   * `base == null` qui décide, et non l'échec de notre requête.
+   */
+  it("note un site que Google a su lire, même refoulé chez nous", () => {
+    const bloque = { ...siteImpeccable(), joignable: false };
+    expect(noteDocument(80, bloque, {}, null, [], false).note).toBe(80);
+  });
+
+  it("n'applique AUCUN malus maison quand la page ne s'est pas laissé lire", () => {
+    // Refoulés, tous nos signaux valent faux par défaut. Les compter
+    // reviendrait à reprocher au site tout ce qu'on n'a pas su regarder.
+    const aveugle = { joignable: false } as unknown as SignauxSite;
+    expect(noteDocument(80, aveugle, {}, null, [], false).lignes).toEqual([]);
+  });
+
+  it("ne publie rien quand aucun axe n'a pu être mesuré", () => {
+    expect(noteDocument(null, { ...siteImpeccable(), joignable: false }).note).toBeNull();
   });
 });
 

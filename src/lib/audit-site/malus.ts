@@ -221,19 +221,40 @@ export function noteDocument(
   ctx: ContexteEntreprise = {},
   noteContenu: number | null = null,
   constatsGoogle: ReadonlyArray<{ id: string; verdict: string }> = [],
+  /**
+   * Avons-nous RÉELLEMENT lu la page ?
+   *
+   * LE CAS QUI A IMPOSÉ CE PARAMÈTRE, trouvé en passant cinq dossiers d'affilée.
+   * Thermiclim répond 503 à notre analyseur — une protection anti-robot — et le
+   * Chrome de Google passe et mesure une performance de 100. Le site est donc
+   * parfaitement en ligne, et le document sortait avec cinq cartes d'axes et
+   * AUCUNE note, parce que `joignable` valait faux.
+   *
+   * Quand Google a exécuté la page, le site est joignable : c'est notre mesure
+   * qui a échoué, pas lui. Mais nos signaux, eux, n'ont rien pu lire — pas de
+   * formulaire, pas de téléphone, pas de mentions légales, tous à faux par
+   * défaut. Leur appliquer le barème reviendrait à reprocher à ce site tout ce
+   * qu'on n'a pas su regarder, ce que ce module refuse partout ailleurs.
+   *
+   * Les malus maison sautent donc, et seuls survivent les constats de Google —
+   * les seuls dont on ait la preuve.
+   */
+  signauxLus = true,
 ): NoteDocument {
-  if (base == null || !Number.isFinite(base) || !s.joignable) {
+  if (base == null || !Number.isFinite(base)) {
     return { note: null, base: null, lignes: [], plafondAtteint: false };
   }
 
-  const lignes = BAREME.filter((m) => {
-    try {
-      return m.quand(s, ctx);
-    } catch {
-      // Un signal absent d'une ligne ancienne ne doit pas faire échouer la note.
-      return false;
-    }
-  }).map(({ libelle, points }) => ({ libelle, points }));
+  const lignes = (signauxLus ? BAREME : [])
+    .filter((m) => {
+      try {
+        return m.quand(s, ctx);
+      } catch {
+        // Un signal absent d'une ligne ancienne ne doit pas faire échouer la note.
+        return false;
+      }
+    })
+    .map(({ libelle, points }) => ({ libelle, points }));
 
   /**
    * Une SEULE ligne pour les défauts de Google, et non dix-sept.
