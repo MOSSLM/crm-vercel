@@ -125,6 +125,34 @@ describe("DemRail — la cadence du jour", () => {
   });
 });
 
+describe("DemRail — le panier « En discussion »", () => {
+  const enDiscussion = (id: string) => ({ ...task({ id }), in_conversation: true });
+
+  it("sort les discussions du plan et n'y affiche aucun quota", () => {
+    const { tuile, frise } = renderRail(
+      [...lot("whatsapp", 25), enDiscussion("d1"), enDiscussion("d2")],
+      { day: "conversation" },
+    );
+    expect(frise.querySelectorAll(".dm-tk")).toHaveLength(2);
+    // Pas de cadence sur ce panier : on répond à ce qui vient.
+    expect(within(tuile("WhatsApp")).queryByText(`/${DAILY_QUOTA.whatsapp}`)).toBeNull();
+    expect(screen.getByText(/sans plafond ni report/)).toBeInTheDocument();
+  });
+
+  it("ne fait pas déborder la cadence du jour", () => {
+    // 20 premiers contacts tiennent toujours aujourd'hui : la discussion ne
+    // leur a pris aucune place.
+    const { tuile } = renderRail([...lot("whatsapp", DAILY_QUOTA.whatsapp), enDiscussion("d1")]);
+    expect(within(tuile("WhatsApp")).getByText(String(DAILY_QUOTA.whatsapp))).toBeInTheDocument();
+    expect(within(tuile("WhatsApp")).queryByText(/reportés/)).toBeNull();
+  });
+
+  it("dit que le quota ne porte que sur les premiers contacts", () => {
+    renderRail(lot("whatsapp", 3));
+    expect(screen.getByText(/premiers contacts WhatsApp par/)).toBeInTheDocument();
+  });
+});
+
 describe("DemRail — le signal d'intention", () => {
   const chaud = task({
     id: "chaud",

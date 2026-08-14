@@ -92,29 +92,44 @@ describe("DemActionCard — la carte message", () => {
   });
 });
 
-describe("DemActionCard — « Fait »", () => {
-  it("boucle la tâche sans exiger d'issue", () => {
+describe("DemActionCard — valider l'envoi", () => {
+  const bouton = () => screen.getByRole("button", { name: /Message envoyé — c'est fait/ });
+
+  it("boucle la tâche d'un seul geste, sans exiger d'issue", () => {
     const onPatch = jest.fn();
     renderCard(DEUX_VERSIONS, { onPatch });
 
-    const fait = screen.getByRole("button", { name: "Fait" });
-    expect(fait).toBeEnabled();
-    fireEvent.click(fait);
+    expect(bouton()).toBeEnabled();
+    fireEvent.click(bouton());
 
     expect(onPatch).toHaveBeenCalledWith({ status: "done", opportunite_id: "o1", note: undefined });
     // Rien n'est inventé : aucune issue n'a été cochée, aucune n'est envoyée.
     expect(onPatch.mock.calls[0][0]).not.toHaveProperty("step_outcome");
   });
 
-  it("devient l'enregistrement de l'issue dès qu'on en coche une", () => {
+  it("ne propose PLUS « a répondu » sur un message", () => {
+    // Le double geste absurde : cocher « a répondu » ici, puis une seconde fois
+    // sur l'attente pour débloquer la suite. La réponse se déclare à un seul
+    // endroit — la tâche d'attente.
+    renderCard(DEUX_VERSIONS);
+    expect(screen.queryByRole("button", { name: "A répondu" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /A répondu, peu intéressé/ })).toBeNull();
+  });
+
+  it("garde les issues qui ne supposent aucune réponse", () => {
+    renderCard(DEUX_VERSIONS);
+    expect(screen.getByRole("button", { name: /Bloqué/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pas de réponse" })).toBeInTheDocument();
+  });
+
+  it("n'affiche le bouton d'issue que si on en coche une", () => {
     const onPatch = jest.fn();
     renderCard(DEUX_VERSIONS, { onPatch });
+    expect(screen.queryByRole("button", { name: /Enregistrer l'issue/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "A répondu" }));
-    expect(screen.queryByRole("button", { name: "Fait" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /Enregistrer l'issue · A répondu/ }));
-    expect(onPatch).toHaveBeenCalledWith(expect.objectContaining({ status: "done", step_outcome: "answered" }));
+    fireEvent.click(screen.getByRole("button", { name: /Bloqué/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Enregistrer l'issue · Bloqué/ }));
+    expect(onPatch).toHaveBeenCalledWith(expect.objectContaining({ status: "done", step_outcome: "blocked" }));
   });
 
   it("marque l'issue comme facultative", () => {

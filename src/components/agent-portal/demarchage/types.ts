@@ -73,6 +73,12 @@ export type DemarchageTask = {
   entreprise: DemarchageEntrepriseRef | DemarchageEntrepriseRef[] | null;
   sequence: DemarchageSequenceInfo | null;
   intent: DemarchageIntent | null;
+  /**
+   * L'inscription a déjà enregistré une réponse du prospect : la discussion est
+   * ouverte. C'est ce qui sort la tâche du quota quotidien — celui-ci plafonne
+   * les premiers contacts, pas les échanges avec ceux qui ont répondu.
+   */
+  in_conversation?: boolean;
 };
 
 /**

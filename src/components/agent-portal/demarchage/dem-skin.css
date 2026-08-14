@@ -530,3 +530,18 @@
   text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)}
 .dm-skin .dm-lbl span{font-size:9px;letter-spacing:.06em;color:var(--text-4);background:var(--bg-2);
   border-radius:4px;padding:2px 5px;text-transform:none}
+
+/* ── « Message envoyé — c'est fait » ──────────────────────────────────────
+   Le geste qui ferme une tâche message. Il est délibérément plus haut et plus
+   contrasté que l'envoi lui-même : envoyer ouvre WhatsApp dans un autre onglet,
+   et c'est en revenant qu'on cherche ce bouton-là. Manqué, la tâche reste dans
+   la file et la séquence ne part jamais en attente. */
+.dm-skin .dm-cta.big{height:52px;font-size:15px}
+.dm-skin .dm-cta.ok{background:var(--ok)}
+
+/* ── Panier « En discussion » ─────────────────────────────────────────────
+   Le prospect a répondu : c'est le seul panier où la file ne planifie rien.
+   Son onglet se distingue de la cadence, qui est du travail décidé à l'avance. */
+.dm-skin .dm-day[data-live="1"] .l{color:var(--ok)}
+.dm-skin .dm-day[data-live="1"][aria-selected="true"]{background:var(--ok);border-color:var(--ok)}
+.dm-skin .dm-day[data-live="1"][aria-selected="true"] .l{color:#fff}

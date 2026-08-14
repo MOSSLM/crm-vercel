@@ -8,6 +8,7 @@ import { dayStartIso } from "@/lib/agent-progress";
 import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
 import { daysSince, isMissedSignal } from "@/lib/analytics-radar/intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
+import { readReplies } from "@/lib/automations/week";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
@@ -173,6 +174,31 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
       if (!lastCallByEnterprise.has(id)) lastCallByEnterprise.set(id, at); // trié desc → le premier est le plus récent
     });
   }
+  // Quelles inscriptions ont DÉJÀ enregistré une réponse du prospect.
+  //
+  // C'est la frontière entre « premier contact » et « discussion » : le quota
+  // quotidien plafonne les prospects qu'on démarche, pas les échanges avec ceux
+  // qui ont répondu. Sans cette distinction, l'étape déclenchée par une réponse
+  // — typiquement l'envoi du site démo — était repoussée au lendemain dès que
+  // les vingt places du jour étaient prises, c'est-à-dire précisément quand la
+  // journée s'était bien passée.
+  //
+  // `vars.replies` est la trace posée par `declarerReponse` : un index d'étape
+  // d'attente → l'instant du clic. Non vide ⇒ la conversation est ouverte.
+  const enrollmentIds = [
+    ...new Set(tasks.map((t) => t.enrollment_id).filter((id): id is string => !!id)),
+  ];
+  const enConversation = new Set<string>();
+  if (enrollmentIds.length) {
+    const { data: enrolls } = await sc
+      .from("sequence_enrollments")
+      .select("id, vars")
+      .in("id", enrollmentIds);
+    for (const e of (enrolls ?? []) as { id: string; vars: unknown }[]) {
+      if (Object.keys(readReplies(e.vars)).length > 0) enConversation.add(e.id);
+    }
+  }
+
   const nowDate = new Date();
 
   const enriched = tasks.map((t) => {
@@ -182,6 +208,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     const intent = t.entreprise_id != null ? intents.get(t.entreprise_id) : undefined;
     return {
       ...t,
+      in_conversation: !!t.enrollment_id && enConversation.has(t.enrollment_id),
       sequence: auto
         ? {
             name: auto.name,
@@ -239,6 +266,10 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
       payload: {},
       contact: e.contact,
       entreprise: e.entreprise,
+      // Une attente n'est jamais « en discussion » : par définition, personne
+      // n'a encore répondu à CETTE étape — il n'y a rien à traiter, seulement à
+      // patienter.
+      in_conversation: false,
       sequence: auto
         ? {
             name: auto.name,

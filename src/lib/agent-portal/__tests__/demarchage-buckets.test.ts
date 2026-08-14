@@ -14,6 +14,7 @@ type T = {
   id: string;
   kind?: string;
   due_at: string | null;
+  in_conversation?: boolean;
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 const t = (id: string, due: string | null, kind = "whatsapp", intent?: T["intent"]): T => ({
@@ -21,6 +22,12 @@ const t = (id: string, due: string | null, kind = "whatsapp", intent?: T["intent
   kind,
   due_at: due,
   intent,
+});
+
+/** Une tâche dont le prospect a déjà répondu — la discussion est ouverte. */
+const enDiscussion = (id: string, due: string | null, kind = "whatsapp"): T => ({
+  ...t(id, due, kind),
+  in_conversation: true,
 });
 
 /** N tâches d'un même canal, toutes échues, pour saturer la cadence. */
@@ -119,6 +126,58 @@ describe("bucketTasks — la cadence quotidienne", () => {
     const b = plan(tasks);
     const total = Object.values(b).reduce((n, arr) => n + arr.length, 0);
     expect(total).toBe(tasks.length);
+  });
+});
+
+describe("bucketTasks — la discussion en cours échappe au plan", () => {
+  it("sort du quota un message dont le prospect a déjà répondu", () => {
+    // Le cas qui faisait mal : la journée est pleine de premiers contacts, et
+    // l'étape « envoie-lui le site démo » — déclenchée par SA réponse — se
+    // retrouvait planifiée au lendemain. On ne fait pas attendre un prospect
+    // qui vient d'écrire.
+    const b = plan([...lot("whatsapp", DAILY_QUOTA.whatsapp), enDiscussion("suite", iso("2026-08-13"))]);
+    expect(b.conversation.map((x) => x.id)).toEqual(["suite"]);
+    expect(b.tomorrow).toHaveLength(0);
+  });
+
+  it("n'a aucun plafond : cent discussions restent cent discussions", () => {
+    const b = plan(Array.from({ length: 100 }, (_, i) => enDiscussion(`d-${i}`, iso("2026-08-12"))));
+    expect(b.conversation).toHaveLength(100);
+    expect(b.today).toHaveLength(0);
+    expect(b.tomorrow).toHaveLength(0);
+  });
+
+  it("garde les APPELS dans la cadence, même en discussion", () => {
+    // Répondre à un message coûte une minute ; passer un appel, dix. Le
+    // plafond des appels est une contrainte d'horloge, pas de volume sortant.
+    const b = plan([...lot("call", DAILY_QUOTA.call), enDiscussion("appel", iso("2026-08-13"), "call")]);
+    expect(b.conversation).toHaveLength(0);
+    expect(b.tomorrow.map((x) => x.id)).toEqual(["appel"]);
+  });
+
+  it("passe devant les signaux de visite, jamais devant un chaud non rappelé", () => {
+    const b = plan([
+      enDiscussion("discussion", iso("2026-08-13")),
+      t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 80 }),
+      t("manque", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 75, missed: true }),
+    ]);
+    expect(firstNonEmptyBucket(b)).toMatchObject({ id: "manque" });
+    expect(b.conversation.map((x) => x.id)).toEqual(["discussion"]);
+    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
+  });
+
+  it("ne bascule pas une attente en discussion : il n'y a rien à y faire", () => {
+    const b = plan([{ ...t("w", iso("2026-08-13"), "wait"), in_conversation: true }]);
+    expect(b.conversation).toHaveLength(0);
+    expect(b.today.map((x) => x.id)).toEqual(["w"]);
+  });
+
+  it("traite les plus anciennes réponses d'abord", () => {
+    const b = plan([
+      enDiscussion("recent", iso("2026-08-13")),
+      enDiscussion("vieux", iso("2026-08-09")),
+    ]);
+    expect(b.conversation.map((x) => x.id)).toEqual(["vieux", "recent"]);
   });
 });
 

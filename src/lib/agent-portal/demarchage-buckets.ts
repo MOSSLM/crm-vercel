@@ -39,17 +39,30 @@ export type DemarchageTaskLike = {
   /** Canal de la tâche — c'est lui qui porte le quota. */
   kind?: string;
   due_at: string | null;
+  /**
+   * L'inscription de ce prospect a DÉJÀ enregistré une réponse : la discussion
+   * est ouverte. Posé par `/api/agent/tasks` d'après `vars.replies`.
+   */
+  in_conversation?: boolean;
   /** Signal d'intention mesuré (GA4). Absent = aucun site démo ou aucune visite. */
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 
-export type DemarchageBucketKey = "missed" | "hot" | "today" | "tomorrow" | "week" | "later";
+export type DemarchageBucketKey =
+  | "missed"
+  | "conversation"
+  | "hot"
+  | "today"
+  | "tomorrow"
+  | "week"
+  | "later";
 
 export type DemarchageBuckets<T> = Record<DemarchageBucketKey, T[]>;
 
 /** L'ordre dans lequel on propose les paniers — le plus urgent d'abord. */
 export const BUCKET_ORDER: readonly DemarchageBucketKey[] = [
   "missed",
+  "conversation",
   "hot",
   "today",
   "tomorrow",
@@ -59,6 +72,7 @@ export const BUCKET_ORDER: readonly DemarchageBucketKey[] = [
 
 export const BUCKET_LABEL: Record<DemarchageBucketKey, string> = {
   missed: "Signal chaud non rappelé",
+  conversation: "En discussion",
   hot: "À appeler maintenant",
   today: "Aujourd'hui",
   tomorrow: "Demain",
@@ -86,8 +100,36 @@ export const DAILY_QUOTA: Readonly<Record<string, number>> = {
 /** Les canaux plafonnés, dans l'ordre où la file les présente. */
 export const QUOTA_KINDS: readonly string[] = ["call", "whatsapp", "linkedin"] as const;
 
+/**
+ * Les canaux dont une discussion ouverte échappe au quota.
+ *
+ * LE QUOTA PORTE SUR LES PREMIERS CONTACTS, PAS SUR LES ÉCHANGES
+ * Vingt WhatsApp par jour, c'est vingt entreprises qu'on démarche. Ce n'est pas
+ * vingt messages : chacune de ces vingt-là peut répondre, et il faut pouvoir
+ * lui répondre dans la foulée — comme à celles d'hier et d'avant-hier. Sans
+ * cette exception, l'étape « envoie-lui le site démo », déclenchée par la
+ * réponse du prospect, se retrouvait planifiée AU LENDEMAIN parce que les vingt
+ * places du jour étaient prises. On laisse refroidir la seule chose qui était
+ * chaude.
+ *
+ * Répondre à un message coûte une minute, d'où l'absence de plafond. L'APPEL
+ * reste plafonné même en discussion : vingt appels par jour, c'est une
+ * contrainte d'horloge, pas de volume sortant.
+ */
+const CONVERSATION_KINDS: readonly string[] = ["whatsapp", "linkedin"] as const;
+
 /** Le plafond d'un canal, ou `null` quand il n'en a pas. */
 export const quotaOf = (kind: string): number | null => DAILY_QUOTA[kind] ?? null;
+
+/**
+ * Cette tâche fait-elle partie d'une discussion en cours ?
+ *
+ * Le prospect a écrit : il attend une réponse, et cette réponse ne se planifie
+ * pas — elle se donne. Ces tâches sortent donc du plan et vivent dans leur
+ * propre panier, sans plafond.
+ */
+export const isConversation = (t: DemarchageTaskLike): boolean =>
+  t.in_conversation === true && CONVERSATION_KINDS.includes(t.kind ?? "");
 
 /**
  * Heure locale (fuseau de l'agent) à partir de laquelle la journée est close :
@@ -173,17 +215,29 @@ export function bucketTasks<T extends DemarchageTaskLike>(
   tasks: T[],
   { now = new Date(), timeZone = AGENT_TIMEZONE, doneToday = {} }: DemarchagePlanOptions = {},
 ): DemarchageBuckets<T> {
-  const buckets: DemarchageBuckets<T> = { missed: [], hot: [], today: [], tomorrow: [], week: [], later: [] };
+  const buckets: DemarchageBuckets<T> = {
+    missed: [],
+    conversation: [],
+    hot: [],
+    today: [],
+    tomorrow: [],
+    week: [],
+    later: [],
+  };
 
   const aPlanifier: T[] = [];
   for (const task of tasks) {
-    // Un signal chaud non rappelé passe AVANT les chauds du jour : c'est une
-    // opportunité déjà en train de refroidir, pas une opportunité fraîche.
+    // Un signal chaud non rappelé passe AVANT tout : c'est une opportunité
+    // déjà en train de refroidir, pas une opportunité fraîche.
     if (task.intent?.missed) buckets.missed.push(task);
+    // Puis ce qui vient d'arriver : quelqu'un a écrit et attend. Devant les
+    // signaux de visite, qui ne sont qu'un intérêt observé, jamais une demande.
+    else if (isConversation(task)) buckets.conversation.push(task);
     else if (isHot(task)) buckets.hot.push(task);
     else aPlanifier.push(task);
   }
 
+  buckets.conversation.sort((a, b) => dueMs(a) - dueMs(b));
   aPlanifier.sort((a, b) => dueMs(a) - dueMs(b));
 
   const journeeClose = localHour(now, timeZone) >= DAY_CUTOFF_HOUR;
