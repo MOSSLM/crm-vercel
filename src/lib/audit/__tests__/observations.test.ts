@@ -205,3 +205,40 @@ describe("validerPreparation — l'observation élargit l'univers", () => {
     expect(v.rejets.some((r) => r.regle === 3)).toBe(true);
   });
 });
+
+/**
+ * Ce que l'agent peut faire à la note, et ce qu'il ne peut pas.
+ *
+ * L'ANGLE MORT QUE CE MÉCANISME FERME. Toutes les preuves de l'analyseur sont
+ * des contrôles de présence : un numéro existe, un formulaire existe. Sur
+ * Doussot, ça donnait 79/100 à un site qui affiche quatre lignes de téléphone
+ * pour trois numéros différents — dont un seul cliquable. La machine ne voit pas
+ * la répétition ; l'agent qui ouvre le site, si.
+ */
+describe("le poids d'une observation", () => {
+  it("vient du catalogue, jamais de l'agent", () => {
+    // L'agent soumet un COMPTAGE. Le barème décide de ce que ça coûte : c'est ce
+    // qui sépare « j'ai relevé un fait » de « j'ai décidé d'une note ».
+    const { retenues } = validerObservations([{ cle: "numeros_differents", valeur: 3 }]);
+    expect(retenues[0].poids).toBe(25);
+    expect(retenues[0].verdict).toBe("probleme");
+    expect(retenues[0].axe).toBe("conversion");
+  });
+
+  it("laisse sans poids ce que le catalogue n'a pas pondéré", () => {
+    const { retenues } = validerObservations([{ cle: "horaires_affiches", valeur: false }]);
+    expect(retenues[0].poids).toBeNull();
+  });
+
+  it("refuse un comptage hors des bornes de plausibilité", () => {
+    // Vingt numéros différents sur un site d'artisan n'existe pas : c'est une
+    // faute de frappe, et elle serait affichée au prospect.
+    const { rejets } = validerObservations([{ cle: "numeros_differents", valeur: 40 }]);
+    expect(rejets[0].pourquoi).toMatch(/bornes/);
+  });
+
+  it("juge au seuil : un seul numéro est la bonne réponse", () => {
+    expect(validerObservations([{ cle: "numeros_differents", valeur: 1 }]).retenues[0].verdict).toBe("ok");
+    expect(validerObservations([{ cle: "numeros_differents", valeur: 2 }]).retenues[0].verdict).toBe("probleme");
+  });
+});

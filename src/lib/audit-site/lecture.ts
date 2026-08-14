@@ -373,6 +373,70 @@ export function versAuditLu(row: Record<string, unknown>): AuditLu {
     }
   }
 
+  /**
+   * CE QUE L'AGENT A RELEVÉ PÈSE DANS SON AXE — mais jamais dans celui de Google.
+   *
+   * L'angle mort que ça ferme : toutes les preuves de l'analyseur sont des
+   * contrôles de présence. Un numéro existe, un formulaire existe. Sur Doussot,
+   * ça donnait 79/100 à un site qui affiche quatre lignes de téléphone pour
+   * trois numéros différents et dont les pages services sont des pavés. La
+   * machine ne voit ni la répétition ni la structure d'un texte ; l'agent qui
+   * ouvre le site, si — et son relevé doit donc compter, pas seulement décorer.
+   *
+   * DEUX GARDE-FOUS, ET LE SECOND EST LE PLUS IMPORTANT.
+   *
+   * Le poids vient du CATALOGUE, jamais de l'agent : il fournit un comptage, le
+   * barème décide de ce que ça coûte. C'est ce qui sépare « j'ai relevé un
+   * fait » de « j'ai décidé d'une note ».
+   *
+   * Et une observation ne touche JAMAIS un axe mesuré par Google. La carte porte
+   * la mention « mesuré par Google », qui vaut caution auprès du prospect ; y
+   * mêler notre relevé ferait mentir la seule ligne du document qu'on ne peut
+   * pas se permettre de rendre discutable. Sur un axe de Google, l'observation
+   * reste un constat, sans peser.
+   */
+  const observations = Array.isArray(detail.observations) ? detail.observations : [];
+  for (const brut of observations) {
+    const o = brut as {
+      cle?: string;
+      axe?: string;
+      libelle?: string;
+      valeur?: string;
+      seuil?: string | null;
+      verdict?: Preuve["verdict"];
+      poids?: number | null;
+    };
+    if (!o?.cle || !o.axe || !o.poids || !o.verdict) continue;
+    /**
+     * SEULE UNE OBSERVATION EN ÉCHEC PÈSE. Un relevé qui passe s'affiche comme
+     * bonne nouvelle et ne touche pas au chiffre.
+     *
+     * Sans cette ligne, soumettre des observations favorables REMONTE la note :
+     * sur Doussot, « aucune page service sans sous-titre » faisait passer le
+     * contenu de 80 à 84. L'agent pourrait donc gonfler le document en relevant
+     * ce qui va bien — l'exact inverse de ce que ce mécanisme existe pour
+     * permettre. Il peut faire descendre une note en constatant un défaut ; il
+     * ne peut pas la faire monter.
+     */
+    if (o.verdict !== "probleme") continue;
+    const axe = axes.find((a) => a.id === o.axe);
+    if (!axe || axe.mesureGoogle) continue;
+
+    axe.preuves = [
+      ...axe.preuves,
+      {
+        cle: `obs:${o.cle}`,
+        libelle: o.libelle ?? o.cle,
+        valeur: o.valeur ?? null,
+        seuil: o.seuil ?? null,
+        poids: o.poids,
+        verdict: o.verdict,
+      },
+    ];
+    const recalculee = noteDepuisPreuves(axe.preuves);
+    if (recalculee != null) axe.note = recalculee;
+  }
+
   const noteGlobale = num(row.note_globale);
 
   /**
@@ -433,7 +497,7 @@ export function versAuditLu(row: Record<string, unknown>): AuditLu {
     // Pas de péremption ici, contrairement aux constats Google : une observation
     // est datée par l'audit qui l'a produite, et c'est ce document-là qu'on
     // renvoie. La périmer indépendamment viderait un audit déjà envoyé.
-    observations: Array.isArray(detail.observations) ? detail.observations : [],
+    observations,
     alertes: Array.isArray(row.alertes) ? (row.alertes as string[]) : [],
     ttfb_ms: num(row.ttfb_ms),
     chargement_ms: num(row.chargement_ms),

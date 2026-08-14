@@ -70,6 +70,25 @@ export interface DefinitionObservation {
    * en rendez-vous, donc elle n'a rien à faire dans le document.
    */
   verification: string;
+  /**
+   * Ce que l'observation pèse dans SON axe, quand elle est en échec.
+   *
+   * L'ANGLE MORT QUE CE CHAMP FERME. Toutes les preuves de l'analyseur sont des
+   * contrôles de présence : un numéro existe, un formulaire existe, des photos
+   * existent. Sur un dossier réel, ça donnait 79/100 à un site qui affiche
+   * quatre lignes de téléphone pour trois numéros différents et dont les pages
+   * services sont des pavés. La machine ne voit pas la répétition, ni la
+   * structure d'un texte ; l'agent qui ouvre le site, si.
+   *
+   * LE POIDS EST DÉCLARÉ ICI, JAMAIS PAR L'AGENT. Il fournit un comptage — quatre
+   * numéros, deux pages sans sous-titre — et le barème décide de ce que ça coûte.
+   * C'est ce qui distingue « j'ai relevé un fait » de « j'ai décidé d'une note »,
+   * et c'est la seule forme sous laquelle un jugement humain peut entrer dans un
+   * chiffre qu'on montre au prospect.
+   *
+   * Absent ⇒ l'observation s'affiche comme constat et ne pèse pas.
+   */
+  poids?: number;
 }
 
 export const CATALOGUE_OBSERVATIONS: readonly DefinitionObservation[] = [
@@ -117,6 +136,30 @@ export const CATALOGUE_OBSERVATIONS: readonly DefinitionObservation[] = [
     min: 1,
     max: 30,
     verification: "Faites défiler votre accueil et notez au bout de combien d’écrans le numéro apparaît.",
+  },
+  {
+    cle: "numeros_differents",
+    libelle: "Numéros de téléphone différents sur le site",
+    axe: "conversion",
+    unite: "comptage",
+    seuil: 1,
+    sens: "max",
+    min: 1,
+    max: 20,
+    poids: 25,
+    verification: "Comptez les numéros affichés sur votre accueil : combien sont différents ?",
+  },
+  {
+    cle: "pages_sans_intertitre",
+    libelle: "Pages services sans le moindre sous-titre",
+    axe: "contenu",
+    unite: "comptage",
+    seuil: 0,
+    sens: "max",
+    min: 0,
+    max: 50,
+    poids: 25,
+    verification: "Ouvrez une page service : voyez-vous des sous-titres, ou un seul bloc de texte ?",
   },
   {
     cle: "avis_affiches",
@@ -202,6 +245,8 @@ export interface ObservationValidee {
   verification: string;
   /** La valeur brute, pour alimenter `univers.nombres`. */
   brut: number | null;
+  /** Ce qu'elle pèse dans son axe. `null` ⇒ elle s'affiche sans peser. */
+  poids: number | null;
 }
 
 export interface RejetObservation {
@@ -262,6 +307,7 @@ function evaluer(def: DefinitionObservation, valeur: unknown): ObservationValide
     libelle: def.libelle,
     axe: def.axe,
     verification: def.verification,
+    poids: def.poids ?? null,
   };
 
   if (def.unite === "oui_non") {
