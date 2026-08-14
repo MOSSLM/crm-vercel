@@ -88,7 +88,14 @@ export type DemarchageTask = {
  */
 export type DemarchageQueueMeta = {
   done_today: number;
+  /**
+   * PREMIERS CONTACTS bouclés aujourd'hui, par canal — pas les messages de
+   * discussion. C'est ce compte-là qui consomme la cadence : répondre à trois
+   * prospects ne doit pas amputer de trois le démarchage du jour.
+   */
   done_today_by_kind: Record<string, number>;
+  /** Messages de discussion bouclés aujourd'hui — hors cadence, pour mémoire. */
+  done_today_conversation: number;
 };
 
 export type DemarchagePatchBody = {

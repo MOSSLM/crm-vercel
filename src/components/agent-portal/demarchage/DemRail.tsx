@@ -68,27 +68,30 @@ function dayLabel(day: DemarchageBucketKey): string {
 }
 
 /**
- * Une tuile de cadence : ce que le jour regardé contient RÉELLEMENT pour ce
- * canal, et la cadence de référence quand il y en a une.
+ * Une tuile de la tête de rail.
  *
- * Le nombre est toujours celui des tâches présentes — jamais le quota. Aucun
- * appel en séquence aujourd'hui, la tuile affiche 0 : c'est l'information, pas
- * un trou à combler.
+ * SUR « AUJOURD'HUI », C'EST UN COMPTEUR D'AVANCEMENT : `fait / cadence`. Il
+ * démarre à 0 le matin et monte au fil de la journée. Il affichait auparavant
+ * le nombre de tâches PLANIFIÉES, donc « 20/20 » dès la première seconde —
+ * lecture exactement inverse de ce qu'on cherche en ouvrant l'écran.
+ *
+ * Sur les autres jours, il n'y a rien de « fait » à montrer : la tuile
+ * annonce ce que le jour contient. Et jamais le quota à la place d'un vide :
+ * aucun appel en séquence, la tuile affiche 0.
  */
-function QuotaTile({
+function Tile({
   ic,
   lb,
   n,
   quota,
-  reste,
+  sub,
 }: {
   ic: string;
   lb: string;
   n: number;
   /** Cadence quotidienne du canal, `null` quand il n'a pas de plafond. */
   quota: number | null;
-  /** Tâches du même canal renvoyées aux jours suivants, faute de place. */
-  reste: number;
+  sub?: string | null;
 }) {
   return (
     <div data-empty={n === 0 ? "1" : undefined}>
@@ -98,9 +101,9 @@ function QuotaTile({
       </span>
       <div className="n">
         {n}
-        {quota != null && n > 0 && <span className="q">/{quota}</span>}
+        {quota != null && <span className="q">/{quota}</span>}
       </div>
-      {reste > 0 && <div className="r">+{reste} reportés</div>}
+      {sub && <div className="r">{sub}</div>}
     </div>
   );
 }
@@ -133,22 +136,47 @@ export function DemRail({
 }) {
   // Les tuiles comptent le panier ENTIER, pas la liste filtrée : cliquer
   // « Appels » ne doit pas faire tomber le compteur Messages à zéro.
-  const dayTasks = buckets[day];
-  const parCanal = countByKind(dayTasks);
+  const parCanal = countByKind(buckets[day]);
   const planifie = PLANNED.includes(day);
+  /** Le jour en cours : c'est le seul où « fait » veut dire quelque chose. */
+  const cejour = day === "today";
 
   // Ce qui, du même canal, a été renvoyé aux jours suivants faute de place —
   // la moitié de l'explication du chiffre affiché.
   const apres = PLANNED.slice(PLANNED.indexOf(day) + 1);
   const reporte = planifie ? countByKind(apres.flatMap((k) => buckets[k])) : {};
 
+  /**
+   * La tuile d'un canal plafonné.
+   *
+   * Sur aujourd'hui : `fait / cadence`, avec le reste à faire en dessous.
+   * Ailleurs : ce que le jour contient, et ce qui a débordé au-delà.
+   */
+  const tuileCadence = (ic: string, lb: string, kind: string) => {
+    const prevu = parCanal[kind] ?? 0;
+    const fait = meta.done_today_by_kind[kind] ?? 0;
+    const quota = planifie ? DAILY_QUOTA[kind] ?? null : null;
+    const debord = reporte[kind] ?? 0;
+    return cejour ? (
+      <Tile ic={ic} lb={lb} n={fait} quota={quota} sub={prevu > 0 ? `${prevu} à faire` : null} />
+    ) : (
+      <Tile ic={ic} lb={lb} n={prevu} quota={quota} sub={debord > 0 ? `+${debord} reportés` : null} />
+    );
+  };
+
   const nb = meta.done_today;
   // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui —
-  // signaux compris, eux aussi se traitent le jour même.
-  const tot = nb + buckets.today.length + buckets.hot.length + buckets.missed.length;
+  // discussions et signaux compris, eux aussi se traitent le jour même.
+  const tot =
+    nb +
+    buckets.today.length +
+    buckets.conversation.length +
+    buckets.hot.length +
+    buckets.missed.length;
 
   const nbLinkedin = parCanal.linkedin ?? 0;
   const nbWait = parCanal.wait ?? 0;
+  const nbDiscussion = buckets.conversation.length;
 
   return (
     <aside className="dm-rail">
@@ -165,32 +193,24 @@ export function DemRail({
           <i style={{ width: `${tot ? Math.min(100, (nb / tot) * 100) : 0}%` }} />
         </div>
         <div className="mini">
-          <QuotaTile
-            ic="phone"
-            lb="Appels"
-            n={parCanal.call ?? 0}
-            quota={planifie ? DAILY_QUOTA.call : null}
-            reste={reporte.call ?? 0}
-          />
-          <QuotaTile
-            ic="whatsapp"
-            lb="WhatsApp"
-            n={parCanal.whatsapp ?? 0}
-            quota={planifie ? DAILY_QUOTA.whatsapp : null}
-            reste={reporte.whatsapp ?? 0}
+          {tuileCadence("phone", "Appels", "call")}
+          {/* « 1er contact » n'est pas cosmétique : c'est ce que la cadence
+              plafonne, et la tuile d'à côté dit le reste. */}
+          {tuileCadence("whatsapp", "WhatsApp 1er contact", "whatsapp")}
+          {/* La discussion ne dépend d'aucun jour : elle est là ou elle n'est
+              pas, et elle n'a pas de plafond. Toujours visible, pour qu'on ne
+              confonde jamais les deux compteurs. */}
+          <Tile
+            ic="message"
+            lb="Discussion en cours"
+            n={nbDiscussion}
+            quota={null}
+            sub={meta.done_today_conversation > 0 ? `${meta.done_today_conversation} traitées` : null}
           />
           {/* LinkedIn et les attentes n'apparaissent que s'il y en a : une
               tuile vide sur un canal qu'on n'utilise pas est du bruit. */}
-          {nbLinkedin > 0 && (
-            <QuotaTile
-              ic="linkedin"
-              lb="LinkedIn"
-              n={nbLinkedin}
-              quota={planifie ? DAILY_QUOTA.linkedin : null}
-              reste={reporte.linkedin ?? 0}
-            />
-          )}
-          {nbWait > 0 && <QuotaTile ic="clock" lb="Attentes" n={nbWait} quota={null} reste={0} />}
+          {nbLinkedin > 0 && tuileCadence("linkedin", "LinkedIn", "linkedin")}
+          {nbWait > 0 && <Tile ic="clock" lb="Attentes" n={nbWait} quota={null} />}
         </div>
         {planifie && (
           <div className="cad">
