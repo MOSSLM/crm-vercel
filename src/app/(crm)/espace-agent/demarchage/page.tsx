@@ -22,7 +22,6 @@ import type {
   DemarchageQueueMeta,
   DemarchageTask,
   DemAudit,
-  DemTemplates,
 } from "@/components/agent-portal/demarchage/types";
 import "@/components/agent-portal/demarchage/dem-skin.css";
 
@@ -52,12 +51,19 @@ export default function AgentDemarchagePage() {
 
   const [company, setCompany] = useState<CompanyBundle | null>(null);
   const [audit, setAudit] = useState<DemAudit>(null);
-  const [templates, setTemplates] = useState<DemTemplates | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
 
-  /** `preferId === null` force le recalcul : la tâche traitée a quitté la file. */
-  const loadQueue = useCallback(async (preferId?: string | null) => {
+  /**
+   * Recharge la file et décide sur quoi on atterrit.
+   *
+   * `pick` non fourni  → on reste sur la tâche courante ;
+   * `pick === null`    → recalcul complet (la tâche traitée a quitté la file) ;
+   * `pick` = fonction  → on choisit à partir de la file FRAÎCHE, ce qui est le
+   *   seul moyen de retrouver une ligne que le serveur vient de créer (typiquement
+   *   l'attente de réponse posée par le moteur juste après un « Fait »).
+   */
+  const loadQueue = useCallback(async (pick?: string | null | ((rows: DemarchageTask[]) => string | null)) => {
     setLoadingQueue(true);
     try {
       const res = await authedFetch("/api/agent/tasks");
@@ -68,7 +74,7 @@ export default function AgentDemarchagePage() {
       setTasks(next);
       setMeta(nextMeta);
       setSel((current) => {
-        const wanted = preferId === undefined ? current : preferId;
+        const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
         if (wanted && next.some((t) => t.id === wanted)) return wanted;
         return (
           firstNonEmptyBucket(bucketTasks(next, { doneToday: nextMeta.done_today_by_kind }))?.id ?? null
@@ -84,20 +90,6 @@ export default function AgentDemarchagePage() {
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
-
-  // La bibliothèque de modèles ne dépend pas du prospect : une seule fois.
-  useEffect(() => {
-    let active = true;
-    void authedFetch("/api/agent/demarchage/templates")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((b) => {
-        if (active && b) setTemplates(b as DemTemplates);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // Le plan du jour : ce qui reste à faire, réparti à la cadence quotidienne de
   // chaque canal. `done_today_by_kind` est indispensable — sans lui, la journée
@@ -164,6 +156,11 @@ export default function AgentDemarchagePage() {
   const handlePatch = useCallback(
     async (body: Omit<DemarchagePatchBody, "id">) => {
       if (!task) return;
+      // Retenus AVANT l'appel : une fois la tâche bouclée, elle disparaît de la
+      // file et ces deux repères avec elle.
+      const enrollmentId = task.enrollment_id;
+      const suivante = shown.find((t) => t.id !== task.id)?.id ?? null;
+
       setBusy(true);
       try {
         const res = await authedFetch("/api/agent/tasks", {
@@ -172,16 +169,23 @@ export default function AgentDemarchagePage() {
           body: JSON.stringify({ id: task.id, ...body }),
         });
         if (!res.ok) throw new Error();
-        toast.success("Issue enregistrée.");
+        toast.success(body.step_outcome ? "Issue enregistrée." : "C'est fait.");
         setHistoryKey((k) => k + 1);
-        await loadQueue(null);
+        await loadQueue((rows) => {
+          // On suit le prospect, pas la file : boucler un premier contact gare
+          // sa séquence sur l'attente de réponse, et c'est cette ligne-là qu'on
+          // veut sous les yeux — pas un prospect au hasard. À défaut (séquence
+          // terminée, arrêtée), on enchaîne sur la tâche suivante.
+          const suite = enrollmentId ? rows.find((t) => t.enrollment_id === enrollmentId) : undefined;
+          return suite?.id ?? suivante;
+        });
       } catch {
         toast.error("Action impossible.");
       } finally {
         setBusy(false);
       }
     },
-    [task, loadQueue],
+    [task, shown, loadQueue],
   );
 
   const onLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
@@ -232,11 +236,11 @@ export default function AgentDemarchagePage() {
                 task={task}
                 company={company}
                 audit={audit}
-                templates={templates}
                 busy={busy}
                 onPatch={handlePatch}
                 onLogged={onLogged}
-                onNext={task.kind === "wait" ? onReplied : goNext}
+                onNext={goNext}
+                onReplied={onReplied}
               />
               {task.entreprise_id != null && (
                 <DemHisto

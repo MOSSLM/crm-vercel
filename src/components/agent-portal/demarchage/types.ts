@@ -178,8 +178,3 @@ export type DemAudit = {
   url_analysee: string | null;
   injoignable: boolean;
 } | null;
-
-export type DemTemplates = {
-  whatsapp: { id: string; name: string; body: string }[];
-  email: { id: string; name: string; subject: string | null; body: string }[];
-};

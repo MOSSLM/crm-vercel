@@ -15,7 +15,7 @@ import { one } from "@/components/agent-portal/format";
 import { useTelephonyOptional } from "@/components/telephony/CallProvider";
 import { placeCallback } from "@/lib/telephony/client";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
-import type { CompanyBundle, DemarchagePatchBody, DemarchageTask, DemAudit, DemTemplates } from "./types";
+import type { CompanyBundle, DemarchagePatchBody, DemarchageTask, DemAudit } from "./types";
 
 /** Effet de chaque issue sur l'étape de l'affaire. */
 const OUTCOME_ROLE: Partial<Record<StepOutcomeId, StageRole>> = {
@@ -66,20 +66,22 @@ export function DemActionCard({
   task,
   company,
   audit,
-  templates,
   busy,
   onPatch,
   onLogged,
   onNext,
+  onReplied,
 }: {
   task: DemarchageTask;
   company: CompanyBundle | null;
   audit: DemAudit;
-  templates: DemTemplates | null;
   busy: boolean;
   onPatch: (body: Omit<DemarchagePatchBody, "id">) => void;
   onLogged: () => void;
+  /** Passer à la tâche suivante de la file — le geste est le même partout. */
   onNext: () => void;
+  /** Le prospect a répondu : l'attente est levée, la file doit se recharger. */
+  onReplied: () => void;
 }) {
   const ch = demCh(task.kind);
   const seq = task.sequence;
@@ -112,35 +114,35 @@ export function DemActionCard({
   const [snoozeDate, setSnoozeDate] = useState(tomorrow());
 
   // ── message ─────────────────────────────────────────────────────────────
-  const stepVersions = useMemo(() => {
-    const main = { id: "step", name: "Modèle de l'étape", body: task.payload?.message ?? "" };
-    const alt = task.payload?.variantAlt;
-    return alt?.message
-      ? [main, { id: "step-alt", name: alt.variant === "contact" ? "avec le prénom" : "sans le prénom", body: alt.message }]
-      : [main];
-  }, [task.payload]);
-
-  const libraryTemplates = useMemo(() => {
-    if (!templates) return [];
-    const lib = task.kind === "linkedin" ? templates.whatsapp : templates.whatsapp;
-    return lib.map((t) => ({ id: t.id, name: t.name, body: t.body }));
-  }, [templates, task.kind]);
-
-  const allTemplates = useMemo(() => [...stepVersions, ...libraryTemplates], [stepVersions, libraryTemplates]);
-  const [tplId, setTplId] = useState(stepVersions[0]?.id ?? "step");
-  const [msg, setMsg] = useState(stepVersions[0]?.body ?? "");
+  /**
+   * Les DEUX versions du modèle de l'étape — celle qu'on écrit à l'entreprise,
+   * celle qu'on écrit à une personne — et rien d'autre.
+   *
+   * La carte proposait aussi toute la bibliothèque de modèles WhatsApp du
+   * compte. Choisir « Relance J+7 » sur une étape « Premier contact » n'a
+   * pourtant aucun sens : la séquence a DÉJÀ décidé quoi dire, et le moteur l'a
+   * rendu avec les variables de ce prospect-là. Le seul choix qui reste ouvert
+   * est celui que le pipeline commercial propose déjà sur sa carte WhatsApp :
+   * à l'entreprise, ou au contact.
+   *
+   * `versionsPreparees` est la lecture commune de ce couple : les trois
+   * surfaces qui traitent une tâche ne peuvent donc pas montrer trois textes
+   * différents du même message.
+   */
+  const versions = useMemo(() => versionsPreparees(task.payload), [task.payload]);
+  const [variant, setVariant] = useState<MessageVariant>(versions[0]?.variant ?? "company");
+  const [msg, setMsg] = useState(versions[0]?.message ?? "");
   useEffect(() => {
-    setTplId(stepVersions[0]?.id ?? "step");
-    setMsg(stepVersions[0]?.body ?? "");
+    setVariant(versions[0]?.variant ?? "company");
+    setMsg(versions[0]?.message ?? "");
     setNote("");
     setOutcome(null);
-  }, [task.id, stepVersions]);
+  }, [task.id, versions]);
 
-  const pickTpl = (id: string) => {
-    const t = allTemplates.find((x) => x.id === id);
-    if (!t) return;
-    setTplId(id);
-    setMsg(t.id.startsWith("step") ? t.body : fillVars(t.body, vars));
+  /** Bascule de version : le texte change sous les yeux, y compris s'il a été retouché. */
+  const pickVersion = (v: MessageVariant) => {
+    setVariant(v);
+    setMsg(versions.find((x) => x.variant === v)?.message ?? "");
   };
 
   const [att, setAtt] = useState({ demo: false, audit: false });
@@ -296,7 +298,7 @@ export function DemActionCard({
           ? "Demi-tour — la séquence repart sur la suite « il a répondu »"
           : "Séquence reprise — étape suivante planifiée",
       );
-      onNext();
+      onReplied();
     } catch {
       toast.error("Action impossible");
     }
@@ -304,6 +306,23 @@ export function DemActionCard({
 
   // ── issues ──────────────────────────────────────────────────────────────
   const chosen = outcome ? findOutcome(outcome) : null;
+
+  /**
+   * « Fait » : l'action a été faite, il n'y a rien de plus à en dire.
+   *
+   * C'est le cas ordinaire d'un premier contact — on envoie, personne ne
+   * répond dans la seconde. La tâche se ferme, le moteur avance l'inscription,
+   * et la séquence se gare sur son étape d'attente : c'est cette ligne-là qui
+   * revient dans la file, et depuis laquelle on enchaîne. Renseigner une issue
+   * reste possible juste en dessous, mais n'est plus un péage.
+   */
+  const markDone = () =>
+    onPatch({
+      status: "done",
+      opportunite_id: task.opportunite_id ?? undefined,
+      note: note.trim() || undefined,
+    });
+
   const saveOutcome = () => {
     if (!chosen || !outcome) return;
     if (chosen.needsNote && !note.trim()) {
@@ -362,15 +381,26 @@ export function DemActionCard({
         {/* ── message ── */}
         {isMessageKind(task.kind) && (
           <>
-            <div className="dm-tpls">
-              <span style={{ fontSize: 11, color: "var(--text-3)", marginRight: 2 }}>Modèles :</span>
-              {allTemplates.map((t) => (
-                <button key={t.id} className="dm-tpl" aria-pressed={tplId === t.id} onClick={() => pickTpl(t.id)}>
-                  <Icon name="doc" className="ico-xs" />
-                  {t.name}
-                </button>
-              ))}
-            </div>
+            {/* Les deux versions du modèle de l'étape — le même geste que la
+                carte WhatsApp du pipeline commercial. Une seule version
+                préparée ⇒ aucun choix affiché, plutôt qu'un faux choix. */}
+            {versions.length > 1 && (
+              <div className="dm-variant" role="group" aria-label="Version du message">
+                {versions.map((v) => (
+                  <button
+                    key={v.variant}
+                    type="button"
+                    className="dm-variant-b"
+                    aria-pressed={variant === v.variant}
+                    title={VARIANT_LABELS[v.variant].hint}
+                    onClick={() => pickVersion(v.variant)}
+                  >
+                    <Icon name={v.variant === "contact" ? "user" : "building"} className="ico-xs" />
+                    {VARIANT_LABELS[v.variant].tab}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="dm-msg">
               <div className="subj">
@@ -582,6 +612,12 @@ export function DemActionCard({
                 <Icon name="layers" className="ico-sm" />
                 Relire les échanges
               </a>
+              {/* Une attente n'est pas un cul-de-sac : rien à faire ici tant
+                  que le prospect n'a pas réagi, donc on enchaîne. */}
+              <button className="btn outline sm" onClick={onNext} style={{ justifyContent: "center" }}>
+                <Icon name="arrowRight" className="ico-sm" />
+                Tâche suivante
+              </button>
             </div>
           </>
         )}
@@ -589,16 +625,9 @@ export function DemActionCard({
         {/* ── issue : commune à l'appel et au message ── */}
         {task.kind !== "wait" && (
           <>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--text-3)",
-                fontFamily: "var(--font-mono)",
-                textTransform: "uppercase",
-                letterSpacing: ".08em",
-              }}
-            >
+            <div className="dm-lbl">
               Issue de l&apos;échange
+              <span>facultatif</span>
             </div>
             <div className="dm-outs">
               {STEP_OUTCOMES.map((o) => (
@@ -638,14 +667,18 @@ export function DemActionCard({
               </div>
             )}
 
+            {/* Sans issue choisie, c'est « Fait » : l'action est faite, la
+                séquence passe en attente et la file enchaîne. Dès qu'une issue
+                est cochée, le même bouton l'enregistre — un seul bouton, jamais
+                deux gestes concurrents. */}
             <button
               className="dm-cta"
-              style={{ ["--k" as string]: outcome ? "var(--text)" : "var(--text-4)" }}
-              disabled={!outcome || busy}
-              onClick={saveOutcome}
+              style={{ ["--k" as string]: outcome ? "var(--text)" : "var(--ok)" }}
+              disabled={busy}
+              onClick={outcome ? saveOutcome : markDone}
             >
               <Icon name="check" className="ico-sm" />
-              Enregistrer l&apos;issue{chosen ? ` · ${chosen.label}` : ""}
+              {chosen ? `Enregistrer l'issue · ${chosen.label}` : "Fait"}
             </button>
 
             <div className="dm-cta2">
