@@ -99,7 +99,14 @@ function sheetFoot(nom: string, n: string): string {
 
 function cCouverture(c: AuditContent, m: MesuresAudit): string {
   const p = c.page1;
-  const capture = m.captureUrl;
+  /*
+   * LA CAPTURE DE LA COUVERTURE EST CELLE DU SITE DÉMO, jamais celle de l'actuel.
+   * On promet ici « découvrez votre nouveau site » ; y montrer l'ancien vide la
+   * promesse de son sens, et prive le prospect de la seule chose qu'il cherche
+   * du regard — son logo, en haut, dans la barre de navigation.
+   */
+  const capture = m.captureDemoUrl;
+  const demoUrl = p.demo_url?.trim() || m.demoUrl || '';
 
   return `<div class="half half-cover" id="audit-h1" data-screen-label="A4-1 couverture">
 <div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
@@ -112,7 +119,7 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
   </div>
   <div class="cover-foot">
     ${z('div', 'cover-client', { field: 'page1.client' })}<div class="cover-client-label">Préparé pour</div><div class="cover-client-name">${texte(p.client_name, 'Entreprise cliente')}</div><div class="cover-client-meta">${texte(p.client_meta, 'Secteur · Ville')}</div></div>
-    ${p.demo_url ? blocDemo(p.demo_url, capture) : ''}
+    ${demoUrl || capture ? blocDemo(demoUrl, capture) : ''}
   </div>
 </div></div>`;
 }
@@ -125,16 +132,26 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
  * qu'un rectangle mort, et le document ne trahit pas ce qui lui manque.
  */
 function blocDemo(url: string, capture: string | null): string {
-  return `<a class="demo-cta" href="${esc(url)}" target="_blank" rel="noopener">
-  <div class="demo-cta-label">Votre site démo est en ligne</div>
-  <div class="mockup"><div class="mockup-chrome"><div class="mockup-dots"><i></i><i></i><i></i></div><div class="mockup-url">${esc(domainOf(url))}</div></div>
+  /*
+   * LA CAPTURE ET LE LIEN SONT DEUX CHOSES, et les lier faisait disparaître la
+   * première. Le bloc entier était conditionné à l'adresse du démo ; or un site
+   * préparé mais non publié n'a pas de sous-domaine — il a pourtant sa capture,
+   * et c'est elle qui porte l'essentiel : le prospect y cherche SON logo, en
+   * haut, dans la barre de navigation. Sans adresse, on montre donc l'aperçu
+   * sans promettre un clic qui n'irait nulle part.
+   */
+  const interieur = `<div class="demo-cta-label">${url ? 'Votre site démo est en ligne' : 'Votre site démo est prêt'}</div>
+  <div class="mockup"><div class="mockup-chrome"><div class="mockup-dots"><i></i><i></i><i></i></div><div class="mockup-url">${esc(url ? domainOf(url) : '')}</div></div>
     <div class="mockup-screen">
       <div class="mockup-skeleton"><div class="sk-hero"></div><div class="sk-line" style="width:88%"></div><div class="sk-line" style="width:62%"></div><div class="sk-btn"></div></div>
       ${capture ? `<img src="${esc(capture)}" alt="Aperçu du site préparé">` : ''}
     </div>
   </div>
-  <div class="demo-cta-link"><span>Découvrez-le maintenant</span><b>→</b></div>
-</a>`;
+  ${url ? '<div class="demo-cta-link"><span>Découvrez-le maintenant</span><b>→</b></div>' : '<div class="demo-cta-link"><span>On vous le montre pendant l’appel</span></div>'}`;
+
+  return url
+    ? `<a class="demo-cta" href="${esc(url)}" target="_blank" rel="noopener">${interieur}</a>`
+    : `<div class="demo-cta">${interieur}</div>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

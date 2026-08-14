@@ -128,8 +128,27 @@ export interface ConstatMesure {
 
 export interface MesuresAudit {
   url: string | null;
-  /** Capture du site, hébergée chez nous. `null` ⇒ le document dessine un vide. */
+  /**
+   * Capture du site ACTUEL du prospect. Sert l'avant/après, jamais la couverture.
+   */
   captureUrl: string | null;
+  /**
+   * Capture du site DÉMO — celle qu'on montre sur la couverture.
+   *
+   * LA CONFUSION QUE CE CHAMP EXISTE POUR EMPÊCHER. Il n'y en avait qu'une, et
+   * la couverture injectait la capture du site ACTUEL dans un cadre intitulé
+   * « Votre site démo est en ligne ». Le prospect à qui l'on promet de découvrir
+   * son nouveau site voyait donc l'ancien — et l'aperçu est justement l'endroit
+   * où se voit ce qu'on lui apporte, à commencer par son logo dans la barre de
+   * navigation.
+   *
+   * Le cadre coupe volontairement en haut (`object-position:top`) : on montre la
+   * barre de navigation et le début de la première section, pas le site en
+   * réduction où plus rien n'est lisible.
+   */
+  captureDemoUrl: string | null;
+  /** L'adresse du site démo, quand le contenu ne la porte pas encore. */
+  demoUrl: string | null;
   /** Horodatage de la mesure affichée — jamais omis, une mesure se date. */
   mesureLe: string | null;
   /** Vrai quand les axes viennent des catégories de Google. */
@@ -184,6 +203,12 @@ export interface EchantillonMediane {
 export function construireMesures(
   audit: AuditLu,
   echantillon?: EchantillonMediane | null,
+  /**
+   * Le site démo, que `AuditLu` ne connaît pas : il vit dans `sites`, pas dans
+   * `entreprises_audit_site`. L'appelant le fournit — c'est lui qui sait
+   * lequel des sites d'une entreprise est montrable.
+   */
+  demo?: { url?: string | null; capture?: string | null } | null,
 ): MesuresAudit {
   const mesureParGoogle = audit.axes.some((a) => a.mesureGoogle === true);
   const observations = observationsDe(audit);
@@ -200,6 +225,8 @@ export function construireMesures(
   return {
     url: audit.url_finale ?? audit.url_analysee,
     captureUrl: audit.capture_url,
+    captureDemoUrl: demo?.capture ?? null,
+    demoUrl: demo?.url ?? null,
     // La date de la mesure AFFICHÉE : celle de Google quand c'est lui qui parle.
     mesureLe: mesureParGoogle ? (audit.psi_recupere_le ?? audit.analyse_le) : audit.analyse_le,
     mesureParGoogle,
@@ -255,6 +282,8 @@ export function mesuresVides(): MesuresAudit {
   return {
     url: null,
     captureUrl: null,
+    captureDemoUrl: null,
+    demoUrl: null,
     noteBase: null,
     noteMalus: [],
     mesureLe: null,

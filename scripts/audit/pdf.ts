@@ -38,6 +38,7 @@ import { construireMesures, mesuresVides } from "@/lib/audit/mesures";
 import { corpsCompact } from "@/utils/audit/htmlCompact";
 import { documentAudit } from "@/utils/audit/compactCss";
 import type { AuditContent } from "@/types";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 /** Charge `.env.local` sans dépendance : le format est trivial, la lire l'est aussi. */
 function chargerEnv(): void {
@@ -99,10 +100,29 @@ async function main(): Promise<void> {
   // Le relevé passe par le même chemin que l'aperçu : `lireAudit` applique la
   // règle de publication (un axe en confiance faible n'existe pas) et calcule la
   // note. Recomposer ces valeurs ici les ferait diverger au premier changement.
+  /**
+   * Le site démo vit dans `sites`, pas dans l'analyse — d'où cette lecture à
+   * part. C'est sa capture qui va sur la couverture : le prospect y cherche son
+   * logo dans la barre de navigation, pas une vue de son ancien site.
+   */
+  const { data: site } = await sb
+    .from("sites")
+    .select("id, published_subdomain, sub_domain_name, og_shot_url")
+    .eq("enterprise_id", entrepriseId)
+    .order("og_shot_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  const s = site as { published_subdomain?: string; sub_domain_name?: string; og_shot_url?: string } | null;
+  const sousDomaine = s?.published_subdomain ?? s?.sub_domain_name ?? null;
+
   const lu = await lireAudit(sb, entrepriseId);
   const mesures =
     lu.disponible && lu.audit
-      ? construireMesures(lu.audit, await lireMedianeParc(sb))
+      ? construireMesures(lu.audit, await lireMedianeParc(sb), {
+          url: sousDomaine ? `https://${sousDomaine}.${SITE_DOMAIN}` : null,
+          capture: s?.og_shot_url ?? null,
+        })
       : mesuresVides();
 
   const contenu = (audit as { content: AuditContent }).content;
