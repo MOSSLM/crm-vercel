@@ -368,9 +368,21 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .verdict-strip span{margin-top:4px}
 .ba-stack{gap:7px}
 .ba-side{min-height:58px;padding:11px 16px 12px}
+/* Un nom d'entreprise long — « DELIGEARD AUVERGNE ENERGIES » — passait sur deux
+   lignes et poussait la couverture dix pixels au-delà de sa boîte. Le nom se
+   resserre plutôt que de déborder ; c'est le seul endroit du document où la
+   typographie cède, parce que le nom du prospect ne se tronque pas. */
+/* La valeur qui résume un axe vient parfois de Google, dans SES mots — « Les
+   couleurs d'arrière-plan et de premier plan ne sont pas suffisamment
+   contrastées » tient sur quatre lignes dans une carte de quatre colonnes, et
+   pousse la demi-page trente pixels trop bas. On borne à deux lignes : le
+   constat entier reste dans le tableau avant/après et dans le rapport en ligne. */
+.ax-v{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cover-client-name{font-size:17px;line-height:1.15;text-wrap:balance}
+.cover-client-meta{line-height:1.3}
 .cover-big{padding:30px 54px 24px}
 .shot-screen{height:168px}
-.half-cover{padding:32px 54px 26px}
+.half-cover{padding:28px 54px 22px}
 .mockup-screen{height:122px}
 .half-score .panel-title{font-size:26px;margin-top:8px}
 .half-score .panel-intro{font-size:10.5px;line-height:1.6;margin-top:6px}
@@ -378,6 +390,13 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .rail{height:14px}
 .ba-side{min-height:52px}
 .ax-grid.ax-n7{grid-template-columns:repeat(4,1fr)}
+/* À sept axes, les cartes sont deux fois plus étroites : une valeur de Google
+   qui tenait sur une ligne en passe trois. On borne à une, et les deux rangées
+   reprennent la même hauteur — sans quoi la première rangée coûte à elle seule
+   les vingt-cinq pixels qui manquent. */
+.ax-grid.ax-n7 .ax-v{-webkit-line-clamp:1}
+.half-score .panel-intro{font-size:10px;line-height:1.55}
+.half-score .verdict-strip p{font-size:12px}
 .ax-grid.ax-n7 .ax-nm{font-size:7.5px}
 .ax-grid.ax-n7 .ax-niv{font-size:8px;padding:2px 7px}
 .recu-row{padding:14px 20px}

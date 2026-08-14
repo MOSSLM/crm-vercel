@@ -44,6 +44,23 @@ const rgbDe = (hex: string): string => {
 /** Le nombre de lignes détaillées de l'avant/après. Au-delà, la demi-page déborde. */
 export const MAX_LIGNES_AVANT_APRES = 3;
 
+/**
+ * Les options tarifaires affichées. Au-delà, la demi-page déborde.
+ *
+ * Mesuré : la préparation de Doussot a retenu deux offres, `construirePage5` en
+ * a déduit sa grille d'options, et la page tarifs a dépassé sa boîte de
+ * quatre-vingt-dix-sept pixels — que `overflow:hidden` aurait coupés en silence.
+ * Le générateur peut proposer ce qu'il veut ; la page, elle, a une taille.
+ *
+ * DEUX, et non quatre : mesuré, la grille à deux colonnes met quatre options sur
+ * deux rangées de cent trente pixels, soit deux cent soixante-trois pour le seul
+ * bloc d'options — la demi-page en a quatre cent quatre-vingt-seize en tout, et
+ * le tarif principal en prend déjà deux cent vingt-sept. Deux options tiennent
+ * sur une rangée. C'est aussi ce qu'un artisan lit avant de décrocher ; le reste
+ * se dit à l'appel, comme les constats du bandeau « +N ».
+ */
+export const MAX_OPTIONS_TARIFS = 2;
+
 type Zone = { field?: string };
 
 /** Ouvre une balise en y posant `data-field` s'il y a un champ à éditer. */
@@ -206,12 +223,25 @@ function reglette(m: MesuresAudit): string {
  * porte une raison que le prospect vérifie sur son téléphone. Une moyenne
  * pondérée ne se raconte pas ; un malus caché serait encore plus opaque qu'elle.
  */
+/** Au-delà, la soustraction déborde de sa boîte. Mesuré sur un dossier réel. */
+const MAX_LIGNES_MALUS = 3;
+
 function soustraction(m: MesuresAudit): string {
   const d = detailNote(m);
   if (!d) return '';
-  return `<div class="score-calc"><b>${d.base}</b> mesuré par Google, moins <b>${d.retire}</b><span>${d.lignes
+  /*
+   * LA SOUSTRACTION SE BORNE, comme le tableau avant/après avant elle.
+   * Sur Deligeard, sept raisons de retrait tenaient sur quatre lignes et
+   * poussaient la demi-page trente pixels au-delà de sa boîte — que
+   * `overflow:hidden` aurait coupées en silence. On en montre trois et on
+   * COMPTE le reste : le détail complet appartient à l'appel, pas au papier.
+   */
+  const montrees = d.lignes.slice(0, MAX_LIGNES_MALUS);
+  const reste = d.lignes.length - montrees.length;
+  const suite = reste > 0 ? ` · et ${reste} autre${reste > 1 ? 's' : ''}` : '';
+  return `<div class="score-calc"><b>${d.base}</b> mesuré par Google, moins <b>${d.retire}</b><span>${montrees
     .map(esc)
-    .join(' · ')}</span></div>`;
+    .join(' · ')}${esc(suite)}</span></div>`;
 }
 
 /**
@@ -398,7 +428,9 @@ function cInvestissement(c: AuditContent): string {
   const p = c.page5;
   const services = getServices(p).filter((s) => s.enabled);
   const { total, hasMrr } = calcTotal(getServices(p));
-  const additions = p.additional_services ?? [];
+  const toutesAdditions = p.additional_services ?? [];
+  const additions = toutesAdditions.slice(0, MAX_OPTIONS_TARIFS);
+  const additionsRestantes = toutesAdditions.length - additions.length;
   const sc = p.secondary_card;
 
   return `<div class="half" id="audit-h5" data-screen-label="A4-3 · 04 Investissement">
@@ -421,6 +453,7 @@ function cInvestissement(c: AuditContent): string {
   ${
     additions.length > 0
       ? `<div class="opt-wrap"><div class="opt-label">${esc(p.addl_section_title || 'Pour aller plus loin')}</div>
+  ${additionsRestantes > 0 ? `<div class="opt-note" style="margin-bottom:8px">et ${additionsRestantes} autre${additionsRestantes > 1 ? 's' : ''} option${additionsRestantes > 1 ? 's' : ''}, détaillée${additionsRestantes > 1 ? 's' : ''} pendant l’appel</div>` : ''}
   <div class="opt-grid">${additions
     .map(
       (o, i) =>
