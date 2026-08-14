@@ -56,6 +56,10 @@ export const NOM_AXE: Record<AxePublieId, string> = {
   popularite: "Notoriété",
   accessibilite: "Accessibilité",
   bonnes_pratiques: "Bonnes pratiques",
+  // « Contenu du site » et non « profondeur éditoriale » : l'artisan doit
+  // reconnaître ce qu'on nomme, et il sait ce qu'est le contenu de son site.
+  contenu: "Contenu du site",
+  netlinking: "Sites qui parlent de vous",
 };
 
 export interface AxeMesure {

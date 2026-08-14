@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AxeId, Confiance, ConstatGoogle, Preuve, SignauxSite } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
-import { noteDocument } from "./malus";
+import { baseDocument, noteDocument } from "./malus";
 import { psiEstFraiche } from "./pagespeed";
 
 /**
@@ -30,7 +30,23 @@ export const UNDEFINED_TABLE = "42P01";
  * ne sait pas juger l'accessibilité réelle ni les bonnes pratiques — il lit du
  * HTML, il n'exécute rien.
  */
-export type AxePublieId = AxeId | "accessibilite" | "bonnes_pratiques";
+export type AxePublieId =
+  | AxeId
+  | "accessibilite"
+  | "bonnes_pratiques"
+  /**
+   * Ce que ni notre analyseur ni Lighthouse ne savent juger.
+   *
+   * `contenu` : combien de pages, quels métiers décrits, des avis affichés, des
+   * photos de chantier, une date récente. C'est l'axe qui répond au site vide
+   * qui charge vite — PageSpeed récompense le vide, ce comptage le sanctionne.
+   *
+   * `netlinking` : combien de sites pointent vers celui-ci. Il ne se répare pas
+   * en achetant une vitrine, et c'est assumé : il fonde une offre SEO
+   * optionnelle, pas une promesse de la colonne « Après ».
+   */
+  | "contenu"
+  | "netlinking";
 
 export interface AxePublie {
   id: AxePublieId;
@@ -316,15 +332,34 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    * toujours. À la lecture, tout est là.
    */
   const signaux = row.signaux as SignauxSite | null | undefined;
+  /**
+   * LA BASE EST LA MOYENNE DES AXES AFFICHÉS, plus la seule performance.
+   *
+   * Le document montrait 35 au-dessus d'une carte à 100 : la note valait la
+   * catégorie performance de Google moins des malus, et les quatre autres
+   * cartes ne pesaient rien. Personne ne pouvait retomber sur le grand nombre
+   * en regardant les petits, ce qui est précisément ce qu'un prospect fait.
+   *
+   * La base se prend donc sur `axes` — les axes RÉELLEMENT publiés, ceux qu'il
+   * a sous les yeux — et non sur une liste théorique. Ce qui n'est pas affiché
+   * ne pèse pas ; ce qui est affiché pèse exactement ce que la page annonce.
+   */
+  const base = baseDocument(axes);
+  const noteContenu = axes.find((a) => a.id === "contenu")?.note ?? null;
   const doc =
-    signaux && psiFraiche
-      ? noteDocument(psiPerf, signaux, {
-          // La ville n'est pas dans cette table ; le seul malus qui en dépend
-          // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
-          // et l'ajouter demanderait une jointure sur chaque lecture de liste.
-          ville: null,
-        })
-      : { note: null, base: null, lignes: [], plancherAtteint: false };
+    signaux && base != null
+      ? noteDocument(
+          base,
+          signaux,
+          {
+            // La ville n'est pas dans cette table ; le seul malus qui en dépend
+            // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
+            // et l'ajouter demanderait une jointure sur chaque lecture de liste.
+            ville: null,
+          },
+          noteContenu,
+        )
+      : { note: null, base: null, lignes: [], plafondAtteint: false };
 
   return {
     entreprise_id: Number(row.entreprise_id),
