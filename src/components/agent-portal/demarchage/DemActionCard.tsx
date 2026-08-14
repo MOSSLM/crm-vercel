@@ -305,6 +305,24 @@ export function DemActionCard({
   };
 
   // ── issues ──────────────────────────────────────────────────────────────
+  /**
+   * Les issues proposées sur CETTE carte.
+   *
+   * Sur un message, celles qui supposent une réponse du prospect (`releasesWait`
+   * : « A répondu », « A répondu, peu intéressé ») n'ont rien à y faire — au
+   * moment où on envoie, personne n'a encore répondu. Les y laisser imposait un
+   * double geste absurde : cocher « a répondu » sur la carte WhatsApp, puis
+   * cocher « a répondu » une seconde fois sur l'attente pour débloquer la suite.
+   * La réponse se déclare à UN seul endroit : la tâche d'attente.
+   *
+   * Sur un appel, elles restent : on a la personne au bout du fil, sa réaction
+   * est immédiate et c'est bien là qu'on la note.
+   */
+  const outcomes = useMemo(
+    () => (isMessageKind(task.kind) ? STEP_OUTCOMES.filter((o) => !o.releasesWait) : STEP_OUTCOMES),
+    [task.kind],
+  );
+
   const chosen = outcome ? findOutcome(outcome) : null;
 
   /**
@@ -465,6 +483,15 @@ export function DemActionCard({
               <Icon name="send" className="ico-sm" />
               {ch.cta}
               {firstName ? ` à ${firstName}` : ""}
+            </button>
+
+            {/* Le geste qui ferme la tâche, juste sous l'envoi et impossible à
+                rater : c'est LUI qu'on cherche une fois le message parti. La
+                séquence enchaîne alors sur son attente de réponse, et c'est
+                là — pas ici — qu'on déclarera que le prospect a répondu. */}
+            <button className="dm-cta big ok" disabled={busy} onClick={markDone}>
+              <Icon name="check" className="ico-lg" />
+              Message envoyé — c&apos;est fait
             </button>
           </>
         )}
@@ -630,7 +657,7 @@ export function DemActionCard({
               <span>facultatif</span>
             </div>
             <div className="dm-outs">
-              {STEP_OUTCOMES.map((o) => (
+              {outcomes.map((o) => (
                 <button
                   key={o.id}
                   className={`dm-out ${TONE[o.tone] ?? ""}`.trim()}
@@ -670,16 +697,21 @@ export function DemActionCard({
             {/* Sans issue choisie, c'est « Fait » : l'action est faite, la
                 séquence passe en attente et la file enchaîne. Dès qu'une issue
                 est cochée, le même bouton l'enregistre — un seul bouton, jamais
-                deux gestes concurrents. */}
-            <button
-              className="dm-cta"
-              style={{ ["--k" as string]: outcome ? "var(--text)" : "var(--ok)" }}
-              disabled={busy}
-              onClick={outcome ? saveOutcome : markDone}
-            >
-              <Icon name="check" className="ico-sm" />
-              {chosen ? `Enregistrer l'issue · ${chosen.label}` : "Fait"}
-            </button>
+                deux gestes concurrents.
+
+                Sur un message, « Fait » vit déjà en gros sous l'envoi : ce
+                bouton-ci n'apparaît donc que pour enregistrer une issue. */}
+            {(!isMessageKind(task.kind) || outcome) && (
+              <button
+                className="dm-cta"
+                style={{ ["--k" as string]: outcome ? "var(--text)" : "var(--ok)" }}
+                disabled={busy}
+                onClick={outcome ? saveOutcome : markDone}
+              >
+                <Icon name="check" className="ico-sm" />
+                {chosen ? `Enregistrer l'issue · ${chosen.label}` : "Fait"}
+              </button>
+            )}
 
             <div className="dm-cta2">
               <button className="btn outline sm" disabled={busy} onClick={rdv} style={{ justifyContent: "center" }}>

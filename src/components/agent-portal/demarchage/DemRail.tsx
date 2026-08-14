@@ -22,6 +22,7 @@ import {
  *  jour. Le retard reste dit, mais sur la ligne concernée. */
 export const DAY_TABS: { id: DemarchageBucketKey; lb: string }[] = [
   { id: "missed", lb: "Non rappelés" },
+  { id: "conversation", lb: "En discussion" },
   { id: "hot", lb: "Chauds" },
   { id: "today", lb: "Aujourd'hui" },
   { id: "tomorrow", lb: "Demain" },
@@ -59,6 +60,7 @@ function dayLabel(day: DemarchageBucketKey): string {
   if (day === "tomorrow") d.setDate(d.getDate() + 1);
   const fmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" });
   if (day === "missed") return "signal chaud jamais rappelé";
+  if (day === "conversation") return "ils ont répondu — à traiter maintenant";
   if (day === "hot") return "signaux d'intention du moment";
   if (day === "week") return "les 7 prochains jours";
   if (day === "later") return "au-delà";
@@ -193,8 +195,14 @@ export function DemRail({
         {planifie && (
           <div className="cad">
             <Icon name="info" className="ico-xs" />
-            cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} WhatsApp par jour — le surplus part
-            au lendemain
+            cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} premiers contacts WhatsApp par
+            jour — le surplus part au lendemain. Les discussions en cours ne comptent pas.
+          </div>
+        )}
+        {day === "conversation" && (
+          <div className="cad">
+            <Icon name="info" className="ico-xs" />
+            Ils ont répondu : on répond à ce qui vient, sans plafond ni report.
           </div>
         )}
       </div>
@@ -209,6 +217,7 @@ export function DemRail({
               role="tab"
               className="dm-day"
               aria-selected={day === d.id}
+              data-live={d.id === "conversation" ? "1" : undefined}
               onClick={() => setDay(d.id)}
             >
               <span className="l">{d.lb}</span>

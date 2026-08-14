@@ -112,6 +112,13 @@ describe("DemActionCard — la carte d'appel", () => {
     expect(screen.getByText(SCRIPT_STEPS[0].title)).toBeInTheDocument();
   });
 
+  it("garde « A répondu » sur un appel — la réaction y est immédiate", () => {
+    // Contrairement au message : on a la personne au bout du fil, c'est bien
+    // ici qu'on note ce qu'elle a dit.
+    renderCard(DEUX_VERSIONS);
+    expect(screen.getByRole("button", { name: "A répondu" })).toBeInTheDocument();
+  });
+
   it("garde le numéro et l'issue de l'échange hors des onglets", () => {
     renderCard(DEUX_VERSIONS);
     const carte = screen.getByRole("tab", { name: /Trame/ }).closest(".dm-card")!;

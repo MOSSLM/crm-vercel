@@ -189,7 +189,24 @@ export default function AgentDemarchagePage() {
   );
 
   const onLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
-  const onReplied = useCallback(() => void loadQueue(null), [loadQueue]);
+
+  /**
+   * Le prospect a répondu : l'attente est levée et le moteur a déjà posé
+   * l'étape suivante. On atterrit dessus — c'est tout l'intérêt d'avoir déclaré
+   * la réponse, et cette étape-là est justement celle qu'il faut faire dans la
+   * foulée (typiquement : envoyer le site démo).
+   */
+  const onReplied = useCallback(() => {
+    const enrollmentId = task?.enrollment_id ?? null;
+    const courant = task?.id ?? null;
+    setHistoryKey((k) => k + 1);
+    void loadQueue((rows) => {
+      const suite = enrollmentId
+        ? rows.find((t) => t.enrollment_id === enrollmentId && t.id !== courant)
+        : undefined;
+      return suite?.id ?? null;
+    });
+  }, [task, loadQueue]);
 
   const companyName = company?.entreprise.name ?? "";
 
