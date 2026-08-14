@@ -160,6 +160,31 @@ describe('corpsCompact — le tableau avant/après', () => {
     expect(html).toContain('constats de plus');
   });
 
+  it('resserre toute la colonne « avant » dès qu’une valeur est trop longue', () => {
+    // Le contrat accorde soixante caractères à `avant`. Au-delà d'AVANT_LONG, la
+    // valeur passe sur deux lignes en Cormorant 25 px, la ligne gagne douze
+    // pixels et la demi-page déborde — mesuré sur TOPMACLIM, dont la meilleure
+    // valeur est le titre de sa page : « Accueil - www.topmaclim.com ».
+    const longue: AuditContent = {
+      ...CONTENU,
+      page3: {
+        ...CONTENU.page3,
+        avant_apres: [
+          { cle: 'seo', avant: '« Accueil - www.topmaclim.com »', apres: 'Une page par commune' },
+          { cle: 'vitesse', avant: '9,8 s', apres: '1,2 s' },
+        ],
+      },
+    };
+    const html = corpsCompact(longue, mesuresVides());
+    expect(html).toContain('ba-stack ba-serre');
+    // La valeur n'est pas tronquée : c'est elle que le prospect va vérifier.
+    expect(html).toContain('« Accueil - www.topmaclim.com »');
+  });
+
+  it('laisse la colonne à son corps normal quand tout tient sur une ligne', () => {
+    expect(corpsCompact(avec(2), mesuresVides())).not.toContain('ba-serre');
+  });
+
   it('écarte du détail une ligne sans après — elle changerait de sujet', () => {
     // « 9ᵉ sur menuisier Antibes » face à « suivi 30 jours » ne se lit pas d'un
     // coup d'œil : la ligne existe, elle n'est simplement pas mise en regard.

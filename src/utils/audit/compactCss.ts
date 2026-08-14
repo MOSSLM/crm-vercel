@@ -406,7 +406,11 @@ html,body,*,*::before,*::after{-webkit-print-color-adjust:exact;print-color-adju
 .ax-v{font-size:10px;margin-top:6px}
 .verdict-strip p{font-size:12.5px}
 .plus-strip{padding:9px 15px}
-.ba-d{margin-top:5px}`;
+.ba-d{margin-top:5px}
+/* La colonne « avant » resserrée quand une de ses valeurs dépasse AVANT_LONG.
+   A 18 px, soixante caractères tiennent sur une ligne dans la demi-colonne, donc
+   la ligne garde ses 85 px quoi qu'écrive le rédacteur. */
+.ba-serre .ba-v{font-size:18px;line-height:1.2}`;
 
 /**
  * Ce que l'APERÇU ajoute au document, et que l'export n'emporte jamais.

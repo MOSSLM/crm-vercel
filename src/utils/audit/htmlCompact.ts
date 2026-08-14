@@ -45,6 +45,24 @@ const rgbDe = (hex: string): string => {
 export const MAX_LIGNES_AVANT_APRES = 3;
 
 /**
+ * La longueur au-delà de laquelle la colonne « avant » passe en petit corps.
+ *
+ * `avant` est le seul champ du tableau écrit par le rédacteur, et le contrat lui
+ * accorde soixante caractères. Rendu en Cormorant 25 px dans une demi-colonne,
+ * il tient sur une ligne jusqu'à vingt-six caractères environ ; au-delà il en
+ * prend deux, la ligne passe de 85 à 97 px et la demi-page déborde de 24 px.
+ * Mesuré sur TOPMACLIM, dont la meilleure valeur est le titre de sa page —
+ * « Accueil - www.topmaclim.com », trente et un caractères.
+ *
+ * ON RESSERRE TOUTE LA COLONNE, PAS LA SEULE LIGNE FAUTIVE : trois valeurs de
+ * corps différents dans un même tableau se lisent comme une erreur de rendu. Et
+ * on resserre plutôt qu'on ne tronque, pour la raison qui vaut déjà pour le nom
+ * du prospect en couverture — c'est le chiffre que le prospect va vérifier, il
+ * doit être lisible en entier.
+ */
+export const AVANT_LONG = 26;
+
+/**
  * Les options tarifaires affichées. Au-delà, la demi-page déborde.
  *
  * Mesuré : la préparation de Doussot a retenu deux offres, `construirePage5` en
@@ -367,6 +385,9 @@ function cConstats(c: AuditContent, m: MesuresAudit): string {
     )
     .join('');
 
+  // Une seule valeur trop longue resserre la colonne entière — voir AVANT_LONG.
+  const serre = detaillees.some((l) => (l.avant ?? '').length > AVANT_LONG);
+
   const bandeau =
     reste.length > 0
       ? `<div class="plus-strip"><div class="plus-n">+${reste.length}</div>
@@ -385,7 +406,7 @@ ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_intr
   })}
 <div class="panel-body" style="gap:11px">
   <div class="ba-heads"><div class="ba-h ba-h-b">Avant · votre site aujourd’hui</div><div class="ba-h ba-h-a">Après · ${esc(LIBELLE_DEMO)}</div></div>
-  <div class="ba-stack">${lignes}</div>
+  <div class="ba-stack${serre ? ' ba-serre' : ''}">${lignes}</div>
   ${bandeau}
 </div></div>`;
 }
