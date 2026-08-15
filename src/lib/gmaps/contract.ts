@@ -159,6 +159,70 @@ const messageErreur = z.preprocess((v) => {
 const dictionnaireTolerant = (v: unknown) =>
   v === null || v === undefined ? {} : v;
 
+// ---------------------------------------------------------------------------
+// CONTRAT 5 — géométrie du suivi (carte de la recherche en cours)
+// ---------------------------------------------------------------------------
+
+/**
+ * La grille de tuiles réellement parcourue, annoncée une seule fois par le
+ * scraper (`tilesPlanned`) dès qu'il l'a calculée.
+ *
+ * On reçoit les DEUX tableaux de coordonnées, et non un coin plus un pas : la
+ * dernière rangée et la dernière colonne n'ont presque jamais la taille des
+ * autres (le cadre de la ville tombe rarement sur un multiple exact du pas).
+ * Reconstruire la grille par multiplication dessinerait des tuiles fausses sur
+ * les bords, c'est-à-dire exactement là où l'on regarde si la zone est couverte.
+ *
+ * `latitudes` va du nord au sud, `longitudes` d'ouest en est — l'ordre dans
+ * lequel le crawler numérote ses tuiles.
+ */
+export const GrilleSchema = z.object({
+  latitudes: z.array(z.number()).min(2),
+  longitudes: z.array(z.number()).min(2),
+  rangees: z.number().int().positive(),
+  colonnes: z.number().int().positive(),
+  total: z.number().int().positive(),
+  tileStep: z.number().positive().nullable().default(null),
+  /** D'où vient le cadre : `openstreetmap`, `communes_fr`, `google`. */
+  source: z.string().nullable().default(null),
+});
+
+export type Grille = z.infer<typeof GrilleSchema>;
+
+/** Une entreprise trouvée, telle qu'on la pose sur la carte. */
+export const PointRechercheSchema = z.object({
+  nom: z.string().default(""),
+  lat: z.number(),
+  lng: z.number(),
+  /** Vrai = ligne réellement écrite ; faux = doublon fusionné. */
+  nouveau: z.boolean().default(false),
+  /** Numéro de la tuile qui l'a trouvée (1-indexé), null si inconnu. */
+  tuile: z.number().int().nullable().default(null),
+});
+
+export type PointRecherche = z.infer<typeof PointRechercheSchema>;
+
+/**
+ * Un point aberrant ne doit pas emporter tout le suivi. Zod rejette un tableau
+ * entier dès qu'un élément ne valide pas : une seule fiche aux coordonnées
+ * illisibles ferait alors répondre 502 « statut_scraper_invalide » et figerait
+ * la barre de progression d'un crawl parfaitement sain. On écarte les intrus en
+ * amont — c'est de la donnée d'illustration, pas un compteur.
+ */
+const filtrerPoints = (v: unknown) => {
+  if (!Array.isArray(v)) return [];
+  return v.filter((p) => {
+    if (!p || typeof p !== "object") return false;
+    const { lat, lng } = p as { lat?: unknown; lng?: unknown };
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    // (0, 0) est une coordonnée valide dans l'absolu, jamais pour une entreprise
+    // française : c'est la signature d'une donnée manquante. Le scraper l'écarte
+    // déjà à la source ; on le refait ici parce que les deux dépôts sont
+    // déployés séparément et que ce CRM peut parler à une version antérieure.
+    return !(lat === 0 && lng === 0);
+  });
+};
+
 /**
  * Statut d'un job, À PLAT. Les compteurs étaient auparavant enfouis dans
  * `result.mapsStats['<businessType>'].found`, ce que le CRM lisait à la racine —
@@ -178,6 +242,25 @@ export const JobStatusSchema = z.object({
   pages: compteur,
   tilesDone: compteur,
   tilesTotal: compteur,
+  /**
+   * CONTRAT 5. Les quatre champs suivants ont TOUS une valeur par défaut, et ce
+   * n'est pas de la coquetterie : le scraper et le CRM sont déployés
+   * séparément. Sans défaut, le premier déploiement du CRM ferait répondre 502 à
+   * tout suivi tant que la machine du scraper n'a pas été redémarrée — un
+   * crawl sain, invisible. Absents, la carte ne s'affiche simplement pas.
+   */
+  grille: GrilleSchema.nullable().default(null),
+  /**
+   * Fiches par tuile, indexé sur (numéro de tuile − 1). `null` = tuile pas
+   * encore parcourue, `0` = parcourue et vide. La carte doit distinguer les deux.
+   */
+  tuiles: z.array(z.number().int().nullable()).default([]),
+  /** Points reçus DEPUIS `pointsDepuis` — pas la liste complète (suivi incrémental). */
+  points: z.preprocess(filtrerPoints, z.array(PointRechercheSchema)).default([]),
+  /** Index du premier point de `points` dans la liste complète. */
+  pointsDepuis: compteur,
+  /** Taille de la liste complète côté scraper : dit au client s'il a tout reçu. */
+  pointsTotal: compteur,
   /** businessType -> uuid de la ligne `recherches`. */
   rechercheIds: z.preprocess(dictionnaireTolerant, z.record(z.string(), z.string())),
   error: messageErreur,

@@ -38,7 +38,9 @@ import {
   estStatutTerminal,
   type JobStatus,
   type JobStatusValue,
+  type PointRecherche,
 } from "@/lib/gmaps/contract";
+import { SuiviRecherche } from "./gmaps/SuiviRecherche";
 
 async function downloadResults(jobId: string, format: "csv" | "json") {
   const res = await authedFetch(`/api/gmaps/results/${jobId}?format=${format}`);
@@ -181,6 +183,20 @@ export const NewSearchPage: React.FC = () => {
   /** Incrémenté par « Reprendre le suivi » : relance l'effet de polling. */
   const [relanceSuivi, setRelanceSuivi] = useState(0);
   /**
+   * Entreprises déjà posées sur la carte. Elles s'ACCUMULENT : chaque sondage ne
+   * rapporte que les nouvelles (cf. `?pointsDepuis=`), sans quoi une recherche
+   * de 500 fiches réexpédierait 500 points toutes les 3 s sur un réseau mobile.
+   */
+  const [points, setPoints] = useState<PointRecherche[]>([]);
+  /** Curseur du suivi incrémental : combien de points ont déjà été reçus. */
+  const curseurPoints = useRef(0);
+  /**
+   * Mot-clé et lieu FIGÉS au lancement. Le panneau de suivi doit décrire le
+   * crawl qui tourne, pas ce que l'utilisateur est en train de retaper dans le
+   * formulaire pendant qu'il tourne.
+   */
+  const [lance, setLance] = useState<{ motCle: string; lieu: string } | null>(null);
+  /**
    * Dernier statut connu du job, lisible depuis le nettoyage de démontage (un
    * `useState` y serait figé à sa valeur de montage). Sert à décider si l'on a
    * le droit d'accélérer l'extinction : uniquement sur un état TERMINAL.
@@ -283,7 +299,9 @@ export const NewSearchPage: React.FC = () => {
     const sonder = async () => {
       if (arrete) return;
       try {
-        const res = await authedFetch(`/api/gmaps/job/${jobId}`);
+        const res = await authedFetch(
+          `/api/gmaps/job/${jobId}?pointsDepuis=${curseurPoints.current}`,
+        );
         if (!res.ok) {
           echecTransport(
             `Suivi de la recherche interrompu (HTTP ${res.status}). Le crawl continue côté serveur.`,
@@ -307,6 +325,18 @@ export const NewSearchPage: React.FC = () => {
         setStatus(statut.status);
         setStats(statut);
         setJobError(statut.error);
+
+        // Accumulation des points. `pointsDepuis === 0` veut dire que le scraper
+        // a renvoyé sa liste DEPUIS LE DÉBUT — soit parce qu'on la demande pour
+        // la première fois, soit parce qu'il a redémarré et n'a plus notre
+        // curseur. Dans les deux cas on REMPLACE ; ailleurs on ajoute. Ajouter
+        // sans distinguer doublerait toute la carte au moindre redémarrage.
+        if (statut.pointsDepuis === 0) {
+          setPoints(statut.points);
+        } else if (statut.points.length > 0) {
+          setPoints((prev) => [...prev, ...statut.points]);
+        }
+        curseurPoints.current = statut.pointsDepuis + statut.points.length;
         if (estStatutTerminal(statut.status)) {
           if (statut.status === "done") toast.success("Recherche terminée");
           else if (statut.status === "partial")
@@ -356,6 +386,10 @@ export const NewSearchPage: React.FC = () => {
     setJobError(null);
     setStats(null);
     setSuiviInterrompu(null);
+    // Une nouvelle recherche repart d'une carte vide : sans cette remise à zéro,
+    // les entreprises du crawl précédent resteraient posées sur la nouvelle ville.
+    setPoints([]);
+    curseurPoints.current = 0;
     try {
       const res = await authedFetch("/api/gmaps/crawl", {
         method: "POST",
@@ -387,6 +421,7 @@ export const NewSearchPage: React.FC = () => {
       const data = parse.data;
       toast.info("Recherche lancée");
       dernierStatutRef.current = data.status;
+      setLance({ motCle: values.keyword, lieu: values.location });
       setJobId(data.jobId);
       setStatus(data.status);
     } catch (err) {
@@ -407,8 +442,21 @@ export const NewSearchPage: React.FC = () => {
           <div className="h-12 w-12 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
         </div>
       )}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-white dark:bg-gray-800">
+      {/*
+        Deux dispositions, pas deux écrans. Tant qu'aucune recherche n'a été
+        lancée, le formulaire reste centré comme avant. Dès qu'un job existe, la
+        page s'élargit pour laisser la carte respirer — et sur mobile le suivi
+        passe DEVANT le formulaire (`order-first`) : on lance depuis son
+        téléphone, puis on regarde le robot avancer, on ne remplit pas deux fois.
+      */}
+      <div
+        className={
+          jobId
+            ? "relative z-10 mx-auto grid w-full max-w-6xl items-start gap-4 p-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]"
+            : "relative z-10 flex min-h-screen items-center justify-center p-4"
+        }
+      >
+        <Card className="w-full max-w-md bg-white dark:bg-gray-800 lg:max-w-none">
           <CardHeader className="text-center">
             <CardTitle>Nouvelle Recherche</CardTitle>
             <CardDescription>
@@ -617,9 +665,14 @@ export const NewSearchPage: React.FC = () => {
               </Button>
             </form>
 
+            {/*
+              Les compteurs ont quitté cette carte : ils vivent désormais dans le
+              panneau de suivi, où ils s'affichent PENDANT le crawl et non plus
+              seulement à la fin. Ne reste ici que ce qui relève du formulaire :
+              l'erreur du lancement, la perte du suivi, et les exports.
+            */}
             {jobId && (
               <div className="mt-4 space-y-4 text-center">
-                <p>Statut: {status ?? "inconnu"}</p>
                 {jobError && (
                   <p className="text-sm text-red-500">{jobError}</p>
                 )}
@@ -641,65 +694,41 @@ export const NewSearchPage: React.FC = () => {
                   </div>
                 )}
                 {(status === "done" || status === "partial") && (
-                  <div className="space-y-4">
-                    <div className="space-x-4">
-                      <Button
-                        type="button"
-                        variant="link"
-                        className="underline p-0 h-auto"
-                        onClick={() => downloadResults(jobId, "csv")}
-                      >
-                        Télécharger CSV
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="link"
-                        className="underline p-0 h-auto"
-                        onClick={() => downloadResults(jobId, "json")}
-                      >
-                        Télécharger JSON
-                      </Button>
-                    </div>
-                    {stats && (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Valeur</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          <TableRow>
-                            <TableCell>Entreprises trouvées</TableCell>
-                            <TableCell>{stats.found}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell>Nouvelles lignes en base</TableCell>
-                            <TableCell>{stats.inserted}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell>Fiches fusionnées (doublons)</TableCell>
-                            <TableCell>{stats.merged}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell>Pages explorées</TableCell>
-                            <TableCell>{stats.pages}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell>Tuiles parcourues</TableCell>
-                            <TableCell>
-                              {stats.tilesDone} / {stats.tilesTotal}
-                            </TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
-                    )}
+                  <div className="space-x-4">
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="underline p-0 h-auto"
+                      onClick={() => downloadResults(jobId, "csv")}
+                    >
+                      Télécharger CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="underline p-0 h-auto"
+                      onClick={() => downloadResults(jobId, "json")}
+                    >
+                      Télécharger JSON
+                    </Button>
                   </div>
                 )}
               </div>
             )}
           </CardContent>
         </Card>
+
+        {jobId && (
+          <div className="order-first w-full min-w-0 lg:order-none">
+            <SuiviRecherche
+              motCle={lance?.motCle ?? ""}
+              lieu={lance?.lieu ?? ""}
+              status={status}
+              stats={stats}
+              points={points}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -18,9 +18,27 @@ type Params = { jobId: string };
  * aussi un alias `/job/:jobId` côté serveur — ceinture et bretelles).
  */
 export const GET = withAuth<undefined, Params>({}, async ({ req, params, cors }) => {
-  const amont = await proxyToGmaps(`/crawl/${encodeURIComponent(params.jobId)}`, {
-    forwardAuthFromReq: req,
-  });
+  // Suivi INCRÉMENTAL des points de la carte : le navigateur dit combien il en a
+  // déjà, le scraper ne renvoie que la suite. Sans ce curseur, une recherche de
+  // 500 fiches réexpédierait 500 points toutes les 3 secondes — et cet écran est
+  // justement celui qu'on regarde depuis un mobile. On revalide le paramètre ici
+  // plutôt que de relayer la chaîne telle quelle : ce qui part vers le scraper
+  // ne doit jamais venir directement de l'URL du navigateur.
+  //
+  // `Number()` et non `parseInt()` : ce dernier tronque au lieu de refuser
+  // (« 1.5 » devenait 1, « 12abc » devenait 12), ce qui laissait passer vers le
+  // scraper une valeur que le navigateur n'avait jamais voulu dire.
+  const brutDepuis = new URL(req.url).searchParams.get("pointsDepuis");
+  const depuis = brutDepuis === null || brutDepuis === "" ? null : Number(brutDepuis);
+  const requete =
+    depuis !== null && Number.isInteger(depuis) && depuis >= 0
+      ? `?pointsDepuis=${depuis}`
+      : "";
+
+  const amont = await proxyToGmaps(
+    `/crawl/${encodeURIComponent(params.jobId)}${requete}`,
+    { forwardAuthFromReq: req },
+  );
 
   const texte = await amont.text();
   if (!amont.ok) {

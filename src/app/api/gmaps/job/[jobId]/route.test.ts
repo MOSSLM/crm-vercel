@@ -57,9 +57,9 @@ describe('GET /api/gmaps/job/[jobId]', () => {
     jest.clearAllMocks();
   });
 
-  const get = (jobId = 'job-1') =>
+  const get = (jobId = 'job-1', requete = '') =>
     GET(
-      new Request(`http://localhost/api/gmaps/job/${jobId}`, {
+      new Request(`http://localhost/api/gmaps/job/${jobId}${requete}`, {
         headers: { authorization: 'Bearer test-token' },
       }),
       { params: Promise.resolve({ jobId }) },
@@ -156,6 +156,62 @@ describe('GET /api/gmaps/job/[jobId]', () => {
     );
     const res = await get('inconnu');
     expect(res.status).toBe(404);
+  });
+
+  // --- CONTRAT 5 : suivi incrémental des points de la carte ------------------
+  // Sans curseur, une recherche de 500 fiches réexpédierait 500 points toutes
+  // les 3 s — sur l'écran qu'on regarde justement depuis un mobile.
+  it('relaie le curseur de points au scraper', async () => {
+    await get('job-1', '?pointsDepuis=12');
+    expect(String(mockFetch.mock.calls[0][0])).toBe(
+      'http://203.0.113.7:3000/crawl/job-1?pointsDepuis=12',
+    );
+  });
+
+  it("n'envoie aucun curseur quand le navigateur n'en donne pas", async () => {
+    await get('job-1');
+    expect(String(mockFetch.mock.calls[0][0])).toBe('http://203.0.113.7:3000/crawl/job-1');
+  });
+
+  it.each(['abc', '-3', '1.5', ''])(
+    'ignore un curseur invalide (%p) au lieu de le relayer tel quel',
+    async (valeur) => {
+      await get('job-1', `?pointsDepuis=${valeur}`);
+      // Ce qui part vers le scraper ne doit jamais venir directement de l'URL
+      // du navigateur : un curseur incohérent se traduit par « donne-moi tout ».
+      expect(String(mockFetch.mock.calls[0][0])).toBe('http://203.0.113.7:3000/crawl/job-1');
+    },
+  );
+
+  it('relaie la grille, les tuiles et les points du scraper', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...STATUT_AMONT,
+          status: 'running',
+          grille: {
+            latitudes: [45.9, 45.8],
+            longitudes: [1.2, 1.3],
+            rangees: 1,
+            colonnes: 1,
+            total: 1,
+            tileStep: 0.1,
+            source: 'openstreetmap',
+          },
+          tuiles: [2],
+          points: [{ nom: 'Plomberie A', lat: 45.85, lng: 1.25, nouveau: true, tuile: 1 }],
+          pointsDepuis: 4,
+          pointsTotal: 5,
+        }),
+        { status: 200 },
+      ),
+    );
+    const data = await (await get('job-carte', '?pointsDepuis=4')).json();
+    expect(data.grille).toMatchObject({ total: 1, source: 'openstreetmap' });
+    expect(data.tuiles).toEqual([2]);
+    expect(data.points).toHaveLength(1);
+    expect(data.pointsDepuis).toBe(4);
+    expect(data.pointsTotal).toBe(5);
   });
 
   it('returns 401 without Authorization header', async () => {
