@@ -135,6 +135,7 @@ const formSchema = z
     tileStep: z.enum(tileSteps),
     useMaps: z.boolean(),
     useSearch: z.boolean(),
+    useGoogleApi: z.boolean(),
     // ⚠️ `<Input type="number">` rend une CHAÎNE. Avec `z.number()`, Zod rejetait
     // « Expected number, received string » et le formulaire ne partait pas du
     // tout dès que « Recherche Google » était coché — sans message visible.
@@ -200,6 +201,8 @@ export const NewSearchPage: React.FC = () => {
       tileStep: "0.1",
       useMaps: false,
       useSearch: false,
+      // Desactive par defaut : c'est le seul reglage qui peut couter de l'argent.
+      useGoogleApi: false,
     },
   });
 
@@ -365,6 +368,7 @@ export const NewSearchPage: React.FC = () => {
           tileStep: parseFloat(values.tileStep),
           useMaps: values.useMaps,
           useSearch: values.useSearch,
+          useGoogleApi: values.useGoogleApi,
           pagesCount: values.pagesCount ?? 0,
         }),
       });
@@ -512,6 +516,50 @@ export const NewSearchPage: React.FC = () => {
                     )}
                   />
                 </div>
+              </div>
+
+              {/*
+                Le seul reglage facturable de ce formulaire. Le texte dit ce que
+                l'option fait VRAIMENT : elle n'accelere pas le crawl (le cadre
+                de la ville vient d'OpenStreetMap, identique a Google a quelques
+                dizaines de metres pres), elle sert de filet quand la lecture des
+                avis dans la page echoue — et ce filet se facture par entreprise.
+              */}
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
+                <div className="flex items-center justify-between gap-3">
+                  <Label
+                    htmlFor="useGoogleApi"
+                    className="text-gray-800 dark:text-gray-100"
+                  >
+                    Recours aux API Google
+                    <span className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-800 dark:text-amber-100">
+                      payant
+                    </span>
+                  </Label>
+                  <Controller
+                    control={control}
+                    name="useGoogleApi"
+                    render={({ field }) => (
+                      <Switch
+                        id="useGoogleApi"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
+                </div>
+                <p className="text-xs leading-relaxed text-amber-900/90 dark:text-amber-100/80">
+                  Desactive, la recherche est <strong>entierement gratuite</strong> et
+                  ramene les memes informations : nom, adresse, telephone, site,
+                  horaires et avis sont lus directement dans la page Google Maps.
+                </p>
+                <p className="text-xs leading-relaxed text-amber-900/90 dark:text-amber-100/80">
+                  Active, Google est interroge <strong>en dernier recours</strong>{" "}
+                  quand les avis n'ont pas pu etre lus. Ce recours est facture{" "}
+                  <strong>par entreprise consultee</strong> : sur une ville de
+                  100 fiches, cela peut faire 100 appels payants. A n'activer que
+                  si une recherche gratuite est revenue trop pauvre.
+                </p>
               </div>
 
               {useSearch && (

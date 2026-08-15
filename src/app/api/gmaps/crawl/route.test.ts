@@ -116,6 +116,22 @@ describe('POST /api/gmaps/crawl', () => {
     expect(mockEnsureServiceRunning).not.toHaveBeenCalled();
   });
 
+  // --- Garde-fou du coût : aucune facturation par omission ---------------------
+  it("n'autorise JAMAIS les API Google payantes par défaut", async () => {
+    // Le repli Places API est facturé PAR ENTREPRISE consultée : sur une ville
+    // de 100 fiches, l'activer par mégarde produit 100 appels payants. Le seul
+    // déclencheur légitime est la case du formulaire, cochée à la main.
+    await post({ body: { keyword: 'pizza', location: 'Paris', useMaps: true } });
+    expect(corpsAmont().useGoogleApi).toBe(false);
+  });
+
+  it('transmet useGoogleApi:true seulement quand il est explicitement demandé', async () => {
+    await post({
+      body: { keyword: 'pizza', location: 'Paris', useMaps: true, useGoogleApi: true },
+    });
+    expect(corpsAmont().useGoogleApi).toBe(true);
+  });
+
   // --- C9 : le test qui aurait attrapé les 5 ruptures d'un coup ----------------
   it('réémet un corps conforme au schéma partagé CrawlRequest', async () => {
     await post({
@@ -137,6 +153,10 @@ describe('POST /api/gmaps/crawl', () => {
     expect(envoye).toEqual({
       location: 'Paris',
       businessTypes: ['pizza'],
+      // Absent de la requete d'entree => faux. C'est le garde-fou du cout :
+      // le repli Places API se facture PAR ENTREPRISE, il ne doit jamais
+      // s'activer par omission.
+      useGoogleApi: false,
       useMaps: true,
       useSearch: true,
       pagesCount: 3,

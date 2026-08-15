@@ -42,6 +42,13 @@ export const CrawlRequestSchema = z.object({
   useSearch: z.boolean(),
   pagesCount: z.number().int().min(0),
   tileStep: z.number().positive(),
+  /**
+   * Autorise le scraper a appeler les API Google PAYANTES : geocodage de la
+   * ville, et surtout le repli Places API sur les avis — celui-la se facture
+   * PAR ENTREPRISE consultee. Faux par defaut : une recherche ne doit jamais
+   * couter d'argent sans que ca ait ete demande.
+   */
+  useGoogleApi: z.boolean(),
 });
 
 export type CrawlRequest = z.infer<typeof CrawlRequestSchema>;
@@ -68,6 +75,7 @@ export const CrawlRequestInputSchema = z
       videVersIndefini,
       z.coerce.number().positive().optional(),
     ),
+    useGoogleApi: z.boolean().optional(),
   })
   .transform((entree) => ({
     location: entree.location,
@@ -81,6 +89,10 @@ export const CrawlRequestInputSchema = z
     useSearch: entree.useSearch ?? false,
     pagesCount: entree.pagesCount ?? 0,
     tileStep: entree.tileStep ?? DEFAULT_TILE_STEP,
+    // Defaut FAUX, et volontairement pas configurable par variable
+    // d'environnement : le seul moyen de declencher une facturation est de
+    // cocher la case dans le formulaire.
+    useGoogleApi: entree.useGoogleApi ?? false,
   }))
   .pipe(CrawlRequestSchema);
 
