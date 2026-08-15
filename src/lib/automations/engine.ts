@@ -1025,6 +1025,57 @@ function stepIsManual(step: SequenceStep): boolean {
   return step.kind === 'call' || step.kind === 'whatsapp' || step.kind === 'linkedin' || step.kind === 'task'
 }
 
+/**
+ * Pose la tâche d'une étape manuelle — UNE SEULE, quoi qu'il arrive.
+ *
+ * POURQUOI UN GARDE ICI
+ * Deux chemins traitent la même étape à la même seconde. Le geste de l'agent
+ * (« il a répondu », « fait ») avance l'inscription puis traite l'étape
+ * suivante tout de suite (cf. `traiterEtapeCourante`) : il pose d'abord
+ * `next_run_at = maintenant`, et ne le remet à `null` qu'APRÈS avoir créé la
+ * tâche — soit deux à quatre secondes plus tard, le temps de lire le modèle,
+ * l'audit, la démo et de choisir l'attributaire. Le ticker, qui passe toutes
+ * les minutes, voit l'inscription due pendant exactement cette fenêtre et
+ * traite la même étape en parallèle.
+ *
+ * L'agent se retrouvait alors avec le même WhatsApp à envoyer deux fois au
+ * même prospect, et l'affaire apparaissait en double dans sa file de démarchage
+ * — deux tâches, donc deux cartes, pour une seule opportunité.
+ *
+ * LE GARDE EST DOUBLE, ET C'EST VOULU
+ * La lecture couvre le cas courant — l'étape a déjà sa tâche, on ne réécrit
+ * rien. L'index unique partiel `prospection_tasks_enrollment_step_uniq`
+ * (cf. `sql/20260819_tache_unique_par_etape.sql`) tranche la vraie course :
+ * deux inserts à la même milliseconde, où aucun des deux n'a rien pu lire.
+ * Une tâche annulée (`skipped`) sort de l'index : un demi-tour de séquence
+ * peut re-poser une étape dont la tâche avait été retirée.
+ */
+async function poserTacheDEtape(
+  sb: SupabaseClient,
+  enrollmentId: string,
+  stepId: string | undefined,
+  tache: Record<string, unknown>,
+): Promise<void> {
+  if (stepId) {
+    const { data: deja } = await sb
+      .from('prospection_tasks')
+      .select('id')
+      .eq('enrollment_id', enrollmentId)
+      .eq('step_id', stepId)
+      .neq('status', 'skipped')
+      .limit(1)
+    if ((deja ?? []).length > 0) return
+  }
+  const { error } = await sb.from('prospection_tasks').insert(tache)
+  // 23505 : l'autre chemin a gagné la course. C'est le résultat recherché — une
+  // seule tâche existe —, donc rien à signaler.
+  if (error && error.code !== '23505') {
+    console.warn(
+      `[automations] tâche d'étape non créée pour l'inscription ${enrollmentId} (étape ${stepId ?? '?'}) : ${error.message}`,
+    )
+  }
+}
+
 export async function enrollInSequence(
   automation: Automation,
   ctx: RunContext,
@@ -1257,7 +1308,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       opportuniteId: enrollment.opportunite_id,
       createdBy: enrollment.created_by ?? null,
     })
-    await sb.from('prospection_tasks').insert({
+    await poserTacheDEtape(sb, enrollment.id, step.id, {
       kind: step.kind === 'task' ? 'linkedin' : step.kind,
       contact_id: ent.contactId,
       entreprise_id: ent.entrepriseId,
