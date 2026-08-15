@@ -360,3 +360,60 @@ export const FileJobsSchema = z.object({
     return v.filter((j) => JobEnFileSchema.safeParse(j).success);
   }, z.array(JobEnFileSchema)),
 });
+
+// ---------------------------------------------------------------------------
+// CONTRAT 7 — les villes à prospecter
+// ---------------------------------------------------------------------------
+
+/**
+ * Une ville proposée par `/api/gmaps/suggestions`.
+ *
+ * Contrairement aux six contrats précédents, celui-ci ne traverse PAS la
+ * frontière des deux dépôts : la route et l'écran sont livrés ensemble. Le
+ * schéma reste là pour la même raison que les autres — un champ manquant doit
+ * faire disparaître une carte, pas planter la page — mais il n'a pas à tolérer
+ * un producteur d'une autre version.
+ */
+export const SuggestionVilleSchema = z.object({
+  code: z.string().min(1),
+  nom: z.string().min(1),
+  departement: z.string().default(""),
+  population: compteur,
+  lat: z.coerce.number(),
+  lon: z.coerce.number(),
+  codePostal: z.string().default(""),
+  homonyme: z.boolean().default(false),
+  fiches: compteur,
+  attendu: compteur,
+  manque: compteur,
+  passage: z.enum(["jamais", "rapide", "complete"]).default("jamais"),
+});
+
+export type SuggestionVille = z.infer<typeof SuggestionVilleSchema>;
+
+const MetierSchema = z.object({
+  tag: z.string().min(1),
+  motCle: z.string().min(1),
+});
+
+export const SuggestionsSchema = z.object({
+  metier: MetierSchema,
+  metiers: z.array(MetierSchema).default([]),
+  /** Une ville illisible s'efface ; les autres restent à l'écran. */
+  villes: z.preprocess((v) => {
+    if (!Array.isArray(v)) return [];
+    return v.filter((ville) => SuggestionVilleSchema.safeParse(ville).success);
+  }, z.array(SuggestionVilleSchema)),
+  /** Villes classées au total, `villes` pouvant en être un préfixe. */
+  total: compteur,
+  etalon: z
+    .object({
+      densite: z.number().nullable().default(null),
+      villesCouvertes: compteur,
+      fiches: compteur,
+    })
+    .default({ densite: null, villesCouvertes: 0, fiches: 0 }),
+  tronque: z.boolean().default(false),
+});
+
+export type Suggestions = z.infer<typeof SuggestionsSchema>;

@@ -43,6 +43,7 @@ import {
 } from "@/lib/gmaps/contract";
 import { SceneSuivi } from "./gmaps/SceneSuivi";
 import { FileRecherches, choisirJobAffiche } from "./gmaps/FileRecherches";
+import { VillesAProspecter, type DemandeRecherche } from "./gmaps/VillesAProspecter";
 import { FileJobsSchema, type JobEnFile } from "@/lib/gmaps/contract";
 
 async function downloadResults(jobId: string, format: "csv" | "json") {
@@ -171,6 +172,23 @@ const formSchema = z
 type FormInput = z.input<typeof formSchema>;
 type FormValues = z.output<typeof formSchema>;
 
+/**
+ * Ce qu'il faut pour lancer une recherche. Volontairement distinct de
+ * `FormValues` : une carte de suggestion n'a ni champ « nombre de pages » ni
+ * interrupteur de source, et devoir en inventer pour appeler le formulaire
+ * ferait passer des valeurs par défaut pour des choix de l'utilisateur.
+ */
+type DemandeCrawl = {
+  motCle: string;
+  lieu: string;
+  tileStep: number;
+  useMaps: boolean;
+  useSearch: boolean;
+  useGoogleApi: boolean;
+  tuilesMax: number;
+  pagesCount: number;
+};
+
 export const NewSearchPage: React.FC = () => {
   const locationRef = useRef<HTMLInputElement>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -218,6 +236,12 @@ export const NewSearchPage: React.FC = () => {
   const [file, setFile] = useState<JobEnFile[]>([]);
   /** Recherche choisie à la main dans la file ; `null` = on laisse la vue suivre. */
   const [choixManuel, setChoixManuel] = useState<string | null>(null);
+  /**
+   * Lieux déjà envoyés au scraper depuis cet écran. Les cartes de suggestion
+   * s'y grisent : le classement, lui, ne bougera qu'une fois les fiches en
+   * base, c'est-à-dire bien après le clic.
+   */
+  const [lieuxLances, setLieuxLances] = useState<ReadonlySet<string>>(new Set());
   /** Mot-clé et lieu de chaque job lancé, pour titrer la carte après bascule. */
   const intitules = useRef(new Map<string, { motCle: string; lieu: string }>());
   /**
@@ -497,7 +521,16 @@ export const NewSearchPage: React.FC = () => {
     setStats(null);
   }, [jobId]);
 
-  const onSubmit = async (values: FormValues) => {
+  /**
+   * Lancement d'une recherche, quelle qu'en soit l'origine.
+   *
+   * Le formulaire et les cartes « où chercher ensuite » passent par ici tous
+   * les deux : mise en file, suivi, intitulés, bascule de vue. Les dupliquer
+   * ferait diverger deux chemins dont un seul serait tenu à jour — et c'est le
+   * chemin des cartes, moins souvent emprunté à la main, qui serait resté en
+   * arrière.
+   */
+  const lancer = async (demande: DemandeCrawl) => {
     setLoading(true);
     setJobError(null);
     setStats(null);
@@ -509,14 +542,14 @@ export const NewSearchPage: React.FC = () => {
         // CONTRAT 3 : le scraper exige `businessTypes`, un tableau NON VIDE.
         // On envoyait `keyword` (chaîne) et il répondait 400 sans exception.
         body: JSON.stringify({
-          businessTypes: [values.keyword],
-          location: values.location,
-          tileStep: parseFloat(values.tileStep),
-          useMaps: values.useMaps,
-          useSearch: values.useSearch,
-          useGoogleApi: values.useGoogleApi,
-          tuilesMax: Number(values.tuilesMax),
-          pagesCount: values.pagesCount ?? 0,
+          businessTypes: [demande.motCle],
+          location: demande.lieu,
+          tileStep: demande.tileStep,
+          useMaps: demande.useMaps,
+          useSearch: demande.useSearch,
+          useGoogleApi: demande.useGoogleApi,
+          tuilesMax: demande.tuilesMax,
+          pagesCount: demande.pagesCount,
         }),
       });
       if (!res.ok) {
@@ -534,9 +567,12 @@ export const NewSearchPage: React.FC = () => {
       const data = parse.data;
       dernierStatutRef.current = data.status;
       intitules.current.set(data.jobId, {
-        motCle: values.keyword,
-        lieu: values.location,
+        motCle: demande.motCle,
+        lieu: demande.lieu,
       });
+      // Ce lieu ne doit plus être proposé en carte : le scraper l'a pris, et
+      // rien dans la file ne dirait à l'écran d'où venait la demande.
+      setLieuxLances((prev) => new Set(prev).add(demande.lieu));
       // Une recherche lancée pendant qu'une autre tourne part EN FILE côté
       // scraper : on ne détourne pas la vue, on annonce l'ajout. La bascule se
       // fera d'elle-même quand la précédente aura fini.
@@ -545,7 +581,7 @@ export const NewSearchPage: React.FC = () => {
         toast.info("Recherche ajoutée à la file");
       } else {
         toast.info("Recherche lancée");
-        setLance({ motCle: values.keyword, lieu: values.location });
+        setLance({ motCle: demande.motCle, lieu: demande.lieu });
         setJobId(data.jobId);
         setStatus(data.status);
       }
@@ -560,6 +596,34 @@ export const NewSearchPage: React.FC = () => {
     }
   };
 
+  const onSubmit = (values: FormValues) =>
+    lancer({
+      motCle: values.keyword,
+      lieu: values.location,
+      tileStep: parseFloat(values.tileStep),
+      useMaps: values.useMaps,
+      useSearch: values.useSearch,
+      useGoogleApi: values.useGoogleApi,
+      tuilesMax: Number(values.tuilesMax),
+      pagesCount: values.pagesCount ?? 0,
+    });
+
+  /**
+   * Départ depuis une carte de suggestion. Les sources et le coût ne sont PAS
+   * repris du formulaire : une carte annonce « survol de 3 zones, gratuit », et
+   * ce qu'elle annonce doit être ce qu'elle fait, quel que soit l'état des
+   * interrupteurs au-dessus. Le recours payant aux API Google reste donc une
+   * décision explicite, prise dans le formulaire et nulle part ailleurs.
+   */
+  const lancerDepuisCarte = (demande: DemandeRecherche) =>
+    lancer({
+      ...demande,
+      useMaps: true,
+      useSearch: false,
+      useGoogleApi: false,
+      pagesCount: 0,
+    });
+
   return (
     <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900">
       {loading && (
@@ -568,17 +632,23 @@ export const NewSearchPage: React.FC = () => {
         </div>
       )}
       {/*
-        Deux dispositions, pas deux écrans. Tant qu'aucune recherche n'a été
-        lancée, le formulaire reste centré comme avant. Dès qu'un job existe, la
-        page s'élargit pour laisser la carte respirer — et sur mobile le suivi
-        passe DEVANT le formulaire (`order-first`) : on lance depuis son
-        téléphone, puis on regarde le robot avancer, on ne remplit pas deux fois.
+        Trois blocs empilés : le formulaire, le suivi de ce qui tourne, et les
+        villes à prospecter. Le formulaire reste centré tant qu'aucune recherche
+        n'a été lancée ; dès qu'un job existe, il se range à gauche et la carte
+        prend la place — et sur mobile le suivi passe DEVANT le formulaire
+        (`order-first`) : on lance depuis son téléphone, puis on regarde le robot
+        avancer, on ne remplit pas deux fois.
+
+        Le centrage VERTICAL d'origine a disparu avec l'arrivée des suggestions :
+        une page qui continue en dessous ne doit pas s'ouvrir sur un formulaire
+        au milieu de l'écran, sans quoi rien n'indique qu'il y a autre chose.
       */}
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 pt-6">
       <div
         className={
           jobId
-            ? "relative z-10 mx-auto grid w-full max-w-6xl items-start gap-4 p-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]"
-            : "relative z-10 flex min-h-screen items-center justify-center p-4"
+            ? "grid w-full items-start gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]"
+            : "mx-auto w-full max-w-md"
         }
       >
         <Card className="w-full max-w-md bg-white dark:bg-gray-800 lg:max-w-none">
@@ -902,6 +972,9 @@ export const NewSearchPage: React.FC = () => {
             />
           </div>
         )}
+      </div>
+
+        <VillesAProspecter onLancer={lancerDepuisCarte} lieuxEnFile={lieuxLances} />
       </div>
     </div>
   );
