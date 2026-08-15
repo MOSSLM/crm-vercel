@@ -1,10 +1,57 @@
 import { proxyToGmaps } from "@/app/api/_lib/gmaps-proxy";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { JobStatusSchema } from "@/lib/gmaps/contract";
 
 export const runtime = "nodejs";
 
 type Params = { jobId: string };
 
-export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
-  return proxyToGmaps(`/job/${params.jobId}`, { forwardAuthFromReq: req });
+/**
+ * Suivi d'un job de crawl.
+ *
+ * ⚠️ Le scraper expose `GET /crawl/:jobId`, pas `/job/:jobId` : on appelait une
+ * route inexistante, et comme son middleware d'auth est global, elle répondait
+ * 401 (jamais 404). Côté navigateur `res.ok` était donc toujours faux, le
+ * polling ne s'arrêtait jamais et le service ECS ne redescendait jamais à 0.
+ * Le chemin public du CRM reste `/api/gmaps/job/:jobId` (l'autre chantier ajoute
+ * aussi un alias `/job/:jobId` côté serveur — ceinture et bretelles).
+ */
+export const GET = withAuth<undefined, Params>({}, async ({ req, params, cors }) => {
+  const amont = await proxyToGmaps(`/crawl/${encodeURIComponent(params.jobId)}`, {
+    forwardAuthFromReq: req,
+  });
+
+  const texte = await amont.text();
+  if (!amont.ok) {
+    return new Response(texte, {
+      status: amont.status,
+      headers: { "Content-Type": "application/json", ...cors },
+    });
+  }
+
+  let brut: unknown;
+  try {
+    brut = JSON.parse(texte);
+  } catch {
+    return jsonError("reponse_scraper_illisible", 502, { corps: texte.slice(0, 500) }, cors);
+  }
+
+  // Le scraper ne réémet pas l'identifiant du job dans son statut ; on le réinjecte
+  // depuis l'URL pour que le CONTRAT 2 soit complet côté client.
+  const statut = JobStatusSchema.safeParse({
+    jobId: params.jobId,
+    ...(brut && typeof brut === "object" ? brut : {}),
+  });
+  if (!statut.success) {
+    // Erreur lisible plutôt qu'un `undefined` silencieux qui s'afficherait « 0 ».
+    return jsonError(
+      "statut_scraper_invalide",
+      502,
+      { details: statut.error.flatten() },
+      cors,
+    );
+  }
+
+  return json(statut.data, { headers: cors });
 });
