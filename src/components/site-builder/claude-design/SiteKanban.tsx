@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 
 interface Demo {
@@ -111,7 +112,7 @@ function DemoCard({
       </div>
       {demo.published_subdomain ? (
         <a
-          href={`https://${demo.published_subdomain}.${SITE_DOMAIN}`}
+          href={lienNonMesure(`https://${demo.published_subdomain}.${SITE_DOMAIN}`)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-blue-600 hover:underline"

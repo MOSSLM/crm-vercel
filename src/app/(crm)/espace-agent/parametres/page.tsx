@@ -4,6 +4,7 @@ import { useAuth } from "@/components/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ExclusionTraficPanel } from "@/components/analytics/ExclusionTraficPanel";
 import { LogOut } from "lucide-react";
 
 export default function AgentParametresPage() {
@@ -36,6 +37,8 @@ export default function AgentParametresPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ExclusionTraficPanel />
 
       <Card>
         <CardContent className="flex items-center justify-between py-4">

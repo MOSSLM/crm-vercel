@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { demoShareUrl, isDraftShareUrl, type DemoLike } from "@/lib/site-builder/demo-share-url";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { versFormatInternational } from "@/lib/telephone";
 
 /**
@@ -183,7 +184,9 @@ export function PartagerDemoDialog({
               Ouvrir WhatsApp
             </Button>
             <Button type="button" variant="ghost" size="sm" asChild>
-              <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+              {/* On ouvre pour relire avant d'envoyer : cette visite-là est la
+                  nôtre. Le lien collé dans le message WhatsApp reste `shareUrl`. */}
+              <a href={lienNonMesure(shareUrl)} target="_blank" rel="noopener noreferrer">
                 Ouvrir le site
               </a>
             </Button>

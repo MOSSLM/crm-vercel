@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Icon } from "./DemIcon";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { formatEuros } from "@/lib/donnees-publiques/fiche";
 import { trancheEffectifLabel } from "@/lib/donnees-publiques/effectif";
 import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
@@ -92,7 +93,16 @@ export function DemSide({
           <>
             <CopyUrl url={demoUrl} />
             <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
-              <a className="btn outline sm" style={{ flex: 1, justifyContent: "center" }} href={demoUrl} target="_blank" rel="noreferrer">
+              {/* `lienNonMesure` — la démo qu'on ouvre pour la vérifier avant
+                  d'appeler ne doit pas ressortir en visite du prospect. L'URL
+                  copiée juste au-dessus, elle, reste nue : c'est celle qui part. */}
+              <a
+                className="btn outline sm"
+                style={{ flex: 1, justifyContent: "center" }}
+                href={lienNonMesure(demoUrl)}
+                target="_blank"
+                rel="noreferrer"
+              >
                 <Icon name="ext" className="ico-sm" />
                 Ouvrir
               </a>

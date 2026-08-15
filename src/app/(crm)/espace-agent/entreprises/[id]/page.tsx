@@ -32,6 +32,7 @@ import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHis
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import DossierEntreprise from "@/components/donnees-publiques/DossierEntreprise";
 import { CarteAnalyseSite } from "@/components/audit-site/CarteAnalyseSite";
@@ -279,8 +280,11 @@ export default function AgentEntrepriseDetailPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center gap-2">
+              {/* Le texte affiché est l'adresse nue — c'est elle qu'on lit au
+                  téléphone. Seul le `href` porte le marqueur, pour que l'ouvrir
+                  d'ici ne compte pas comme une visite du prospect. */}
               <a
-                href={demoShareUrl(site)}
+                href={lienNonMesure(demoShareUrl(site))}
                 target="_blank"
                 rel="noreferrer"
                 className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"

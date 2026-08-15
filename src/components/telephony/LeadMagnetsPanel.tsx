@@ -49,6 +49,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { authedFetch } from "@/utils/authedFetch";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { lienWhatsApp } from "@/lib/telephone";
 
 interface SiteLM {
@@ -210,7 +211,7 @@ export function LeadMagnetsPanel({
                 </span>
               </div>
 
-              <a href={lienDemo} target="_blank" rel="noopener noreferrer" className="lm-url">
+              <a href={lienNonMesure(lienDemo)} target="_blank" rel="noopener noreferrer" className="lm-url">
                 {lienDemo.replace(/^https:\/\//, "")}
               </a>
 
@@ -232,7 +233,7 @@ export function LeadMagnetsPanel({
               </button>
 
               <div className="lm-actions">
-                <Action titre="Ouvrir la démo" href={lienDemo}>
+                <Action titre="Ouvrir la démo" href={lienNonMesure(lienDemo)}>
                   <ExternalLink className="ico-xs" />
                 </Action>
                 <Action titre="Copier le lien" onClick={() => void copier(lienDemo, "du site")}>
