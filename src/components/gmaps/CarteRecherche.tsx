@@ -54,6 +54,12 @@ export type CarteRechercheProps = {
   /** Remonte le nombre d'entreprises trop éloignées pour tenir dans le cadre. */
   onHorsCadre?: (n: number) => void;
   /**
+   * Numéros des tuiles que cette passe compte visiter. Vide = toutes. Sert à
+   * distinguer une tuile SAUTÉE (jamais prévue) d'une tuile pas encore
+   * atteinte : les deux sont vierges, mais l'une ne se remplira jamais.
+   */
+  tuilesPrevues?: number[];
+  /**
    * Contour de la commune (GeoJSON), quand le scraper a su le donner. C'est lui
    * qui répond à « où suis-je ? » : une grille de tuiles seule n'est qu'un
    * rectangle posé sur du blanc.
@@ -76,6 +82,7 @@ export function CarteRecherche({
   onHorsCadre,
   contour,
   ville,
+  tuilesPrevues,
 }: CarteRechercheProps) {
   const stageRef = React.useRef<HTMLDivElement | null>(null);
   const [size, setSize] = React.useState({ width: 720, height: 460 });
@@ -328,6 +335,12 @@ export function CarteRecherche({
   /** Contre-échelle des pastilles : une petite zone mérite de plus gros points. */
   const unite = Math.max(0.7, Math.min(size.width, size.height) / 620);
 
+  /** Tuiles qu'une passe rapide ne visitera pas. Vide = exploration complète. */
+  const prevues = React.useMemo(
+    () => (tuilesPrevues && tuilesPrevues.length ? new Set(tuilesPrevues) : null),
+    [tuilesPrevues],
+  );
+
   const grilleLayer = React.useMemo(
     () => (
       <g className="rlive-grille">
@@ -336,11 +349,13 @@ export function CarteRecherche({
           const etat =
             t.index === tuileEnCours && enCours
               ? "encours"
-              : n === null
-                ? "attente"
-                : n === 0
+              : n !== null
+                ? n === 0
                   ? "vide"
-                  : "trouve";
+                  : "trouve"
+                : prevues && !prevues.has(t.index)
+                  ? "sautee"
+                  : "attente";
           return (
             <polygon
               key={t.index}
@@ -348,6 +363,7 @@ export function CarteRecherche({
               data-etat={etat}
               points={polygone(t)}
               style={n && n > 0 ? { fill: teinte(n) } : undefined}
+              data-prevue={prevues && !prevues.has(t.index) ? "false" : undefined}
               onMouseEnter={(e) => {
                 const rect = stageRef.current?.getBoundingClientRect();
                 if (!rect) return;
@@ -363,7 +379,7 @@ export function CarteRecherche({
         })}
       </g>
     ),
-    [cadres, tuiles, tuileEnCours, enCours, polygone, teinte],
+    [cadres, tuiles, tuileEnCours, enCours, polygone, teinte, prevues],
   );
 
   return (
@@ -525,7 +541,9 @@ export function CarteRecherche({
           </div>
           <div className="tt-s">
             {survol.n === null
-              ? "pas encore explorée"
+              ? prevues && !prevues.has(survol.index)
+                ? "sautée par la passe rapide"
+                : "pas encore explorée"
               : survol.n === 0
                 ? "explorée · aucune entreprise"
                 : `explorée · ${survol.n} entreprise${survol.n > 1 ? "s" : ""}`}

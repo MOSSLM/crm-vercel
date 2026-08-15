@@ -161,6 +161,9 @@ describe('POST /api/gmaps/crawl', () => {
       useSearch: true,
       pagesCount: 3,
       tileStep: 0.02,
+      // Absent de la requete d'entree => 0, c'est-a-dire « explore tout ».
+      // Sauter des tuiles doit se demander, jamais s'attraper par omission.
+      tuilesMax: 0,
     });
     // `keyword` ne doit PAS survivre : le scraper ne le lit pas.
     expect(envoye).not.toHaveProperty('keyword');
@@ -200,5 +203,26 @@ describe('POST /api/gmaps/crawl', () => {
     expect(res.status).toBe(401);
     expect(mockEnsureServiceRunning).not.toHaveBeenCalled();
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // --- Passe rapide : n'explorer que les N tuiles les plus écartées ---------
+
+  it('relaie le nombre de tuiles demandé pour une passe rapide', async () => {
+    await post({
+      body: { keyword: 'plombier', location: 'Lyon', useMaps: true, tuilesMax: 3 },
+    });
+    expect(corpsAmont()).toMatchObject({ tuilesMax: 3 });
+  });
+
+  it("explore tout quand aucune passe rapide n'est demandée", async () => {
+    await post({ body: { keyword: 'plombier', location: 'Lyon', useMaps: true } });
+    expect(corpsAmont()).toMatchObject({ tuilesMax: 0 });
+  });
+
+  it('refuse un nombre de tuiles absurde plutôt que de le relayer', async () => {
+    const res = await post({
+      body: { keyword: 'plombier', location: 'Lyon', useMaps: true, tuilesMax: -4 },
+    });
+    expect(res.status).toBe(400);
   });
 });

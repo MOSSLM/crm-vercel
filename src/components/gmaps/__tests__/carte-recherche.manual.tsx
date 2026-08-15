@@ -17,6 +17,7 @@ import * as os from "os";
 import * as path from "path";
 import { act, render } from "@testing-library/react";
 import { SuiviRecherche } from "../SuiviRecherche";
+import { FileRecherches } from "../FileRecherches";
 import { JobStatusSchema } from "@/lib/gmaps/contract";
 
 const RACINE = path.resolve(__dirname, "../../../..");
@@ -92,14 +93,47 @@ it("écrit un aperçu du suivi de recherche", async () => {
   const statut = JobStatusSchema.parse(brut);
 
   const { container } = render(
-    <SuiviRecherche
+    <div className="space-y-4">
+      <SuiviRecherche
       motCle="plombier"
       lieu="Limoges, France"
       status={statut.status}
       stats={statut}
       points={statut.points}
-      contour={statut.contour}
-    />,
+        contour={statut.contour}
+      />
+      <FileRecherches
+        jobs={[
+          {
+            jobId: "en-cours",
+            status: "running",
+            location: "Limoges, France",
+            businessTypes: ["plombier"],
+            found: statut.found,
+            inserted: statut.inserted,
+            merged: statut.merged,
+            tilesDone: statut.tilesDone,
+            tilesTotal: statut.tilesTotal,
+          },
+          {
+            jobId: "attente-1",
+            status: "pending",
+            location: "Nemours, France",
+            businessTypes: ["plombier"],
+            found: 0, inserted: 0, merged: 0, tilesDone: 0, tilesTotal: 0,
+          },
+          {
+            jobId: "attente-2",
+            status: "pending",
+            location: "Corbeil-Essonnes, France",
+            businessTypes: ["electricien", "chauffagiste"],
+            found: 0, inserted: 0, merged: 0, tilesDone: 0, tilesTotal: 0,
+          },
+        ]}
+        jobAffiche="en-cours"
+        onAfficher={() => {}}
+      />
+    </div>,
   );
 
   // Le fond de carte arrive par une promesse : sans ce tour de boucle, on

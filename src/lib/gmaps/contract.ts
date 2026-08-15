@@ -49,6 +49,17 @@ export const CrawlRequestSchema = z.object({
    * couter d'argent sans que ca ait ete demande.
    */
   useGoogleApi: z.boolean(),
+  /**
+   * PASSE RAPIDE : ne parcourir que les N tuiles les plus écartées les unes des
+   * autres, au lieu de toute la grille. 0 = exploration complète.
+   *
+   * Ce n'est pas un échantillon au hasard : le robot range ses tuiles du plus
+   * éloigné au plus proche de ce qu'il a déjà vu, et Google rend largement les
+   * mêmes entreprises pour deux tuiles voisines. Garder les premières, c'est
+   * couvrir la ville avec le moins de recouvrement possible — l'essentiel des
+   * entreprises pour une fraction du temps.
+   */
+  tuilesMax: z.number().int().min(0).max(500),
 });
 
 export type CrawlRequest = z.infer<typeof CrawlRequestSchema>;
@@ -76,6 +87,10 @@ export const CrawlRequestInputSchema = z
       z.coerce.number().positive().optional(),
     ),
     useGoogleApi: z.boolean().optional(),
+    tuilesMax: z.preprocess(
+      videVersIndefini,
+      z.coerce.number().int().min(0).max(500).optional(),
+    ),
   })
   .transform((entree) => ({
     location: entree.location,
@@ -93,6 +108,8 @@ export const CrawlRequestInputSchema = z
     // d'environnement : le seul moyen de declencher une facturation est de
     // cocher la case dans le formulaire.
     useGoogleApi: entree.useGoogleApi ?? false,
+    // 0 par défaut : ne rien sauter tant qu'on ne l'a pas demandé.
+    tuilesMax: entree.tuilesMax ?? 0,
   }))
   .pipe(CrawlRequestSchema);
 
@@ -187,6 +204,13 @@ export const GrilleSchema = z.object({
   source: z.string().nullable().default(null),
   /** Libellé complet du lieu tel qu'OpenStreetMap l'a reconnu. */
   nomLieu: z.string().nullable().default(null),
+  /**
+   * Numéros des tuiles que cette passe compte visiter. Sur une exploration
+   * complète, c'est toute la grille ; sur une passe rapide, c'est ce qui
+   * distingue une tuile SAUTÉE d'une tuile pas encore atteinte — et donc ce
+   * qui permettra d'y revenir.
+   */
+  tuilesPrevues: z.array(z.number().int().positive()).default([]),
 });
 
 export type Grille = z.infer<typeof GrilleSchema>;
@@ -257,6 +281,14 @@ export const JobStatusSchema = z.object({
   saved: compteur,
   pages: compteur,
   tilesDone: compteur,
+  /**
+   * Position dans la GRILLE de la tuile lue à l'instant — à ne pas confondre
+   * avec `tilesDone`, qui est un compte. Les deux ont divergé le jour où les
+   * tuiles ont cessé d'être parcourues rangée par rangée : le robot va
+   * désormais à chaque étape sur la tuile la plus éloignée de celles déjà
+   * faites, ce qui maximise les entreprises distinctes trouvées tôt.
+   */
+  tuileEnCours: compteur,
   tilesTotal: compteur,
   /**
    * CONTRAT 5. Les quatre champs suivants ont TOUS une valeur par défaut, et ce
@@ -294,3 +326,37 @@ export const JobStatusSchema = z.object({
 });
 
 export type JobStatus = z.infer<typeof JobStatusSchema>;
+
+// ---------------------------------------------------------------------------
+// CONTRAT 6 — la file d'attente
+// ---------------------------------------------------------------------------
+
+/**
+ * Une recherche vue depuis la file. Volontairement maigre : ni points, ni
+ * contour, ni grille. C'est de quoi écrire une ligne de liste, pas de quoi
+ * dessiner une carte — celle-ci ne se charge que pour la recherche affichée.
+ */
+export const JobEnFileSchema = z.object({
+  jobId: z.string().min(1),
+  status: JobStatusEnum,
+  location: z.string().default(""),
+  businessTypes: z.array(z.string()).default([]),
+  found: compteur,
+  inserted: compteur,
+  merged: compteur,
+  tilesDone: compteur,
+  tilesTotal: compteur,
+});
+
+export type JobEnFile = z.infer<typeof JobEnFileSchema>;
+
+/**
+ * Un job illisible ne doit pas emporter toute la file : on écarte l'intrus et
+ * on affiche les autres, plutôt que de laisser l'écran sans aucune liste.
+ */
+export const FileJobsSchema = z.object({
+  jobs: z.preprocess((v) => {
+    if (!Array.isArray(v)) return [];
+    return v.filter((j) => JobEnFileSchema.safeParse(j).success);
+  }, z.array(JobEnFileSchema)),
+});

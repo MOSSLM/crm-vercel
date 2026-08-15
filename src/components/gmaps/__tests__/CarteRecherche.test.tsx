@@ -133,6 +133,31 @@ describe("CarteRecherche", () => {
     expect(container.querySelectorAll("polygon.rlive-tuile")).toHaveLength(GRILLE.total);
   });
 
+  it("distingue une tuile SAUTÉE d'une tuile pas encore atteinte", () => {
+    // Une passe rapide ne visite que les zones les plus écartées. Les deux
+    // états sont vierges, mais l'un ne se remplira jamais : les confondre
+    // laisserait lire un choix délibéré comme un crawl inachevé.
+    const { container } = rendre({
+      tuiles: [3, null, null, null],
+      tuileEnCours: 1,
+      enCours: false,
+      tuilesPrevues: [1, 4],
+    });
+    const etats = [...container.querySelectorAll("polygon.rlive-tuile")].map((n) =>
+      n.getAttribute("data-etat"),
+    );
+    // 1 explorée, 2 et 3 hors passe → sautées, 4 prévue mais pas encore faite.
+    expect(etats).toEqual(["trouve", "sautee", "sautee", "attente"]);
+  });
+
+  it("n'invente aucune tuile sautée quand l'exploration est complète", () => {
+    const { container } = rendre({ tuiles: [3, null, null, null], tuilesPrevues: [] });
+    const etats = [...container.querySelectorAll("polygon.rlive-tuile")].map((n) =>
+      n.getAttribute("data-etat"),
+    );
+    expect(etats).not.toContain("sautee");
+  });
+
   it("pose une pastille par entreprise, et une tache seulement en mode « taches »", () => {
     const { container } = rendre();
     expect(container.querySelectorAll("circle.carte-dot")).toHaveLength(2);

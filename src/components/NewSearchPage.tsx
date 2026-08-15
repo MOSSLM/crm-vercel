@@ -41,7 +41,9 @@ import {
   type JobStatusValue,
   type PointRecherche,
 } from "@/lib/gmaps/contract";
-import { SuiviRecherche } from "./gmaps/SuiviRecherche";
+import { SceneSuivi } from "./gmaps/SceneSuivi";
+import { FileRecherches, choisirJobAffiche } from "./gmaps/FileRecherches";
+import { FileJobsSchema, type JobEnFile } from "@/lib/gmaps/contract";
 
 async function downloadResults(jobId: string, format: "csv" | "json") {
   const res = await authedFetch(`/api/gmaps/results/${jobId}?format=${format}`);
@@ -139,6 +141,8 @@ const formSchema = z
     useMaps: z.boolean(),
     useSearch: z.boolean(),
     useGoogleApi: z.boolean(),
+    /** Nombre de tuiles d'une passe rapide. « 0 » = explorer toute la ville. */
+    tuilesMax: z.enum(["0", "3", "5", "10"]),
     // ⚠️ `<Input type="number">` rend une CHAÎNE. Avec `z.number()`, Zod rejetait
     // « Expected number, received string » et le formulaire ne partait pas du
     // tout dès que « Recherche Google » était coché — sans message visible.
@@ -207,6 +211,16 @@ export const NewSearchPage: React.FC = () => {
    */
   const [lance, setLance] = useState<{ motCle: string; lieu: string } | null>(null);
   /**
+   * Ce que le scraper a sur le feu. Sondé à part du job affiché : la file
+   * survit au job, et c'est elle qui dit vers laquelle basculer quand celui
+   * qu'on regarde se termine.
+   */
+  const [file, setFile] = useState<JobEnFile[]>([]);
+  /** Recherche choisie à la main dans la file ; `null` = on laisse la vue suivre. */
+  const [choixManuel, setChoixManuel] = useState<string | null>(null);
+  /** Mot-clé et lieu de chaque job lancé, pour titrer la carte après bascule. */
+  const intitules = useRef(new Map<string, { motCle: string; lieu: string }>());
+  /**
    * Dernier statut connu du job, lisible depuis le nettoyage de démontage (un
    * `useState` y serait figé à sa valeur de montage). Sert à décider si l'on a
    * le droit d'accélérer l'extinction : uniquement sur un état TERMINAL.
@@ -229,10 +243,13 @@ export const NewSearchPage: React.FC = () => {
       useSearch: false,
       // Desactive par defaut : c'est le seul reglage qui peut couter de l'argent.
       useGoogleApi: false,
+      // Complet par defaut : sauter des tuiles doit se demander.
+      tuilesMax: "0",
     },
   });
 
   const useSearch = watch("useSearch");
+  const etendue = watch("tuilesMax");
 
   useEffect(() => {
     const load = async () => {
@@ -317,6 +334,21 @@ export const NewSearchPage: React.FC = () => {
           `/api/gmaps/job/${jobId}?pointsDepuis=${curseurPoints.current}` +
             (contourRecu.current ? "" : "&avecContour=1"),
         );
+        // 404 : le scraper ne connaît plus ce job. Ce n'est PAS un hoquet
+        // réseau — insister n'y changera rien. Les jobs vivent en mémoire dans
+        // le conteneur : un redémarrage de la machine les efface, et le crawl
+        // qui tournait est bel et bien perdu. Le dire franchement vaut mieux
+        // que quinze secondes de « suivi interrompu » suivies d'un silence.
+        if (res.status === 404) {
+          setSuiviInterrompu(
+            "Cette recherche a disparu : la machine de scraping a redémarré. " +
+              "Ce qui avait déjà été trouvé est en base ; le reste est à relancer.",
+          );
+          dernierStatutRef.current = "error";
+          setStatus("error");
+          arreterSuivi();
+          return;
+        }
         if (!res.ok) {
           echecTransport(
             `Suivi de la recherche interrompu (HTTP ${res.status}). Le crawl continue côté serveur.`,
@@ -408,17 +440,68 @@ export const NewSearchPage: React.FC = () => {
     };
   }, []);
 
+  /**
+   * Sondage de la FILE. Indépendant du suivi du job affiché : il continue même
+   * quand la recherche à l'écran est terminée, sans quoi on ne verrait jamais
+   * la suivante démarrer.
+   */
+  useEffect(() => {
+    if (!jobId) return;
+    let arrete = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const sonder = async () => {
+      if (arrete) return;
+      try {
+        const res = await authedFetch("/api/gmaps/jobs");
+        if (res.ok) {
+          const parse = FileJobsSchema.safeParse(await res.json());
+          if (parse.success) setFile(parse.data.jobs);
+        }
+      } catch {
+        // La file est un confort : son absence ne doit rien casser à l'écran.
+      }
+      if (!arrete) timer = setTimeout(sonder, POLL_INTERVAL_MS);
+    };
+    void sonder();
+    return () => {
+      arrete = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [jobId]);
+
+  /**
+   * Passage de témoin : quand la recherche affichée se termine et qu'une autre
+   * démarre, la vue la suit. C'est tout l'intérêt d'une file — sinon on
+   * resterait sur une carte figée pendant que le robot travaille ailleurs.
+   */
+  useEffect(() => {
+    const cible = choisirJobAffiche(file, choixManuel, jobId);
+    if (cible && cible !== jobId) {
+      setJobId(cible);
+      const intitule = intitules.current.get(cible);
+      if (intitule) setLance(intitule);
+    }
+  }, [file, choixManuel, jobId]);
+
+  /**
+   * Changer de recherche affichée, c'est changer de ville : la carte de la
+   * précédente n'a plus rien à faire là. Sans cette remise à zéro, les points
+   * de Limoges resteraient posés sur Clermont-Ferrand.
+   */
+  useEffect(() => {
+    setPoints([]);
+    curseurPoints.current = 0;
+    setContour(null);
+    contourRecu.current = false;
+    setStats(null);
+  }, [jobId]);
+
   const onSubmit = async (values: FormValues) => {
     setLoading(true);
     setJobError(null);
     setStats(null);
     setSuiviInterrompu(null);
-    // Une nouvelle recherche repart d'une carte vide : sans cette remise à zéro,
-    // les entreprises du crawl précédent resteraient posées sur la nouvelle ville.
-    setPoints([]);
-    curseurPoints.current = 0;
-    setContour(null);
-    contourRecu.current = false;
     try {
       const res = await authedFetch("/api/gmaps/crawl", {
         method: "POST",
@@ -432,6 +515,7 @@ export const NewSearchPage: React.FC = () => {
           useMaps: values.useMaps,
           useSearch: values.useSearch,
           useGoogleApi: values.useGoogleApi,
+          tuilesMax: Number(values.tuilesMax),
           pagesCount: values.pagesCount ?? 0,
         }),
       });
@@ -448,11 +532,23 @@ export const NewSearchPage: React.FC = () => {
         throw new Error("Le scraper n'a pas renvoyé d'identifiant de job");
       }
       const data = parse.data;
-      toast.info("Recherche lancée");
       dernierStatutRef.current = data.status;
-      setLance({ motCle: values.keyword, lieu: values.location });
-      setJobId(data.jobId);
-      setStatus(data.status);
+      intitules.current.set(data.jobId, {
+        motCle: values.keyword,
+        lieu: values.location,
+      });
+      // Une recherche lancée pendant qu'une autre tourne part EN FILE côté
+      // scraper : on ne détourne pas la vue, on annonce l'ajout. La bascule se
+      // fera d'elle-même quand la précédente aura fini.
+      const dejaEnVol = !!jobId && !estStatutTerminal(status);
+      if (dejaEnVol) {
+        toast.info("Recherche ajoutée à la file");
+      } else {
+        toast.info("Recherche lancée");
+        setLance({ motCle: values.keyword, lieu: values.location });
+        setJobId(data.jobId);
+        setStatus(data.status);
+      }
     } catch (err) {
       console.error(err);
       const message =
@@ -561,6 +657,45 @@ export const NewSearchPage: React.FC = () => {
                     </Select>
                   )}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tuilesMax" className="text-gray-700 dark:text-gray-200">
+                  Étendue
+                </Label>
+                <Controller
+                  control={control}
+                  name="tuilesMax"
+                  render={({ field }) => (
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger className="dark:bg-gray-900 dark:text-gray-100">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Complète — toute la ville</SelectItem>
+                        <SelectItem value="3">Rapide — 3 zones</SelectItem>
+                        <SelectItem value="5">Rapide — 5 zones</SelectItem>
+                        <SelectItem value="10">Rapide — 10 zones</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {/*
+                  Ce n'est pas un échantillon au hasard : le robot va d'abord
+                  aux zones les plus éloignées les unes des autres, et deux
+                  zones voisines rendent largement les mêmes entreprises. Les
+                  zones sautées restent hachurées sur la carte, et la recherche
+                  est marquée « rapide » — on saura où revenir.
+                */}
+                {etendue !== "0" && (
+                  <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                    Le robot ne visitera que les <strong>{etendue} zones les plus
+                    éloignées</strong> les unes des autres : l'essentiel des
+                    entreprises, une fraction du temps. Les zones sautées restent
+                    visibles sur la carte, et la recherche est marquée «&nbsp;rapide&nbsp;»
+                    pour être reprise en détail plus tard.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -682,15 +817,15 @@ export const NewSearchPage: React.FC = () => {
                 </div>
               )}
 
-              <Button
-                type="submit"
-                className="w-full"
-                // Un job est « en vol » tant qu'il n'a pas atteint un état
-                // TERMINAL. Ne tester que `!== "done"` bloquait le bouton à vie
-                // sur un job en erreur ou partiel.
-                disabled={loading || (!!jobId && !estStatutTerminal(status))}
-              >
-                Lancer la recherche
+              {/*
+                Le bouton ne se bloque PLUS pendant un crawl : le scraper sait
+                empiler les demandes et n'en traite qu'une à la fois. C'est
+                précisément ce qui permet d'aligner plusieurs villes d'affilée.
+              */}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {!!jobId && !estStatutTerminal(status)
+                  ? "Ajouter à la file"
+                  : "Lancer la recherche"}
               </Button>
             </form>
 
@@ -748,14 +883,22 @@ export const NewSearchPage: React.FC = () => {
         </Card>
 
         {jobId && (
-          <div className="order-first w-full min-w-0 lg:order-none">
-            <SuiviRecherche
-              motCle={lance?.motCle ?? ""}
-              lieu={lance?.lieu ?? ""}
-              status={status}
-              stats={stats}
-              points={points}
-              contour={contour}
+          <div className="order-first w-full min-w-0 space-y-4 lg:order-none">
+            <SceneSuivi
+              courant={{
+                jobId,
+                motCle: lance?.motCle ?? "",
+                lieu: lance?.lieu ?? "",
+                status,
+                stats,
+                points,
+                contour,
+              }}
+            />
+            <FileRecherches
+              jobs={file}
+              jobAffiche={jobId}
+              onAfficher={(id) => setChoixManuel(id)}
             />
           </div>
         )}

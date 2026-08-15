@@ -51,6 +51,8 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points, contour }:
   const total = stats?.tilesTotal ?? 0;
   const part = avancement(faites, total);
   const grille = stats?.grille ?? null;
+  /** Passe rapide : moins de tuiles prévues que la grille n'en compte. */
+  const rapide = !!grille && total > 0 && total < grille.total;
   /**
    * Nom de la commune cherchée. On préfère celui qu'OpenStreetMap a reconnu
    * (« Limoges » extrait de « Limoges, Haute-Vienne, … ») à la saisie brute du
@@ -69,6 +71,17 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points, contour }:
           <b>{motCle || "Recherche"}</b>
           <span>{lieu}</span>
         </div>
+        {/*
+          Une passe rapide n'a pas exploré la ville, elle l'a échantillonnée.
+          Le dire ici évite de lire une carte à moitié hachurée comme un crawl
+          inachevé — et rappelle qu'il y a de quoi y revenir.
+        */}
+        {rapide && (
+          <span className="rlive-rapide" title="Seules les zones les plus éloignées les unes des autres ont été visitées.">
+            rapide · {nf.format(total)} zone{total > 1 ? "s" : ""} sur{" "}
+            {nf.format(grille?.total ?? 0)}
+          </span>
+        )}
       </header>
 
       <div className="rlive-progres">
@@ -102,6 +115,7 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points, contour }:
           mode={mode}
           onHorsCadre={setHorsCadre}
           contour={contour ?? null}
+          tuilesPrevues={grille?.tuilesPrevues ?? []}
           ville={villeCherchee}
         />
       ) : (
@@ -148,6 +162,12 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points, contour }:
           <i style={{ background: "var(--bg-2)" }} />
           explorée, rien trouvé
         </span>
+        {rapide && (
+          <span>
+            <i className="rlive-legende-sautee" />
+            sautée par la passe rapide
+          </span>
+        )}
         <span>
           <i style={{ background: "#5D99DD" }} />
           explorée, entreprises trouvées
