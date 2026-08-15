@@ -50,6 +50,7 @@ import { EnrichmentMetricsSettings } from './settings/EnrichmentMetricsSettings'
 import { EnrichmentReenrichSettings } from './settings/EnrichmentReenrichSettings';
 import { VilleSeoSettings } from './settings/VilleSeoSettings';
 import { MediaAutotagSettings } from './settings/MediaAutotagSettings';
+import { ExclusionTraficPanel } from './analytics/ExclusionTraficPanel';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -244,6 +245,8 @@ export const SettingsPage: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="preferences" className="space-y-6">
+          <ExclusionTraficPanel />
+
           <Card>
             <CardHeader>
               <CardTitle>Préférences de recherche</CardTitle>

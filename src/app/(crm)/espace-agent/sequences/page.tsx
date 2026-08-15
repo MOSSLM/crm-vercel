@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { authedFetch } from "@/utils/authedFetch";
+import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -460,14 +461,14 @@ export default function AgentSequencesPage() {
                           )}
                           {task.payload?.audit_url && (
                             <Button size="sm" variant="outline" asChild>
-                              <a href={task.payload.audit_url} target="_blank" rel="noreferrer">
+                              <a href={lienNonMesure(task.payload.audit_url)} target="_blank" rel="noreferrer">
                                 <ExternalLink className="mr-1 h-4 w-4" /> Audit
                               </a>
                             </Button>
                           )}
                           {task.payload?.demo_url && (
                             <Button size="sm" variant="outline" asChild>
-                              <a href={task.payload.demo_url} target="_blank" rel="noreferrer">
+                              <a href={lienNonMesure(task.payload.demo_url)} target="_blank" rel="noreferrer">
                                 <ExternalLink className="mr-1 h-4 w-4" /> Site démo
                               </a>
                             </Button>
