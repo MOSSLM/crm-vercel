@@ -26,7 +26,7 @@ const tableChain = (result: ChainResult = { data: null, error: null }) => {
   // il rend la chaîne pour qu'on puisse enchaîner `.eq(…).maybeSingle()`
   // derrière. Le faire résoudre directement cassait tout appel qui filtre sur
   // un statut avant de conclure.
-  for (const m of ['select', 'eq', 'in', 'not', 'lte', 'gte', 'order']) {
+  for (const m of ['select', 'eq', 'neq', 'in', 'not', 'lte', 'gte', 'order']) {
     c[m] = jest.fn(() => c);
   }
   c.limit = jest.fn(() => Promise.resolve(result));
@@ -338,6 +338,42 @@ describe('processSequenceEnrollment', () => {
     expect(tables.sequence_enrollments.captured.updates).toEqual([
       { next_run_at: null, send_at: null, hold_reason: null },
     ]);
+  });
+
+  it('ne repose pas la tâche quand l’étape en a déjà une — le ticker et le geste de l’agent se croisent', async () => {
+    // La fenêtre réelle : « il a répondu » avance l'inscription, pose
+    // `next_run_at = maintenant`, puis met deux à quatre secondes à créer la
+    // tâche. Le ticker passe pendant ce temps et retraite la même étape.
+    wire(sequenceWith('whatsapp'), {
+      prospection_tasks: tableChain({ data: [{ id: 'task-deja-la' }], error: null }),
+    });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(tables.prospection_tasks.captured.inserts).toEqual([]);
+    // L'inscription attend quand même le geste humain : la tâche existe, elle
+    // est simplement l'œuvre de l'autre chemin.
+    expect(tables.sequence_enrollments.captured.updates).toEqual([
+      { next_run_at: null, send_at: null, hold_reason: null },
+    ]);
+  });
+
+  it('laisse passer le doublon refusé par la base sans casser l’avancement', async () => {
+    // Les deux chemins ont lu avant que l'un ait écrit : c'est l'index unique
+    // qui tranche. Le perdant n'a rien à signaler — une seule tâche existe,
+    // c'est le résultat recherché.
+    const dejaPris = tableChain({ data: [], error: null });
+    dejaPris.insert = jest.fn(() => Promise.resolve({ data: null, error: { code: '23505' } }));
+    wire(sequenceWith('whatsapp'), { prospection_tasks: dejaPris });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(processSequenceEnrollment(enrollment)).resolves.toBeUndefined();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(tables.sequence_enrollments.captured.updates).toEqual([
+      { next_run_at: null, send_at: null, hold_reason: null },
+    ]);
+    warn.mockRestore();
   });
 
   it('bascule la tâche chez l’admin quand personne ne suit l’entreprise', async () => {
