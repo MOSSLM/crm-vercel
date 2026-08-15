@@ -37,6 +37,7 @@ import {
   CalendarDays,
   CalendarClock,
   Activity,
+  MapPin,
   Settings,
 } from "lucide-react";
 
@@ -90,6 +91,7 @@ export const SPACES: Space[] = [
     href: "/qualification",
     tools: [
       { title: "Démarchage", href: "/qualification", icon: Target },
+      { title: "Carte du territoire", href: "/carte", icon: MapPin },
       { title: "Qualifiés", href: "/qualified", icon: CheckCircle },
       { title: "Nouvelle recherche", href: "/search/new", icon: Search },
       { title: "Réseaux", href: "/networks", icon: Share2 },
@@ -208,6 +210,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/telephonie", "telephonie"],
 
   ["/qualification", "acquisition"],
+  ["/carte", "acquisition"],
   ["/qualified", "acquisition"],
   ["/search", "acquisition"],
   ["/networks", "acquisition"],

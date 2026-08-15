@@ -1,0 +1,647 @@
+/*
+ * carte.css — Carte du territoire.
+ *
+ * Tout est préfixé `carte-` et vit sous `.studio-surface`, qui fournit déjà
+ * .btn / .pill / .seg et les jetons de couleur : la carte n'invente que ce que
+ * le design system n'a pas (scène SVG, légende, panneau départemental) et
+ * hérite du reste, thème sombre compris.
+ */
+
+.carte-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+/* ── Bandeau de l'outil ── */
+.carte-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.carte-head-ico {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.carte-head-ttl {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.carte-head-ttl h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.carte-head-spec {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Deux colonnes : scène + panneau ── */
+.carte-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.carte-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+.carte-panel {
+  width: clamp(380px, 34vw, 520px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ── Barre d'outils de la carte ── */
+.carte-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.carte-find,
+.carte-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 31px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+.carte-find { min-width: 220px; }
+.carte-find:focus-within,
+.carte-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+.carte-find input,
+.carte-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.carte-search button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.carte-search button:hover { color: var(--text); }
+
+.carte-kpi {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  overflow: hidden;
+}
+.carte-k {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+.carte-k .l {
+  font-family: var(--font-family-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.carte-k .v {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+/* ── Scène ── */
+.carte-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f2f7fd, #e9f1fa);
+  touch-action: none;
+}
+.carte-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+.carte-svg:active { cursor: grabbing; }
+
+.carte-zoom[data-anime="true"] {
+  transition: transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.carte-geo { filter: url(#carte-lift); }
+.carte-blobs {
+  filter: url(#carte-soft);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.carte-lines,
+.carte-dots { pointer-events: none; }
+
+.carte-dep {
+  fill: #fff;
+  stroke: none;
+  transition: fill 0.12s;
+}
+.carte-dep:hover { fill: #e9f1fb; }
+.carte-dep[data-state="dim"] { fill: #fcfdfe; }
+.carte-dep[data-state="on"] { fill: #fff; }
+
+.carte-dline {
+  fill: none;
+  stroke: rgba(18, 40, 68, 0.2);
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.carte-dline[data-state="on"] {
+  stroke: #122844;
+  stroke-width: 1.6;
+}
+
+/*
+ * `r` en propriété CSS (et non en attribut) : c'est ce qui permet de
+ * contre-échelonner les pastilles pendant le zoom sans re-rendre les milliers
+ * de <circle>, le groupe zoomé n'ayant qu'un attribut `transform` à repeindre.
+ */
+.carte-blob {
+  r: calc(var(--carte-blob-r, 11px) / var(--carte-blob-scale, 1));
+  opacity: 0.16;
+}
+.carte-blob[data-dim="true"] { opacity: 0.04; }
+.carte-dot {
+  r: calc(var(--carte-dot-r, 2.2px) / var(--carte-dot-scale, 1));
+  stroke: #fff;
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.95;
+}
+.carte-dot[data-dim="true"] { opacity: 0.16; }
+.carte-dot[data-on="true"] {
+  stroke: #122844;
+  stroke-width: 1.6;
+  r: calc(var(--carte-dot-r, 2.2px) * 1.9 / var(--carte-dot-scale, 1));
+}
+
+.carte-loading {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-family-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.carte-err {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-family-base);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.carte-err b { font-size: 14px; color: var(--danger); }
+.carte-err .btn { margin-top: 6px; }
+
+/* ── Contrôles de zoom ── */
+.carte-zoomc {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.carte-zoomc button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: var(--shadow-card);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.carte-zoomc button:hover { border-color: var(--accent); color: var(--accent); }
+.carte-zoomc button.rz {
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+/* ── Infobulle département ── */
+.carte-tt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 204px;
+  z-index: 5;
+  pointer-events: none;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #122844;
+  color: #fff;
+  box-shadow: 0 18px 40px -14px rgba(10, 27, 51, 0.5);
+}
+.carte-tt .tt-t { display: flex; align-items: baseline; gap: 8px; }
+.carte-tt .tt-t b { font-size: 13px; font-weight: 600; }
+.carte-tt .tt-code {
+  margin-left: auto;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.carte-tt .tt-s { margin-top: 2px; font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+.carte-tt .tt-bars {
+  display: flex;
+  gap: 2px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.carte-tt .tt-bars i { border-radius: 99px; }
+.carte-tt .tt-l {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 7px;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.carte-tt .tt-l span { display: flex; align-items: center; gap: 4px; }
+.carte-tt .tt-l i { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ── Légende ── */
+.carte-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 46px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+}
+.carte-lg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: none;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.carte-lg:hover { background: var(--bg-2); border-color: var(--border-2); }
+.carte-lg i { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.carte-lg .n { font-size: 12.5px; color: var(--text); }
+.carte-lg .v { font-family: var(--font-family-mono); font-size: 11px; color: var(--text-3); }
+.carte-lg[data-off="true"] { opacity: 0.45; border-style: dashed; }
+.carte-lg[data-off="true"] i { background: var(--text-4) !important; }
+.carte-lg-choro {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+  padding-left: 16px;
+}
+.carte-lg-choro .sw { display: flex; gap: 2px; width: 132px; }
+.carte-lg-choro .sw i {
+  flex: 1;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+.carte-lg-choro .sc {
+  font-family: var(--font-family-mono);
+  font-size: 9.5px;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+.carte-lg-note {
+  margin-left: auto;
+  padding-left: 16px;
+  font-family: var(--font-family-mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--text-4);
+  text-align: right;
+  max-width: 320px;
+}
+
+/* ── Panneau ── */
+.carte-kicker {
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.carte-mono { font-family: var(--font-family-mono); font-size: 11px; }
+.carte-p-head {
+  flex-shrink: 0;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.carte-p-top { display: flex; align-items: flex-start; gap: 11px; }
+.carte-dcode {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: #122844;
+  color: #fff;
+  font-family: var(--font-family-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+.carte-p-ttl { min-width: 0; }
+.carte-p-ttl h2 {
+  margin: 0;
+  font-family: var(--font-family-serif);
+  font-size: 23px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.carte-p-ttl .s { margin-top: 2px; font-size: 11.5px; color: var(--text-3); }
+.carte-p-top .btn { margin-left: auto; flex-shrink: 0; }
+
+.carte-p-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+.carte-ps {
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.carte-ps .d {
+  position: absolute;
+  top: 10px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.carte-ps .v {
+  display: block;
+  font-family: var(--font-family-mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.carte-ps .l { display: block; margin-top: 1px; font-size: 10.5px; color: var(--text-3); }
+
+.carte-p-head .carte-search { margin-top: 11px; }
+
+.carte-p-hint {
+  margin: 14px 16px 4px;
+  padding: 11px 13px;
+  border: 1px dashed var(--border-2);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.carte-p-rank { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px 16px; }
+.carte-rk-h { display: flex; justify-content: space-between; padding: 8px 8px 6px; }
+.carte-rk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.carte-rk:hover { background: var(--bg-2); }
+.carte-rk .code {
+  width: 22px;
+  flex-shrink: 0;
+  font-family: var(--font-family-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.carte-rk .nm {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.carte-rk .nm em { display: block; font-style: normal; font-size: 10px; color: var(--text-4); }
+.carte-rk .num {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.carte-mini-bars {
+  display: flex;
+  gap: 2px;
+  width: 104px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--bg-3);
+}
+.carte-mini-bars i { border-radius: 99px; }
+
+.carte-p-table { flex: 1; min-height: 120px; overflow: auto; }
+.carte-p-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.carte-p-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 11px;
+  text-align: left;
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.carte-p-table td { padding: 8px 11px; border-bottom: 1px solid var(--border); }
+.carte-p-table tbody tr { cursor: pointer; }
+.carte-p-table tbody tr:hover { background: var(--hover); }
+.carte-p-table tbody tr[data-on="true"] { background: var(--accent-tint); }
+.carte-p-table .ctr { text-align: center; }
+.carte-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.carte-cell .n { font-size: 12.5px; font-weight: 500; color: var(--text); }
+.carte-cell .s { font-size: 10.5px; color: var(--text-3); }
+.carte-open {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--text-3);
+}
+.carte-open:hover { background: var(--accent-tint); color: var(--accent); }
+
+.carte-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.carte-tag i { width: 6px; height: 6px; border-radius: 50%; }
+
+.carte-p-detail {
+  flex-shrink: 0;
+  max-height: 44%;
+  overflow: auto;
+  padding: 13px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.carte-p-detail .dh { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+.carte-p-detail .dh b { font-size: 13.5px; color: var(--text); }
+.carte-p-detail .dh .t4 { margin-left: auto; color: var(--text-4); }
+.carte-kv {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 7px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.carte-kv dt { color: var(--text-3); }
+.carte-kv dd { margin: 0; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.carte-kv dd a { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); }
+.carte-kv dd a:hover { text-decoration: underline; }
+.carte-kv .t3 { color: var(--text-3); }
+.carte-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.carte-da { display: flex; gap: 7px; margin-top: 13px; }
+
+.carte-p-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface);
+}
+
+.carte-empty { padding: 28px 16px; text-align: center; }
+.carte-empty h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--text); }
+.carte-empty p { margin: 0; font-size: 12px; color: var(--text-3); }
+
+/* ── Thème sombre : seul le fond « papier » de la scène change ── */
+.dark .carte-stage {
+  background: linear-gradient(180deg, #0a1b33, #071426);
+}
+.dark .carte-dep { fill: #10243f; }
+.dark .carte-dep:hover { fill: #17314f; }
+.dark .carte-dep[data-state="dim"] { fill: #0d1e36; }
+.dark .carte-dep[data-state="on"] { fill: #17314f; }
+.dark .carte-dline { stroke: rgba(232, 240, 250, 0.22); }
+.dark .carte-dline[data-state="on"] { stroke: #e8f0fa; }
+.dark .carte-dot { stroke: #071426; }
+.dark .carte-dot[data-on="true"] { stroke: #e8f0fa; }
+.dark .carte-blobs { mix-blend-mode: screen; }
+.dark .carte-zoomc button { background: rgba(10, 27, 51, 0.92); }
+.dark .carte-dcode,
+.dark .carte-tt { background: #14304f; }
+
+/* ── Étroit : le panneau passe sous la carte ── */
+@media (max-width: 1100px) {
+  .carte-body { flex-direction: column; }
+  .carte-panel {
+    width: auto;
+    max-height: 46%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .carte-main { min-height: 380px; }
+  .carte-kpi .carte-k:nth-child(n + 3) { display: none; }
+  .carte-lg-note { display: none; }
+}
