@@ -542,8 +542,12 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
       body = hydrateReviews(body, variables["__reviews"]);
       // Même passage que le rendu publié : l'aperçu doit montrer le vrai lien
       // vers la fiche Google du client, pas la recherche générique que portent
-      // les designs déjà générés.
-      body = corrigerLiensAvis(body, variables["entreprise.avis_url"]);
+      // les designs déjà générés — et à défaut de fiche, la recherche au nom de
+      // l'entreprise.
+      body = corrigerLiensAvis(body, variables["entreprise.avis_url"], {
+        nom: variables["entreprise.nom"],
+        ville: variables["entreprise.ville"],
+      });
       body = hydrateStats(body, variables["__stats"]);
       // Certifications : contrairement aux stats, l'absence SUPPRIME le bloc.
       // Un logo RGE est une allégation, pas une décoration.

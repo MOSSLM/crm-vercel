@@ -1,44 +1,52 @@
 "use client";
 
+import { useMemo } from "react";
 import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
 import type { DemarchageQueueMeta, DemarchageTask } from "./types";
 import {
   DAILY_QUOTA,
+  SIGNAL_LABEL,
+  SIGNAL_ORDER,
   countByKind,
+  countBySignal,
   isLate,
-  type DemarchageBucketKey,
-  type DemarchageBuckets,
+  signalOf,
+  type DemarchageDay,
+  type DemarchageSignal,
 } from "@/lib/agent-portal/demarchage-buckets";
 
-/** Les jours de la file — mêmes libellés que la maquette, dates réelles.
- *  Les deux premiers onglets ne sont pas des jours mais des signaux mesurés :
- *  un prospect qui vient de rouvrir sa démo prime sur n'importe quelle
- *  échéance décidée à l'avance.
+/**
+ * Le filtre courant de la file : « tout », un canal, ou un signal.
  *
- *  Il n'y a PLUS d'onglet « Retard » : la file ne planifie plus à l'heure mais
- *  à la cadence, et une relance en retard repart simplement en tête du plan du
- *  jour. Le retard reste dit, mais sur la ligne concernée. */
-export const DAY_TABS: { id: DemarchageBucketKey; lb: string }[] = [
-  { id: "missed", lb: "Non rappelés" },
-  { id: "conversation", lb: "En discussion" },
-  { id: "hot", lb: "Chauds" },
-  { id: "today", lb: "Aujourd'hui" },
-  { id: "tomorrow", lb: "Demain" },
-  { id: "week", lb: "Cette semaine" },
-  { id: "later", lb: "Plus tard" },
-];
+ * Les trois signaux étaient des ONGLETS à côté des jours ; ils sont passés ici
+ * parce que ce sont des manières de trier la journée, pas des journées. La
+ * barre du haut ne dit plus que des dates.
+ */
+export type DemFilter = "all" | DemarchageSignal | string;
 
-const FILTERS: [string, string][] = [
-  ["all", "Tout"],
-  ["call", "Appels"],
-  ["msg", "Messages"],
-  ["wait", "Attentes"],
-];
+/** Ce qui rend un canal ou un signal cliquable dans la barre de filtres. */
+type Chip = { id: DemFilter; lb: string; n: number; tone?: "conv" | "hot" | "missed" };
 
-/** Les jours que le plan remplit — les deux paniers de signal ignorent la cadence. */
-const PLANNED: DemarchageBucketKey[] = ["today", "tomorrow", "week", "later"];
+/**
+ * Les canaux, dans l'ordre où on veut les proposer, avec leur libellé au
+ * pluriel. Un canal absent de cette table reste filtrable : il prend le libellé
+ * de `demCh`. C'est ce qui fait que le jour où une étape e-mail apparaît dans
+ * une séquence, sa pastille arrive toute seule dans la barre.
+ */
+const KIND_ORDER: readonly string[] = ["call", "whatsapp", "email", "linkedin", "sms", "wait"] as const;
+const KIND_LABEL: Record<string, string> = {
+  call: "Appels",
+  whatsapp: "WhatsApp",
+  email: "E-mails",
+  linkedin: "LinkedIn",
+  sms: "SMS",
+  wait: "Attentes",
+};
+
+const toneOf = (s: DemarchageSignal): Chip["tone"] =>
+  s === "conversation" ? "conv" : s === "hot" ? "hot" : "missed";
 
 /** Durée d'engagement, lisible d'un coup d'œil. */
 const dureeCourte = (sec: number) =>
@@ -54,17 +62,30 @@ function jourRelatif(iso: string): string {
   return `il y a ${j} j`;
 }
 
-/** Sous-titre du bloc session : la date réelle du jour regardé. */
-function dayLabel(day: DemarchageBucketKey): string {
-  const d = new Date();
-  if (day === "tomorrow") d.setDate(d.getDate() + 1);
-  const fmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" });
-  if (day === "missed") return "signal chaud jamais rappelé";
-  if (day === "conversation") return "ils ont répondu — à traiter maintenant";
-  if (day === "hot") return "signaux d'intention du moment";
-  if (day === "week") return "les 7 prochains jours";
-  if (day === "later") return "au-delà";
-  return fmt.format(d);
+const dateFr = (iso: string, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", ...opts }).format(new Date(`${iso}T12:00:00Z`));
+
+/**
+ * L'étiquette d'un onglet de jour : une DATE, et rien d'autre.
+ *
+ * « Auj. 15 » plutôt que « Aujourd'hui » : la barre tient jusqu'à quatre jours
+ * dans les 286 px du rail sans tronquer, et au-delà elle défile. Le titre
+ * complet reste en infobulle.
+ */
+function tabLabel(day: DemarchageDay<DemarchageTask>): string {
+  const jour = dateFr(day.date, { day: "numeric" });
+  if (day.offset === 0) return `Auj. ${jour}`;
+  if (day.offset === 1) return `Dem. ${jour}`;
+  return dateFr(day.date, { weekday: "short", day: "numeric" });
+}
+
+/** Le sous-titre du bloc session : la date réelle du jour regardé, en toutes lettres. */
+function dayTitle(day: DemarchageDay<DemarchageTask> | undefined): string {
+  if (!day) return "—";
+  const complet = dateFr(day.date, { weekday: "long", day: "numeric", month: "long" });
+  if (day.offset === 0) return `aujourd'hui, ${complet}`;
+  if (day.offset === 1) return `demain, ${complet}`;
+  return complet;
 }
 
 /**
@@ -109,11 +130,13 @@ function Tile({
 }
 
 export function DemRail({
-  buckets,
+  days,
   day,
   setDay,
   filt,
   setFilt,
+  step,
+  setStep,
   tasks,
   meta,
   agentName,
@@ -121,12 +144,16 @@ export function DemRail({
   sel,
   onPick,
 }: {
-  buckets: DemarchageBuckets<DemarchageTask>;
-  day: DemarchageBucketKey;
-  setDay: (d: DemarchageBucketKey) => void;
-  filt: string;
-  setFilt: (f: string) => void;
-  /** La liste RÉELLEMENT affichée : le panier du jour, passé au filtre de canal. */
+  days: Array<DemarchageDay<DemarchageTask>>;
+  /** Date civile (YYYY-MM-DD) du jour affiché. */
+  day: string;
+  setDay: (d: string) => void;
+  filt: DemFilter;
+  setFilt: (f: DemFilter) => void;
+  /** Étape de séquence filtrée, `null` = toutes. */
+  step: number | null;
+  setStep: (s: number | null) => void;
+  /** La liste RÉELLEMENT affichée : le jour choisi, passé aux filtres. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
   agentName: string | null;
@@ -134,17 +161,79 @@ export function DemRail({
   sel: string | null;
   onPick: (id: string) => void;
 }) {
-  // Les tuiles comptent le panier ENTIER, pas la liste filtrée : cliquer
+  const courant = days.find((d) => d.date === day) ?? days[0];
+  const duJour = useMemo(() => courant?.tasks ?? [], [courant]);
+
+  // Les compteurs regardent la journée ENTIÈRE, pas la liste filtrée : cliquer
   // « Appels » ne doit pas faire tomber le compteur Messages à zéro.
-  const parCanal = countByKind(buckets[day]);
-  const planifie = PLANNED.includes(day);
+  //
+  // Les TUILES, elles, ne comptent que les premiers contacts : c'est ce que la
+  // cadence plafonne, et la tuile « Discussion en cours » compte le reste. Sans
+  // cette séparation, répondre à trois prospects gonflait le compteur de
+  // démarchage de trois et faisait afficher « 23/20 ».
+  const { parCanal, parSignal, cadenceParCanal } = useMemo(
+    () => ({
+      parCanal: countByKind(duJour),
+      parSignal: countBySignal(duJour),
+      cadenceParCanal: countByKind(duJour.filter((t) => signalOf(t) !== "conversation")),
+    }),
+    [duJour],
+  );
   /** Le jour en cours : c'est le seul où « fait » veut dire quelque chose. */
-  const cejour = day === "today";
+  const cejour = courant?.offset === 0;
 
   // Ce qui, du même canal, a été renvoyé aux jours suivants faute de place —
   // la moitié de l'explication du chiffre affiché.
-  const apres = PLANNED.slice(PLANNED.indexOf(day) + 1);
-  const reporte = planifie ? countByKind(apres.flatMap((k) => buckets[k])) : {};
+  const apres = days.filter((d) => d.offset > (courant?.offset ?? 0));
+  const reporte = countByKind(apres.flatMap((d) => d.tasks));
+
+  /**
+   * Les pastilles de filtre, déduites des tâches RÉELLEMENT présentes ce
+   * jour-là. Une file sans LinkedIn n'affiche pas de pastille LinkedIn : un
+   * filtre qui ne peut rien retirer est du bruit, et c'est exactement ce que
+   * demandait la barre figée « Tout · Appels · Messages · Attentes ».
+   */
+  const chips = useMemo<Chip[]>(() => {
+    const out: Chip[] = [{ id: "all", lb: "Tout", n: duJour.length }];
+    const kinds = Object.keys(parCanal).filter((k) => k && parCanal[k] > 0);
+    kinds.sort((a, b) => {
+      const ia = KIND_ORDER.indexOf(a);
+      const ib = KIND_ORDER.indexOf(b);
+      return (ia < 0 ? KIND_ORDER.length : ia) - (ib < 0 ? KIND_ORDER.length : ib);
+    });
+    for (const k of kinds) out.push({ id: k, lb: KIND_LABEL[k] ?? demCh(k).lb, n: parCanal[k] });
+    for (const s of SIGNAL_ORDER) {
+      if (parSignal[s] > 0) out.push({ id: s, lb: SIGNAL_LABEL[s], n: parSignal[s], tone: toneOf(s) });
+    }
+    return out;
+  }, [duJour, parCanal, parSignal]);
+
+  /**
+   * Les étapes de séquence présentes ce jour-là.
+   *
+   * Sans elles, une file de quinze WhatsApp se lit comme quinze fois la même
+   * chose : rien ne distingue un premier contact d'une quatrième relance, alors
+   * que ce n'est ni le même message ni le même prospect. On ne propose le tri
+   * qu'à partir de deux étapes distinctes — sinon il ne trie rien.
+   */
+  const etapes = useMemo(() => {
+    const set = new Set<number>();
+    for (const t of duJour) {
+      const i = t.sequence?.stepIndex;
+      if (typeof i === "number" && Number.isFinite(i)) set.add(i);
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [duJour]);
+
+  const nb = meta.done_today;
+  // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui.
+  const aujourdhui = days.find((d) => d.offset === 0)?.tasks.length ?? 0;
+  const tot = nb + aujourdhui;
+
+  // Les discussions vivent toutes dans la journée du jour — c'est là qu'on les
+  // compte, et non dans la journée regardée : « trois prospects attendent une
+  // réponse » ne doit pas disparaître parce qu'on jette un œil à demain.
+  const nbDiscussion = countBySignal(days.find((d) => d.offset === 0)?.tasks ?? []).conversation;
 
   /**
    * La tuile d'un canal plafonné.
@@ -153,9 +242,9 @@ export function DemRail({
    * Ailleurs : ce que le jour contient, et ce qui a débordé au-delà.
    */
   const tuileCadence = (ic: string, lb: string, kind: string) => {
-    const prevu = parCanal[kind] ?? 0;
+    const prevu = cadenceParCanal[kind] ?? 0;
     const fait = meta.done_today_by_kind[kind] ?? 0;
-    const quota = planifie ? DAILY_QUOTA[kind] ?? null : null;
+    const quota = DAILY_QUOTA[kind] ?? null;
     const debord = reporte[kind] ?? 0;
     return cejour ? (
       <Tile ic={ic} lb={lb} n={fait} quota={quota} sub={prevu > 0 ? `${prevu} à faire` : null} />
@@ -164,24 +253,10 @@ export function DemRail({
     );
   };
 
-  const nb = meta.done_today;
-  // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui —
-  // discussions et signaux compris, eux aussi se traitent le jour même.
-  const tot =
-    nb +
-    buckets.today.length +
-    buckets.conversation.length +
-    buckets.hot.length +
-    buckets.missed.length;
-
-  const nbLinkedin = parCanal.linkedin ?? 0;
-  const nbWait = parCanal.wait ?? 0;
-  const nbDiscussion = buckets.conversation.length;
-
   return (
     <aside className="dm-rail">
       <div className="dm-sess">
-        <div className="lb">Ma file · {dayLabel(day)}</div>
+        <div className="lb">Ma file · {dayTitle(courant)}</div>
         <div className="vl">
           {nb}
           <span>/{tot}</span>
@@ -209,52 +284,79 @@ export function DemRail({
           />
           {/* LinkedIn et les attentes n'apparaissent que s'il y en a : une
               tuile vide sur un canal qu'on n'utilise pas est du bruit. */}
-          {nbLinkedin > 0 && tuileCadence("linkedin", "LinkedIn", "linkedin")}
-          {nbWait > 0 && <Tile ic="clock" lb="Attentes" n={nbWait} quota={null} />}
+          {(cadenceParCanal.linkedin ?? 0) > 0 && tuileCadence("linkedin", "LinkedIn", "linkedin")}
+          {(cadenceParCanal.wait ?? 0) > 0 && (
+            <Tile ic="clock" lb="Attentes" n={cadenceParCanal.wait ?? 0} quota={null} />
+          )}
         </div>
-        {planifie && (
+        <div className="cad">
+          <Icon name="info" className="ico-xs" />
+          cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} premiers contacts WhatsApp par
+          jour — le surplus part au lendemain. Les discussions en cours ne comptent pas.
+        </div>
+        {nbDiscussion > 0 && (
           <div className="cad">
-            <Icon name="info" className="ico-xs" />
-            cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} premiers contacts WhatsApp par
-            jour — le surplus part au lendemain. Les discussions en cours ne comptent pas.
-          </div>
-        )}
-        {day === "conversation" && (
-          <div className="cad">
-            <Icon name="info" className="ico-xs" />
-            Ils ont répondu : on répond à ce qui vient, sans plafond ni report.
+            <Icon name="message" className="ico-xs" />
+            {nbDiscussion} ont répondu : on répond à ce qui vient, sans plafond ni report.
           </div>
         )}
       </div>
 
+      {/* Des DATES, rien que des dates. Les signaux qui squattaient cette barre
+          sont passés en pastilles juste en dessous : à sept onglets dans 286 px
+          on ne lisait plus que la première lettre de chacun. */}
       <div className="dm-days" role="tablist" aria-label="Jour de la file">
-        {DAY_TABS.map((d) => {
-          const n = buckets[d.id].length;
-          return (
-            <button
-              key={d.id}
-              type="button"
-              role="tab"
-              className="dm-day"
-              aria-selected={day === d.id}
-              data-live={d.id === "conversation" ? "1" : undefined}
-              onClick={() => setDay(d.id)}
-            >
-              <span className="l">{d.lb}</span>
-              {/* Rien à faire ce jour-là : on l'écrit « — », pas « 0 act. ». */}
-              <span className="n">{n > 0 ? `${n} act.` : "—"}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="dm-filt">
-        {FILTERS.map(([id, lb]) => (
-          <button key={id} className="dm-chip" aria-pressed={filt === id} onClick={() => setFilt(id)}>
-            {lb}
+        {days.map((d) => (
+          <button
+            key={d.date}
+            type="button"
+            role="tab"
+            className="dm-day"
+            aria-selected={day === d.date}
+            title={dayTitle(d)}
+            onClick={() => setDay(d.date)}
+          >
+            <span className="l">{tabLabel(d)}</span>
+            {/* Rien à faire ce jour-là : on l'écrit « — », pas « 0 act. ». */}
+            <span className="n">{d.tasks.length > 0 ? `${d.tasks.length} act.` : "—"}</span>
           </button>
         ))}
       </div>
+
+      <div className="dm-filt">
+        {chips.map((c) => (
+          <button
+            key={c.id}
+            className="dm-chip"
+            data-tone={c.tone}
+            aria-pressed={filt === c.id}
+            onClick={() => setFilt(c.id)}
+          >
+            {c.lb}
+            <span className="n">{c.n}</span>
+          </button>
+        ))}
+      </div>
+
+      {etapes.length > 1 && (
+        <div className="dm-filt steps">
+          <span className="lb">Étape</span>
+          <button className="dm-chip" aria-pressed={step === null} onClick={() => setStep(null)}>
+            toutes
+          </button>
+          {etapes.map((e) => (
+            <button
+              key={e}
+              className="dm-chip"
+              aria-pressed={step === e}
+              onClick={() => setStep(step === e ? null : e)}
+              title={`Étape ${e} de séquence`}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="dm-fr">
         <div className="dm-fr-h">
@@ -281,9 +383,8 @@ export function DemRail({
             `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim() ||
             "Prospect";
           const state = t.id === sel ? "now" : "next";
-          const missed = t.intent?.missed === true;
-          const hot = t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
-          const heat = missed ? "missed" : hot ? "hot" : undefined;
+          const signal = signalOf(t);
+          const heat = signal === "missed" ? "missed" : signal === "hot" ? "hot" : undefined;
           const late = isLate(t);
           return (
             <div
@@ -291,6 +392,7 @@ export function DemRail({
               className="dm-tk"
               data-s={state}
               data-heat={heat}
+              data-conv={signal === "conversation" ? "1" : undefined}
               aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
             >
@@ -315,9 +417,16 @@ export function DemRail({
                     <Icon name={ch.ic} className="ico-xs" />
                     {ch.lb}
                   </span>
+                  {/* L'ÉTAPE, en évidence. « WhatsApp » tout seul ne dit pas si
+                      c'est un premier contact ou une quatrième relance — deux
+                      lignes identiques à l'œil pour deux situations opposées. */}
                   {t.sequence?.stepIndex != null && (
-                    <span className="st">étape {t.sequence.stepIndex}</span>
+                    <span className="st stp">
+                      étape {t.sequence.stepIndex}
+                      {t.sequence.totalSteps > 0 ? `/${t.sequence.totalSteps}` : ""}
+                    </span>
                   )}
+                  {signal === "conversation" && <span className="st conv">a répondu</span>}
                   {late && <span className="st late">échéance passée</span>}
                 </div>
                 {/* Ce que le prospect a fait de sa démo : l'information qui
@@ -326,7 +435,7 @@ export function DemRail({
                 {t.intent && t.intent.sessions > 0 && (
                   <div className="vu" data-heat={heat}>
                     <Icon name="eye" className="ico-xs" />
-                    {missed && t.intent.daysSinceVisit != null
+                    {signal === "missed" && t.intent.daysSinceVisit != null
                       ? `Chaud depuis ${t.intent.daysSinceVisit} j, jamais rappelé`
                       : `Démo vue ${t.intent.sessions}×${
                           t.intent.engagementSec > 0 ? ` · ${dureeCourte(t.intent.engagementSec)}` : ""

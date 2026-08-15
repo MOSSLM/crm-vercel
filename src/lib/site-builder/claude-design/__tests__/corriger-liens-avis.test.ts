@@ -99,11 +99,50 @@ describe("corrigerLiensAvis", () => {
     expect(out.match(new RegExp(FICHE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(2);
   });
 
-  it("ne fait rien sans URL de fiche — mieux vaut le lien bancal qu'un href vide", () => {
+  it("ne fait rien sans fiche NI nom — mieux vaut le lien bancal qu'un href vide", () => {
     const html = `<a href="https://www.google.com/search?q=avis">Avis</a>`;
     expect(corrigerLiensAvis(html, null)).toBe(html);
     expect(corrigerLiensAvis(html, "")).toBe(html);
     expect(corrigerLiensAvis(html, "   ")).toBe(html);
+    expect(corrigerLiensAvis(html, null, { nom: "  ", ville: "Bordeaux" })).toBe(html);
+  });
+
+  it("sans fiche, cherche l'entreprise et sa ville au lieu du mot « avis »", () => {
+    const html = `<a href="https://www.google.com/search?q=avis">Voir tous les avis</a>`;
+    const out = corrigerLiensAvis(html, null, { nom: "Climat Gaz", ville: "Bordeaux" });
+    expect(out).toContain(`href="https://www.google.com/search?q=Climat%20Gaz%20Bordeaux"`);
+  });
+
+  it("sans ville connue, la recherche de repli se fait sur le seul nom", () => {
+    const html = `<a href="https://www.google.com/search?q=avis">Avis</a>`;
+    const out = corrigerLiensAvis(html, null, { nom: "Climat Gaz", ville: null });
+    expect(out).toContain(`href="https://www.google.com/search?q=Climat%20Gaz"`);
+  });
+
+  it("le repli d'un lien cartographique reste cartographique", () => {
+    const html = `<a href="https://www.google.fr/maps/search/avis">Sur la carte</a>`;
+    const out = corrigerLiensAvis(html, null, { nom: "Climat Gaz", ville: "Bordeaux" });
+    expect(out).toContain(`href="https://www.google.com/maps/search/Climat%20Gaz%20Bordeaux"`);
+  });
+
+  it("le repli ouvre aussi dans un nouvel onglet", () => {
+    const html = `<a href="https://www.google.com/search?q=avis">Avis</a>`;
+    const out = corrigerLiensAvis(html, null, { nom: "Climat Gaz", ville: "Bordeaux" });
+    expect(out).toContain('target="_blank"');
+    expect(out).toContain('rel="noopener noreferrer"');
+  });
+
+  it("la fiche l'emporte toujours sur le repli", () => {
+    const html = `<a href="https://www.google.com/search?q=avis">Avis</a>`;
+    const out = corrigerLiensAvis(html, FICHE, { nom: "Climat Gaz", ville: "Bordeaux" });
+    expect(out).toContain(`href="${FICHE}"`);
+    expect(out).not.toContain("q=Climat");
+  });
+
+  it("le marqueur explicite suit le repli quand il n'y a pas de fiche", () => {
+    const html = `<a data-avis-lien href="#">Nos avis</a>`;
+    const out = corrigerLiensAvis(html, null, { nom: "Climat Gaz", ville: "Bordeaux" });
+    expect(out).toContain(`href="https://www.google.com/search?q=Climat%20Gaz%20Bordeaux"`);
   });
 
   it("retourne le HTML tel quel quand il n'y a rien à corriger", () => {

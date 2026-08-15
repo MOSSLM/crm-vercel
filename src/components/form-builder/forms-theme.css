@@ -8,10 +8,10 @@
 
 [data-form-builder] {
   /* Warm neutral — Linear/Notion-ish, with warmth for HVAC/solar */
-  --bg: #F7FAFD;
-  --bg-2: #EFF5FC;
+  --bg: #F8F8F9;
+  --bg-2: #F1F2F4;
   --surface: #FFFFFF;
-  --surface-2: #F3F8FD;
+  --surface-2: #F5F6F8;
   --hover: rgba(18, 40, 68, 0.04);
   --hover-2: rgba(18, 40, 68, 0.07);
   --border: rgba(18, 40, 68, 0.08);

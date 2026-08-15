@@ -1,17 +1,16 @@
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
-import { DemRail } from "../DemRail";
-import { DAILY_QUOTA, bucketTasks } from "@/lib/agent-portal/demarchage-buckets";
-import type { DemarchageBucketKey } from "@/lib/agent-portal/demarchage-buckets";
+import { DemRail, type DemFilter } from "../DemRail";
+import { DAILY_QUOTA, planTasks, signalOf } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemarchageTask } from "../types";
 
 /**
- * La file annonce une CADENCE, pas un horaire.
+ * La file annonce une CADENCE, pas un horaire — et une DATE, pas un panier.
  *
  * Ce qui est vérifié ici est exactement ce qui était faux avant : une heure
  * inventée par le moteur sur chaque ligne, un compteur par canal qui suivait le
- * filtre affiché au lieu de la journée réelle, et l'emoji d'intention collé au
- * nom de l'entreprise.
+ * filtre affiché au lieu de la journée réelle, l'emoji d'intention collé au nom
+ * de l'entreprise, et sept onglets illisibles là où on n'attend que des jours.
  */
 
 const NOW = new Date("2026-08-13T10:00:00Z");
@@ -40,23 +39,44 @@ function task(over: Partial<DemarchageTask> & { id: string }): DemarchageTask {
 const lot = (kind: DemarchageTask["kind"], n: number) =>
   Array.from({ length: n }, (_, i) => task({ id: `${kind}-${i}`, kind }));
 
+/** Une étape de séquence, telle que `/api/agent/tasks` la renvoie. */
+const etape = (stepIndex: number, totalSteps = 5): DemarchageTask["sequence"] => ({
+  name: "Artisans — 5 touches",
+  stepLabel: `Étape ${stepIndex}`,
+  stepIndex,
+  totalSteps,
+  steps: [],
+});
+
 function renderRail(
   tasks: DemarchageTask[],
   {
-    day = "today" as DemarchageBucketKey,
+    offset = 0,
+    filt = "all" as DemFilter,
+    step = null as number | null,
     doneToday = {} as Record<string, number>,
     doneConversation = 0,
   } = {},
 ) {
-  const buckets = bucketTasks(tasks, { now: NOW, timeZone: "UTC", doneToday });
+  const days = planTasks(tasks, { now: NOW, timeZone: "UTC", doneToday });
+  const journee = days.find((d) => d.offset === offset) ?? days[0];
+  const shown = journee.tasks.filter((t) => {
+    if (step != null && t.sequence?.stepIndex !== step) return false;
+    if (filt === "all") return true;
+    return filt === "missed" || filt === "conversation" || filt === "hot"
+      ? signalOf(t) === filt
+      : t.kind === filt;
+  });
   const { container } = render(
     <DemRail
-      buckets={buckets}
-      day={day}
+      days={days}
+      day={journee.date}
       setDay={jest.fn()}
-      filt="all"
+      filt={filt}
       setFilt={jest.fn()}
-      tasks={buckets[day]}
+      step={step}
+      setStep={jest.fn()}
+      tasks={shown}
       meta={{
         done_today: 0,
         done_today_by_kind: doneToday,
@@ -77,6 +97,8 @@ function renderRail(
     frise: el(".dm-fr"),
     /** Une tuile par son libellé (« Appels », « WhatsApp »…). */
     tuile: (lb: string) => within(el(".dm-sess .mini")).getByText(lb).closest<HTMLElement>("div")!,
+    /** Les pastilles de filtre, dans l'ordre. */
+    pastilles: () => Array.from(container.querySelectorAll(".dm-filt .dm-chip")),
   };
 }
 
@@ -110,7 +132,7 @@ describe("DemRail — la cadence du jour", () => {
   });
 
   it("annonce sur demain ce qui a débordé du jour", () => {
-    const { tuile } = renderRail(lot("whatsapp", 25), { day: "tomorrow" });
+    const { tuile } = renderRail(lot("whatsapp", 25), { offset: 1 });
     const wa = tuile("WhatsApp 1er contact");
     expect(within(wa).getByText(String(25 - DAILY_QUOTA.whatsapp))).toBeInTheDocument();
   });
@@ -124,13 +146,10 @@ describe("DemRail — la cadence du jour", () => {
     expect(within(appels).queryByText(/à faire/)).toBeNull();
   });
 
-  it("compte le panier entier, pas la liste filtrée", () => {
-    const { tuile } = renderRail([...lot("call", 4), ...lot("whatsapp", 6)], { day: "tomorrow" });
-    // Rien demain : les deux canaux tiennent aujourd'hui.
-    expect(within(tuile("Appels")).getByText("0")).toBeInTheDocument();
-    const auj = renderRail([...lot("call", 4), ...lot("whatsapp", 6)]);
-    expect(within(auj.tuile("Appels")).getByText("4 à faire")).toBeInTheDocument();
-    expect(within(auj.tuile("WhatsApp 1er contact")).getByText("6 à faire")).toBeInTheDocument();
+  it("compte la journée entière, pas la liste filtrée", () => {
+    const { tuile } = renderRail([...lot("call", 4), ...lot("whatsapp", 6)], { filt: "call" });
+    expect(within(tuile("Appels")).getByText("4 à faire")).toBeInTheDocument();
+    expect(within(tuile("WhatsApp 1er contact")).getByText("6 à faire")).toBeInTheDocument();
   });
 
   it("laisse le reste à faire tomber à zéro quand la journée est bouclée", () => {
@@ -142,12 +161,6 @@ describe("DemRail — la cadence du jour", () => {
     expect(within(wa).queryByText(/à faire/)).toBeNull();
   });
 
-  it("écrit « — » pour un jour vide plutôt que « 0 act. »", () => {
-    renderRail(lot("whatsapp", 3));
-    // « Demain » est vide : 3 WhatsApp tiennent tous aujourd'hui.
-    expect(within(screen.getByRole("tab", { name: /Demain/ })).getByText("—")).toBeInTheDocument();
-  });
-
   it("signale l'échéance dépassée sur la ligne, faute d'onglet « Retard »", () => {
     const { frise } = renderRail([task({ id: "vieux", due_at: "2026-08-01T09:00:00.000Z" })]);
     expect(within(frise).getByText("échéance passée")).toBeInTheDocument();
@@ -155,7 +168,103 @@ describe("DemRail — la cadence du jour", () => {
   });
 });
 
-describe("DemRail — le panier « En discussion »", () => {
+describe("DemRail — la barre du haut ne dit que des dates", () => {
+  it("nomme les onglets par leur date, pas par un panier", () => {
+    renderRail(lot("whatsapp", 25));
+    const onglets = screen.getAllByRole("tab").map((b) => b.querySelector(".l")?.textContent);
+    expect(onglets).toEqual(["Auj. 13", "Dem. 14"]);
+  });
+
+  it("date les journées au-delà de demain par leur jour de semaine", () => {
+    renderRail(lot("whatsapp", DAILY_QUOTA.whatsapp * 3));
+    const onglets = screen.getAllByRole("tab").map((b) => b.querySelector(".l")?.textContent);
+    expect(onglets).toEqual(["Auj. 13", "Dem. 14", "sam. 15"]);
+  });
+
+  it("ne montre plus les signaux comme des jours", () => {
+    renderRail([
+      task({ id: "d", in_conversation: true }),
+      task({ id: "c", kind: "call", intent: { ...INTENT, callWhen: "maintenant" } }),
+    ]);
+    expect(screen.queryByRole("tab", { name: /discussion/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Chauds/ })).toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+
+  it("n'ouvre pas d'onglet pour un jour vide", () => {
+    // 3 WhatsApp tiennent tous aujourd'hui : demain n'existe pas.
+    renderRail(lot("whatsapp", 3));
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+});
+
+describe("DemRail — les pastilles suivent les tâches du jour", () => {
+  const libelles = (chips: Element[]) =>
+    chips.map((c) => c.textContent?.replace(/\d+$/, "").trim());
+
+  it("ne propose que les canaux réellement présents", () => {
+    const { pastilles } = renderRail([...lot("call", 2), ...lot("whatsapp", 3)]);
+    expect(libelles(pastilles())).toEqual(["Tout", "Appels", "WhatsApp"]);
+  });
+
+  it("fait apparaître un canal dès qu'une tâche l'utilise", () => {
+    const { pastilles } = renderRail([
+      ...lot("whatsapp", 2),
+      task({ id: "li", kind: "linkedin" }),
+      task({ id: "w", kind: "wait" }),
+    ]);
+    expect(libelles(pastilles())).toEqual(["Tout", "WhatsApp", "LinkedIn", "Attentes"]);
+  });
+
+  it("ajoute « En discussion » aux pastilles, là où c'était un onglet", () => {
+    const { pastilles } = renderRail([...lot("whatsapp", 2), task({ id: "d", in_conversation: true })]);
+    expect(libelles(pastilles())).toContain("En discussion");
+  });
+
+  it("compte ce que chaque pastille retiendra", () => {
+    const { pastilles } = renderRail([...lot("call", 2), ...lot("whatsapp", 3)]);
+    expect(pastilles().map((c) => c.querySelector(".n")?.textContent)).toEqual(["5", "2", "3"]);
+  });
+});
+
+describe("DemRail — l'étape de séquence est lisible et filtrable", () => {
+  const troisEtapes = [
+    task({ id: "a", sequence: etape(1) }),
+    task({ id: "b", sequence: etape(3) }),
+    task({ id: "c", kind: "wait", sequence: etape(4) }),
+  ];
+
+  it("écrit l'étape sur la ligne, avec son rang dans la séquence", () => {
+    const { frise } = renderRail(troisEtapes);
+    expect(within(frise).getByText("étape 1/5")).toBeInTheDocument();
+    expect(within(frise).getByText("étape 3/5")).toBeInTheDocument();
+  });
+
+  it("propose de trier par étape dès qu'il y en a plusieurs", () => {
+    const { container } = renderRail(troisEtapes);
+    const steps = container.querySelector<HTMLElement>(".dm-filt.steps")!;
+    expect(within(steps).getByText("toutes")).toBeInTheDocument();
+    expect(Array.from(steps.querySelectorAll(".dm-chip")).map((c) => c.textContent)).toEqual([
+      "toutes",
+      "1",
+      "3",
+      "4",
+    ]);
+  });
+
+  it("ne propose pas de trier quand tout est à la même étape", () => {
+    const { container } = renderRail([task({ id: "a", sequence: etape(1) }), task({ id: "b", sequence: etape(1) })]);
+    expect(container.querySelector(".dm-filt.steps")).toBeNull();
+  });
+
+  it("ne garde que l'étape choisie", () => {
+    const { frise } = renderRail(troisEtapes, { step: 3 });
+    expect(frise.querySelectorAll(".dm-tk")).toHaveLength(1);
+    expect(within(frise).getByText("Prospect b")).toBeInTheDocument();
+  });
+});
+
+describe("DemRail — le panier « En discussion » est devenu une ligne", () => {
   const enDiscussion = (id: string) => ({ ...task({ id }), in_conversation: true });
 
   it("a sa propre tuile, séparée du compteur de premiers contacts", () => {
@@ -171,12 +280,10 @@ describe("DemRail — le panier « En discussion »", () => {
     expect(within(tuile("Discussion en cours")).getByText("4 traitées")).toBeInTheDocument();
   });
 
-  it("sort les discussions du plan", () => {
-    const { frise } = renderRail(
-      [...lot("whatsapp", 25), enDiscussion("d1"), enDiscussion("d2")],
-      { day: "conversation" },
-    );
-    expect(frise.querySelectorAll(".dm-tk")).toHaveLength(2);
+  it("marque la ligne au lieu de l'exiler dans un onglet", () => {
+    const { container, frise } = renderRail([...lot("whatsapp", 3), enDiscussion("d1")]);
+    expect(container.querySelector('.dm-tk[data-conv="1"]')).not.toBeNull();
+    expect(within(frise).getByText("a répondu")).toBeInTheDocument();
     expect(screen.getByText(/sans plafond ni report/)).toBeInTheDocument();
   });
 
@@ -194,26 +301,25 @@ describe("DemRail — le panier « En discussion »", () => {
   });
 });
 
+const INTENT: NonNullable<DemarchageTask["intent"]> = {
+  score: 90,
+  tier: "tres_chaud",
+  flame: "🔥🔥",
+  callWhen: "maintenant",
+  reasons: ["A envoyé le formulaire depuis la démo"],
+  sessions: 3,
+  pageViews: 7,
+  engagementSec: 120,
+  lastDay: "2026-08-13",
+  missed: false,
+  daysSinceVisit: 0,
+};
+
 describe("DemRail — le signal d'intention", () => {
-  const chaud = task({
-    id: "chaud",
-    intent: {
-      score: 90,
-      tier: "tres_chaud",
-      flame: "🔥🔥",
-      callWhen: "maintenant",
-      reasons: ["A envoyé le formulaire depuis la démo"],
-      sessions: 3,
-      pageViews: 7,
-      engagementSec: 120,
-      lastDay: "2026-08-13",
-      missed: false,
-      daysSinceVisit: 0,
-    },
-  });
+  const chaud = task({ id: "chaud", intent: INTENT });
 
   it("sort l'emoji de la ligne du nom et le met dans sa propre case", () => {
-    renderRail([chaud], { day: "hot" });
+    renderRail([chaud]);
     const flamme = screen.getByTitle("A envoyé le formulaire depuis la démo");
     // Sa propre case, teintée selon la chaleur — plus un bout du nom.
     expect(flamme).toHaveClass("fl");
@@ -226,7 +332,7 @@ describe("DemRail — le signal d'intention", () => {
   });
 
   it("teinte la carte entière, pas seulement le texte", () => {
-    const { container } = renderRail([chaud], { day: "hot" });
+    const { container } = renderRail([chaud]);
     expect(container.querySelector('.dm-tk[data-heat="hot"]')).not.toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 // types.ts — shape of GET /api/analytics-radar's JSON payload (kept in sync by hand).
 import type { GlobeHubRow } from "./Globe";
+import type { RadarMapRange } from "@/lib/analytics-radar/map-range";
 
 /** Les deux périmètres du radar, jamais mélangés (cf. le paramètre `scope`). */
 export type RadarScope = "demos" | "vitrine";
@@ -53,6 +54,14 @@ export interface AnalyticsRadarPayload {
    *  et l'UI doit le dire au lieu de les présenter comme des zéros mesurés. */
   degraded: { failedReports: number } | null;
   range: { days: number };
+  /** La fenêtre réellement servie pour le globe (cf. `map-range.ts`). */
+  map: {
+    range: RadarMapRange;
+    /** Villes issues du SEUL temps réel — donc non filtrées par domaine. */
+    realtimeOnly: boolean;
+    cities: number;
+    visits: number;
+  };
   totalSites: number;
   kpis: {
     sessions: number;
