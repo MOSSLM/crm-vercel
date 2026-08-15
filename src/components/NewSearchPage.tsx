@@ -37,6 +37,7 @@ import {
   JobStatusSchema,
   estStatutTerminal,
   type JobStatus,
+  type Contour,
   type JobStatusValue,
   type PointRecherche,
 } from "@/lib/gmaps/contract";
@@ -191,6 +192,15 @@ export const NewSearchPage: React.FC = () => {
   /** Curseur du suivi incrémental : combien de points ont déjà été reçus. */
   const curseurPoints = useRef(0);
   /**
+   * Silhouette de la commune. Elle n'arrive qu'UNE fois (elle pèse quelques
+   * kilo-octets et ne change jamais), donc elle vit ici et non dans `stats`,
+   * qui est remplacé à chaque sondage — l'y laisser la ferait disparaître dès
+   * la lecture suivante.
+   */
+  const [contour, setContour] = useState<Contour | null>(null);
+  /** Lisible depuis la boucle de sondage, contrairement à l'état ci-dessus. */
+  const contourRecu = useRef(false);
+  /**
    * Mot-clé et lieu FIGÉS au lancement. Le panneau de suivi doit décrire le
    * crawl qui tourne, pas ce que l'utilisateur est en train de retaper dans le
    * formulaire pendant qu'il tourne.
@@ -299,8 +309,13 @@ export const NewSearchPage: React.FC = () => {
     const sonder = async () => {
       if (arrete) return;
       try {
+        // `avecContour` n'est demandé que tant qu'on ne l'a pas : le réclamer à
+        // chaque sondage ajouterait quelques kilo-octets toutes les 3 secondes
+        // pour une donnée déjà en main. `contourRecu` est une ref et non l'état
+        // `contour`, qui serait figé à sa valeur de montage dans cette closure.
         const res = await authedFetch(
-          `/api/gmaps/job/${jobId}?pointsDepuis=${curseurPoints.current}`,
+          `/api/gmaps/job/${jobId}?pointsDepuis=${curseurPoints.current}` +
+            (contourRecu.current ? "" : "&avecContour=1"),
         );
         if (!res.ok) {
           echecTransport(
@@ -337,6 +352,18 @@ export const NewSearchPage: React.FC = () => {
           setPoints((prev) => [...prev, ...statut.points]);
         }
         curseurPoints.current = statut.pointsDepuis + statut.points.length;
+
+        // Le contour n'arrive qu'une fois : on le retient, et on cesse de le
+        // demander. Un job sans contour (repli communes_fr, ou lieu sans
+        // frontière connue d'OpenStreetMap) n'en aura jamais — on arrête aussi
+        // de le réclamer une fois la grille annoncée, sinon on le redemanderait
+        // à chaque sondage pour rien.
+        if (statut.contour) {
+          setContour(statut.contour);
+          contourRecu.current = true;
+        } else if (statut.grille) {
+          contourRecu.current = true;
+        }
         if (estStatutTerminal(statut.status)) {
           if (statut.status === "done") toast.success("Recherche terminée");
           else if (statut.status === "partial")
@@ -390,6 +417,8 @@ export const NewSearchPage: React.FC = () => {
     // les entreprises du crawl précédent resteraient posées sur la nouvelle ville.
     setPoints([]);
     curseurPoints.current = 0;
+    setContour(null);
+    contourRecu.current = false;
     try {
       const res = await authedFetch("/api/gmaps/crawl", {
         method: "POST",
@@ -726,6 +755,7 @@ export const NewSearchPage: React.FC = () => {
               status={status}
               stats={stats}
               points={points}
+              contour={contour}
             />
           </div>
         )}

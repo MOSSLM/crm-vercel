@@ -102,6 +102,37 @@ describe("CarteRecherche", () => {
     expect(t4.y).toBeGreaterThan(t2.y);
   });
 
+  it("trace la silhouette de la commune sans faire exploser le chemin SVG", () => {
+    // Régression mesurée : avec le ré-échantillonnage adaptatif de d3 laissé par
+    // défaut, le contour de Limoges (457 sommets) produisait 4,16 Mo de chemin
+    // au lieu de 7,4 Ko — la page devenait injouable, sans la moindre erreur.
+    const carre = {
+      type: "Polygon" as const,
+      coordinates: [
+        [
+          [1.16, 45.92],
+          [1.24, 45.92],
+          [1.24, 45.84],
+          [1.16, 45.84],
+          [1.16, 45.92],
+        ],
+      ],
+    };
+    const { container } = rendre({ contour: carre });
+    const trace = container.querySelector("path.rlive-commune");
+    expect(trace).not.toBeNull();
+    // Cinq sommets : quelques dizaines d'octets. Un millier signalerait que le
+    // ré-échantillonnage est revenu.
+    expect((trace!.getAttribute("d") ?? "").length).toBeLessThan(1000);
+  });
+
+  it("s'affiche normalement quand aucune silhouette n'est disponible", () => {
+    // Repli `communes_fr`, ou lieu sans frontière connue d'OpenStreetMap.
+    const { container } = rendre({ contour: null });
+    expect(container.querySelector("path.rlive-commune")).toBeNull();
+    expect(container.querySelectorAll("polygon.rlive-tuile")).toHaveLength(GRILLE.total);
+  });
+
   it("pose une pastille par entreprise, et une tache seulement en mode « taches »", () => {
     const { container } = rendre();
     expect(container.querySelectorAll("circle.carte-dot")).toHaveLength(2);

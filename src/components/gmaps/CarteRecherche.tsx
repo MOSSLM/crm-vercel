@@ -2,10 +2,18 @@
 
 import * as React from "react";
 import { geoConicConformal, geoPath } from "d3-geo";
-import { fetchContours, projeter, type DeptGeometry } from "@/lib/carte/geo";
+import { fetchContours, orienterPourD3, projeter, type DeptGeometry } from "@/lib/carte/geo";
 import { CONTOURS_URL } from "@/lib/carte/departements";
+import {
+  chargerCommunes,
+  chargerContoursCommunes,
+  memeCommune,
+  placerEtiquettes,
+  type Commune,
+  type ContourCommune,
+} from "@/lib/carte/communes";
 import { CHOROPLETHE } from "@/components/carte/CarteFrance";
-import type { Grille, PointRecherche } from "@/lib/gmaps/contract";
+import type { Contour, Grille, PointRecherche } from "@/lib/gmaps/contract";
 import {
   cadreAvecPoints,
   cadreGlobal,
@@ -45,6 +53,17 @@ export type CarteRechercheProps = {
   mode: "taches" | "points";
   /** Remonte le nombre d'entreprises trop éloignées pour tenir dans le cadre. */
   onHorsCadre?: (n: number) => void;
+  /**
+   * Contour de la commune (GeoJSON), quand le scraper a su le donner. C'est lui
+   * qui répond à « où suis-je ? » : une grille de tuiles seule n'est qu'un
+   * rectangle posé sur du blanc.
+   */
+  contour?: Contour | null;
+  /**
+   * Nom de la commune cherchée. Sert à la distinguer de ses voisines — même
+   * silhouette, mais elle seule est le sujet de la recherche.
+   */
+  ville?: string | null;
 };
 
 export function CarteRecherche({
@@ -55,10 +74,14 @@ export function CarteRecherche({
   enCours,
   mode,
   onHorsCadre,
+  contour,
+  ville,
 }: CarteRechercheProps) {
   const stageRef = React.useRef<HTMLDivElement | null>(null);
   const [size, setSize] = React.useState({ width: 720, height: 460 });
   const [geometries, setGeometries] = React.useState<DeptGeometry[]>([]);
+  const [communes, setCommunes] = React.useState<Commune[]>([]);
+  const [voisines, setVoisines] = React.useState<ContourCommune[]>([]);
   const [survol, setSurvol] = React.useState<{
     index: number;
     n: number | null;
@@ -103,6 +126,45 @@ export function CarteRecherche({
   /** La grille seule, pour la vignette de situation. */
   const cadreGrille = React.useMemo(() => cadreGlobal(grille), [grille]);
 
+  /**
+   * Villes alentour, chargées UNE fois sur l'emprise de la grille — pas sur le
+   * cadre courant, qui s'étend au fil des trouvailles et relancerait la requête
+   * à chaque point. Une marge d'un tiers couvre cet étalement d'avance.
+   */
+  React.useEffect(() => {
+    const controleur = new AbortController();
+    const dLat = (cadreGrille.nord - cadreGrille.sud) / 3;
+    const dLon = (cadreGrille.est - cadreGrille.ouest) / 3;
+    chargerCommunes(
+      {
+        emprise: {
+          sud: cadreGrille.sud - dLat,
+          nord: cadreGrille.nord + dLat,
+          ouest: cadreGrille.ouest - dLon,
+          est: cadreGrille.est + dLon,
+        },
+        limite: 120,
+      },
+      controleur.signal,
+    )
+      .then(setCommunes)
+      // Repères de confort : leur absence ne doit pas peindre une erreur sur un
+      // crawl qui se déroule bien.
+      .catch(() => {});
+
+    const emprise = {
+      sud: cadreGrille.sud - dLat,
+      nord: cadreGrille.nord + dLat,
+      ouest: cadreGrille.ouest - dLon,
+      est: cadreGrille.est + dLon,
+    };
+    chargerContoursCommunes(emprise, 24, controleur.signal)
+      .then(setVoisines)
+      .catch(() => {});
+
+    return () => controleur.abort();
+  }, [cadreGrille.nord, cadreGrille.sud, cadreGrille.est, cadreGrille.ouest]);
+
   const horsCadre = React.useMemo(() => compterHorsCadre(cadre, points), [cadre, points]);
   React.useEffect(() => {
     onHorsCadre?.(horsCadre);
@@ -138,6 +200,16 @@ export function CarteRecherche({
     const p = geoConicConformal()
       .parallels([44, 49])
       .rotate([-3, 0])
+      /**
+       * `precision(0)` coupe le ré-échantillonnage adaptatif de d3, qui insère
+       * des points le long de chaque segment pour suivre la courbure du globe.
+       * À l'échelle d'une ville c'est invisible — l'écart est très en dessous du
+       * pixel — mais l'échelle de projection y est si grande que le tracé
+       * explose : mesuré sur le contour de Limoges, 4,16 Mo de chemin SVG contre
+       * 7,4 Ko sans. Baisser la valeur ne suffit pas (1, 0,5 et le défaut
+       * donnent le même résultat) : il faut la couper.
+       */
+      .precision(0)
       .fitExtent(
         [
           [0, 0],
@@ -166,6 +238,53 @@ export function CarteRecherche({
   }, [geometries, path, cadre]);
 
   const cadres = React.useMemo(() => cadresDeGrille(grille), [grille]);
+
+  /** Silhouette de la commune, projetée. */
+  const traceContour = React.useMemo(() => {
+    if (!contour) return null;
+    // Le schéma partagé garde `coordinates` volontairement lâche — mieux vaut
+    // un anneau ignoré qu'un suivi entier tombé en 502 pour une géométrie mal
+    // formée. `geoPath` sait déjà ne rien tracer de ce qu'il ne comprend pas.
+    try {
+      // Réorienté d'abord : d3-geo lit l'enroulement comme désignant l'intérieur,
+      // et sa convention est l'inverse de celle d'OpenStreetMap.
+      const oriente = orienterPourD3(contour);
+      return oriente ? path(oriente as unknown as GeoJSON.Geometry) || null : null;
+    } catch {
+      return null;
+    }
+  }, [contour, path]);
+
+  /**
+   * Silhouettes des communes voisines. La ville cherchée en est retirée : elle a
+   * son propre tracé, plus marqué, et la superposer donnerait un bord deux fois
+   * plus épais que les autres.
+   */
+  const tracesVoisines = React.useMemo(() => {
+    return voisines
+      .filter((c) => !memeCommune(c.nom, ville))
+      .map((c) => {
+        const oriente = orienterPourD3(c.contour);
+        if (!oriente) return null;
+        try {
+          const d = path(oriente as unknown as GeoJSON.Geometry);
+          return d ? { code: c.code, d } : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter((c): c is { code: string; d: string } => c !== null);
+  }, [voisines, ville, path]);
+
+  const etiquettes = React.useMemo(() => {
+    const projetees = communes
+      .map((c) => {
+        const p = projection([c.lon, c.lat]);
+        return p ? { ...c, x: p[0], y: p[1] } : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+    return placerEtiquettes(projetees, { largeur: size.width, hauteur: size.height }, 10, 14);
+  }, [communes, projection, size.width, size.height]);
 
   const seuils = React.useMemo(
     () => seuilsQuantile(tuiles.filter((n): n is number => typeof n === "number"), CHOROPLETHE.length),
@@ -278,7 +397,9 @@ export function CarteRecherche({
             patternUnits="userSpaceOnUse"
             patternTransform="rotate(45)"
           >
-            <rect width="6" height="6" className="rlive-trame-fond" />
+            {/* Pas de rectangle de fond : un aplat opaque masquerait la
+                silhouette de la commune, qui est précisément ce qui dit où
+                l'on se trouve. Seules les hachures marquent « pas encore vu ». */}
             <line x1="0" y1="0" x2="0" y2="6" className="rlive-trame-trait" />
           </pattern>
         </defs>
@@ -296,6 +417,24 @@ export function CarteRecherche({
           ))}
         </g>
 
+        {/*
+          La commune SOUS la grille : c'est le fond sur lequel les tuiles se
+          lisent, pas un ornement posé par-dessus. Sans elle, l'écran montrait
+          un rectangle de tuiles flottant sur du blanc, sans rien qui dise où
+          l'on se trouve.
+        */}
+        {/*
+          Les communes voisines d'abord, en retrait : elles donnent le tissu
+          alentour sans disputer la vedette à la ville cherchée.
+        */}
+        <g className="rlive-voisines">
+          {tracesVoisines.map((c) => (
+            <path key={c.code} className="rlive-voisine" d={c.d} />
+          ))}
+        </g>
+
+        {traceContour && <path className="rlive-commune" d={traceContour} />}
+
         {grilleLayer}
 
         <g className="carte-lines">
@@ -303,6 +442,11 @@ export function CarteRecherche({
             <path key={code} className="carte-dline" d={d} />
           ))}
         </g>
+
+        {/* Le TRAIT de la commune repasse par-dessus la grille : mesuré, les
+            tuiles recouvraient la silhouette et n'en laissaient voir que les
+            bords. Le remplissage, lui, reste dessous. */}
+        {traceContour && <path className="rlive-commune-trait" d={traceContour} />}
 
         {mode === "taches" && (
           <g className="rlive-blobs">
@@ -328,6 +472,31 @@ export function CarteRecherche({
               fill={p.nouveau ? COULEUR_NOUVEAU : COULEUR_CONNU}
             />
           ))}
+        </g>
+
+        {/*
+          Les noms de villes passent EN DERNIER : posés plus tôt, les taches
+          floutées des entreprises les laveraient. Le liseré (paint-order) les
+          détache du fond sans avoir à leur poser un cartouche.
+        */}
+        <g className="rlive-villes">
+          {etiquettes.map((c) => {
+            // La ville cherchée porte le nom de la silhouette principale : elle
+            // s'écrit plus gros, sinon rien ne dit ce que ce contour représente.
+            const cible = memeCommune(c.nom, ville);
+            return (
+              <g key={c.code} data-cible={cible ? "true" : undefined}>
+                <circle className="rlive-ville-pt" cx={c.x} cy={c.y} r={cible ? 2.8 : 1.9} />
+                <text
+                  className="rlive-ville-nom"
+                  x={c.x + (cible ? 7 : 5)}
+                  y={c.y + (cible ? 4.6 : 3.4)}
+                >
+                  {c.nom}
+                </text>
+              </g>
+            );
+          })}
         </g>
       </svg>
 

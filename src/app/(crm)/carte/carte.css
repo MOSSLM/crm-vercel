@@ -229,6 +229,31 @@
   r: calc(var(--carte-dot-r, 2.2px) * 1.9 / var(--carte-dot-scale, 1));
 }
 
+/*
+ * Noms de villes. Ils vivent HORS du groupe zoomé (cf. CarteFrance) : c'est ce
+ * qui leur garde une taille constante quand on zoome, et ce qui fait que d'autres
+ * noms apparaissent à mesure que les villes s'écartent les unes des autres.
+ */
+.carte-villes { pointer-events: none; }
+.carte-ville-pt {
+  fill: #122844;
+  stroke: #fff;
+  stroke-width: 0.9;
+}
+.carte-ville-nom {
+  font-family: var(--font-family-base);
+  font-size: 10.5px;
+  font-weight: 500;
+  fill: #122844;
+  /* Liseré de la couleur du fond : le nom tient au-dessus d'une tache ou d'un
+     aplat sombre sans qu'on ait à lui poser un cartouche opaque. */
+  stroke: #fff;
+  stroke-width: 2.8;
+  paint-order: stroke fill;
+}
+.dark .carte-ville-pt { fill: #e8f0fa; stroke: #071426; }
+.dark .carte-ville-nom { fill: #e8f0fa; stroke: #071426; }
+
 .carte-loading {
   display: grid;
   place-items: center;

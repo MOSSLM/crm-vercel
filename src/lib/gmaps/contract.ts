@@ -185,9 +185,25 @@ export const GrilleSchema = z.object({
   tileStep: z.number().positive().nullable().default(null),
   /** D'où vient le cadre : `openstreetmap`, `communes_fr`, `google`. */
   source: z.string().nullable().default(null),
+  /** Libellé complet du lieu tel qu'OpenStreetMap l'a reconnu. */
+  nomLieu: z.string().nullable().default(null),
 });
 
 export type Grille = z.infer<typeof GrilleSchema>;
+
+/**
+ * Contour d'une commune. On ne valide QUE ce qu'on dessine — le type et un
+ * tableau de coordonnées — sans décrire la récursivité complète du GeoJSON :
+ * un schéma trop strict ferait tomber tout le suivi en 502 pour un anneau mal
+ * formé, là où le rendu se contente d'ignorer une géométrie qu'il ne sait pas
+ * tracer.
+ */
+export const ContourSchema = z.object({
+  type: z.enum(["Polygon", "MultiPolygon"]),
+  coordinates: z.array(z.unknown()).min(1),
+});
+
+export type Contour = z.infer<typeof ContourSchema>;
 
 /** Une entreprise trouvée, telle qu'on la pose sur la carte. */
 export const PointRechercheSchema = z.object({
@@ -250,6 +266,16 @@ export const JobStatusSchema = z.object({
    * crawl sain, invisible. Absents, la carte ne s'affiche simplement pas.
    */
   grille: GrilleSchema.nullable().default(null),
+  /**
+   * Silhouette de la commune explorée (GeoJSON allégé côté scraper : Limoges
+   * passe de 3 251 sommets et 74 Ko à 457 sommets et 7,7 Ko, pour 22 m d'écart
+   * — un pixel à l'échelle d'une ville).
+   *
+   * N'arrive QUE sur demande (`?avecContour=1`) : il ne change jamais, et le
+   * renvoyer toutes les 3 s coûterait des mégaoctets sur un réseau mobile. Le
+   * client le garde donc de son côté une fois reçu.
+   */
+  contour: ContourSchema.nullable().default(null),
   /**
    * Fiches par tuile, indexé sur (numéro de tuile − 1). `null` = tuile pas
    * encore parcourue, `0` = parcourue et vide. La carte doit distinguer les deux.

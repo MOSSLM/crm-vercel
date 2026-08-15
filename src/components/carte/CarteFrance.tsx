@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Minus, Plus } from "lucide-react";
 import { projeter, type DeptGeometry } from "@/lib/carte/geo";
+import { chargerCommunes, placerEtiquettes, type Commune } from "@/lib/carte/communes";
 import { STATUT_BY_ID } from "@/lib/carte/statuts";
 import type { DeptCarte, FicheCarte } from "./useCarteData";
 
@@ -79,6 +80,24 @@ export function CarteFrance({
   const [transform, setTransform] = React.useState<Transform>(IDENTITY);
   const [anime, setAnime] = React.useState(false);
   const [survol, setSurvol] = React.useState<{ code: string; x: number; y: number } | null>(null);
+  const [communes, setCommunes] = React.useState<Commune[]>([]);
+
+  /**
+   * Repères de villes, chargés UNE fois : les 600 communes les plus peuplées de
+   * France. Pas de rechargement au zoom — ce serait une requête par coup de
+   * molette, et à l'échelle nationale ce sont bien les grandes villes qu'on
+   * cherche à reconnaître. Ce sont ensuite les recouvrements qui décident
+   * lesquelles s'écrivent : en zoomant, les voisines cessent de se gêner et
+   * apparaissent d'elles-mêmes.
+   */
+  React.useEffect(() => {
+    const controleur = new AbortController();
+    chargerCommunes({ limite: 400 }, controleur.signal)
+      .then(setCommunes)
+      // Confort : leur absence ne doit pas empêcher la carte de s'afficher.
+      .catch(() => {});
+    return () => controleur.abort();
+  }, []);
 
   React.useEffect(() => {
     const node = stageRef.current;
@@ -372,6 +391,27 @@ export function CarteFrance({
     );
   }, [contours, fiches, positions, mode, selection, ficheActive, compteParDept, seuils]);
 
+  /**
+   * Noms de villes, calculés DANS LE REPÈRE ÉCRAN et rendus hors du groupe
+   * zoomé : à l'intérieur, le texte grossirait avec le zoom jusqu'à devenir
+   * illisible à k = 12. On applique donc la transformation à la main, ce qui a
+   * l'avantage de faire réapparaître les villes à mesure qu'elles s'écartent.
+   */
+  const etiquettes = React.useMemo(() => {
+    const projetees = communes
+      .map((c) => {
+        const p = projection([c.lon, c.lat]);
+        if (!p) return null;
+        return {
+          ...c,
+          x: p[0] * transform.k + transform.x,
+          y: p[1] * transform.k + transform.y,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+    return placerEtiquettes(projetees, { largeur: size.width, hauteur: size.height }, 10.5, 26);
+  }, [communes, projection, transform.k, transform.x, transform.y, size.width, size.height]);
+
   const deptSurvole = survol ? departements.find((d) => d.code === survol.code) : null;
   const unite = Math.max(0.62, Math.min(size.width, size.height) / 880);
 
@@ -411,6 +451,22 @@ export function CarteFrance({
           transform={`translate(${transform.x} ${transform.y}) scale(${transform.k})`}
         >
           {calques}
+        </g>
+
+        {/*
+          Hors du groupe zoomé, et en dernier : le texte garde sa taille quel
+          que soit le zoom, et rien ne vient le laver — ni les taches floutées,
+          ni les aplats de densité.
+        */}
+        <g className="carte-villes">
+          {etiquettes.map((c) => (
+            <g key={c.code}>
+              <circle className="carte-ville-pt" cx={c.x} cy={c.y} r={2} />
+              <text className="carte-ville-nom" x={c.x + 5.5} y={c.y + 3.6}>
+                {c.nom}
+              </text>
+            </g>
+          ))}
         </g>
       </svg>
 

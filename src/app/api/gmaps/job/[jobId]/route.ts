@@ -28,12 +28,17 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params, cors })
   // `Number()` et non `parseInt()` : ce dernier tronque au lieu de refuser
   // (« 1.5 » devenait 1, « 12abc » devenait 12), ce qui laissait passer vers le
   // scraper une valeur que le navigateur n'avait jamais voulu dire.
-  const brutDepuis = new URL(req.url).searchParams.get("pointsDepuis");
+  const url = new URL(req.url);
+  const brutDepuis = url.searchParams.get("pointsDepuis");
   const depuis = brutDepuis === null || brutDepuis === "" ? null : Number(brutDepuis);
-  const requete =
-    depuis !== null && Number.isInteger(depuis) && depuis >= 0
-      ? `?pointsDepuis=${depuis}`
-      : "";
+  const parametres = new URLSearchParams();
+  if (depuis !== null && Number.isInteger(depuis) && depuis >= 0) {
+    parametres.set("pointsDepuis", String(depuis));
+  }
+  // Le contour de la commune ne change jamais et pèse quelques kilo-octets : le
+  // navigateur ne le réclame que tant qu'il ne l'a pas.
+  if (url.searchParams.get("avecContour") === "1") parametres.set("avecContour", "1");
+  const requete = parametres.size > 0 ? `?${parametres.toString()}` : "";
 
   const amont = await proxyToGmaps(
     `/crawl/${encodeURIComponent(params.jobId)}${requete}`,

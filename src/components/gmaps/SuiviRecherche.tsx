@@ -4,7 +4,7 @@ import * as React from "react";
 import { Radar } from "lucide-react";
 import { CarteRecherche } from "./CarteRecherche";
 import { avancement } from "@/lib/gmaps/grille";
-import type { JobStatus, JobStatusValue, PointRecherche } from "@/lib/gmaps/contract";
+import type { Contour, JobStatus, JobStatusValue, PointRecherche } from "@/lib/gmaps/contract";
 
 const nf = new Intl.NumberFormat("fr-FR");
 
@@ -32,9 +32,11 @@ export type SuiviRechercheProps = {
   status: JobStatusValue | null;
   stats: JobStatus | null;
   points: PointRecherche[];
+  /** Silhouette de la commune : reçue une seule fois, donc portée à part. */
+  contour?: Contour | null;
 };
 
-export function SuiviRecherche({ motCle, lieu, status, stats, points }: SuiviRechercheProps) {
+export function SuiviRecherche({ motCle, lieu, status, stats, points, contour }: SuiviRechercheProps) {
   const [mode, setMode] = React.useState<"taches" | "points">("taches");
   /**
    * Entreprises trouvées mais trop loin pour tenir dans le cadre. Google rend
@@ -49,6 +51,12 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points }: SuiviRec
   const total = stats?.tilesTotal ?? 0;
   const part = avancement(faites, total);
   const grille = stats?.grille ?? null;
+  /**
+   * Nom de la commune cherchée. On préfère celui qu'OpenStreetMap a reconnu
+   * (« Limoges » extrait de « Limoges, Haute-Vienne, … ») à la saisie brute du
+   * formulaire, qui peut porter « Limoges, France » ou un code postal.
+   */
+  const villeCherchee = (grille?.nomLieu ?? lieu ?? "").split(",")[0].trim() || null;
 
   return (
     <section className="rlive">
@@ -93,6 +101,8 @@ export function SuiviRecherche({ motCle, lieu, status, stats, points }: SuiviRec
           enCours={enCours}
           mode={mode}
           onHorsCadre={setHorsCadre}
+          contour={contour ?? null}
+          ville={villeCherchee}
         />
       ) : (
         <div className="carte-stage rlive-stage rlive-vide">

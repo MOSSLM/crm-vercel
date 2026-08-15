@@ -39,7 +39,15 @@ beforeAll(() => {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
   global.fetch = jest.fn(async (url: unknown) => {
-    const fichier = path.join(RACINE, "public", String(url));
+    const cible = String(url);
+    // Les repères de villes passent par une route authentifiée : hors du
+    // navigateur, on sert un extrait capturé de `communes_fr`.
+    const fichier = cible.startsWith("/api/geo/communes/contours")
+      ? process.env.CONTOURS_CRAWL || ""
+      : cible.startsWith("/api/geo/communes")
+        ? process.env.COMMUNES_CRAWL || ""
+        : path.join(RACINE, "public", cible);
+    if (!fichier || !fs.existsSync(fichier)) return { ok: false, status: 404 } as Response;
     return {
       ok: true,
       json: async () => JSON.parse(fs.readFileSync(fichier, "utf8")),
@@ -90,6 +98,7 @@ it("écrit un aperçu du suivi de recherche", async () => {
       status={statut.status}
       stats={statut}
       points={statut.points}
+      contour={statut.contour}
     />,
   );
 
