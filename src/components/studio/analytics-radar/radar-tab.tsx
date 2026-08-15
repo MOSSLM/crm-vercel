@@ -9,16 +9,23 @@ import { Icon } from "./icons";
 import { anNum } from "./format";
 import { createAnGlobe, type AnGlobeHandle, type GlobeHubRow } from "./Globe";
 import { LOW_VOLUME_TOTAL, PER_VISIT_KM, SHADES, SHARE_STOPS } from "./globe-scale";
+import { MAP_RANGES, MAP_RANGE_ORDER, type RadarMapRange } from "@/lib/analytics-radar/map-range";
 
 export function GlobeStage({
   hubRows,
   onSelectCity,
-  rangeLabel,
+  range,
+  setRange,
+  realtimeOnly = false,
   liveCities = [],
 }: {
   hubRows: GlobeHubRow[];
   onSelectCity: (city: string) => void;
-  rangeLabel: string;
+  /** La fenêtre de temps de la carte — indépendante de la plage de la page. */
+  range: RadarMapRange;
+  setRange: (r: RadarMapRange) => void;
+  /** Ces villes viennent du seul temps réel : GA4 n'y filtre pas les domaines. */
+  realtimeOnly?: boolean;
   /** Villes avec au moins un visiteur actif là, maintenant (GA4 Realtime) —
    *  chacune déclenche un ping (onde bleue) sur le globe à chaque rafraîchissement. */
   liveCities?: string[];
@@ -71,9 +78,33 @@ export function GlobeStage({
       <div className="a-ghd">
         <div className="t">Connexions mondiales</div>
         <div className="s">
-          {rangeLabel} · {anNum(placedTotal)} visite{placedTotal > 1 ? "s" : ""} situé
+          {MAP_RANGES[range].label} · {anNum(placedTotal)} visite{placedTotal > 1 ? "s" : ""} situé
           {placedTotal > 1 ? "es" : "e"} · {hubRows.length} ville{hubRows.length > 1 ? "s" : ""}
         </div>
+        {realtimeOnly ? (
+          // Le direct ne peut venir que de GA4 Realtime, qui n'expose pas
+          // `hostName` : ces villes sont classées sur le titre de la page, pas
+          // filtrées par domaine comme les autres fenêtres. Autant le dire là où
+          // ça se regarde, plutôt que de le laisser croire mesuré pareil.
+          <div className="w">temps réel · périmètre déduit du titre de page</div>
+        ) : null}
+      </div>
+      {/* La fenêtre de la carte. Elle ne touche à rien d'autre sur l'écran :
+          voir qui est là maintenant ne doit pas remettre à zéro les moyennes du
+          mois affichées juste au-dessus. */}
+      <div className="a-grange" role="group" aria-label="Fenêtre de la carte">
+        {MAP_RANGE_ORDER.map((k) => (
+          <button
+            key={k}
+            className={"a-btn sm" + (k === "live" ? " live" : "")}
+            aria-pressed={range === k}
+            onClick={() => setRange(k)}
+            title={MAP_RANGES[k].label}
+          >
+            {k === "live" ? <i className="dot" /> : null}
+            {MAP_RANGES[k].short}
+          </button>
+        ))}
       </div>
       <div className="a-gctl">
         <button

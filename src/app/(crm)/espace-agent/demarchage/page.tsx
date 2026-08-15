@@ -4,17 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { authedFetch } from "@/utils/authedFetch";
 import { useAuth } from "@/components/AuthContext";
-import { DemRail } from "@/components/agent-portal/demarchage/DemRail";
+import { DemRail, type DemFilter } from "@/components/agent-portal/demarchage/DemRail";
 import { DemHead } from "@/components/agent-portal/demarchage/DemHead";
 import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
 import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
 import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
 import {
-  bucketOfTask,
-  bucketTasks,
-  firstNonEmptyBucket,
-  type DemarchageBucketKey,
+  SIGNAL_ORDER,
+  dayOfTask,
+  firstPlannedTask,
+  planTasks,
+  signalOf,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type {
   CompanyBundle,
@@ -47,11 +48,13 @@ export default function AgentDemarchagePage() {
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
 
-  // « Aujourd'hui » par défaut, mais `firstNonEmptyBucket` (au chargement de
-  // la file) bascule sur « Non rappelés » ou « Chauds » dès qu'il y en a :
-  // un signal chaud ne doit pas attendre qu'on pense à changer d'onglet.
-  const [day, setDay] = useState<DemarchageBucketKey>("today");
-  const [filt, setFilt] = useState("all");
+  // Le jour affiché, par sa date civile (YYYY-MM-DD). Vide au premier rendu :
+  // l'onglet se cale sur la journée de la tâche choisie dès que la file arrive,
+  // et à défaut sur la première du plan (aujourd'hui).
+  const [day, setDay] = useState<string>("");
+  const [filt, setFilt] = useState<DemFilter>("all");
+  /** Étape de séquence filtrée — `null` = toutes. */
+  const [step, setStep] = useState<number | null>(null);
 
   const [company, setCompany] = useState<CompanyBundle | null>(null);
   const [audit, setAudit] = useState<DemAudit>(null);
@@ -81,7 +84,7 @@ export default function AgentDemarchagePage() {
         const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
         if (wanted && next.some((t) => t.id === wanted)) return wanted;
         return (
-          firstNonEmptyBucket(bucketTasks(next, { doneToday: nextMeta.done_today_by_kind }))?.id ?? null
+          firstPlannedTask(planTasks(next, { doneToday: nextMeta.done_today_by_kind }))?.id ?? null
         );
       });
     } catch {
@@ -95,11 +98,11 @@ export default function AgentDemarchagePage() {
     void loadQueue();
   }, [loadQueue]);
 
-  // Le plan du jour : ce qui reste à faire, réparti à la cadence quotidienne de
+  // Le plan : les journées à venir, chacune remplie à la cadence quotidienne de
   // chaque canal. `done_today_by_kind` est indispensable — sans lui, la journée
   // se rechargerait à chaque tâche bouclée.
-  const buckets = useMemo(
-    () => bucketTasks(tasks, { doneToday: meta.done_today_by_kind }),
+  const days = useMemo(
+    () => planTasks(tasks, { doneToday: meta.done_today_by_kind }),
     [tasks, meta.done_today_by_kind],
   );
 
@@ -107,23 +110,40 @@ export default function AgentDemarchagePage() {
   // dans la file ne doit pas laisser l'onglet sur « aujourd'hui ».
   const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
   useEffect(() => {
-    if (!task) return;
-    const k = bucketOfTask(buckets, task.id);
-    if (k) setDay(k);
-  }, [task, buckets]);
+    const k = task ? dayOfTask(days, task.id) : null;
+    // À défaut de sélection (ou si la tâche a quitté la file), on retombe sur
+    // la première journée du plan plutôt que de garder une date qui n'existe
+    // plus — un onglet sans journée n'afficherait rien du tout.
+    setDay((current) => k ?? (days.some((d) => d.date === current) ? current : days[0]?.date ?? ""));
+  }, [task, days]);
 
-  const shown = useMemo(() => {
-    const list = buckets[day];
-    return list.filter((t) =>
-      filt === "all"
-        ? true
-        : filt === "call"
-          ? t.kind === "call"
-          : filt === "msg"
-            ? t.kind === "whatsapp" || t.kind === "linkedin"
-            : t.kind === "wait",
-    );
-  }, [buckets, day, filt]);
+  const duJour = useMemo(() => days.find((d) => d.date === day)?.tasks ?? [], [days, day]);
+
+  /** Une tâche répond-elle à ce filtre ? Un filtre est SOIT un signal
+   *  (« en discussion », « chauds »…) SOIT un canal — les deux vocabulaires ne
+   *  se mélangent pas dans une même barre. */
+  const correspond = useCallback(
+    (t: DemarchageTask, f: DemFilter) =>
+      f === "all" || (SIGNAL_ORDER.includes(f as never) ? signalOf(t) === f : t.kind === f),
+    [],
+  );
+
+  // Les pastilles ne montrent que ce que la journée contient : un filtre resté
+  // coché sur un canal absent afficherait une file vide SANS afficher le filtre
+  // responsable — impossible à défaire autrement qu'en rechargeant. On le
+  // relâche donc dès qu'il n'a plus de pastille.
+  useEffect(() => {
+    setFilt((f) => (duJour.some((t) => correspond(t, f)) ? f : "all"));
+    setStep((s) => (s == null || duJour.some((t) => t.sequence?.stepIndex === s) ? s : null));
+  }, [duJour, correspond]);
+
+  const shown = useMemo(
+    () =>
+      duJour.filter(
+        (t) => (step == null || t.sequence?.stepIndex === step) && correspond(t, filt),
+      ),
+    [duJour, filt, step, correspond],
+  );
 
   // Fiche entreprise + audit à chaque changement de prospect.
   const entrepriseId = task?.entreprise_id ?? null;
@@ -218,11 +238,13 @@ export default function AgentDemarchagePage() {
     <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
       <div className="dm">
         <DemRail
-          buckets={buckets}
+          days={days}
           day={day}
           setDay={setDay}
           filt={filt}
           setFilt={setFilt}
+          step={step}
+          setStep={setStep}
           tasks={shown}
           meta={meta}
           agentName={user?.name ?? null}

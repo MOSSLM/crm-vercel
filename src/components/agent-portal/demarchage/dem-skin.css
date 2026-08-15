@@ -15,11 +15,11 @@
  */
 
 .dm-skin{
-  --bg: #F7FAFD;
-  --bg-2: #EFF5FC;
-  --bg-3: #E7F0FB;
+  --bg: #F8F8F9;
+  --bg-2: #F1F2F4;
+  --bg-3: #E7E9ED;
   --surface: #FFFFFF;
-  --surface-2: #F3F8FD;
+  --surface-2: #F5F6F8;
   --hover: rgba(18, 40, 68, 0.04);
   --hover-2: rgba(18, 40, 68, 0.07);
   --border: rgba(18, 40, 68, 0.08);
@@ -170,17 +170,39 @@
 .dm-skin .dm-sess .mini>div{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px}
 .dm-skin .dm-sess .mini .k{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-3)}
 .dm-skin .dm-sess .mini .n{font-family:var(--font-mono);font-size:14px;font-weight:500;margin-top:1px}
-.dm-skin .dm-days{display:flex;gap:3px;padding:8px 9px;border-bottom:1px solid var(--border)}
-.dm-skin .dm-day{appearance:none;border:1px solid transparent;background:transparent;border-radius:7px;padding:5px 7px;cursor:pointer;text-align:left;flex:1;min-width:0;color:var(--text-2)}
+/* Des DATES, et de la place pour les lire. Les onglets ne se partagent plus la
+   largeur à parts égales (`flex:1`) : à sept entrées dans 286 px, chacune
+   tombait à ~38 px et n'affichait plus que la première lettre. Ils prennent
+   maintenant la largeur de leur texte, et la barre défile si la file s'étale
+   sur plus de quatre journées. */
+.dm-skin .dm-days{display:flex;gap:3px;padding:8px 9px;border-bottom:1px solid var(--border);
+  overflow-x:auto;scrollbar-width:thin}
+.dm-skin .dm-days::-webkit-scrollbar{height:5px}
+.dm-skin .dm-days::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px}
+.dm-skin .dm-day{appearance:none;border:1px solid transparent;background:transparent;border-radius:7px;padding:5px 8px;cursor:pointer;text-align:left;flex:1 0 auto;min-width:0;color:var(--text-2)}
 .dm-skin .dm-day:hover{background:var(--hover)}
-.dm-skin .dm-day .l{font-size:11.5px;font-weight:600;letter-spacing:-.005em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dm-skin .dm-day .n{font-family:var(--font-mono);font-size:10px;color:var(--text-3)}
+.dm-skin .dm-day .l{font-size:11.5px;font-weight:600;letter-spacing:-.005em;display:block;white-space:nowrap}
+.dm-skin .dm-day .n{font-family:var(--font-mono);font-size:10px;color:var(--text-3);white-space:nowrap}
 .dm-skin .dm-day[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
 .dm-skin .dm-day[aria-selected="true"] .n{color:rgba(255,255,255,.6)}
-.dm-skin .dm-filt{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.dm-skin .dm-filt{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.dm-skin .dm-filt.steps{padding:6px 10px}
+.dm-skin .dm-filt.steps .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-right:1px}
 .dm-skin .dm-chip{appearance:none;border:1px solid var(--border-2);background:var(--surface);border-radius:20px;height:22px;padding:0 9px;font-size:11px;color:var(--text-2);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
 .dm-skin .dm-chip:hover{background:var(--surface-2);color:var(--text)}
+.dm-skin .dm-chip .n{font-family:var(--font-mono);font-size:9.5px;color:var(--text-4)}
 .dm-skin .dm-chip[aria-pressed="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
+.dm-skin .dm-chip[aria-pressed="true"] .n{color:rgba(255,255,255,.6)}
+/* Les trois signaux gardent leur couleur DANS la barre de filtres : ce sont les
+   mêmes que celles des lignes de la file, sinon on ne fait pas le lien entre la
+   pastille cliquée et les cartes qui restent. */
+.dm-skin .dm-chip[data-tone="conv"]{border-color:rgba(31,138,91,.45);color:var(--ok)}
+.dm-skin .dm-chip[data-tone="conv"][aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.dm-skin .dm-chip[data-tone="hot"]{border-color:rgba(224,138,47,.5);color:#8A5A0E}
+.dm-skin .dm-chip[data-tone="hot"][aria-pressed="true"]{background:#E08A2F;border-color:#E08A2F;color:#fff}
+.dm-skin .dm-chip[data-tone="missed"]{border-color:rgba(181,50,47,.5);color:var(--danger)}
+.dm-skin .dm-chip[data-tone="missed"][aria-pressed="true"]{background:var(--danger);border-color:var(--danger);color:#fff}
+.dark .dm-skin .dm-chip[data-tone="hot"]{color:#E3A94A}
 
 /* ───── frise verticale ───── */
 .dm-skin .dm-fr{flex:1;min-height:0;overflow:auto;padding:6px 0 18px}
@@ -511,6 +533,22 @@
   .dm-skin .dm-stats{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
 }
 
+/* ── Dossier replié : une ligne au lieu de deux bandeaux ──────────────────
+   Les sept tuiles + la bande de contacts pèsent ~150 px. Repliées, elles
+   tiennent sur 26 px et la carte d'action remonte au-dessus de la ligne de
+   flottaison d'un 13 pouces. Aucune valeur n'est perdue : même chiffres, même
+   ordre, l'exercice et la tranche passent en infobulle. */
+.dm-skin .dm-sum{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:6px 14px 7px;border-top:1px solid var(--border);background:var(--surface-2);
+  font-size:11.5px;color:var(--text-3);overflow:hidden}
+.dm-skin .dm-sum .it{display:inline-flex;align-items:baseline;gap:5px;min-width:0}
+.dm-skin .dm-sum .it .ico-xs{align-self:center;color:var(--text-4)}
+.dm-skin .dm-sum em{font-style:normal;font-family:var(--font-mono);font-size:9.5px;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--text-4)}
+.dm-skin .dm-sum b{font-weight:600;font-size:12px;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26ch}
+.dm-skin .dm-sum b.neg{color:var(--danger)}
+
 /* Écran court : c'est la hauteur qui manque, pas la largeur. On serre encore,
    et la colonne centrale récupère ce que les marges rendent. */
 @media (max-height: 860px){
@@ -539,9 +577,19 @@
 .dm-skin .dm-cta.big{height:52px;font-size:15px}
 .dm-skin .dm-cta.ok{background:var(--ok)}
 
-/* ── Panier « En discussion » ─────────────────────────────────────────────
-   Le prospect a répondu : c'est le seul panier où la file ne planifie rien.
-   Son onglet se distingue de la cadence, qui est du travail décidé à l'avance. */
-.dm-skin .dm-day[data-live="1"] .l{color:var(--ok)}
-.dm-skin .dm-day[data-live="1"][aria-selected="true"]{background:var(--ok);border-color:var(--ok)}
-.dm-skin .dm-day[data-live="1"][aria-selected="true"] .l{color:#fff}
+/* ── « En discussion » dans la file ───────────────────────────────────────
+   Le prospect a répondu : ces lignes ne sont pas planifiées, elles sont dues.
+   Elles avaient leur propre onglet ; depuis que la barre du haut ne dit plus
+   que des dates, c'est la LIGNE qui doit se reconnaître — un liseré vert et un
+   badge « a répondu », dans la même grammaire que le chaud (orange) et le non
+   rappelé (rouge). */
+.dm-skin .dm-tk[data-conv="1"]{border-left-color:var(--ok);background:rgba(31,138,91,.07)}
+.dm-skin .dm-tk[data-conv="1"]:hover{background:rgba(31,138,91,.12)}
+.dm-skin .dm-tk .st.conv{background:var(--ok-tint);color:var(--ok);font-weight:600}
+
+/* ── L'étape de séquence, lisible sans ouvrir la fiche ────────────────────
+   « WhatsApp » tout seul ne distingue pas un premier contact d'une quatrième
+   relance : deux lignes identiques à l'œil pour deux situations opposées. Le
+   numéro d'étape est donc traité comme une information de premier plan, pas
+   comme la mention grise qu'il était. */
+.dm-skin .dm-tk .st.stp{background:var(--accent-tint);color:var(--accent-2);font-weight:600}

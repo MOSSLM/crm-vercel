@@ -10,8 +10,8 @@
  */
 /* an-v2.css — Radar analytics · thème « Sama CRM » bleu / blanc (DA main) */
 .an-radar-surface{
---bg:#F7FAFD;--bg-2:#EFF5FC;--bg-3:#E7F0FB;
---panel:#FFFFFF;--panel-2:#F3F8FD;--panel-3:#E7F0FB;
+--bg:#F8F8F9;--bg-2:#F1F2F4;--bg-3:#E7E9ED;
+--panel:#FFFFFF;--panel-2:#F5F6F8;--panel-3:#E7E9ED;
 --line:rgba(18,40,68,.09);--line-2:rgba(18,40,68,.16);--line-3:rgba(18,40,68,.3);
 --tx:#122844;--tx-2:#4A648C;--tx-3:#8AA0C0;--tx-4:#B3C4DE;
 --acc:#2F7AE0;--acc-2:#1F5BC0;--acc-t:rgba(47,122,224,.10);--acc-t2:rgba(47,122,224,.18);
@@ -47,8 +47,8 @@
 /* ── shell ──────────────────────────────────────────── */
 .an-radar-surface{height:100%;min-height:0}
 .an-radar-surface .a-root{flex:1;min-height:0;height:100%;display:flex;flex-direction:column;min-width:1180px;background:
-radial-gradient(ellipse at 8% -12%,rgba(47,122,224,.10),transparent 52%),
-radial-gradient(ellipse at 96% 110%,rgba(122,90,224,.08),transparent 50%),var(--bg)}
+radial-gradient(ellipse at 8% -12%,rgba(47,122,224,.05),transparent 52%),
+radial-gradient(ellipse at 96% 110%,rgba(122,90,224,.04),transparent 50%),var(--bg)}
 .an-radar-surface .a-top{flex:0 0 54px;height:54px;overflow:hidden;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.86);backdrop-filter:blur(12px);position:relative;z-index:20}
 .an-radar-surface .a-brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 .an-radar-surface .a-brand>div{min-width:0}
@@ -123,6 +123,24 @@ background:radial-gradient(ellipse at 50% 40%,#FFFFFF 0%,#EAF3FD 44%,#D9E9FA 100
 .an-radar-surface .a-ghd{position:absolute;top:13px;left:14px;pointer-events:none;background:rgba(255,255,255,.66);backdrop-filter:blur(7px);border:1px solid rgba(255,255,255,.7);padding:8px 13px 9px;border-radius:12px}
 .an-radar-surface .a-ghd .t{font-family:var(--font-serif);font-size:23px;line-height:1.1;letter-spacing:-.01em;color:var(--tx)}
 .an-radar-surface .a-ghd .s{font-family:var(--font-mono);font-size:10.5px;color:var(--tx-3);margin-top:3px}
+/* Le temps réel ne peut pas être filtré par domaine (cf. la route API) : la
+   carte le dit là où on la regarde, au lieu de laisser croire à une mesure de
+   même nature que les autres fenêtres. */
+.an-radar-surface .a-ghd .w{font-family:var(--font-mono);font-size:9.5px;color:var(--amb);margin-top:3px;text-transform:uppercase;letter-spacing:.06em}
+
+/* ── Fenêtre de la carte ──────────────────────────────────────────────────
+   Sous le titre du globe, et NON dans la barre de KPI : cette plage-là ne
+   concerne que les villes affichées. La plage de la page (KPI, tableaux,
+   frise) reste où elle était. */
+.an-radar-surface .a-grange{position:absolute;top:82px;left:14px;display:flex;gap:4px;z-index:3;flex-wrap:wrap;max-width:calc(100% - 28px)}
+.an-radar-surface .a-grange .a-btn{background:rgba(255,255,255,.86);border-color:var(--line-2);color:var(--tx-2);backdrop-filter:blur(6px);padding:0 9px}
+.an-radar-surface .a-grange .a-btn:hover{background:#fff;border-color:var(--line-3);color:var(--tx)}
+.an-radar-surface .a-grange .a-btn[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+/* « Direct » porte une pastille qui bat : c'est la seule fenêtre où ce qui est
+   affiché change tout seul sous les yeux. */
+.an-radar-surface .a-grange .a-btn.live .dot{width:6px;height:6px;border-radius:50%;background:var(--grn);box-shadow:0 0 0 3px var(--grn-t);display:block;animation:an-live-dot 2s infinite}
+.an-radar-surface .a-grange .a-btn.live[aria-pressed=true] .dot{background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.28)}
+@keyframes an-live-dot{0%,100%{opacity:1}50%{opacity:.3}}
 .an-radar-surface .a-gctl{position:absolute;top:13px;right:14px;display:flex;gap:6px;z-index:3}
 .an-radar-surface .a-gctl .a-btn{background:rgba(255,255,255,.86);border-color:var(--line-2);color:var(--tx);backdrop-filter:blur(6px)}
 .an-radar-surface .a-gctl .a-btn:hover{background:#fff;border-color:var(--line-3)}
@@ -175,7 +193,7 @@ background:radial-gradient(ellipse at 50% 40%,#FFFFFF 0%,#EAF3FD 44%,#D9E9FA 100
 .an-radar-surface .a-track .dy{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:0}
 .an-radar-surface .a-track .dy i{display:block;border-radius:2px 2px 0 0;background:var(--bg-3);transition:background .15s}
 .an-radar-surface .a-track .dy.on i{background:linear-gradient(180deg,var(--acc),rgba(47,122,224,.45))}
-.an-radar-surface .a-track .dy.we i{background:#EEF3FA}
+.an-radar-surface .a-track .dy.we i{background:#EDEEF1}
 .an-radar-surface .a-track .dy.on.we i{background:linear-gradient(180deg,rgba(47,122,224,.6),rgba(47,122,224,.24))}
 .an-radar-surface .a-track .dy.cur i{box-shadow:0 0 0 1px var(--ink) inset}
 .an-radar-surface .a-track .dy:hover i{background:var(--acc-2)}

@@ -182,7 +182,12 @@ export async function LibrarySectionInline({
   // d'avoir jamais reçu l'URL de la fiche du client. Corrigé au rendu et pas
   // seulement dans les variables : les démos déjà générées portent l'URL de
   // recherche en dur, et il n'est pas question de les régénérer une par une.
-  html = corrigerLiensAvis(html, variables?.["entreprise.avis_url"]);
+  // Sans fiche connue, on retombe sur « {nom} {ville} » — le prospect tombe au
+  // moins sur SA propre entreprise plutôt que sur le mot « avis ».
+  html = corrigerLiensAvis(html, variables?.["entreprise.avis_url"], {
+    nom: variables?.["entreprise.nom"],
+    ville: variables?.["entreprise.ville"],
+  });
 
   // Chiffres clés ([data-stats]) depuis `__stats`. Même contrat que les avis :
   // sans stat disponible, les cartes d'exemple du design restent en place —

@@ -62,6 +62,8 @@ export interface Ga4RunReportResponse {
   metricHeaders?: Array<{ name: string; type: string }>;
   rows?: Ga4ReportRow[];
   rowCount?: number;
+  /** `ResponseMetaData` — on n'en lit que le fuseau, cf. `ga4ReportTimeZone`. */
+  metadata?: { timeZone?: string; currencyCode?: string };
 }
 
 async function callGa4(
@@ -116,6 +118,47 @@ export function ga4RowsToObjects(report: Ga4RunReportResponse): Array<Record<str
 
 export function ga4DateRangeFromDays(days: number): Ga4DateRange {
   return { startDate: `${days}daysAgo`, endDate: "today" };
+}
+
+/**
+ * Le fuseau de la propriété, tel que GA4 le renvoie avec chaque rapport.
+ *
+ * C'est LUI qui donne son sens aux dimensions temporelles : `dateHourMinute`
+ * vaut « YYYYMMDDHHMM » à l'heure de la propriété, pas en UTC. Sans ce fuseau,
+ * une fenêtre glissante (« les 60 dernières minutes ») se décalerait d'une à
+ * deux heures selon la saison — on afficherait des visites d'il y a trois
+ * heures comme si elles venaient d'avoir lieu.
+ *
+ * `null` quand la réponse ne le porte pas : à l'appelant de dire qu'il ne sait
+ * pas plutôt que de deviner.
+ */
+export function ga4ReportTimeZone(report: Ga4RunReportResponse): string | null {
+  const tz = report.metadata?.timeZone;
+  return typeof tz === "string" && tz.length > 0 ? tz : null;
+}
+
+/**
+ * L'horodatage `dateHourMinute` (YYYYMMDDHHMM) d'un instant, dans un fuseau.
+ *
+ * Les deux se comparent alors comme des chaînes — l'ordre lexicographique de ce
+ * format est l'ordre chronologique. Une réserve, assumée : aux deux
+ * changements d'heure, l'heure locale n'est pas monotone, et une fenêtre
+ * glissante peut se tromper d'une heure pendant une heure, deux fois par an.
+ */
+export function ga4MinuteStamp(at: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  // Intl peut rendre « 24 » pour minuit selon l'implémentation.
+  const heure = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}${get("month")}${get("day")}${heure}${get("minute")}`;
 }
 
 export interface Ga4Config {

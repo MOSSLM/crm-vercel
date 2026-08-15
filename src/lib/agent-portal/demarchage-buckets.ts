@@ -23,10 +23,19 @@
  * Passé `DAY_CUTOFF_HOUR` (heure de l'agent), la journée est close : le reste
  * bascule sur demain plutôt que de rester affiché comme faisable ce soir.
  *
- * Les deux paniers de tête — signal chaud non rappelé, prospect chaud — ne sont
- * PAS soumis au quota : ce sont des occasions mesurées, pas de la cadence. Un
- * prospect qui vient de rouvrir sa démo se rappelle aujourd'hui même si les
- * vingt appels du jour sont déjà passés.
+ * DES JOURS, RIEN QUE DES JOURS
+ * Le plan ne rend QUE des journées datées. Les trois signaux — chaud non
+ * rappelé, discussion ouverte, prospect chaud — ne sont plus des onglets à côté
+ * des jours : ils vivaient là par accident d'implémentation, et la barre
+ * d'onglets se retrouvait avec sept entrées de six pixels où on ne lisait plus
+ * que la première lettre. Ce sont désormais des ATTRIBUTS (`signalOf`) posés sur
+ * la tâche, qui la font remonter en tête d'AUJOURD'HUI et qui alimentent les
+ * filtres. Un signal chaud est une chose à faire aujourd'hui : sa place est dans
+ * la journée, pas dans un onglet parallèle.
+ *
+ * Ces trois signaux échappent en revanche au quota : ce sont des occasions
+ * mesurées, pas de la cadence. Un prospect qui vient de rouvrir sa démo se
+ * rappelle aujourd'hui même si les vingt appels du jour sont déjà passés.
  *
  * Réutilise `dayStartIso` (`@/lib/agent-progress`) pour la frontière du jour
  * dans le fuseau de l'agent : c'est la même horloge que le compteur "X sur Y
@@ -48,36 +57,19 @@ export type DemarchageTaskLike = {
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 
-export type DemarchageBucketKey =
-  | "missed"
-  | "conversation"
-  | "hot"
-  | "today"
-  | "tomorrow"
-  | "week"
-  | "later";
+/**
+ * Ce qui sort une tâche de la cadence et la remonte en tête de journée.
+ * `null` = tâche ordinaire, planifiée au quota.
+ */
+export type DemarchageSignal = "missed" | "conversation" | "hot";
 
-export type DemarchageBuckets<T> = Record<DemarchageBucketKey, T[]>;
+/** L'ordre de priorité des signaux — c'est aussi l'ordre d'affichage. */
+export const SIGNAL_ORDER: readonly DemarchageSignal[] = ["missed", "conversation", "hot"] as const;
 
-/** L'ordre dans lequel on propose les paniers — le plus urgent d'abord. */
-export const BUCKET_ORDER: readonly DemarchageBucketKey[] = [
-  "missed",
-  "conversation",
-  "hot",
-  "today",
-  "tomorrow",
-  "week",
-  "later",
-] as const;
-
-export const BUCKET_LABEL: Record<DemarchageBucketKey, string> = {
-  missed: "Signal chaud non rappelé",
+export const SIGNAL_LABEL: Record<DemarchageSignal, string> = {
+  missed: "Non rappelés",
   conversation: "En discussion",
-  hot: "À appeler maintenant",
-  today: "Aujourd'hui",
-  tomorrow: "Demain",
-  week: "Cette semaine",
-  later: "Plus tard",
+  hot: "Chauds",
 };
 
 /**
@@ -125,24 +117,15 @@ export const quotaOf = (kind: string): number | null => DAILY_QUOTA[kind] ?? nul
  * Cette tâche fait-elle partie d'une discussion en cours ?
  *
  * Le prospect a écrit : il attend une réponse, et cette réponse ne se planifie
- * pas — elle se donne. Ces tâches sortent donc du plan et vivent dans leur
- * propre panier, sans plafond.
+ * pas — elle se donne. Ces tâches sortent donc du plan et se traitent le jour
+ * même, sans plafond.
  */
 export const isConversation = (t: DemarchageTaskLike): boolean =>
   t.in_conversation === true && CONVERSATION_KINDS.includes(t.kind ?? "");
 
 /**
- * Heure locale (fuseau de l'agent) à partir de laquelle la journée est close :
- * ce qui n'a pas été fait passe à demain. Personne n'appelle un artisan à
- * 22 h 30, et laisser vingt WhatsApp affichés « pour aujourd'hui » à cette
- * heure-là ne fait que fabriquer un retard qui n'en est pas un.
- */
-export const DAY_CUTOFF_HOUR = 22;
-
-/**
- * Un prospect dont les signaux mesurés réclament un appel aujourd'hui passe
- * dans son propre panier, en tête de file, QUELLE QUE SOIT l'échéance prévue
- * par sa séquence.
+ * Un prospect dont les signaux mesurés réclament un appel aujourd'hui remonte
+ * en tête de journée, QUELLE QUE SOIT l'échéance prévue par sa séquence.
  *
  * C'est le cœur de l'idée : la séquence planifie le rythme normal, mais une
  * démo rouverte ce matin est une information plus fraîche que n'importe quel
@@ -152,6 +135,28 @@ export const DAY_CUTOFF_HOUR = 22;
  */
 const isHot = (t: DemarchageTaskLike) =>
   t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
+
+/** Le signal porté par la tâche, ou `null` si elle suit simplement la cadence. */
+export function signalOf(task: DemarchageTaskLike): DemarchageSignal | null {
+  // Un signal chaud non rappelé passe AVANT tout : c'est une opportunité déjà
+  // en train de refroidir, pas une opportunité fraîche.
+  if (task.intent?.missed) return "missed";
+  // Puis ce qui vient d'arriver : quelqu'un a écrit et attend. Devant les
+  // signaux de visite, qui ne sont qu'un intérêt observé, jamais une demande.
+  if (isConversation(task)) return "conversation";
+  if (isHot(task)) return "hot";
+  return null;
+}
+
+/**
+ * Heure locale (fuseau de l'agent) à partir de laquelle la journée est close :
+ * ce qui n'a pas été fait passe à demain. Personne n'appelle un artisan à
+ * 22 h 30, et laisser vingt WhatsApp affichés « pour aujourd'hui » à cette
+ * heure-là ne fait que fabriquer un retard qui n'en est pas un.
+ */
+export const DAY_CUTOFF_HOUR = 22;
+
+const DAY_MS = 86_400_000;
 
 const dueMs = (t: DemarchageTaskLike): number => {
   const ms = t.due_at ? new Date(t.due_at).getTime() : NaN;
@@ -165,12 +170,27 @@ function localHour(now: Date, timeZone: string): number {
   return (now.getTime() - start) / 3_600_000;
 }
 
-/** Le panier d'un décalage en jours : 0 = aujourd'hui, 1 = demain, 2-6 = la semaine. */
-function bucketOfDay(offset: number): DemarchageBucketKey {
-  if (offset <= 0) return "today";
-  if (offset === 1) return "tomorrow";
-  if (offset < 7) return "week";
-  return "later";
+/**
+ * La date civile (YYYY-MM-DD, fuseau de l'agent) du jour `offset`.
+ *
+ * On vise MIDI du jour visé plutôt que minuit : aux deux changements d'heure,
+ * « minuit + 24 h » tombe à 23 h la veille ou 1 h le lendemain, et la date
+ * formatée serait fausse une fois par an dans chaque sens.
+ */
+export function dayDate(
+  offset: number,
+  now: Date = new Date(),
+  timeZone: string = AGENT_TIMEZONE,
+): string {
+  const start = new Date(dayStartIso(now, timeZone)).getTime();
+  const midi = new Date(start + offset * DAY_MS + DAY_MS / 2);
+  // en-CA rend exactement YYYY-MM-DD, sans avoir à recoller des morceaux.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(midi);
 }
 
 /**
@@ -203,41 +223,58 @@ export type DemarchagePlanOptions = {
   doneToday?: Readonly<Record<string, number>>;
 };
 
+/** Une journée du plan — c'est exactement un onglet de la file. */
+export type DemarchageDay<T> = {
+  /** 0 = aujourd'hui, 1 = demain, … */
+  offset: number;
+  /** Date civile (YYYY-MM-DD) dans le fuseau de l'agent — la clé de l'onglet. */
+  date: string;
+  tasks: T[];
+};
+
 /**
- * Range chaque tâche dans son panier : d'abord les deux paniers de signal, puis
- * la répartition par cadence sur les jours à venir.
+ * Range chaque tâche dans sa journée.
  *
- * L'ordre de passage à l'intérieur d'un panier est celui de l'échéance
+ * Aujourd'hui vient d'abord les trois signaux (chaud non rappelé, discussion,
+ * chaud), dans cet ordre, puis la part de cadence du jour. Les jours suivants
+ * n'ont que de la cadence.
+ *
+ * L'ordre de passage à l'intérieur d'un groupe est celui de l'échéance
  * croissante — la plus ancienne d'abord, sans date en dernier —, quel que soit
  * l'ordre dans lequel l'appelant fournit les tâches.
+ *
+ * Le tableau rendu contient TOUJOURS aujourd'hui (même vide : c'est l'onglet
+ * par défaut, il ne doit pas disparaître sous les doigts), puis uniquement les
+ * journées qui portent au moins une tâche — pas de colonne « 0 act. » pour un
+ * jeudi où il n'y a rien.
  */
-export function bucketTasks<T extends DemarchageTaskLike>(
+export function planTasks<T extends DemarchageTaskLike>(
   tasks: T[],
   { now = new Date(), timeZone = AGENT_TIMEZONE, doneToday = {} }: DemarchagePlanOptions = {},
-): DemarchageBuckets<T> {
-  const buckets: DemarchageBuckets<T> = {
-    missed: [],
-    conversation: [],
-    hot: [],
-    today: [],
-    tomorrow: [],
-    week: [],
-    later: [],
+): Array<DemarchageDay<T>> {
+  /** Les tâches de chaque décalage de jour, avant mise en forme. */
+  const parJour = new Map<number, T[]>();
+  const pousser = (offset: number, task: T) => {
+    const arr = parJour.get(offset);
+    if (arr) arr.push(task);
+    else parJour.set(offset, [task]);
   };
 
+  const signaux: Record<DemarchageSignal, T[]> = { missed: [], conversation: [], hot: [] };
   const aPlanifier: T[] = [];
   for (const task of tasks) {
-    // Un signal chaud non rappelé passe AVANT tout : c'est une opportunité
-    // déjà en train de refroidir, pas une opportunité fraîche.
-    if (task.intent?.missed) buckets.missed.push(task);
-    // Puis ce qui vient d'arriver : quelqu'un a écrit et attend. Devant les
-    // signaux de visite, qui ne sont qu'un intérêt observé, jamais une demande.
-    else if (isConversation(task)) buckets.conversation.push(task);
-    else if (isHot(task)) buckets.hot.push(task);
+    const signal = signalOf(task);
+    if (signal) signaux[signal].push(task);
     else aPlanifier.push(task);
   }
 
-  buckets.conversation.sort((a, b) => dueMs(a) - dueMs(b));
+  for (const cle of SIGNAL_ORDER) {
+    signaux[cle].sort((a, b) => dueMs(a) - dueMs(b));
+    // Les signaux sont du travail du jour : ils ouvrent la journée, dans
+    // l'ordre de priorité, avant la cadence.
+    signaux[cle].forEach((t) => pousser(0, t));
+  }
+
   aPlanifier.sort((a, b) => dueMs(a) - dueMs(b));
 
   const journeeClose = localHour(now, timeZone) >= DAY_CUTOFF_HOUR;
@@ -249,9 +286,11 @@ export function bucketTasks<T extends DemarchageTaskLike>(
     const kind = task.kind ?? "";
     const quota = quotaOf(kind);
 
-    // Canal sans plafond (l'attente de réponse) : rien à étaler.
+    // Canal sans plafond (l'attente de réponse) : rien à étaler, et rien à
+    // reporter non plus — déclarer une réponse prend deux secondes, la clôture
+    // du soir ne la concerne pas.
     if (quota == null || quota <= 0) {
-      buckets.today.push(task);
+      pousser(0, task);
       continue;
     }
 
@@ -267,10 +306,15 @@ export function bucketTasks<T extends DemarchageTaskLike>(
       etat.libre = quota;
     }
     etat.libre -= 1;
-    buckets[bucketOfDay(etat.jour)].push(task);
+    pousser(etat.jour, task);
   }
 
-  return buckets;
+  // Aujourd'hui existe toujours, même vide.
+  if (!parJour.has(0)) parJour.set(0, []);
+
+  return [...parJour.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([offset, liste]) => ({ offset, date: dayDate(offset, now, timeZone), tasks: liste }));
 }
 
 /** Combien de tâches par canal dans une liste — ce que la file annonce pour un jour. */
@@ -283,22 +327,39 @@ export function countByKind(tasks: readonly DemarchageTaskLike[]): Record<string
   return par;
 }
 
-/** Le premier panier non vide, dans l'ordre où on veut le proposer par défaut. */
-export function firstNonEmptyBucket<T>(buckets: DemarchageBuckets<T>): T | null {
-  for (const key of BUCKET_ORDER) {
-    const first = buckets[key][0];
-    if (first) return first;
+/** Combien de tâches portent chaque signal — ce que les filtres annoncent. */
+export function countBySignal(tasks: readonly DemarchageTaskLike[]): Record<DemarchageSignal, number> {
+  const par: Record<DemarchageSignal, number> = { missed: 0, conversation: 0, hot: 0 };
+  for (const t of tasks) {
+    const s = signalOf(t);
+    if (s) par[s] += 1;
+  }
+  return par;
+}
+
+/**
+ * La première tâche du plan — celle sur laquelle on atterrit à l'ouverture.
+ *
+ * L'ordre du plan porte déjà la priorité : le premier jour d'abord, et à
+ * l'intérieur de ce jour les signaux avant la cadence. Il n'y a donc rien à
+ * arbitrer ici.
+ */
+export function firstPlannedTask<T extends DemarchageTaskLike>(
+  days: ReadonlyArray<DemarchageDay<T>>,
+): T | null {
+  for (const day of days) {
+    if (day.tasks[0]) return day.tasks[0];
   }
   return null;
 }
 
-/** Le panier qui contient cette tâche — pour faire suivre l'onglet à la sélection. */
-export function bucketOfTask<T extends { id: string }>(
-  buckets: DemarchageBuckets<T>,
+/** La journée qui contient cette tâche — pour faire suivre l'onglet à la sélection. */
+export function dayOfTask<T extends DemarchageTaskLike & { id: string }>(
+  days: ReadonlyArray<DemarchageDay<T>>,
   id: string,
-): DemarchageBucketKey | null {
-  for (const key of BUCKET_ORDER) {
-    if (buckets[key].some((t) => t.id === id)) return key;
+): string | null {
+  for (const day of days) {
+    if (day.tasks.some((t) => t.id === id)) return day.date;
   }
   return null;
 }

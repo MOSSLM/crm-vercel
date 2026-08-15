@@ -1,10 +1,12 @@
 import {
   DAILY_QUOTA,
-  bucketOfTask,
-  bucketTasks,
   countByKind,
-  firstNonEmptyBucket,
+  countBySignal,
+  dayOfTask,
+  firstPlannedTask,
   isLate,
+  planTasks,
+  signalOf,
 } from "../demarchage-buckets";
 
 const NOW = new Date("2026-08-13T10:00:00Z");
@@ -34,186 +36,210 @@ const enDiscussion = (id: string, due: string | null, kind = "whatsapp"): T => (
 const lot = (kind: string, n: number, prefix = kind): T[] =>
   Array.from({ length: n }, (_, i) => t(`${prefix}-${i}`, iso("2026-08-10"), kind));
 
-const plan = (tasks: T[], opts: Parameters<typeof bucketTasks>[1] = {}) =>
-  bucketTasks(tasks, { now: NOW, timeZone: "UTC", ...opts });
+const plan = (tasks: T[], opts: Parameters<typeof planTasks>[1] = {}) =>
+  planTasks(tasks, { now: NOW, timeZone: "UTC", ...opts });
 
-describe("bucketTasks — la cadence quotidienne", () => {
+/** Les tâches d'un décalage de jour (0 = aujourd'hui) — [] si le jour est absent. */
+const jour = (days: ReturnType<typeof plan>, offset: number) =>
+  days.find((d) => d.offset === offset)?.tasks ?? [];
+const ids = (tasks: T[]) => tasks.map((x) => x.id);
+
+describe("planTasks — la cadence quotidienne", () => {
   it("garde tout aujourd'hui tant que le quota du canal n'est pas atteint", () => {
-    const b = plan(lot("whatsapp", 5));
-    expect(b.today).toHaveLength(5);
-    expect(b.tomorrow).toHaveLength(0);
+    const d = plan(lot("whatsapp", 5));
+    expect(jour(d, 0)).toHaveLength(5);
+    expect(jour(d, 1)).toHaveLength(0);
   });
 
   it("renvoie à demain ce qui dépasse le quota du jour", () => {
     // 25 WhatsApp en attente, 20 par jour : 20 aujourd'hui, 5 demain.
-    const b = plan(lot("whatsapp", 25));
-    expect(b.today).toHaveLength(DAILY_QUOTA.whatsapp);
-    expect(b.tomorrow).toHaveLength(25 - DAILY_QUOTA.whatsapp);
-    expect(b.week).toHaveLength(0);
+    const d = plan(lot("whatsapp", 25));
+    expect(jour(d, 0)).toHaveLength(DAILY_QUOTA.whatsapp);
+    expect(jour(d, 1)).toHaveLength(25 - DAILY_QUOTA.whatsapp);
+    expect(jour(d, 2)).toHaveLength(0);
   });
 
-  it("étale au-delà de demain, puis dans « cette semaine » et « plus tard »", () => {
+  it("étale sur autant de journées datées que nécessaire", () => {
     const q = DAILY_QUOTA.whatsapp;
-    // 8 journées pleines : aujourd'hui, demain, 5 jours de semaine, 1 au-delà.
-    const b = plan(lot("whatsapp", q * 8));
-    expect(b.today).toHaveLength(q);
-    expect(b.tomorrow).toHaveLength(q);
-    expect(b.week).toHaveLength(q * 5);
-    expect(b.later).toHaveLength(q);
+    const d = plan(lot("whatsapp", q * 8));
+    expect(d).toHaveLength(8);
+    d.forEach((journee) => expect(journee.tasks).toHaveLength(q));
+    expect(d.map((j) => j.offset)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("date chaque journée pour de vrai, dans le fuseau de l'agent", () => {
+    const d = plan(lot("whatsapp", DAILY_QUOTA.whatsapp * 3));
+    expect(d.map((j) => j.date)).toEqual(["2026-08-13", "2026-08-14", "2026-08-15"]);
+  });
+
+  it("garde toujours aujourd'hui, même quand il n'y a rien à y faire", () => {
+    expect(plan([]).map((j) => j.date)).toEqual(["2026-08-13"]);
+  });
+
+  it("n'invente pas de journée vide entre deux journées pleines", () => {
+    // Rien ne peut créer un trou dans le plan, mais rien ne doit non plus
+    // ajouter un onglet « 0 act. » pour un jour que la cadence n'a pas atteint.
+    const d = plan(lot("whatsapp", 3));
+    expect(d).toHaveLength(1);
   });
 
   it("compte chaque canal séparément — 20 appels ET 20 WhatsApp tiennent le même jour", () => {
-    const b = plan([...lot("call", 20), ...lot("whatsapp", 20)]);
-    expect(b.today).toHaveLength(40);
-    expect(b.tomorrow).toHaveLength(0);
+    const d = plan([...lot("call", 20), ...lot("whatsapp", 20)]);
+    expect(jour(d, 0)).toHaveLength(40);
+    expect(jour(d, 1)).toHaveLength(0);
   });
 
   it("laisse un canal sans tâche à zéro — jamais à son quota", () => {
     // Aucune séquence à l'étape appel : la file ne doit pas inventer 20 appels.
-    const b = plan(lot("whatsapp", 30));
-    expect(countByKind(b.today).call ?? 0).toBe(0);
-    expect(countByKind(b.today).whatsapp).toBe(DAILY_QUOTA.whatsapp);
+    const d = plan(lot("whatsapp", 30));
+    expect(countByKind(jour(d, 0)).call ?? 0).toBe(0);
+    expect(countByKind(jour(d, 0)).whatsapp).toBe(DAILY_QUOTA.whatsapp);
   });
 
   it("décompte ce qui a DÉJÀ été bouclé aujourd'hui du quota du jour", () => {
     // 15 WhatsApp déjà envoyés ce matin : il ne reste que 5 places aujourd'hui.
-    const b = plan(lot("whatsapp", 25), { doneToday: { whatsapp: 15 } });
-    expect(b.today).toHaveLength(5);
-    expect(b.tomorrow).toHaveLength(DAILY_QUOTA.whatsapp);
+    const d = plan(lot("whatsapp", 25), { doneToday: { whatsapp: 15 } });
+    expect(jour(d, 0)).toHaveLength(5);
+    expect(jour(d, 1)).toHaveLength(DAILY_QUOTA.whatsapp);
   });
 
   it("ferme la journée quand le quota est déjà consommé", () => {
-    const b = plan(lot("call", 6), { doneToday: { call: DAILY_QUOTA.call } });
-    expect(b.today).toHaveLength(0);
-    expect(b.tomorrow).toHaveLength(6);
+    const d = plan(lot("call", 6), { doneToday: { call: DAILY_QUOTA.call } });
+    expect(jour(d, 0)).toHaveLength(0);
+    expect(jour(d, 1)).toHaveLength(6);
   });
 
   it("bascule tout sur demain passé 22 h", () => {
     const soir = new Date("2026-08-13T22:30:00Z");
-    const b = bucketTasks(lot("whatsapp", 25), { now: soir, timeZone: "UTC" });
-    expect(b.today).toHaveLength(0);
-    expect(b.tomorrow).toHaveLength(DAILY_QUOTA.whatsapp);
-    expect(b.week).toHaveLength(5);
+    const d = planTasks(lot("whatsapp", 25), { now: soir, timeZone: "UTC" });
+    expect(jour(d, 0)).toHaveLength(0);
+    expect(jour(d, 1)).toHaveLength(DAILY_QUOTA.whatsapp);
+    expect(jour(d, 2)).toHaveLength(5);
   });
 
   it("garde le jour ouvert juste avant la coupure", () => {
-    const b = bucketTasks(lot("whatsapp", 3), { now: new Date("2026-08-13T21:59:00Z"), timeZone: "UTC" });
-    expect(b.today).toHaveLength(3);
+    const d = planTasks(lot("whatsapp", 3), { now: new Date("2026-08-13T21:59:00Z"), timeZone: "UTC" });
+    expect(jour(d, 0)).toHaveLength(3);
   });
 
   it("passe les plus anciennes échéances en premier", () => {
-    const b = plan([
+    const d = plan([
       t("recent", iso("2026-08-13")),
       t("vieux", iso("2026-08-01")),
       t("moyen", iso("2026-08-07")),
     ]);
-    expect(b.today.map((x) => x.id)).toEqual(["vieux", "moyen", "recent"]);
+    expect(ids(jour(d, 0))).toEqual(["vieux", "moyen", "recent"]);
   });
 
   it("planifie quand même une tâche sans échéance, en fin de file", () => {
-    const b = plan([t("sansdate", null), t("date", iso("2026-08-12"))]);
-    expect(b.today.map((x) => x.id)).toEqual(["date", "sansdate"]);
+    const d = plan([t("sansdate", null), t("date", iso("2026-08-12"))]);
+    expect(ids(jour(d, 0))).toEqual(["date", "sansdate"]);
   });
 
   it("ne plafonne pas l'attente de réponse : elle ne coûte aucun effort", () => {
-    const b = plan(lot("wait", 40));
-    expect(b.today).toHaveLength(40);
-    expect(b.tomorrow).toHaveLength(0);
+    const d = plan(lot("wait", 40));
+    expect(jour(d, 0)).toHaveLength(40);
+    expect(jour(d, 1)).toHaveLength(0);
   });
 
-  it("n'affecte jamais une tâche à deux paniers", () => {
+  it("n'affecte jamais une tâche à deux journées", () => {
     const tasks = [...lot("whatsapp", 45), ...lot("call", 3), t("chaud", iso("2026-08-30"), "call", { callWhen: "maintenant", score: 90 })];
-    const b = plan(tasks);
-    const total = Object.values(b).reduce((n, arr) => n + arr.length, 0);
+    const d = plan(tasks);
+    const total = d.reduce((n, j) => n + j.tasks.length, 0);
     expect(total).toBe(tasks.length);
   });
 });
 
-describe("bucketTasks — la discussion en cours échappe au plan", () => {
+describe("planTasks — la discussion en cours échappe au plan", () => {
   it("sort du quota un message dont le prospect a déjà répondu", () => {
     // Le cas qui faisait mal : la journée est pleine de premiers contacts, et
     // l'étape « envoie-lui le site démo » — déclenchée par SA réponse — se
     // retrouvait planifiée au lendemain. On ne fait pas attendre un prospect
     // qui vient d'écrire.
-    const b = plan([...lot("whatsapp", DAILY_QUOTA.whatsapp), enDiscussion("suite", iso("2026-08-13"))]);
-    expect(b.conversation.map((x) => x.id)).toEqual(["suite"]);
-    expect(b.tomorrow).toHaveLength(0);
+    const d = plan([...lot("whatsapp", DAILY_QUOTA.whatsapp), enDiscussion("suite", iso("2026-08-13"))]);
+    expect(ids(jour(d, 0))[0]).toBe("suite");
+    expect(jour(d, 1)).toHaveLength(0);
   });
 
   it("n'a aucun plafond : cent discussions restent cent discussions", () => {
-    const b = plan(Array.from({ length: 100 }, (_, i) => enDiscussion(`d-${i}`, iso("2026-08-12"))));
-    expect(b.conversation).toHaveLength(100);
-    expect(b.today).toHaveLength(0);
-    expect(b.tomorrow).toHaveLength(0);
+    const d = plan(Array.from({ length: 100 }, (_, i) => enDiscussion(`d-${i}`, iso("2026-08-12"))));
+    expect(jour(d, 0)).toHaveLength(100);
+    expect(jour(d, 1)).toHaveLength(0);
   });
 
   it("garde les APPELS dans la cadence, même en discussion", () => {
     // Répondre à un message coûte une minute ; passer un appel, dix. Le
     // plafond des appels est une contrainte d'horloge, pas de volume sortant.
-    const b = plan([...lot("call", DAILY_QUOTA.call), enDiscussion("appel", iso("2026-08-13"), "call")]);
-    expect(b.conversation).toHaveLength(0);
-    expect(b.tomorrow.map((x) => x.id)).toEqual(["appel"]);
+    const d = plan([...lot("call", DAILY_QUOTA.call), enDiscussion("appel", iso("2026-08-13"), "call")]);
+    expect(countBySignal(jour(d, 0)).conversation).toBe(0);
+    expect(ids(jour(d, 1))).toEqual(["appel"]);
   });
 
-  it("passe devant les signaux de visite, jamais devant un chaud non rappelé", () => {
-    const b = plan([
+  it("ouvre la journée par les signaux, dans l'ordre de priorité", () => {
+    const d = plan([
+      t("froid", iso("2026-08-01")),
       enDiscussion("discussion", iso("2026-08-13")),
       t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 80 }),
       t("manque", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 75, missed: true }),
     ]);
-    expect(firstNonEmptyBucket(b)).toMatchObject({ id: "manque" });
-    expect(b.conversation.map((x) => x.id)).toEqual(["discussion"]);
-    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
+    expect(ids(jour(d, 0))).toEqual(["manque", "discussion", "chaud", "froid"]);
+    expect(firstPlannedTask(d)).toMatchObject({ id: "manque" });
   });
 
   it("ne bascule pas une attente en discussion : il n'y a rien à y faire", () => {
-    const b = plan([{ ...t("w", iso("2026-08-13"), "wait"), in_conversation: true }]);
-    expect(b.conversation).toHaveLength(0);
-    expect(b.today.map((x) => x.id)).toEqual(["w"]);
+    const d = plan([{ ...t("w", iso("2026-08-13"), "wait"), in_conversation: true }]);
+    expect(countBySignal(jour(d, 0)).conversation).toBe(0);
+    expect(ids(jour(d, 0))).toEqual(["w"]);
   });
 
   it("traite les plus anciennes réponses d'abord", () => {
-    const b = plan([
+    const d = plan([
       enDiscussion("recent", iso("2026-08-13")),
       enDiscussion("vieux", iso("2026-08-09")),
     ]);
-    expect(b.conversation.map((x) => x.id)).toEqual(["vieux", "recent"]);
+    expect(ids(jour(d, 0))).toEqual(["vieux", "recent"]);
   });
 });
 
-describe("bucketTasks — les signaux passent devant la cadence", () => {
+describe("signalOf — les signaux passent devant la cadence", () => {
   it("remonte un prospect chaud en tête, même si sa séquence le prévoit plus tard", () => {
-    const b = plan([t("froid", iso("2026-08-13")), t("chaud", iso("2026-08-30"), "call", { callWhen: "maintenant", score: 90 })]);
-    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
-    expect(b.later).toEqual([]);
-    expect(firstNonEmptyBucket(b)).toMatchObject({ id: "chaud" });
+    const d = plan([t("froid", iso("2026-08-13")), t("chaud", iso("2026-08-30"), "call", { callWhen: "maintenant", score: 90 })]);
+    expect(ids(jour(d, 0))).toEqual(["chaud", "froid"]);
+    expect(d).toHaveLength(1);
   });
 
   it("considère « aujourd'hui » comme chaud, pas seulement « maintenant »", () => {
-    const b = plan([t("a", iso("2026-08-30"), "call", { callWhen: "aujourdhui", score: 70 })]);
-    expect(b.hot).toHaveLength(1);
+    expect(signalOf(t("a", iso("2026-08-30"), "call", { callWhen: "aujourdhui", score: 70 }))).toBe("hot");
   });
 
   it("ignore le quota du jour : un signal chaud se rappelle même journée pleine", () => {
-    const b = plan([...lot("call", DAILY_QUOTA.call), t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 90 })]);
-    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
-    expect(b.today).toHaveLength(DAILY_QUOTA.call);
+    const d = plan([...lot("call", DAILY_QUOTA.call), t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 90 })]);
+    expect(ids(jour(d, 0))[0]).toBe("chaud");
+    expect(jour(d, 0)).toHaveLength(DAILY_QUOTA.call + 1);
   });
 
   it("ne remonte PAS un signal tiède : J+1 repasse par le plan", () => {
-    const b = plan([t("tiede", iso("2026-08-14"), "whatsapp", { callWhen: "j1", score: 40 })]);
-    expect(b.hot).toEqual([]);
-    expect(b.today.map((x) => x.id)).toEqual(["tiede"]);
+    const tiede = t("tiede", iso("2026-08-14"), "whatsapp", { callWhen: "j1", score: 40 });
+    expect(signalOf(tiede)).toBeNull();
+    expect(ids(jour(plan([tiede]), 0))).toEqual(["tiede"]);
   });
 
   it("passe le signal chaud non rappelé avant les chauds du jour", () => {
-    const b = plan([
+    const chaud = t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 80 });
+    const manque = t("manque", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 75, missed: true });
+    expect(signalOf(manque)).toBe("missed");
+    expect(signalOf(chaud)).toBe("hot");
+    expect(firstPlannedTask(plan([chaud, manque]))).toMatchObject({ id: "manque" });
+  });
+
+  it("compte les signaux d'une journée, pour les pastilles de filtre", () => {
+    const d = plan([
+      enDiscussion("d1", iso("2026-08-13")),
+      enDiscussion("d2", iso("2026-08-13")),
       t("chaud", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 80 }),
-      t("manque", iso("2026-08-13"), "call", { callWhen: "maintenant", score: 75, missed: true }),
+      t("froid", iso("2026-08-13")),
     ]);
-    expect(b.missed.map((x) => x.id)).toEqual(["manque"]);
-    expect(b.hot.map((x) => x.id)).toEqual(["chaud"]);
-    expect(firstNonEmptyBucket(b)).toMatchObject({ id: "manque" });
+    expect(countBySignal(jour(d, 0))).toEqual({ missed: 0, conversation: 2, hot: 1 });
   });
 });
 
@@ -236,11 +262,11 @@ describe("isLate — l'échéance dépassée reste dite, sur la ligne", () => {
   });
 });
 
-describe("bucketOfTask", () => {
-  it("retrouve le panier d'une tâche, pour que l'onglet suive la sélection", () => {
-    const b = plan(lot("whatsapp", 25));
-    expect(bucketOfTask(b, "whatsapp-0")).toBe("today");
-    expect(bucketOfTask(b, "whatsapp-24")).toBe("tomorrow");
-    expect(bucketOfTask(b, "inconnu")).toBeNull();
+describe("dayOfTask", () => {
+  it("retrouve la journée d'une tâche, pour que l'onglet suive la sélection", () => {
+    const d = plan(lot("whatsapp", 25));
+    expect(dayOfTask(d, "whatsapp-0")).toBe("2026-08-13");
+    expect(dayOfTask(d, "whatsapp-24")).toBe("2026-08-14");
+    expect(dayOfTask(d, "inconnu")).toBeNull();
   });
 });

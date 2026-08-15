@@ -23,8 +23,23 @@
   --font-family-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-family-mono: "Geist Mono", var(--font-dm-mono), ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Color system - Light mode (Sama CRM — Direction Artistique : nuit, azur, brume) */
-  --background: #F7FAFD;
+  /* Color system - Light mode (Sama CRM — Direction Artistique : nuit, azur, brume)
+   *
+   * LES FONDS SONT GRIS, PAS BLEUS.
+   * La brume d'origine (#F7FAFD / #EFF5FC / #E7F0FB) portait 13 à 20 points de
+   * bleu de plus que de rouge : sur les grands aplats — page, barre latérale,
+   * en-têtes de tableau — ça ne se lit plus comme une nuance neutre mais comme
+   * un écran teinté, et ça fatigue au bout d'une journée. Les fonds sont donc
+   * repassés en gris quasi neutre (3 à 6 points d'écart), assez clairs pour
+   * rester du « presque blanc » sans que les cartes blanches s'y noient.
+   *
+   * L'azur reste l'accent, l'encre reste #122844 : c'est la Direction
+   * Artistique qui garde ses couleurs, ce sont les SURFACES qui les perdent.
+   * Les mêmes quatre valeurs sont reprises telles quelles par chaque skin
+   * (tel-skin, dem-skin, rdv-skin, mp-skin, analytics-radar…) — elles doivent
+   * bouger ensemble, sinon un écran reste bleu à côté des autres.
+   */
+  --background: #F8F8F9;
   --foreground: #122844;
   --card: #FFFFFF;
   --card-foreground: #122844;
@@ -32,14 +47,14 @@
   --popover-foreground: #122844;
   --primary: #2F7AE0;
   --primary-foreground: #FFFFFF;
-  --secondary: #EFF5FC;
+  --secondary: #F1F2F4;
   --secondary-foreground: #122844;
-  --muted: #EFF5FC;
+  --muted: #F1F2F4;
   /* Un cran plus sombre que --text-3 : ce jeton porte le texte courant
      secondaire de tout le CRM et doit passer AA (4,8:1 sur blanc), là où
      --text-3 reste la brume des étiquettes discrètes. */
   --muted-foreground: #5F7396;
-  --accent: #EFF5FC;
+  --accent: #F1F2F4;
   --accent-foreground: #2F7AE0;
   --destructive: #B5322F;
   --destructive-foreground: #FFFFFF;
@@ -50,7 +65,7 @@
   --hover: rgba(18, 40, 68, 0.04);
   --input: rgba(18, 40, 68, 0.12);
   --input-background: #FFFFFF;
-  --switch-background: #E7F0FB;
+  --switch-background: #E7E9ED;
   --ring: rgba(47, 122, 224, 0.30);
 
   /* Layout */
@@ -59,11 +74,11 @@
   --shadow-elevated: 0 1px 0 rgba(18, 40, 68, 0.04), 0 12px 32px rgba(18, 40, 68, 0.08);
 
   /* Sidebar colors */
-  --sidebar: #EFF5FC;
+  --sidebar: #F1F2F4;
   --sidebar-foreground: #122844;
   --sidebar-primary: #2F7AE0;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #E7F0FB;
+  --sidebar-accent: #E7E9ED;
   --sidebar-accent-foreground: #122844;
   --sidebar-border: rgba(18, 40, 68, 0.08);
   --sidebar-ring: rgba(47, 122, 224, 0.30);
@@ -77,11 +92,11 @@
   --info-foreground: #FFFFFF;
 
   /* Direction Artistique Sama — jetons complémentaires (nuit #0A1B33 · azur #2F7AE0 · brume) */
-  --bg: #F7FAFD;
-  --bg-2: #EFF5FC;
-  --bg-3: #E7F0FB;
+  --bg: #F8F8F9;
+  --bg-2: #F1F2F4;
+  --bg-3: #E7E9ED;
   --surface: #FFFFFF;
-  --surface-2: #F3F8FD;
+  --surface-2: #F5F6F8;
   --text: #122844;
   --text-2: #4A648C;
   --text-3: #8AA0C0;

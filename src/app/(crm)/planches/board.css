@@ -3,11 +3,11 @@
    All rules live under .pboard so the CRM theme is untouched. */
 
 .pboard {
-  --bg: #F7FAFD;
-  --bg-2: #EFF5FC;
-  --bg-3: #E7F0FB;
+  --bg: #F8F8F9;
+  --bg-2: #F1F2F4;
+  --bg-3: #E7E9ED;
   --surface: #FFFFFF;
-  --surface-2: #F3F8FD;
+  --surface-2: #F5F6F8;
   --hover: rgba(18, 40, 68, 0.04);
   --hover-2: rgba(18, 40, 68, 0.07);
   --border: rgba(18, 40, 68, 0.08);

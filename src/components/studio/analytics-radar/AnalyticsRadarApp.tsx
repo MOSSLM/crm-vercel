@@ -17,6 +17,7 @@ import { GlobeStage, RealtimePanel, TopCities, DayTrack } from "./radar-tab";
 import { SitesTab, BehaviourTab } from "./tables-tab";
 import { SessionsTab } from "./sessions-tab";
 import { IntentPanel } from "./intent-panel";
+import { MAP_RANGES, type RadarMapRange } from "@/lib/analytics-radar/map-range";
 import type { AnalyticsRadarPayload, AnalyticsRadarUnconfigured, RadarScope } from "./types";
 
 type Tab = "radar" | "sites" | "beh" | "parcours";
@@ -35,7 +36,7 @@ const REFRESH_MS = 60_000;
  *   du navigateur passe en arrière-plan : un tableau de bord laissé ouvert la
  *   nuit consommait à lui seul des milliers de requêtes.
  */
-function useAnalyticsRadar(days: number, live: boolean, scope: RadarScope) {
+function useAnalyticsRadar(days: number, live: boolean, scope: RadarScope, mapRange: RadarMapRange) {
   const [data, setData] = React.useState<AnalyticsRadarPayload | AnalyticsRadarUnconfigured | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -46,7 +47,7 @@ function useAnalyticsRadar(days: number, live: boolean, scope: RadarScope) {
 
     const load = () => {
       if (firstLoad) setLoading(true);
-      authedFetch(`/api/analytics-radar?days=${days}&scope=${scope}`)
+      authedFetch(`/api/analytics-radar?days=${days}&scope=${scope}&mapRange=${mapRange}`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
         .then((json) => {
           if (cancelled) return;
@@ -96,7 +97,7 @@ function useAnalyticsRadar(days: number, live: boolean, scope: RadarScope) {
       stopPolling();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [days, live, scope]);
+  }, [days, live, scope, mapRange]);
 
   return { data, error, loading };
 }
@@ -136,9 +137,13 @@ export function AnalyticsRadarApp() {
   const [tab, setTab] = React.useState<Tab>("radar");
   const [days, setDays] = React.useState(7);
   const [scope, setScope] = React.useState<RadarScope>("demos");
+  // La fenêtre du GLOBE, distincte de la plage de la page : « qui regarde sa
+  // démo en ce moment » et « combien de sessions ce mois-ci » sont deux
+  // questions, et l'écran doit pouvoir répondre aux deux à la fois.
+  const [mapRange, setMapRange] = React.useState<RadarMapRange>("today");
   // Seul l'onglet radar montre du temps réel : ailleurs, un rafraîchissement
   // automatique ne ferait que consommer du quota GA4 sans rien changer à l'écran.
-  const { data, error, loading } = useAnalyticsRadar(days, tab === "radar", scope);
+  const { data, error, loading } = useAnalyticsRadar(days, tab === "radar", scope, mapRange);
 
   // « Sites démo » n'a aucun sens quand on regarde notre propre vitrine.
   React.useEffect(() => {
@@ -307,7 +312,9 @@ export function AnalyticsRadarApp() {
             <GlobeStage
               hubRows={d.hubs}
               onSelectCity={() => setTab("sites")}
-              rangeLabel={rangeLabel}
+              range={d.map?.range ?? mapRange}
+              setRange={setMapRange}
+              realtimeOnly={d.map?.realtimeOnly ?? false}
               liveCities={liveCities}
             />
             <div className="a-rail">
@@ -332,7 +339,16 @@ export function AnalyticsRadarApp() {
                   <IntentPanel rows={d.intent} onPick={() => setTab("sites")} />
                 </Panel>
               ) : null}
-              <Panel title="Villes les plus actives" icon="mappin" count={d.hubs.length} style={{ flex: "0 0 auto", maxHeight: 250 }}>
+              {/* Même source que le globe, donc même fenêtre : sans cette
+                  mention, deux blocs côte à côte annonceraient des chiffres
+                  différents de ceux des KPI sans qu'on sache pourquoi. */}
+              <Panel
+                title="Villes les plus actives"
+                icon="mappin"
+                src={MAP_RANGES[d.map?.range ?? mapRange].label}
+                count={d.hubs.length}
+                style={{ flex: "0 0 auto", maxHeight: 250 }}
+              >
                 <TopCities hubRows={d.hubs} onPick={() => {}} />
               </Panel>
             </div>

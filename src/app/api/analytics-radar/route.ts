@@ -7,11 +7,14 @@ import { listDemoSites } from "@/lib/analytics-radar/demo-sites";
 import { geocodeCitiesFromCommunes, geocodeCity, type CityGeo } from "@/lib/analytics-radar/city-geo";
 import {
   ga4DateRangeFromDays,
+  ga4MinuteStamp,
+  ga4ReportTimeZone,
   ga4RowsToObjects,
   getGa4Config,
   runGa4RealtimeReport,
   runGa4Report,
 } from "@/lib/analytics-radar/ga4-client";
+import { MAP_RANGES, parseMapRange } from "@/lib/analytics-radar/map-range";
 import { clarityInfoNumber } from "@/lib/analytics-radar/clarity-client";
 import { scoreIntent, type IntentSignals } from "@/lib/analytics-radar/intent";
 import { SITE_DOMAIN } from "@/lib/site-domain";
@@ -187,6 +190,12 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
 
   const url = new URL(req.url);
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days")) || 7));
+  // La carte a sa propre fenêtre (« en direct », « dernière heure », « 24 h »…)
+  // — cf. `@/lib/analytics-radar/map-range` pour le pourquoi. Elle ne touche
+  // qu'aux villes du globe : les KPI, les tableaux et la frise restent sur
+  // `days`, sinon regarder le direct effacerait les moyennes du mois.
+  const mapRange = parseMapRange(url.searchParams.get("mapRange"), days);
+  const mapWindow = MAP_RANGES[mapRange];
   // Deux périmètres qui ne se mélangent jamais : les sites démo envoyés aux
   // prospects, ou notre propre vitrine. Le filtre part de l'hôte, donc la
   // séparation est faite par GA4 lui-même et non par un tri approximatif.
@@ -253,18 +262,26 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     ? { filter: { fieldName: "hostName", inListFilter: { values: scopeHostnames } } }
     : undefined;
 
-  const report = (dimensions: string[], metrics: string[], limit = 250) =>
+  type ReportOpts = { limit?: number; ranges?: typeof dateRanges; orderBys?: Record<string, unknown>[] };
+
+  const rawReport = (dimensions: string[], metrics: string[], opts: ReportOpts = {}) =>
     runGa4Report(propertyId, serviceAccountKey, {
-      dateRanges,
+      dateRanges: opts.ranges ?? dateRanges,
       dimensions: dimensions.map((name) => ({ name })),
       metrics: metrics.map((name) => ({ name })),
       ...(demoSitesFilter ? { dimensionFilter: demoSitesFilter } : {}),
-      limit,
-    }).then(ga4RowsToObjects).catch((e: unknown) => {
+      ...(opts.orderBys ? { orderBys: opts.orderBys } : {}),
+      limit: opts.limit ?? 250,
+    }).catch((e: unknown) => {
       console.error("[analytics-radar] GA4 report failed", dimensions, e);
       failedReports += 1;
-      return [] as Array<Record<string, string>>;
+      // `null` et non `{}` : un appel raté doit se distinguer d'une réponse
+      // vide, sinon l'appelant recompte l'échec ou le prend pour un vrai zéro.
+      return null;
     });
+
+  const report = (dimensions: string[], metrics: string[], limit = 250) =>
+    rawReport(dimensions, metrics, { limit }).then((r) => ga4RowsToObjects(r ?? {}));
 
   // GA4 Realtime n'expose pas `hostName` : impossible d'y appliquer le même
   // filtre. Les chiffres temps réel restent donc à l'échelle de la propriété,
@@ -279,9 +296,44 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
       return [] as Array<Record<string, string>>;
     });
 
+  // ── Les villes du globe, sur la fenêtre choisie POUR LA CARTE ────────────
+  // Trois régimes (cf. map-range.ts) :
+  //   · `live`   → aucune requête standard : le direct vient de GA4 Realtime,
+  //                seule source sans latence de traitement ;
+  //   · minutes  → rapport à la MINUTE sur hier+aujourd'hui, recoupé ensuite à
+  //                la fenêtre glissante avec le fuseau que GA4 renvoie ;
+  //   · jours    → rapport à la journée, comme le reste de l'écran.
+  const mapDateRanges =
+    mapWindow.minutes != null
+      ? // Une fenêtre de 24 h à cheval sur minuit a besoin des deux journées.
+        [{ startDate: "yesterday", endDate: "today" }]
+      : mapWindow.days === 0
+        ? [{ startDate: "today", endDate: "today" }]
+        : [ga4DateRangeFromDays(mapWindow.days ?? days)];
+  const mapCityPromise =
+    mapRange === "live"
+      ? Promise.resolve(null)
+      : mapWindow.minutes != null
+        ? // 10 000 lignes : ville × pays × minute active. Large, mais une
+          // fenêtre de 24 h ne peut pas dépasser 1 440 minutes, et une même
+          // minute ne porte que les quelques villes réellement actives.
+          //
+          // Tri décroissant sur la minute, et ce n'est pas cosmétique : si la
+          // propriété est assez chargée pour dépasser la limite, GA4 tronque —
+          // et on veut qu'il tronque les minutes les plus VIEILLES, celles qui
+          // tombent de toute façon hors de la fenêtre. Sans ce tri, l'ordre
+          // n'est pas spécifié et la troncature mangerait des minutes au hasard,
+          // fenêtre comprise.
+          rawReport(["city", "country", "dateHourMinute"], ["sessions"], {
+            limit: 10_000,
+            ranges: mapDateRanges,
+            orderBys: [{ dimension: { dimensionName: "dateHourMinute" }, desc: true }],
+          })
+        : rawReport(["city", "country"], ["sessions"], { limit: 250, ranges: mapDateRanges });
+
   const [
     daily,
-    byCity,
+    mapCityRaw,
     byCityHost,
     byHost,
     byDevice,
@@ -303,7 +355,7 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     byHostEvent,
   ] = await Promise.all([
     report(["date"], ["sessions", "screenPageViews", "engagedSessions", "userEngagementDuration"]),
-    report(["city", "country"], ["sessions"], 100),
+    mapCityPromise,
     // Ville × site démo : alimente « combien de sites démo distincts ont été
     // consultés depuis cette ville » dans l'infobulle du globe.
     report(["city", "hostName"], ["sessions"], 500),
@@ -411,41 +463,88 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
     citySiteCount.set(s.city, (citySiteCount.get(s.city) ?? 0) + 1);
   });
 
+  // ── Les villes du globe, recoupées à la fenêtre de la carte ─────────────
+  // Le rapport standard a été demandé sur une plage qui CONTIENT la fenêtre
+  // (hier + aujourd'hui pour une fenêtre en minutes) : c'est ici qu'on la
+  // ramène à sa largeur réelle. Le fuseau vient de GA4 lui-même — `dateHourMinute`
+  // est une heure locale de propriété, pas un instant UTC.
+  const mapRows = ga4RowsToObjects(mapCityRaw ?? {});
+  const mapTimeZone = mapCityRaw ? ga4ReportTimeZone(mapCityRaw) : null;
+  // Fenêtre en minutes sans fuseau connu : on ne sait pas où couper. Plutôt que
+  // de trancher au hasard (une à deux heures d'écart selon la saison), on
+  // n'affiche rien pour cette fenêtre et on le compte comme une requête ratée —
+  // l'écran dira que le chiffre manque au lieu d'en inventer un.
+  const mapWindowUnusable = mapWindow.minutes != null && mapCityRaw != null && !mapTimeZone;
+  if (mapWindowUnusable) {
+    console.error("[analytics-radar] GA4 n'a pas renvoyé le fuseau de la propriété — fenêtre glissante impossible");
+    failedReports += 1;
+  }
+  const debutFenetre =
+    mapWindow.minutes != null && mapTimeZone
+      ? ga4MinuteStamp(new Date(Date.now() - mapWindow.minutes * 60_000), mapTimeZone)
+      : null;
+  /** Sessions par ville sur la fenêtre, et le pays associé pour l'étiquette. */
+  const mapByCity = new Map<string, { country: string; n: number }>();
+  if (!mapWindowUnusable) {
+    for (const r of mapRows) {
+      if (debutFenetre && (r.dateHourMinute ?? "") < debutFenetre) continue;
+      const city = r.city || "Inconnue";
+      const cur = mapByCity.get(city) ?? { country: r.country || "", n: 0 };
+      cur.n += num(r.sessions);
+      if (!cur.country && r.country) cur.country = r.country;
+      mapByCity.set(city, cur);
+    }
+  }
+
   // Géocodage sur le vrai référentiel des communes (34 900 entrées en base),
   // pas sur une liste écrite en dur : une visite depuis une petite commune
   // doit apparaître sur le globe comme n'importe quelle métropole.
-  const cityNames = [...byCity.map((r) => r.city), ...realtimeMain.map((r) => r.city)].filter(Boolean);
+  const cityNames = [...mapByCity.keys(), ...realtimeMain.map((r) => r.city)].filter(Boolean);
   const geoByCity = await geocodeCitiesFromCommunes(sb, cityNames).catch(() => new Map<string, CityGeo>());
   const geoFor = (city: string) => geoByCity.get(city) ?? geocodeCity(city);
 
-  const hubs = byCity.map((r) => {
-    const geo = geoFor(r.city);
-    const city = r.city || "Inconnue";
-    return {
-      c: city,
-      country: r.country || "",
-      n: num(r.sessions),
-      lat: geo?.lat ?? null,
-      lon: geo?.lon ?? null,
-      rg: geo?.region ?? r.country ?? "",
-      visitedSites: visitedSitesByCity.get(city)?.size ?? 0,
-      citySites: citySiteCount.get(city) ?? 0,
-    };
-  });
+  const hubs = [...mapByCity.entries()]
+    .filter(([, v]) => v.n > 0)
+    .map(([city, v]) => {
+      const geo = geoFor(city);
+      return {
+        c: city,
+        country: v.country,
+        n: v.n,
+        lat: geo?.lat ?? null,
+        lon: geo?.lon ?? null,
+        rg: geo?.region ?? v.country ?? "",
+        visitedSites: visitedSitesByCity.get(city)?.size ?? 0,
+        citySites: citySiteCount.get(city) ?? 0,
+      };
+    });
 
   // Same processing-latency gap as sites above: a city with real active
   // visitors right now but no standard-report rows yet would otherwise be
   // completely absent from the globe. Only added when the city has no
-  // standard-report row at all yet, so a city already tracked by `byCity`
-  // is never double-counted between the two sources.
+  // standard-report row at all yet, so a city already tracked by the standard
+  // report is never double-counted between the two sources. En mode « direct »,
+  // c'est même la SEULE source : le rapport standard n'a pas encore vu la
+  // demi-heure qui vient de s'écouler.
   const hubCities = new Set(hubs.map((h) => h.c));
   // Compte par ville pris sur la requête dédiée `["city"] → activeUsers` :
   // GA4 y déduplique par ville, alors qu'additionner les lignes de
   // `realtimeMain` (4 dimensions) compterait plusieurs fois un même visiteur.
   const realtimeCountryByCity = new Map(realtimeMain.map((r) => [r.city, r.country || ""]));
+  // GA4 Realtime ne sait pas filtrer par domaine : sans ce garde-fou, une visite
+  // sur n'importe quelle page de la propriété (un rapport d'audit relu en
+  // interne, par exemple) posait une ville sur le globe des sites démo. On ne
+  // garde donc que les villes où une page DU PÉRIMÈTRE est ouverte — classement
+  // par titre de page, la même approximation que le reste du bloc temps réel.
+  const villesEnPerimetre = new Set(
+    realtimeMain
+      .filter((r) => r.city && num(r.activeUsers) > 0 && inScopeRealtime(r.unifiedScreenName || ""))
+      .map((r) => r.city),
+  );
   const realtimeCityAgg = new Map<string, { country: string; activeUsers: number }>();
   realtimeByCity.forEach((r) => {
     if (!r.city || num(r.activeUsers) <= 0) return;
+    if (!villesEnPerimetre.has(r.city)) return;
     realtimeCityAgg.set(r.city, {
       country: realtimeCountryByCity.get(r.city) ?? "",
       activeUsers: num(r.activeUsers),
@@ -461,7 +560,17 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
       lat: geo?.lat ?? null,
       lon: geo?.lon ?? null,
       rg: geo?.region ?? country,
-      visitedSites: visitedSitesByCity.get(city)?.size ?? 0,
+      // En direct, « combien de sites démo distincts sont ouverts depuis ici »
+      // se lit sur le temps réel lui-même ; les autres fenêtres gardent le
+      // décompte du rapport standard.
+      visitedSites:
+        visitedSitesByCity.get(city)?.size ??
+        new Set(
+          realtimeMain
+            .filter((r) => r.city === city)
+            .map((r) => matchSiteByScreenName(r.unifiedScreenName || "")?.hostname)
+            .filter(Boolean),
+        ).size,
       citySites: citySiteCount.get(city) ?? 0,
     });
   });
@@ -645,6 +754,18 @@ export const GET = withAuth({}, async ({ req, cors, user }) => {
       // dépassé ne doit pas s'afficher comme « zéro visite mesurée ».
       degraded: failedReports > 0 ? { failedReports } : null,
       range: { days },
+      /**
+       * La fenêtre RÉELLEMENT servie pour la carte — renvoyée telle quelle pour
+       * que l'écran affiche le libellé de ce qu'il a reçu et non de ce qu'il a
+       * demandé. `realtimeOnly` dit que ces villes viennent du seul temps réel,
+       * qui ne sait pas filtrer par domaine : le globe doit le signaler.
+       */
+      map: {
+        range: mapRange,
+        realtimeOnly: mapRange === "live",
+        cities: hubs.length,
+        visits: hubs.reduce((s, h) => s + h.n, 0),
+      },
       // En vue vitrine il n'y a pas de « parc de sites démo » à couvrir : le
       // dénominateur du KPI « sites visités » n'aurait aucun sens.
       totalSites: scope === "vitrine" ? 0 : sites.length,

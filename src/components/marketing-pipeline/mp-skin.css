@@ -7,8 +7,8 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 .mp-scope {
-  --bg: #F7FAFD; --bg-2: #EFF5FC; --bg-3: #E7F0FB;
-  --surface: #FFFFFF; --surface-2: #F3F8FD;
+  --bg: #F8F8F9; --bg-2: #F1F2F4; --bg-3: #E7E9ED;
+  --surface: #FFFFFF; --surface-2: #F5F6F8;
   --hover: rgba(18, 40, 68,.04); --hover-2: rgba(18, 40, 68,.07);
   --border: rgba(18, 40, 68,.09); --border-2: rgba(18, 40, 68,.14); --border-strong: rgba(18, 40, 68,.22);
   --text: #122844; --text-2: #4A648C; --text-3: #8AA0C0; --text-4: #B3C4DE;
