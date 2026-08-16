@@ -50,6 +50,13 @@ const envSchema = z
     RENDER_PROVIDER: z.string().min(1).optional(),
     RENDER_API_KEY: z.string().min(1).optional(),
     RENDER_API_URL: z.string().url().optional(),
+    // PageSpeed Insights — la seule source de Core Web Vitals (LCP/CLS/INP),
+    // que l'analyseur maison ne peut pas mesurer sans navigateur.
+    // OPTIONNELLE, et elle doit le rester : ce schéma jette à l'import quand
+    // une variable requise manque, donc la rendre obligatoire casserait tout
+    // le déploiement au lieu de désactiver cette seule fonctionnalité. Sans
+    // clé, le quota public suffit pour un usage à la demande.
+    PAGESPEED_API_KEY: z.string().min(1).optional(),
     // Google Calendar (module Rendez-vous) — optional; the OAuth routes return
     // 503 when absent and the scheduling module works without external busy.
     GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
@@ -60,6 +67,18 @@ const envSchema = z
     // The cross-field check below enforces "at least one" in prod.
     CRON_SECRET: z.string().min(1).optional(),
     PG_CRON_SECRET: z.string().min(1).optional(),
+    // Radar analytics (GA4 Data API + Clarity Data Export API) — optional; the
+    // route returns a "not configured" payload when absent instead of fake
+    // numbers. GA4_SERVICE_ACCOUNT_KEY is the *content* of the service-account
+    // JSON key file (not a path — Vercel env vars aren't files), granted
+    // Viewer access on the GA4 property in Admin → Property Access Management.
+    // GA4_PROPERTY_ID is the numeric property id (Admin → Property Settings),
+    // NOT the NEXT_PUBLIC_GA_MEASUREMENT_ID (G-XXXXXXX) used by the tracking tag.
+    GA4_PROPERTY_ID: z.string().min(1).optional(),
+    GA4_SERVICE_ACCOUNT_KEY: z.string().min(1).optional(),
+    // Clarity → Settings → Data Export → generate token. Distinct from
+    // NEXT_PUBLIC_CLARITY_PROJECT_ID, which only feeds the tracking tag.
+    CLARITY_API_TOKEN: z.string().min(1).optional(),
   })
   .refine(
     (env) => !isProd || !!env.CRON_SECRET || !!env.PG_CRON_SECRET,
@@ -90,10 +109,14 @@ const envResult = envSchema.safeParse({
   RENDER_PROVIDER: process.env.RENDER_PROVIDER,
   RENDER_API_KEY: process.env.RENDER_API_KEY,
   RENDER_API_URL: process.env.RENDER_API_URL,
+  PAGESPEED_API_KEY: process.env.PAGESPEED_API_KEY,
   GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID,
   GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET: process.env.CRON_SECRET,
   PG_CRON_SECRET: process.env.PG_CRON_SECRET,
+  GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID,
+  GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY,
+  CLARITY_API_TOKEN: process.env.CLARITY_API_TOKEN,
 });
 
 if (!envResult.success) {
@@ -125,8 +148,12 @@ export const {
   RENDER_PROVIDER,
   RENDER_API_KEY,
   RENDER_API_URL,
+  PAGESPEED_API_KEY,
   GOOGLE_CALENDAR_CLIENT_ID,
   GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET,
   PG_CRON_SECRET,
+  GA4_PROPERTY_ID,
+  GA4_SERVICE_ACCOUNT_KEY,
+  CLARITY_API_TOKEN,
 } = envResult.data;
