@@ -300,3 +300,215 @@ $$;
 
 revoke all on function public.entreprises_compteurs() from public, anon;
 grant execute on function public.entreprises_compteurs() to authenticated, service_role;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 5. File de qualification
+-- ───────────────────────────────────────────────────────────────────────────
+--
+-- L'écran de qualification filtrait les 60 000 fiches en mémoire, sans
+-- mémoïsation, à chaque rendu — donc à chaque frappe dans la recherche — en
+-- appelant `isDuplicate()` par fiche, lui-même un balayage des groupes de
+-- doublons. Tout redescend en SQL.
+--
+-- Une fonction plutôt qu'une lecture PostgREST parce que deux filtres ne
+-- s'expriment pas en paramètres d'URL : « masquer les doublons » demande de
+-- savoir quels domaines apparaissent plus d'une fois, et la blacklist demande
+-- une jointure sur `url_blacklist`.
+
+/**
+ * Domaine canonique d'une URL : sans protocole, sans `www.`, sans port, sans
+ * chemin ni query, en minuscules. Reproduit `canonicalizeDomain` de
+ * src/lib/url-canonical.ts, qui reste la référence côté application.
+ * IMMUTABLE, condition pour servir de colonne générée.
+ */
+create or replace function public.domaine_canonique(u text)
+returns text language sql immutable parallel safe as $$
+  select nullif(
+    lower(
+      split_part(
+        split_part(
+          split_part(
+            split_part(
+              regexp_replace(
+                regexp_replace(coalesce(u, ''), '^\s*https?://', '', 'i'),
+                '^www\.', '', 'i'),
+              '/', 1),
+            '?', 1),
+          '#', 1),
+        ':', 1)
+    ),
+  '');
+$$;
+
+alter table public.entreprises
+  add column if not exists domaine_canonique text
+  generated always as (
+    public.domaine_canonique(coalesce(canonical_url, site_web_canonique))
+  ) stored;
+
+create index if not exists entreprises_domaine_actifs_idx
+  on public.entreprises (domaine_canonique)
+  where domaine_canonique is not null and merged_into_id is null;
+
+-- Index couvrant, calqué exactement sur le prédicat ET sur le tri de l'onglet
+-- « file ».
+--
+-- L'ordre des colonnes n'est pas cosmétique. Une première version indexait
+-- (created_at desc, id) — id ASCENDANT — alors que la page trie
+-- (created_at desc, id desc) : l'ordre ne correspondait pas, PostgreSQL
+-- retombait sur un tri, et ce tri coûtait 685 ms. Parce que les dates ne sont
+-- pas distinctes : l'import ADEME a posé le MÊME `created_at` sur 15 023
+-- fiches, et 22 323 sur la valeur suivante. Il fallait trier ce groupe entier
+-- d'ex æquo pour en afficher douze.
+--
+-- `domaine_canonique` en INCLUDE : le filtrage doublons/blacklist le lit sans
+-- retourner au tas.
+create index if not exists entreprises_file_queue_cover_idx
+  on public.entreprises (created_at desc, id desc)
+  include (domaine_canonique)
+  where qualifie = false
+    and hidden_in_qualification is not true
+    and archived_at is null
+    and merged_into_id is null;
+
+-- Domaines portés par plus d'une fiche active : ce que « masquer les doublons »
+-- retire de la file.
+--
+-- Recalculé à chaque ouverture de page, ce test coûtait 25 657 sous-requêtes
+-- corrélées (~400 ms) : la file affiche 12 lignes, elle n'a pas à ré-agréger
+-- 60 000 lignes pour les produire. Le jeu ne bouge que quand un crawl ajoute
+-- des fiches ou qu'une URL change — une vue matérialisée décrit exactement
+-- cette cadence.
+create materialized view if not exists public.mv_domaines_doublons as
+select domaine_canonique, count(*) as nb
+from public.entreprises
+where domaine_canonique is not null and merged_into_id is null
+group by 1
+having count(*) > 1;
+
+-- Unique : condition d'un REFRESH ... CONCURRENTLY, qui ne verrouille pas la
+-- vue en lecture pendant le rafraîchissement.
+create unique index if not exists mv_domaines_doublons_pk
+  on public.mv_domaines_doublons (domaine_canonique);
+
+grant select on public.mv_domaines_doublons to authenticated, service_role;
+
+-- Rafraîchissement toutes les 15 min. pg_cron est déjà l'ordonnanceur du projet
+-- (cf. 20260524_pg_cron_process_scheduled_actions.sql).
+--   select cron.unschedule('refresh-mv-domaines-doublons');  -- pour retirer
+select cron.schedule(
+  'refresh-mv-domaines-doublons',
+  '*/15 * * * *',
+  $$ refresh materialized view concurrently public.mv_domaines_doublons $$
+);
+
+/**
+ * Une page de la file de qualification, filtres appliqués en base.
+ *
+ * `total` est exact pour les filtres demandés, blacklist et doublons compris :
+ * la pagination numérotée de l'écran reste juste. C'est la différence avec le
+ * `total` approximatif de /api/agent/qualification/queue, qui filtre la
+ * blacklist en mémoire et le documente comme tel.
+ *
+ * `fiche` est un jsonb plutôt que 33 colonnes déclarées : la liste des colonnes
+ * de `entreprises` bouge, la signature de la fonction n'a pas à bouger avec.
+ *
+ * Coût mesuré, onglet file sans filtre : 3 314 ms à la première écriture,
+ * 125 ms après l'index ci-dessus et la vue matérialisée.
+ */
+create or replace function public.entreprises_file(
+  p_onglet            text    default 'queue',
+  p_q                 text    default null,
+  p_sources           text[]  default null,
+  p_url_filter        text    default 'all',
+  p_masquer_doublons  boolean default true,
+  p_limit             int     default 12,
+  p_offset            int     default 0
+)
+returns table (fiche jsonb, total bigint)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_filtre text;
+  v_total  bigint;
+  v_q      text := nullif(btrim(coalesce(p_q, '')), '');
+  v_d      text := nullif(regexp_replace(coalesce(p_q, ''), '\D', '', 'g'), '');
+begin
+  -- Le prédicat est construit une fois puis servi au comptage ET à la page :
+  -- écrit deux fois, il finirait par diverger, et l'écran afficherait un total
+  -- qui ne correspond pas à ce qu'il liste.
+  v_filtre := 'e.merged_into_id is null and ' ||
+    case p_onglet
+      when 'qualified' then 'e.qualifie and e.archived_at is null'
+      when 'hidden'    then 'not e.qualifie and e.hidden_in_qualification and e.archived_at is null'
+      -- `is not true` couvre false ET null : la colonne a été ajoutée après
+      -- coup, les anciennes lignes sont restées à null.
+      else 'not e.qualifie and e.hidden_in_qualification is not true and e.archived_at is null'
+    end;
+
+  if p_sources is not null and cardinality(p_sources) > 0 then
+    v_filtre := v_filtre || ' and e.sources && $2';
+  end if;
+
+  if p_url_filter = 'with-url' then
+    v_filtre := v_filtre || ' and nullif(btrim(coalesce(e.canonical_url, '''')), '''') is not null';
+  elsif p_url_filter = 'without-url' then
+    v_filtre := v_filtre || ' and nullif(btrim(coalesce(e.canonical_url, '''')), '''') is null';
+  end if;
+
+  if v_q is not null then
+    v_filtre := v_filtre ||
+      ' and (e.name ilike ''%''||$1||''%'' or e.ville ilike ''%''||$1||''%''' ||
+      ' or e.adresse ilike ''%''||$1||''%''' ||
+      -- Le numéro compte autant que le nom : c'est souvent la seule chose
+      -- qu'on sache d'un prospect qui rappelle. En dessous de 4 chiffres le
+      -- motif ramènerait la moitié de la table.
+      case when v_d is not null and length(v_d) >= 4
+           then ' or e.telephone_chiffres ilike ''%''||$3||''%'''
+           else '' end ||
+      ')';
+  end if;
+
+  -- Blacklist et doublons ne s'appliquent qu'à la file à traiter : sur
+  -- « qualifiées » et « masquées » on veut voir ce qui existe, y compris ce
+  -- qu'on a écarté.
+  if p_onglet = 'queue' then
+    v_filtre := v_filtre ||
+      ' and (e.domaine_canonique is null or not exists (' ||
+      '   select 1 from public.url_blacklist b' ||
+      '   where b.active and public.domaine_canonique(b.value) = e.domaine_canonique))';
+
+    if p_masquer_doublons then
+      v_filtre := v_filtre ||
+        ' and (e.domaine_canonique is null or not exists (' ||
+        '   select 1 from public.mv_domaines_doublons d' ||
+        '   where d.domaine_canonique = e.domaine_canonique))';
+    end if;
+  end if;
+
+  execute 'select count(*) from public.entreprises e where ' || v_filtre
+    into v_total
+    using v_q, p_sources, v_d;
+
+  return query execute
+    'select to_jsonb(e) - ''telephone_chiffres'' - ''domaine_canonique'', $6' ||
+    ' from public.entreprises e where ' || v_filtre ||
+    ' order by e.created_at desc, e.id desc limit $4 offset $5'
+    using v_q, p_sources, v_d, greatest(p_limit, 0), greatest(p_offset, 0), v_total;
+
+  -- Le total voyage sur chaque ligne ; une page vide n'en porterait donc
+  -- aucune, et l'appelant lirait 0. Or « page au-dela de la fin » et « aucun
+  -- resultat » sont deux situations differentes : la premiere doit garder son
+  -- total pour que la pagination sache revenir en arriere. On emet donc une
+  -- ligne sans fiche, que la route retire de la liste.
+  if not found then
+    return query select null::jsonb, v_total;
+  end if;
+end;
+$$;
+
+revoke all on function public.entreprises_file(text, text, text[], text, boolean, int, int) from public, anon;
+grant execute on function public.entreprises_file(text, text, text[], text, boolean, int, int) to authenticated, service_role;

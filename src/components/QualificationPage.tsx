@@ -32,6 +32,7 @@ import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
 import logger from '../utils/logger';
 import { normalizeServiceTags } from '../utils/serviceTags';
+import { useFileQualification, type OngletFile } from '@/hooks/useFileQualification';
 
 type UrlFilter = 'all' | 'with-url' | 'without-url';
 
@@ -66,16 +67,14 @@ export const QualificationPage: React.FC = () => {
   ];
 
   const {
-    companies,
+    compteurs,
     qualifyCompany,
     unqualifyCompany,
     updateCompany,
     deleteCompany,
     loading,
-    isDuplicate,
     blacklistCompany,
     blacklistDomain,
-    isCompanyBlacklisted,
     offers,
     selectedQualificationOfferId,
     setSelectedQualificationOfferId
@@ -123,51 +122,52 @@ export const QualificationPage: React.FC = () => {
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   const { sprintFlow, save } = useSprintFlowState();
 
-  const filteredCompanies = companies.filter(company => {
-    const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-    const matchesSearch =
-      displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (company.adresse && company.adresse.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      normalizeServiceTags(company.service_tags, company.premiers_tags)
-        .some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesSource =
-      selectedSources.length === 0 ||
-      selectedSources.some((source) => company.sources.includes(source));
+  // L'onglet actif, tel que la route l'attend. Il se déduit des deux bascules
+  // historiques plutôt que de les remplacer : elles sont persistées en
+  // localStorage et lues ailleurs dans l'écran.
+  const ongletActif: OngletFile = showHiddenCompanies
+    ? 'hidden'
+    : showQualified
+      ? 'qualified'
+      : 'queue';
 
-    const matchesQualification = showQualified ? company.qualifie : !company.qualifie;
-
-    const hasUrl = Boolean(company.canonical_url?.trim());
-    const matchesUrl =
-      urlFilter === 'all' ||
-      (urlFilter === 'with-url' && hasUrl) ||
-      (urlFilter === 'without-url' && !hasUrl);
-    
-    const hideByDuplicate =
-      !showDuplicates &&
-      (isDuplicate(company.id) || isCompanyBlacklisted(company));
-
-    const hideByManual =
-      !showHiddenCompanies && company.hidden_in_qualification;
-
-    // Une fiche archivée sort de la qualification, y compris de l'onglet
-    // « Masquées » — c'est /qualified, avec sa bascule « Archivées », qui sert à
-    // la retrouver et à la désarchiver.
-    if (company.archived_at) return false;
-
-    return matchesSearch && matchesSource && matchesQualification && matchesUrl && !hideByDuplicate && !hideByManual;
+  /**
+   * La file vient du serveur : filtrage, recherche, comptage et pagination sont
+   * faits en SQL.
+   *
+   * Ce bloc était un `companies.filter(...)` sur 60 000 objets, appelé
+   * directement dans le corps du composant — donc à chaque rendu, donc à chaque
+   * frappe dans la recherche — et il appelait pour chaque fiche `isDuplicate()`,
+   * lui-même un balayage des groupes de doublons. C'est ce produit qui figeait
+   * l'onglet.
+   */
+  const {
+    entreprises: paginatedCompanies,
+    total: totalFiltre,
+    chargement: chargementFile,
+    erreur: erreurFile,
+    rafraichir: rafraichirFile,
+  } = useFileQualification({
+    onglet: ongletActif,
+    q: searchTerm,
+    sources: selectedSources,
+    urlFilter,
+    masquerDoublons: !showDuplicates,
+    page: currentPage,
+    parPage: itemsPerPage,
   });
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedCompanies = filteredCompanies.slice(startIndex, endIndex);
+  const totalPages = Math.max(1, Math.ceil(totalFiltre / itemsPerPage));
 
-  // Reset to first page when filters change
+  // Reset to first page when filters change.
+  //
+  // `showDuplicates` en fait partie depuis que la pagination est servie par le
+  // serveur : réafficher les doublons change le nombre de résultats, et rester
+  // sur la page 40 d'un jeu qui vient d'en perdre la moitié afficherait une
+  // page vide.
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSources, showQualified, urlFilter, showHiddenCompanies]);
+  }, [searchTerm, selectedSources, showQualified, urlFilter, showHiddenCompanies, showDuplicates]);
 
   const toggleSource = (source: string) => {
     setSelectedSources((previous) =>
@@ -200,6 +200,7 @@ export const QualificationPage: React.FC = () => {
           });
         }
         toast.success(`${displayName} déqualifiée`);
+        rafraichirFile();
       } else {
         await qualifyCompany(company.id);
         if (sprintFlow && sprintFlow.companyIds.length < sprintFlow.targetCount && !sprintFlow.companyIds.includes(company.id)) {
@@ -209,6 +210,7 @@ export const QualificationPage: React.FC = () => {
           });
         }
         toast.success(`${displayName} qualifiée avec succès !`);
+        rafraichirFile();
       }
     } catch (error) {
       logger.error('Erreur lors de la qualification:', error);
@@ -234,17 +236,16 @@ export const QualificationPage: React.FC = () => {
   const qualificationOffers = offers.filter((offer) => offer.actif && offer.visible_in_qualification);
   const selectedOffer = qualificationOffers.find((offer) => offer.id === selectedQualificationOfferId) ?? null;
 
-  // Tab counts derived from real data (independent of current view filters)
-  const queueCount = companies.filter(
-    (c) => !c.qualifie && !c.hidden_in_qualification && !isDuplicate(c.id) && !isCompanyBlacklisted(c)
-  ).length;
-  const qualifiedCount = companies.filter((c) => c.qualifie && !c.archived_at).length;
-  // L'archivage pose `hidden_in_qualification = true` : sans l'exclure ici, une
-  // entreprise archivée viendrait grossir l'onglet « Masquées », où on ne peut
-  // ni la reconnaître ni la désarchiver.
-  const hiddenCount = companies.filter(
-    (c) => !c.qualifie && c.hidden_in_qualification && !c.archived_at
-  ).length;
+  // Compteurs d'onglets : chiffres de stock calculés en SQL
+  // (`entreprises_compteurs()`), pas trois balayages de plus sur le tableau en
+  // mémoire — lequel ne porte de toute façon plus que le périmètre actif.
+  //
+  // Ils ignorent la blacklist et les doublons, contrairement au total de la
+  // liste : un onglet annonce ce qu'il contient, la liste ce qu'elle affiche
+  // pour les filtres en cours.
+  const queueCount = compteurs.a_qualifier;
+  const qualifiedCount = compteurs.qualifiees;
+  const hiddenCount = compteurs.masquees;
 
   // Active tab derived from existing view state
   const activeTab: 'queue' | 'qualified' | 'hidden' = showHiddenCompanies
@@ -282,6 +283,7 @@ export const QualificationPage: React.FC = () => {
           ? `${displayName} réaffichée`
           : `${displayName} masquée`
       );
+      rafraichirFile();
     } catch (error) {
       logger.error('Erreur lors du masquage:', error);
       toast.error('Erreur lors du masquage de l’entreprise');
@@ -300,6 +302,7 @@ export const QualificationPage: React.FC = () => {
       );
       toast.success(`${displayName} black-listée (URL exacte)`);
       setCompanyToBlacklist(null);
+      rafraichirFile();
     } catch (error) {
       logger.error('Erreur lors du blacklist (URL exacte):', error);
       toast.error('Erreur lors du blacklist de l\'URL exacte');
@@ -324,6 +327,7 @@ export const QualificationPage: React.FC = () => {
       );
       toast.success(`Domaine black-listé pour ${displayName}`);
       setCompanyToBlacklist(null);
+      rafraichirFile();
     } catch (error) {
       logger.error('Erreur lors du blacklist du domaine:', error);
       toast.error('Erreur lors du blacklist du domaine');
@@ -344,6 +348,7 @@ export const QualificationPage: React.FC = () => {
       await deleteCompany(companyToDelete.id);
       setShowDeleteModal(false);
       setCompanyToDelete(null);
+      rafraichirFile();
     } catch (error) {
       logger.error('Error deleting company:', error);
     }
@@ -825,12 +830,30 @@ export const QualificationPage: React.FC = () => {
             </button>
 
             <span className="pg-info">
-              Page {currentPage} / {totalPages} · {filteredCompanies.length} entreprise{filteredCompanies.length > 1 ? 's' : ''} au total
+              Page {currentPage} / {totalPages} · {totalFiltre.toLocaleString('fr-FR')} entreprise{totalFiltre > 1 ? 's' : ''} au total
             </span>
           </div>
         )}
 
-        {filteredCompanies.length === 0 && (
+        {/* Une file vide et une file en erreur se ressemblent trop pour être
+            affichées pareil : sans ce cas, une requête échouée passerait pour
+            « plus rien à qualifier ». */}
+        {erreurFile && (
+          <div className="dtable">
+            <div className="py-12 text-center">
+              <Target className="mx-auto mb-4" style={{ width: 40, height: 40, color: 'var(--text-4)' }} />
+              <h3 className="mb-2 font-medium">Chargement impossible</h3>
+              <p className="mb-4" style={{ color: 'var(--text-3)', fontSize: '12.5px' }}>
+                {erreurFile}
+              </p>
+              <Button variant="outline" size="sm" onClick={rafraichirFile}>
+                Réessayer
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!erreurFile && !chargementFile && totalFiltre === 0 && (
           <div className="dtable">
             <div className="py-12 text-center">
               <Target className="mx-auto mb-4" style={{ width: 40, height: 40, color: 'var(--text-4)' }} />
