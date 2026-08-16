@@ -1,0 +1,77 @@
+-- La fusion d'entreprises n'a JAMAIS pu s'exécuter. Voici pourquoi.
+--
+-- LE SYMPTÔME
+-- `archive_fusion_entreprises` compte 0 ligne. On en a longtemps conclu que
+-- personne n'avait jamais lancé `fusionner_entreprises` — 450 lignes de SQL
+-- soigné, avec essai à blanc, archivage avant écriture et repointage des 41
+-- clés étrangères lues dans le catalogue. La vérité est pire : la fonction
+-- ÉCHOUE, systématiquement, dès le premier appel.
+--
+--   ERROR: 42883: function digest(text, unknown) does not exist
+--   CONTEXT: SQL function "compute_entreprise_key_v3" during inlining
+--            PL/pgSQL function fusionner_entreprises(...) line 572
+--
+-- LA CHAÎNE, ET POURQUOI ELLE EST INVISIBLE
+--   1. `entreprises.dedupe_key_v3` est une colonne GENERATED ALWAYS. Toute
+--      écriture sur `entreprises` la recalcule.
+--   2. Elle est calculée par `compute_entreprise_key_v3`, qui appelle `digest()`
+--      — c'est-à-dire pgcrypto, installé dans le schéma `extensions` chez
+--      Supabase, pas dans `public`.
+--   3. `compute_entreprise_key_v3` n'avait AUCUN `search_path` à elle : elle
+--      héritait de celui de l'appelant.
+--   4. Les appelants ordinaires (PostgREST, service role) ont
+--      `search_path = "$user", public, extensions` : `digest` est joignable,
+--      tout marche, et c'est pour ça que les 60 000 fiches s'écrivent sans
+--      problème depuis des mois.
+--   5. `fusionner_entreprises` est `SECURITY DEFINER` et FIGE son search_path à
+--      `pg_catalog, public, pg_temp` — sans `extensions`. C'est la bonne
+--      pratique de sécurité, appliquée correctement.
+--
+-- Autrement dit : le durcissement de sécurité de la fonction de fusion casse la
+-- colonne générée, et seulement pour elle. Le défaut ne se manifeste que sur le
+-- chemin qu'on n'empruntait jamais.
+--
+-- LA CORRECTION, ET POURQUOI ELLE PORTE SUR L'AUTRE FONCTION
+-- On aurait pu ajouter `extensions` au search_path de `fusionner_entreprises`.
+-- Ça n'aurait réparé qu'UN appelant : la prochaine fonction SECURITY DEFINER
+-- qui écrira sur `entreprises` retombera dans le même trou, avec le même
+-- message incompréhensible.
+--
+-- Une fonction qui alimente une colonne générée doit rendre le MÊME résultat
+-- quel que soit l'appelant — c'est la définition d'`IMMUTABLE`, que cette
+-- fonction déclare déjà. Dépendre du search_path de l'appelant contredit cette
+-- promesse. On l'épingle donc chez elle.
+
+alter function public.compute_entreprise_key_v3(
+  text, double precision, double precision, text, text, text, text
+) set search_path = pg_catalog, public, extensions, pg_temp;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Vérifié le 17/08, par l'expérience et non par déduction
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Avant : `fusionner_entreprises(3784, '{3785}', '{}', true, 'doublon')` levait
+--         `function digest(text, unknown) does not exist`.
+-- Après : la même commande rend son rapport complet — 46 tables filles
+--         examinées, 7 lignes repointées, 7 conflits nommés avec leur
+--         conséquence, 18 valeurs écartées, 3 colonnes réunies.
+-- Et l'essai à blanc se défait bien : les fiches 3784 et 3785 sont restées
+-- vivantes, `archive_fusion_entreprises` toujours à 0.
+--
+-- CE QUE L'ESSAI À BLANC A RÉVÉLÉ AU PASSAGE, et qui vaut plus que la correction
+-- La méthode `siren` de `doublons_suggeres` NE TROUVE PAS DES DOUBLONS. Elle
+-- trouve les ÉTABLISSEMENTS d'une même entreprise :
+--   · 3784 « Ets Soliris », Argenton-sur-Creuse, SIRET …00023
+--   · 3785 « Soliris Châteauroux », Saint-Maur, SIRET …00056
+-- Deux adresses réelles, deux SIRET distincts, un seul SIREN. Les fusionner
+-- effacerait un établissement qui existe. Même cas pour « Gaz Service 45 —
+-- Siège » et « Gaz Service 45 — Établissement EnR ».
+-- C'est exactement ce que l'essai à blanc existe pour montrer avant qu'on clique.
+--
+-- select array_to_string(proconfig,' ') from pg_proc
+--  where proname = 'compute_entreprise_key_v3' and pronamespace = 'public'::regnamespace;
+-- -- attendu : search_path=pg_catalog, public, extensions, pg_temp
+--
+-- ROLLBACK :
+-- alter function public.compute_entreprise_key_v3(
+--   text, double precision, double precision, text, text, text, text
+-- ) reset search_path;
