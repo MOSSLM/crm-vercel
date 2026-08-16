@@ -1,4 +1,4 @@
-import { C } from '@/components/audit/AuditShared';
+import { C } from './palette';
 
 /**
  * La feuille de style du document d'audit compact.

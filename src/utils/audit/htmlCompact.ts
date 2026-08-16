@@ -2,7 +2,7 @@ import type { AuditContent, AuditPage5 } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
 import { LIBELLE_DEMO, detailNote, mesuresVides, sousTitreNote } from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
-import { C } from '@/components/audit/AuditShared';
+import { C } from './palette';
 
 /** Un hexadécimal en triplet `r,g,b`, pour les teintes transparentes. */
 const rgbDe = (hex: string): string => {

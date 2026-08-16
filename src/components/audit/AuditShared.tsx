@@ -2,15 +2,21 @@
 import React from 'react';
 import type { AuditPricingService, AuditPage5, AuditGlobalStyle } from '@/types';
 
-export const C = {
-  nuit: '#0A1B33',
-  azur: '#2F7AE0',
-  brume: '#B5D0F0',
-  creme: '#F7FAFD',
-  blanc: '#E8F3FF',
-};
+/**
+ * La palette et le logo vivent dans `@/utils/audit/palette` — un module PUR.
+ *
+ * Ce fichier porte `'use client'` : une valeur importée d'ici par du code rendu
+ * côté serveur n'est pas la valeur, c'est une référence client dont les
+ * propriétés valent `undefined`. La plaquette est rendue côté serveur, et
+ * `compactCss.ts` lisait `C.nuit` à l'évaluation du module — le build de
+ * production tombait sur `/plaquette/[jeton]` sans nommer la cause.
+ *
+ * Réexportés plutôt que déplacés : les composants qui les lisaient déjà n'ont
+ * pas à changer d'import, et il n'y a toujours qu'une seule définition.
+ */
+import { C, LOGO_PATH } from '@/utils/audit/palette';
+export { C, LOGO_PATH };
 
-export const LOGO_PATH = "M50,4 L55.85,20.58 L67.6,7.5 L66.67,25.06 L82.5,17.5 L74.95,33.33 L92.5,32.4 L79.42,44.15 L96,50 L79.42,55.85 L92.5,67.6 L74.95,66.67 L82.5,82.5 L66.67,74.94 L67.6,92.5 L55.85,79.42 L50,96 L44.15,79.42 L32.4,92.5 L33.33,74.94 L17.5,82.5 L25.05,66.67 L7.5,67.6 L20.58,55.85 L4,50 L20.58,44.15 L7.5,32.4 L25.05,33.33 L17.5,17.5 L33.33,25.06 L32.4,7.5 L44.15,20.58 Z M50,36 A14,14 0 1 0 50,64 A14,14 0 1 0 50,36 Z";
 
 export function makeGrainBg(freq = 0.75, color = '#ffffff'): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="4" stitchTiles="stitch" result="noise"/><feColorMatrix in="noise" type="saturate" values="0" result="gray"/><feFlood flood-color="${color}" result="c"/><feComposite in="c" in2="gray" operator="in"/></filter></defs><rect width="200" height="200" filter="url(#n)"/></svg>`;
