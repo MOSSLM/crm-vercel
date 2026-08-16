@@ -630,11 +630,20 @@ returns jsonb language sql stable security definer set search_path = public as $
       select jsonb_agg(jsonb_build_object('dept', dept, 'statut', statut, 'n', n) order by dept, statut)
       from (select dept, statut, count(*) as n from base where dept is not null group by 1, 2) t
     ), '[]'::jsonb),
+    -- `densite` porte le departement ET le statut de chaque cellule : l'ecran
+    -- colorie ses pastilles par statut et les filtre par departement, un simple
+    -- total ne suffirait pas. Une cellule fait un dixieme de degre (~11 km).
     'densite', coalesce((
-      select jsonb_agg(jsonb_build_array(lat, lng, n))
+      select jsonb_agg(jsonb_build_object(
+        'lat', lat, 'lng', lng, 'dept', dept, 'statut', statut, 'n', n))
       from (
-        select round(lat::numeric, 1) as lat, round(lng::numeric, 1) as lng, count(*) as n
-        from base where lat is not null and lng is not null group by 1, 2
+        select
+          round(lat::numeric, 1)::double precision as lat,
+          round(lng::numeric, 1)::double precision as lng,
+          dept, statut, count(*) as n
+        from base
+        where lat is not null and lng is not null
+        group by 1, 2, 3, 4
       ) g
     ), '[]'::jsonb)
   );

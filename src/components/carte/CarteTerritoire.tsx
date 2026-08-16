@@ -18,7 +18,7 @@ const MODES: Array<{ id: ModeCarte; label: string; title: string }> = [
 const TOUS_STATUTS = new Set<StatutCarte>(STATUTS.map((s) => s.id));
 
 export function CarteTerritoire() {
-  const { data, loading, error, reload } = useCarteData();
+  const { data, loading, error, reload, chargerDepartement } = useCarteData();
 
   const [mode, setMode] = React.useState<ModeCarte>("taches");
   const [statuts, setStatuts] = React.useState<Set<StatutCarte>>(TOUS_STATUTS);
@@ -38,10 +38,12 @@ export function CarteTerritoire() {
     [fiches],
   );
   const etendueDept = React.useMemo(() => {
+    // Somme des poids : un point est une cellule de densité qui vaut plusieurs
+    // fiches tant que le département n'est pas ouvert.
     const compte = new Map<string, number>();
     for (const fiche of fiches) {
       if (!fiche.dept) continue;
-      compte.set(fiche.dept, (compte.get(fiche.dept) ?? 0) + 1);
+      compte.set(fiche.dept, (compte.get(fiche.dept) ?? 0) + (fiche.poids || 1));
     }
     const valeurs = [...compte.values()];
     return {
@@ -61,11 +63,18 @@ export function CarteTerritoire() {
     });
   };
 
-  const choisirDept = React.useCallback((code: string | null) => {
-    setSelection(code);
-    setFicheActive(null);
-    setRecherche("");
-  }, []);
+  const choisirDept = React.useCallback(
+    (code: string | null) => {
+      setSelection(code);
+      setFicheActive(null);
+      setRecherche("");
+      // Ouvrir un département remplace ses cellules de densité par ses fiches
+      // réelles : c'est le seul moment où on en a besoin, et le seul où le
+      // volume le permet (2 137 fiches pour le Rhône, contre 60 687 en France).
+      if (code) chargerDepartement(code);
+    },
+    [chargerDepartement],
+  );
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -203,10 +212,12 @@ export function CarteTerritoire() {
                 <span className="v">
                   {nf.format(
                     data
-                      ? data.fiches.filter(
-                          (f) =>
-                            f.statut === statut.id && (!selection || f.dept === selection),
-                        ).length
+                      ? data.fiches
+                          .filter(
+                            (f) =>
+                              f.statut === statut.id && (!selection || f.dept === selection),
+                          )
+                          .reduce((somme, f) => somme + (f.poids || 1), 0)
                       : 0,
                   )}
                 </span>

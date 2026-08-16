@@ -137,14 +137,19 @@ export function CarteFrance({
     return map;
   }, [geometries, path]);
 
+  /**
+   * Le compte réel par département, tel que la base l'a calculé.
+   *
+   * Il était dérivé des points affichés. Ça ne tient plus : à l'échelle
+   * nationale un point est une CELLULE de densité qui vaut plusieurs fiches, et
+   * un département ouvert affiche ses fiches réelles. Compter les points
+   * mélangerait les deux échelles et l'aplat mentirait.
+   */
   const compteParDept = React.useMemo(() => {
     const counts = new Map<string, number>();
-    for (const fiche of fiches) {
-      if (!fiche.dept) continue;
-      counts.set(fiche.dept, (counts.get(fiche.dept) ?? 0) + 1);
-    }
+    for (const dept of departements) counts.set(dept.code, dept.total);
     return counts;
-  }, [fiches]);
+  }, [departements]);
 
   const seuils = React.useMemo(
     () => seuilsQuantile([...compteParDept.values()], CHOROPLETHE.length),
@@ -246,6 +251,9 @@ export function CarteFrance({
       let distance = seuil;
       for (const fiche of fiches) {
         if (fiche.dept !== code) continue;
+        // Une cellule de densité (id négatif) ne désigne aucune entreprise :
+        // seules les fiches réelles du département ouvert sont cliquables.
+        if (fiche.id < 0) continue;
         const p = positions.get(fiche.id);
         if (!p) continue;
         const d2 = (p[0] - px) ** 2 + (p[1] - py) ** 2;
@@ -341,12 +349,19 @@ export function CarteFrance({
     const pastille = (fiche: FicheCarte, classe: string) => {
       const p = positions.get(fiche.id);
       if (!p) return null;
+      // Une cellule vaut plusieurs fiches : son rayon suit la racine carrée de
+      // son poids, pour que la SURFACE reste proportionnelle au nombre — c'est
+      // la surface que l'œil lit, pas le rayon. Le CSS garde la main sur la
+      // taille de base des vraies fiches.
+      const poids = fiche.poids || 1;
+      const r = poids > 1 ? Math.min(9, 1.6 * Math.sqrt(poids)) : undefined;
       return (
         <circle
           key={fiche.id}
           className={classe}
           cx={p[0]}
           cy={p[1]}
+          r={r}
           fill={STATUT_BY_ID[fiche.statut].color}
           data-dim={selection !== null && fiche.dept !== selection ? "true" : undefined}
           data-on={fiche.id === ficheActive ? "true" : undefined}
