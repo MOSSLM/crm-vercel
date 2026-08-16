@@ -340,6 +340,47 @@ describe('processSequenceEnrollment', () => {
     ]);
   });
 
+  it('gèle l’étape sans modèle ni texte plutôt que de poser une tâche muette', async () => {
+    // LE CAS DE PRODUCTION. « WhatsApp seul — site direct » a été réécrite dans
+    // le builder : sa branche « sans réponse » — celle qu'empruntent les
+    // silencieux, donc la majorité — porte une étape WhatsApp sans modèle et
+    // sans message. `renderStepMessage` retombe alors sur `interpolate(undefined)`
+    // qui vaut la chaîne vide, et la tâche partait quand même : l'agent ouvrait
+    // WhatsApp devant un écran blanc.
+    wire(sequenceWith('whatsapp', { template: null }));
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(tables.prospection_tasks.captured.inserts).toEqual([]);
+    const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+    expect(updates[0]).toEqual(
+      expect.objectContaining({ hold_reason: 'message_vide', send_at: null }),
+    );
+  });
+
+  it('gèle aussi le message qui n’a que des blancs', async () => {
+    // Un modèle vidé de son texte laisse des retours à la ligne : ce n'est pas
+    // « vide » au sens strict, et c'est tout aussi muet à l'écran.
+    wire(sequenceWith('whatsapp', { template: null, message: '  \n  ' }));
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(tables.prospection_tasks.captured.inserts).toEqual([]);
+    const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+    expect(updates[0]).toEqual(expect.objectContaining({ hold_reason: 'message_vide' }));
+  });
+
+  it('pose bien la tâche quand l’étape porte un texte sans modèle', async () => {
+    // Le garde ne doit pas manger le cas normal : un message écrit à la main,
+    // sans modèle, est parfaitement légitime.
+    wire(sequenceWith('whatsapp', { template: null, message: 'Bonjour, un mot rapide.' }));
+
+    await processSequenceEnrollment(enrollment);
+
+    const task = (tables.prospection_tasks.captured.inserts as Record<string, unknown>[])[0];
+    expect((task.payload as { message: string }).message).toBe('Bonjour, un mot rapide.');
+  });
+
   it('ne repose pas la tâche quand l’étape en a déjà une — le ticker et le geste de l’agent se croisent', async () => {
     // La fenêtre réelle : « il a répondu » avance l'inscription, pose
     // `next_run_at = maintenant`, puis met deux à quatre secondes à créer la

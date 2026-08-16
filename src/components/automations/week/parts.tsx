@@ -114,6 +114,7 @@ export const HOLD_LABEL: Record<string, string> = {
   test_hold: 'phase de test — destinataire hors liste',
   sequence_paused: 'séquence en pause',
   global_pause: 'régulateur en pause',
+  message_vide: 'message à écrire — l’étape est vide',
 }
 
 export const STATUS_META: Record<string, { label: string; tone: string }> = {

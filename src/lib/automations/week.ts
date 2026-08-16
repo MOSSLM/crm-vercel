@@ -398,6 +398,9 @@ const BLOCKING_HOLDS = new Set([
   'lien_manquant',
   // Idem pour la démo : le site n'est pas encore « Prêt à envoyer ».
   'demo_manquante',
+  // L'étape n'a ni modèle ni texte : elle retient la séquence jusqu'à ce que
+  // quelqu'un écrive le message. C'est un vrai blocage, pas un report d'horaire.
+  'message_vide',
 ])
 
 /**
