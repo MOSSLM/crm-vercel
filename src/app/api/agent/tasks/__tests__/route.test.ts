@@ -1,0 +1,398 @@
+/**
+ * @jest-environment node
+ *
+ * La file de démarchage, côté serveur.
+ *
+ * CE QUE CE FICHIER GARDE
+ * Cette route a caché pendant des semaines les tâches sans `enrollment_id` —
+ * c'est-à-dire tout l'appel à froid, soit le mode de travail principal de la
+ * campagne d'août 2026. Le filtre tenait en cinq mots (`.not("enrollment_id",
+ * "is", null)`) et rien ne le contredisait. Ces tests sont ce contredit :
+ * une tâche à froid ENTRE dans la file, n'est jamais comptée comme discussion,
+ * et consomme la cadence du jour comme n'importe quelle relance.
+ *
+ * Le faux client Supabase applique RÉELLEMENT les filtres posés par la route
+ * (`eq`, `in`, `not ... is null`) sur un petit jeu de lignes, plutôt que de
+ * rendre une réponse figée : sans ça, un test passerait aussi bien avec le
+ * filtre qu'on vient de retirer.
+ */
+import { __resetServiceClientForTests } from "@/app/api/_lib/service-client";
+import { DAILY_QUOTA } from "@/lib/agent-portal/demarchage-buckets";
+
+const mockAuthGetUser = jest.fn();
+const mockFrom = jest.fn();
+
+jest.mock("@/env", () => ({
+  SUPABASE_URL: "http://localhost",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role",
+}));
+
+jest.mock("@supabase/supabase-js", () => ({
+  createClient: jest.fn(() => ({
+    from: (...args: unknown[]) => mockFrom(...args),
+    auth: { getUser: (...args: unknown[]) => mockAuthGetUser(...args) },
+  })),
+}));
+
+// GA4 : le module tire `google-auth-library` et le réseau. La route sait déjà
+// se passer d'intention (`.catch`), on lui en donne zéro.
+jest.mock("@/lib/analytics-radar/site-intent", () => ({
+  intentByEnterprise: jest.fn(async () => new Map()),
+}));
+
+// Le moteur de séquences n'a rien à faire ici : la reprise d'une inscription
+// est testée chez lui, et la faire tourner pour de vrai ferait dépendre ce
+// fichier de la moitié du domaine.
+jest.mock("@/lib/automations/engine", () => ({
+  advanceEnrollmentAfterTask: jest.fn(async () => undefined),
+}));
+
+import { GET, PATCH } from "../route";
+
+const AGENT = "76353de0-ac50-4645-9530-8be2db55c7a3";
+
+/** Une opération de la chaîne postgrest, telle que le faux client la retient. */
+type Op = { m: string; args: unknown[] };
+
+/** Lit `entreprise.owner_id` aussi bien que `status` sur une ligne. */
+const valeurDe = (ligne: Record<string, unknown>, chemin: string): unknown =>
+  chemin.split(".").reduce<unknown>((acc, cle) => {
+    if (acc == null || typeof acc !== "object") return undefined;
+    const noeud = Array.isArray(acc) ? acc[0] : acc;
+    return (noeud as Record<string, unknown>)?.[cle];
+  }, ligne);
+
+/** Applique à la main les filtres que la route a posés. */
+const filtrer = (lignes: Record<string, unknown>[], ops: Op[]) =>
+  lignes.filter((ligne) =>
+    ops.every((op) => {
+      if (op.m === "eq") return valeurDe(ligne, op.args[0] as string) === op.args[1];
+      if (op.m === "in") return (op.args[1] as unknown[]).includes(valeurDe(ligne, op.args[0] as string));
+      // `.not(col, "is", null)` — le filtre qui cachait le froid.
+      if (op.m === "not" && op.args[1] === "is" && op.args[2] === null) {
+        return valeurDe(ligne, op.args[0] as string) != null;
+      }
+      return true;
+    }),
+  );
+
+type Jeu = {
+  taches: Record<string, unknown>[];
+  faites: Record<string, unknown>[];
+  reglages: Record<string, unknown> | null;
+  /** La tâche que la garde de propriété du PATCH doit trouver. */
+  garde: Record<string, unknown> | null;
+  /** Tables dont toute écriture échoue — pour vérifier le « best effort ». */
+  enPanne: readonly string[];
+};
+
+const JEU_VIDE: Jeu = { taches: [], faites: [], reglages: null, garde: null, enPanne: [] };
+
+/**
+ * Toutes les requêtes de la route, servies depuis un jeu de lignes en mémoire.
+ * Rend les chaînes d'opérations reçues, table par table : c'est ce qui permet
+ * de vérifier une ÉCRITURE (le PATCH n'a rien à relire).
+ */
+const brancher = (jeu: Partial<Jeu>) => {
+  const { taches, faites, reglages, garde, enPanne } = { ...JEU_VIDE, ...jeu };
+  const opsParTable: Record<string, Op[][]> = {};
+
+  mockFrom.mockImplementation((table: string) => {
+    const ops: Op[] = [];
+    const resoudre = (): { data: unknown; error: unknown } => {
+      (opsParTable[table] ??= []).push(ops);
+      if (enPanne.includes(table)) throw new Error("colonne absente");
+      const eq = (col: string, val: unknown) =>
+        ops.some((o) => o.m === "eq" && o.args[0] === col && o.args[1] === val);
+      const ecrit = ops.some((o) => o.m === "update");
+
+      if (table === "user_profiles") return { data: { role: "freelance" }, error: null };
+      if (table === "agent_settings") return { data: reglages, error: null };
+      if (table === "prospection_tasks") {
+        if (ecrit) return { data: { id: "t1", status: "done" }, error: null };
+        // La garde de propriété du PATCH cible une tâche par son id.
+        if (ops.some((o) => o.m === "eq" && o.args[0] === "id")) return { data: garde, error: null };
+        if (eq("status", "done")) return { data: filtrer(faites, ops), error: null };
+        // La lecture « dernier appel passé » : aucune ici.
+        if (eq("kind", "call")) return { data: [], error: null };
+        return { data: filtrer(taches, ops), error: null };
+      }
+      return { data: null, error: null };
+    };
+
+    const chain: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "in", "not", "gte", "order", "limit", "is", "update", "insert"]) {
+      chain[m] = (...args: unknown[]) => {
+        ops.push({ m, args });
+        return chain;
+      };
+    }
+    chain.maybeSingle = async () => resoudre();
+    chain.then = (suite: (v: unknown) => unknown) => suite(resoudre());
+    return chain;
+  });
+
+  return opsParTable;
+};
+
+const appel = (query = "") =>
+  GET(
+    new Request(`http://localhost/api/agent/tasks${query}`, {
+      headers: { authorization: "Bearer jeton" },
+    }),
+  );
+
+type LigneFile = {
+  id: string;
+  kind: string;
+  cohorte: string | null;
+  hors_sequence: boolean;
+  in_conversation: boolean;
+  sequence: unknown;
+};
+type Reponse = {
+  tasks: LigneFile[];
+  meta: { quotas: Record<string, number>; done_today_by_kind: Record<string, number>; cohorte: string | null };
+};
+
+const lire = async (res: Response) => (await res.json()) as Reponse;
+
+/** Une tâche d'appel à froid : pas d'inscription, pas de séquence. */
+const froide = (id: string, cohorte: string | null = "B_sans_site") => ({
+  id,
+  kind: "call",
+  status: "pending",
+  title: "Appel",
+  due_at: "2026-08-17T09:00:00.000Z",
+  contact_id: null,
+  entreprise_id: Number(id.replace(/\D/g, "")) || 1,
+  opportunite_id: null,
+  payload: {},
+  enrollment_id: null,
+  automation_id: null,
+  step_id: null,
+  contact: null,
+  entreprise: { id: 1, name: "Artisan", ville: "Lyon", telephone: null, owner_id: AGENT, cohorte_demarchage: cohorte },
+});
+
+/** Une tâche de relance, inscrite sur une séquence. */
+const enSequence = (id: string, cohorte: string | null = "A_site_faible") => ({
+  ...froide(id, cohorte),
+  kind: "whatsapp",
+  enrollment_id: `enr-${id}`,
+  automation_id: null,
+});
+
+describe("GET /api/agent/tasks — l'appel à froid entre dans la file", () => {
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  it("remonte une tâche sans inscription, marquée hors séquence", async () => {
+    brancher({ taches: [froide("t1")] });
+    const { tasks } = await lire(await appel());
+    expect(tasks.map((t) => t.id)).toEqual(["t1"]);
+    expect(tasks[0].hors_sequence).toBe(true);
+    expect(tasks[0].sequence).toBeNull();
+  });
+
+  it("ne prend jamais une tâche à froid pour une discussion en cours", async () => {
+    // Sans inscription, il n'y a ni étape ni réponse enregistrée : la classer
+    // « en discussion » la sortirait du quota, et la cadence ne voudrait plus
+    // rien dire dès la première journée d'appels à froid.
+    brancher({ taches: [froide("t1")] });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].in_conversation).toBe(false);
+  });
+
+  it("marque hors séquence UNIQUEMENT ce qui l'est", async () => {
+    brancher({ taches: [froide("t1"), enSequence("t2")] });
+    const { tasks } = await lire(await appel());
+    const parId = Object.fromEntries(tasks.map((t) => [t.id, t.hors_sequence]));
+    expect(parId).toEqual({ t1: true, t2: false });
+  });
+
+  it("`?froid=0` restitue l'ancienne file : les relances, rien d'autre", async () => {
+    brancher({ taches: [froide("t1"), enSequence("t2")] });
+    const { tasks } = await lire(await appel("?froid=0"));
+    expect(tasks.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("compte un appel à froid bouclé aujourd'hui dans la cadence du jour", async () => {
+    // Vingt appels à froid passés ce matin occupent vingt places de la
+    // journée : les ignorer rouvrirait une journée déjà pleine.
+    brancher({
+      taches: [froide("t1")],
+      faites: [
+        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
+      ],
+    });
+    const { meta } = await lire(await appel());
+    expect(meta.done_today_by_kind).toEqual({ call: 1 });
+  });
+
+  it("laisse les tâches bouclées à froid dehors quand `?froid=0`", async () => {
+    brancher({
+      taches: [],
+      faites: [
+        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
+      ],
+    });
+    const { meta } = await lire(await appel("?froid=0"));
+    expect(meta.done_today_by_kind).toEqual({});
+  });
+});
+
+describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  it("porte la cohorte sur chaque ligne de file", async () => {
+    brancher({ taches: [froide("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
+    const { tasks } = await lire(await appel());
+    expect(Object.fromEntries(tasks.map((t) => [t.id, t.cohorte]))).toEqual({
+      t1: "B_sans_site",
+      t2: "A_site_faible",
+    });
+  });
+
+  it("rend `null` pour une entreprise hors campagne", async () => {
+    brancher({ taches: [froide("t1", null)] });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].cohorte).toBeNull();
+  });
+
+  it("ne garde qu'une cohorte quand on la demande", async () => {
+    brancher({ taches: [froide("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
+    const { tasks, meta } = await lire(await appel("?cohorte=A_site_faible"));
+    expect(tasks.map((t) => t.id)).toEqual(["t2"]);
+    expect(meta.cohorte).toBe("A_site_faible");
+  });
+
+  it("ignore une cohorte inconnue plutôt que de rendre une file vide", async () => {
+    // Une faute de frappe dans l'URL ne doit pas laisser croire qu'il n'y a
+    // rien à faire aujourd'hui : une file trop large se voit, une file vide se
+    // croit.
+    brancher({ taches: [froide("t1", "B_sans_site")] });
+    const { tasks, meta } = await lire(await appel("?cohorte=C_inventee"));
+    expect(tasks.map((t) => t.id)).toEqual(["t1"]);
+    expect(meta.cohorte).toBeNull();
+  });
+
+  it("ne filtre pas la cadence déjà consommée par la cohorte affichée", async () => {
+    // Le quota est du temps d'agent, pas un compteur par cohorte : un appel
+    // passé à une entreprise de B occupe la même place qu'un appel à A.
+    brancher({
+      taches: [enSequence("t2", "A_site_faible")],
+      faites: [
+        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
+      ],
+    });
+    const { meta } = await lire(await appel("?cohorte=A_site_faible"));
+    expect(meta.done_today_by_kind).toEqual({ call: 1 });
+  });
+});
+
+describe("PATCH /api/agent/tasks — la première touche", () => {
+  const GARDE = {
+    id: "t1",
+    kind: "call",
+    contact_id: null,
+    entreprise_id: 42,
+    opportunite_id: null,
+    step_id: null,
+    enrollment_id: null,
+    assignee_id: null,
+    entreprise: { owner_id: AGENT },
+  };
+
+  const patch = (body: Record<string, unknown>) =>
+    PATCH(
+      new Request("http://localhost/api/agent/tasks", {
+        method: "PATCH",
+        headers: { authorization: "Bearer jeton", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  it("horodate l'entreprise au premier « Fait », et une seule fois", () => {
+    const ops = brancher({ garde: GARDE });
+    return patch({ id: "t1", status: "done" }).then((res) => {
+      expect(res.status).toBe(200);
+      const ecriture = (ops.entreprises ?? [])[0] ?? [];
+      const update = ecriture.find((o) => o.m === "update");
+      expect((update?.args[0] as Record<string, unknown>)?.premiere_touche_le).toEqual(expect.any(String));
+      expect(ecriture).toContainEqual({ m: "eq", args: ["id", 42] });
+      // LE garde-fou : sans `is(..., null)`, chaque relance réécrirait la date
+      // et l'âge de l'entreprise resterait éternellement à zéro — les deux
+      // cohortes deviendraient incomparables.
+      expect(ecriture).toContainEqual({ m: "is", args: ["premiere_touche_le", null] });
+    });
+  });
+
+  it("ne touche à rien pour un « pas le bon moment »", async () => {
+    const ops = brancher({ garde: GARDE });
+    await patch({ id: "t1", status: "snoozed", snooze_until: "2026-08-20T09:00:00.000Z" });
+    expect(ops.entreprises).toBeUndefined();
+  });
+
+  it("enregistre le « Fait » même si l'horodatage échoue", async () => {
+    // L'agent a passé l'appel : refuser d'enregistrer son travail parce qu'une
+    // colonne de mesure résiste serait le pire échange possible.
+    brancher({ garde: GARDE, enPanne: ["entreprises"] });
+    const res = await patch({ id: "t1", status: "done" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "done" });
+  });
+
+  it("ne cherche pas d'entreprise quand la tâche n'en porte pas", async () => {
+    const ops = brancher({ garde: { ...GARDE, entreprise_id: null, assignee_id: AGENT, entreprise: null } });
+    await patch({ id: "t1", status: "done" });
+    expect(ops.entreprises).toBeUndefined();
+  });
+});
+
+describe("GET /api/agent/tasks — les quotas de l'agent", () => {
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  it("annonce le défaut quand l'agent n'a rien réglé", async () => {
+    brancher({ reglages: null });
+    const { meta } = await lire(await appel());
+    expect(meta.quotas).toEqual(DAILY_QUOTA);
+  });
+
+  it("annonce la cadence réglée par l'agent", async () => {
+    brancher({ reglages: { quotas_demarchage: { call: 40, whatsapp: 60 } } });
+    const { meta } = await lire(await appel());
+    expect(meta.quotas).toEqual({ ...DAILY_QUOTA, call: 40, whatsapp: 60 });
+  });
+
+  it("retombe sur le défaut devant un réglage aberrant", async () => {
+    // Un quota nul viderait la file : `planTasks` repousserait chaque tâche au
+    // lendemain, indéfiniment. Le matin d'une campagne, c'est un écran vide.
+    brancher({ reglages: { quotas_demarchage: { call: 0, whatsapp: -3 } } });
+    const { meta } = await lire(await appel());
+    expect(meta.quotas).toEqual(DAILY_QUOTA);
+  });
+
+  it("survit à une colonne absente : la file ne dépend pas du réglage", async () => {
+    brancher({ reglages: null });
+    const res = await appel();
+    expect(res.status).toBe(200);
+  });
+});

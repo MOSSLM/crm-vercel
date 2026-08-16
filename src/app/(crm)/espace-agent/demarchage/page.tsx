@@ -10,15 +10,20 @@ import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
 import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
 import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
+import { DemSearch } from "@/components/agent-portal/demarchage/DemSearch";
+import { DemHorsFile } from "@/components/agent-portal/demarchage/DemHorsFile";
 import {
   SIGNAL_ORDER,
+  cadenceEffective,
   dayOfTask,
   firstPlannedTask,
   planTasks,
   signalOf,
 } from "@/lib/agent-portal/demarchage-buckets";
+import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
 import type {
   CompanyBundle,
+  DemCohorte,
   DemarchagePatchBody,
   DemarchageQueueMeta,
   DemarchageTask,
@@ -39,6 +44,10 @@ const EMPTY_META: DemarchageQueueMeta = {
  * l'entreprise en cours au centre (son dossier en en-tête, sa frise de
  * séquence, la carte d'action de l'étape, puis tout son historique), et à
  * droite ce dont on se sert pendant l'échange (démo, audit, RDV, registre).
+ *
+ * L'écran est piloté par une TÂCHE — sauf sur un point, et c'est volontaire :
+ * une entreprise qui rappelle n'a par définition rien de prévu aujourd'hui.
+ * `horsFile` ouvre alors sa fiche seule, sans tâche et sans rien créer.
  */
 export default function AgentDemarchagePage() {
   const { user } = useAuth();
@@ -55,11 +64,25 @@ export default function AgentDemarchagePage() {
   const [filt, setFilt] = useState<DemFilter>("all");
   /** Étape de séquence filtrée — `null` = toutes. */
   const [step, setStep] = useState<number | null>(null);
+  /**
+   * Cohorte filtrée — `null` = les deux.
+   *
+   * Contrairement au canal et au signal, elle ne filtre PAS en mémoire : elle
+   * part au serveur (`?cohorte=…`). La campagne compare deux cohortes au même
+   * âge, et une cohorte tronquée par la pagination de la file donnerait des
+   * comptes faux — c'est la file entière qui doit être celle de la cohorte.
+   */
+  const [cohorte, setCohorte] = useState<DemCohorte | null>(null);
 
   const [company, setCompany] = useState<CompanyBundle | null>(null);
   const [audit, setAudit] = useState<DemAudit>(null);
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
+
+  /** La recherche « quelqu'un rappelle » est-elle ouverte ? */
+  const [recherche, setRecherche] = useState(false);
+  /** L'entreprise regardée hors file, quand elle n'a aucune tâche à traiter. */
+  const [horsFile, setHorsFile] = useState<number | null>(null);
 
   /**
    * Recharge la file et décide sur quoi on atterrit.
@@ -70,30 +93,44 @@ export default function AgentDemarchagePage() {
    *   seul moyen de retrouver une ligne que le serveur vient de créer (typiquement
    *   l'attente de réponse posée par le moteur juste après un « Fait »).
    */
-  const loadQueue = useCallback(async (pick?: string | null | ((rows: DemarchageTask[]) => string | null)) => {
-    setLoadingQueue(true);
-    try {
-      const res = await authedFetch("/api/agent/tasks");
-      if (!res.ok) return;
-      const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
-      const next = body.tasks ?? [];
-      const nextMeta = body.meta ?? EMPTY_META;
-      setTasks(next);
-      setMeta(nextMeta);
-      setSel((current) => {
-        const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
-        if (wanted && next.some((t) => t.id === wanted)) return wanted;
-        return (
-          firstPlannedTask(planTasks(next, { doneToday: nextMeta.done_today_by_kind }))?.id ?? null
+  const loadQueue = useCallback(
+    async (pick?: string | null | ((rows: DemarchageTask[]) => string | null)) => {
+      setLoadingQueue(true);
+      try {
+        // La cohorte est le seul filtre qui voyage jusqu'à la route : les deux
+        // autres trient ce qui est déjà chargé.
+        const res = await authedFetch(
+          cohorte ? `/api/agent/tasks?cohorte=${encodeURIComponent(cohorte)}` : "/api/agent/tasks",
         );
-      });
-    } catch {
-      toast.error("Impossible de charger la file de démarchage.");
-    } finally {
-      setLoadingQueue(false);
-    }
-  }, []);
+        if (!res.ok) return;
+        const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
+        const next = body.tasks ?? [];
+        const nextMeta = body.meta ?? EMPTY_META;
+        setTasks(next);
+        setMeta(nextMeta);
+        setSel((current) => {
+          const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
+          if (wanted && next.some((t) => t.id === wanted)) return wanted;
+          return (
+            firstPlannedTask(
+              planTasks(next, {
+                doneToday: nextMeta.done_today_by_kind,
+                quotas: cadenceEffective(nextMeta.quotas),
+              }),
+            )?.id ?? null
+          );
+        });
+      } catch {
+        toast.error("Impossible de charger la file de démarchage.");
+      } finally {
+        setLoadingQueue(false);
+      }
+    },
+    [cohorte],
+  );
 
+  // Changer de cohorte relance la requête : `loadQueue` en dépend, donc son
+  // identité change, donc cet effet rejoue. C'est le seul rechargement voulu.
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
@@ -101,9 +138,15 @@ export default function AgentDemarchagePage() {
   // Le plan : les journées à venir, chacune remplie à la cadence quotidienne de
   // chaque canal. `done_today_by_kind` est indispensable — sans lui, la journée
   // se rechargerait à chaque tâche bouclée.
+  //
+  // `meta.quotas` L'EST TOUT AUTANT, et pour une raison qui ne se voit pas :
+  // sans lui, `planTasks` retombe sur `DAILY_QUOTA` (60 par jour) pendant que le
+  // rail affiche « /100 » lu du serveur. Les deux chiffres seraient vrais
+  // séparément, et faux ensemble — quarante entreprises de la journée
+  // basculeraient au lendemain, tous les jours, sans que rien ne le signale.
   const days = useMemo(
-    () => planTasks(tasks, { doneToday: meta.done_today_by_kind }),
-    [tasks, meta.done_today_by_kind],
+    () => planTasks(tasks, { doneToday: meta.done_today_by_kind, quotas: cadenceEffective(meta.quotas) }),
+    [tasks, meta.done_today_by_kind, meta.quotas],
   );
 
   // Le jour affiché suit la tâche sélectionnée : cliquer une relance de demain
@@ -121,7 +164,8 @@ export default function AgentDemarchagePage() {
 
   /** Une tâche répond-elle à ce filtre ? Un filtre est SOIT un signal
    *  (« en discussion », « chauds »…) SOIT un canal — les deux vocabulaires ne
-   *  se mélangent pas dans une même barre. */
+   *  se mélangent pas dans une même barre. La cohorte, elle, est une TROISIÈME
+   *  dimension : elle se combine avec celle-ci au lieu de la remplacer. */
   const correspond = useCallback(
     (t: DemarchageTask, f: DemFilter) =>
       f === "all" || (SIGNAL_ORDER.includes(f as never) ? signalOf(t) === f : t.kind === f),
@@ -137,6 +181,14 @@ export default function AgentDemarchagePage() {
     setStep((s) => (s == null || duJour.some((t) => t.sequence?.stepIndex === s) ? s : null));
   }, [duJour, correspond]);
 
+  // Le même filet, pour la cohorte. Il regarde la file ENTIÈRE et non la
+  // journée : le filtre étant servi par la route, une cohorte sans aucune ligne
+  // ne rend pas une journée vide mais une file vide — et rien à l'écran ne
+  // dirait pourquoi. On le relâche, ce qui recharge les deux cohortes.
+  useEffect(() => {
+    if (cohorte && !loadingQueue && tasks.length === 0) setCohorte(null);
+  }, [cohorte, loadingQueue, tasks.length]);
+
   const shown = useMemo(
     () =>
       duJour.filter(
@@ -145,8 +197,10 @@ export default function AgentDemarchagePage() {
     [duJour, filt, step, correspond],
   );
 
-  // Fiche entreprise + audit à chaque changement de prospect.
-  const entrepriseId = task?.entreprise_id ?? null;
+  // Fiche entreprise + audit à chaque changement de prospect. La fiche ouverte
+  // hors file prime sur la tâche sélectionnée : c'est elle qu'on regarde, la
+  // file continue d'exister derrière sans se recharger.
+  const entrepriseId = horsFile ?? task?.entreprise_id ?? null;
   useEffect(() => {
     if (!entrepriseId) {
       setCompany(null);
@@ -171,6 +225,78 @@ export default function AgentDemarchagePage() {
       active = false;
     };
   }, [entrepriseId]);
+
+  /**
+   * Le dossier de la fiche hors file — et seulement s'il est bien le SIEN.
+   *
+   * Le bundle précédent reste affiché pendant le chargement du suivant, ce qui
+   * est un confort quand on enchaîne les tâches. Ici, non : le nom encore à
+   * l'écran est celui qu'on s'apprête à prononcer au téléphone. On attend donc
+   * que le dossier chargé corresponde à l'entreprise demandée.
+   */
+  const ficheHorsFile =
+    horsFile != null && company?.entreprise.id === horsFile ? company : null;
+  const enTete = horsFile != null ? ficheHorsFile : company;
+
+  /**
+   * « / » ouvre la recherche : une seule touche, atteignable sans regarder le
+   * clavier pendant que ça sonne. ⌘K et ⌘J sont déjà pris par le menu de
+   * commandes et le cockpit RDV de l'espace agent.
+   *
+   * Rien n'est intercepté pendant une saisie — sans quoi taper « et/ou » dans
+   * une note ouvrirait la recherche. Le champ de recherche gère lui-même
+   * Entrée, les flèches et Échap.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const cible = e.target as HTMLElement | null;
+      const enSaisie =
+        !!cible &&
+        (cible.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(cible.tagName));
+      if (enSaisie) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        setRecherche(true);
+        return;
+      }
+      // Échap quitte la fiche hors file et rend la file — le chemin de retour
+      // d'un aller sans clic.
+      if (e.key === "Escape" && !recherche && horsFile != null) {
+        e.preventDefault();
+        setHorsFile(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [recherche, horsFile]);
+
+  const estEnFile = useCallback(
+    (id: number) => tasks.some((t) => t.entreprise_id === id),
+    [tasks],
+  );
+
+  /**
+   * Ce qui se passe quand on choisit une entreprise dans la recherche.
+   *
+   * Si elle a une tâche en file, on atterrit dessus — et on relâche les filtres
+   * au passage : atterrir sur une tâche que la liste de gauche n'affiche pas
+   * ferait dire deux choses différentes au même écran. Sinon, sa fiche seule.
+   */
+  const ouvrirEntreprise = useCallback(
+    (e: CompanySearchResult) => {
+      setRecherche(false);
+      const enFile = tasks.find((t) => t.entreprise_id === e.id);
+      if (enFile) {
+        setHorsFile(null);
+        setFilt("all");
+        setStep(null);
+        setSel(enFile.id);
+        return;
+      }
+      setHorsFile(e.id);
+    },
+    [tasks],
+  );
 
   const goNext = useCallback(() => {
     const next = shown.find((t) => t.id !== sel);
@@ -199,7 +325,8 @@ export default function AgentDemarchagePage() {
           // On suit le prospect, pas la file : boucler un premier contact gare
           // sa séquence sur l'attente de réponse, et c'est cette ligne-là qu'on
           // veut sous les yeux — pas un prospect au hasard. À défaut (séquence
-          // terminée, arrêtée), on enchaîne sur la tâche suivante.
+          // terminée, arrêtée, ou appel à froid qui n'en a jamais eu), on
+          // enchaîne sur la tâche suivante.
           const suite = enrollmentId ? rows.find((t) => t.enrollment_id === enrollmentId) : undefined;
           return suite?.id ?? suivante;
         });
@@ -232,7 +359,7 @@ export default function AgentDemarchagePage() {
     });
   }, [task, loadQueue]);
 
-  const companyName = company?.entreprise.name ?? "";
+  const companyName = enTete?.entreprise.name ?? "";
 
   return (
     <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
@@ -245,16 +372,30 @@ export default function AgentDemarchagePage() {
           setFilt={setFilt}
           step={step}
           setStep={setStep}
+          cohorte={cohorte}
+          setCohorte={setCohorte}
           tasks={shown}
           meta={meta}
           agentName={user?.name ?? null}
           loading={loadingQueue}
-          sel={task?.id ?? null}
-          onPick={setSel}
+          // Rien de surligné dans la file quand on regarde une fiche hors
+          // file : ce n'est pas elle qui est à l'écran.
+          sel={horsFile != null ? null : (task?.id ?? null)}
+          onPick={(id) => {
+            setHorsFile(null);
+            setSel(id);
+          }}
+          onRechercher={() => setRecherche(true)}
         />
 
-        {company && task ? (
-          <DemHead company={company} sequence={task.sequence} audit={audit} />
+        {enTete && (task || horsFile != null) ? (
+          <DemHead
+            company={enTete}
+            sequence={horsFile != null ? null : (task?.sequence ?? null)}
+            audit={audit}
+            cohorte={horsFile != null ? null : (task?.cohorte ?? null)}
+            horsSequence={horsFile == null && task?.hors_sequence === true}
+          />
         ) : (
           <header className="dm-head">
             <div className="dm-hd">
@@ -262,7 +403,11 @@ export default function AgentDemarchagePage() {
                 <div className="nm">Démarchage</div>
                 <div className="sb">
                   <span className="it">
-                    {loadingQueue ? "Chargement de la file…" : "Aucune entreprise en séquence à traiter."}
+                    {horsFile != null
+                      ? "Ouverture de la fiche…"
+                      : loadingQueue
+                        ? "Chargement de la file…"
+                        : "Aucune entreprise à démarcher pour l'instant."}
                   </span>
                 </div>
               </div>
@@ -271,9 +416,24 @@ export default function AgentDemarchagePage() {
         )}
 
         <main className="dm-main">
-          {task ? (
+          {horsFile != null ? (
+            ficheHorsFile && (
+              <>
+                <DemHorsFile company={ficheHorsFile} onRetour={() => setHorsFile(null)} />
+                <DemHisto
+                  entrepriseId={horsFile}
+                  companyName={companyName}
+                  refreshKey={historyKey}
+                />
+              </>
+            )
+          ) : task ? (
             <>
-              <DemSeqStrip sequence={task.sequence} />
+              <DemSeqStrip
+                sequence={task.sequence}
+                horsSequence={task.hors_sequence === true}
+                cohorte={task.cohorte ?? null}
+              />
               <DemActionCard
                 key={task.id}
                 task={task}
@@ -295,18 +455,35 @@ export default function AgentDemarchagePage() {
             </>
           ) : (
             !loadingQueue && (
+              // Le message d'avant parlait de séquences : depuis les appels à
+              // froid, une file vide veut dire « plus personne à appeler », pas
+              // « aucune séquence en cours ».
               <div className="dm-hint">
-                File vide — aucune entreprise en séquence n&apos;attend d&apos;action aujourd&apos;hui.
+                File vide — aucune entreprise n&apos;attend d&apos;action aujourd&apos;hui. Si
+                quelqu&apos;un rappelle, sa fiche se retrouve avec « / ».
               </div>
             )
           )}
         </main>
 
-        {company && task ? (
-          <DemSide company={company} audit={audit} opportuniteId={task.opportunite_id} />
+        {enTete && (task || horsFile != null) ? (
+          <DemSide
+            company={enTete}
+            audit={audit}
+            opportuniteId={
+              horsFile != null ? (enTete.opportunite?.id ?? null) : (task?.opportunite_id ?? null)
+            }
+          />
         ) : (
           <aside className="dm-side" />
         )}
+
+        <DemSearch
+          ouvert={recherche}
+          onFermer={() => setRecherche(false)}
+          onChoisir={ouvrirEntreprise}
+          estEnFile={estEnFile}
+        />
       </div>
     </div>
   );

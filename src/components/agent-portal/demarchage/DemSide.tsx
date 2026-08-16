@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Icon } from "./DemIcon";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { urlPlaquette } from "@/lib/audit/plaquette-lien";
 import { lienNonMesure } from "@/lib/analytics/trafic-interne";
 import { formatEuros } from "@/lib/donnees-publiques/fiche";
 import { trancheEffectifLabel } from "@/lib/donnees-publiques/effectif";
@@ -109,10 +110,33 @@ export function DemSide({
             </div>
           </>
         ) : (
-          <div className="dm-hint warn">
-            <Icon name="clock" className="ico-sm" />
-            Démo non publiée — ne pas promettre de lien tant qu&apos;elle n&apos;est pas en ligne.
-          </div>
+          <>
+            <div className="dm-hint warn">
+              <Icon name="clock" className="ico-sm" />
+              Démo non publiée — ne pas promettre de lien tant qu&apos;elle n&apos;est pas en ligne.
+            </div>
+            {/* CE QU'ON PEUT ENVOYER QUAND ON N'A RIEN DE PERSONNEL.
+                C'est le cas de tout appel à froid, et de la cohorte B tant que
+                son démo n'est pas construit : sans ce lien, l'agent raccroche
+                en promettant « je vous envoie quelque chose » et n'a rien à
+                envoyer. La plaquette ne nomme personne — elle est bâtie pour
+                partir telle quelle (cf. `contenuImpersonnel`).
+
+                LIEN COLLECTIF, ET C'EST UNE PERTE CONNUE : une ouverture depuis
+                cette URL ne s'attribue à personne. La version par prospect
+                existe — le board la fabrique en lot (« Créer les plaquettes »,
+                `/api/agent/marketing-pipeline/plaquette`) — mais la fiche ne
+                transporte pas encore le jeton, et sa migration n'est pas jouée.
+                Tant que les deux ne sont pas là, le lien collectif ouvre le bon
+                document ; c'est le compteur qui manque, pas la plaquette.
+
+                `urlPlaquette()` plutôt que le chemin recopié : cette URL part
+                par WhatsApp chez des prospects, elle doit bouger d'un seul
+                geste le jour où elle bouge. */}
+            <div style={{ marginTop: 9 }}>
+              <CopyUrl url={urlPlaquette()} />
+            </div>
+          </>
         )}
       </div>
 

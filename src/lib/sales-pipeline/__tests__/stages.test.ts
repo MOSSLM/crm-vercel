@@ -255,6 +255,34 @@ describe('divers', () => {
     expect(isLostStage('RDV calé')).toBe(false)
   })
 
+  // « Lost » est le nom de l'étape de perte dans la majorité des pipelines
+  // importés. Tant qu'il n'était pas reconnu, `buildColumns` lui donnait une
+  // colonne DE PLUS À DROITE de « Client signé » : la dernière colonne du
+  // tableau, celle qu'on lit comme l'aboutissement, était la perte.
+  it('reconnaît « Lost », le nom réel de l’étape en production', () => {
+    expect(isLostStage('Lost')).toBe(true)
+    expect(isLostStage('Closed Lost')).toBe(true)
+    expect(isLostStage('Refusé')).toBe(true)
+  })
+
+  it('ne donne aucune colonne à une étape « Lost »', () => {
+    const stages: PipelineStageRef[] = [
+      { id: 6, nom: 'RDV calé', ordre: 50 },
+      { id: 7, nom: 'Client signé', ordre: 60 },
+      { id: 9, nom: 'Lost', ordre: 80 },
+    ]
+    expect(columnsOf({ stages }).map((c) => c.id)).not.toContain('stage:9')
+    // Vue fondue : pas davantage de colonne de rôle « perdu ».
+    expect(columnsOf({ stages, parRole: true }).map((c) => c.id)).toEqual([
+      ENTRY_COLUMN_ID,
+      'step:s1',
+      'step:s2',
+      'step:s3',
+      'role:rdv',
+      'role:signe',
+    ])
+  })
+
   it('devine le bon bouton pour une étape de pipeline', () => {
     expect(stageCta('RDV calé')).toBe('Caler le RDV')
     expect(stageCta('Devis envoyé')).toBe('Envoyer la proposition')

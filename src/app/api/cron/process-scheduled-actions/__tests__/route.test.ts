@@ -197,13 +197,15 @@ describe('GET /api/cron/process-scheduled-actions', () => {
       }];
 
       const fetchPending = buildSelectChain({ data: pending, error: null });
+      const oppLookup = buildSelectChain({ data: { entreprise_id: 42 }, error: null });
       const insertNote = buildInsertChain({ error: null });
-      // Make the insert throw via mocking from('opportunite_notes').insert to reject
+      // Make the insert throw via mocking from('email_logs').insert to reject
       insertNote.insert = jest.fn().mockRejectedValue(new Error('boom'));
       const markRetry = buildUpdateChain();
 
       mockFrom
         .mockReturnValueOnce(fetchPending)
+        .mockReturnValueOnce(oppLookup)
         .mockReturnValueOnce(insertNote)
         .mockReturnValueOnce(markRetry);
 
@@ -230,11 +232,13 @@ describe('GET /api/cron/process-scheduled-actions', () => {
       }];
 
       const fetchPending = buildSelectChain({ data: pending, error: null });
+      const oppLookup = buildSelectChain({ data: { entreprise_id: 42 }, error: null });
       const insertNote = { insert: jest.fn().mockRejectedValue(new Error('boom again')) };
       const markFailed = buildUpdateChain();
 
       mockFrom
         .mockReturnValueOnce(fetchPending)
+        .mockReturnValueOnce(oppLookup)
         .mockReturnValueOnce(insertNote)
         .mockReturnValueOnce(markFailed);
 
@@ -261,11 +265,13 @@ describe('GET /api/cron/process-scheduled-actions', () => {
       }];
 
       const fetchPending = buildSelectChain({ data: pending, error: null });
+      const oppLookup = buildSelectChain({ data: { entreprise_id: 42 }, error: null });
       const insertNote = buildInsertChain({ error: null });
       const markExecuted = buildUpdateChain();
 
       mockFrom
         .mockReturnValueOnce(fetchPending)
+        .mockReturnValueOnce(oppLookup)
         .mockReturnValueOnce(insertNote)
         .mockReturnValueOnce(markExecuted);
 
@@ -274,6 +280,85 @@ describe('GET /api/cron/process-scheduled-actions', () => {
 
       // Verify the fetch filter targeted only pending rows.
       expect(fetchPending.eq).toHaveBeenCalledWith('status', 'pending');
+    });
+
+    /**
+     * `add_note` visait `public.opportunite_notes`, table qui n'existe pas :
+     * l'erreur PostgREST n'était pas lue et la ligne passait `executed`. Ce test
+     * nomme la table de destination, parce que c'est la SEULE chose qui
+     * distinguait un no-op silencieux d'une note enregistrée.
+     */
+    it('écrit la note dans email_logs, la table que l’historique relit', async () => {
+      const pending = [{
+        id: 'sa-1',
+        workflow_id: 'wf-1',
+        opportunite_id: 'opp-1',
+        action: { type: 'add_note', params: { content: 'rappeler après les congés' } },
+        attempts: 0,
+      }];
+
+      const fetchPending = buildSelectChain({ data: pending, error: null });
+      const oppLookup = buildSelectChain({ data: { entreprise_id: 42 }, error: null });
+      const insertNote = buildInsertChain({ error: null });
+      const markExecuted = buildUpdateChain();
+
+      mockFrom
+        .mockReturnValueOnce(fetchPending)
+        .mockReturnValueOnce(oppLookup)
+        .mockReturnValueOnce(insertNote)
+        .mockReturnValueOnce(markExecuted);
+
+      const { GET } = await importRoute();
+      const res = await GET(cronRequest(null));
+
+      expect(await res.json()).toEqual({ processed: 1 });
+      expect(mockFrom).toHaveBeenCalledWith('email_logs');
+      expect(mockFrom).not.toHaveBeenCalledWith('opportunite_notes');
+      expect(insertNote.insert).toHaveBeenCalledWith(expect.objectContaining({
+        channel: 'note',
+        entreprise_id: 42,
+        opportunite_id: 'opp-1',
+        body_text: 'rappeler après les congés',
+      }));
+      expect(markExecuted.captured.updates).toEqual([{ status: 'executed' }]);
+    });
+
+    /**
+     * Une erreur d'insertion RENDUE (et non levée) était ignorée : PostgREST ne
+     * jette pas, il renvoie `{ error }`. Sans ce contrôle, la ligne était
+     * marquée `executed` et l'action de workflow perdue pour de bon — une
+     * action programmée ne se rejoue jamais.
+     */
+    it('rejoue plus tard quand l’insertion RENVOIE une erreur au lieu de la lever', async () => {
+      const pending = [{
+        id: 'sa-1',
+        workflow_id: 'wf-1',
+        opportunite_id: 'opp-1',
+        action: { type: 'add_note', params: { content: 'note' } },
+        attempts: 0,
+      }];
+
+      const fetchPending = buildSelectChain({ data: pending, error: null });
+      const oppLookup = buildSelectChain({ data: { entreprise_id: 42 }, error: null });
+      const insertNote = buildInsertChain({ error: { message: 'relation does not exist' } });
+      const markRetry = buildUpdateChain();
+
+      mockFrom
+        .mockReturnValueOnce(fetchPending)
+        .mockReturnValueOnce(oppLookup)
+        .mockReturnValueOnce(insertNote)
+        .mockReturnValueOnce(markRetry);
+
+      const { GET } = await importRoute();
+      await GET(cronRequest(null));
+
+      expect(markRetry.captured.updates).toEqual([
+        expect.objectContaining({
+          status: 'pending',
+          attempts: 1,
+          last_error: expect.stringContaining('relation does not exist'),
+        }),
+      ]);
     });
   });
 });

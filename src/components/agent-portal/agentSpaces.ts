@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarClock,
   ClipboardCheck,
+  Funnel,
   GitBranch,
   Target,
   Inbox,
@@ -82,6 +83,9 @@ export const AGENT_SPACES: AgentSpace[] = [
     href: "/espace-agent/dashboard",
     tools: [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
+      // Juste après le dashboard : l'entonnoir répond à « où est-ce qu'on perd
+      // les entreprises », qui est la question posée avant d'ouvrir un board.
+      { title: "Entonnoir", href: "/espace-agent/entonnoir", icon: Funnel },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
       { title: "Pipeline commercial", href: "/espace-agent/pipeline-commercial", icon: Target },
       {
@@ -176,6 +180,7 @@ export function getAgentSpaceById(id: AgentSpaceId): AgentSpace {
  */
 const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
   ["/espace-agent/dashboard", "pilotage"],
+  ["/espace-agent/entonnoir", "pilotage"],
   ["/espace-agent/marketing-pipeline", "pilotage"],
   ["/espace-agent/pipeline-commercial", "pilotage"],
   ["/espace-agent/pipeline", "pilotage"],

@@ -221,8 +221,17 @@ export function stageCta(name: string): string {
   return 'Faire avancer'
 }
 
-/** Une étape « Perdu » n'est pas une colonne : c'est un état de ligne. */
-export const isLostStage = (name: string) => /perdu|abandon/i.test(name)
+/**
+ * Une étape « Perdu » n'est pas une colonne : c'est un état de ligne.
+ *
+ * UN SEUL MOTIF, ET IL VIT DANS `stageRole`. Il y en avait deux — `/perdu|abandon/`
+ * ici, `/perdu|abandon|refus|annul/` là-bas — et ils ont dérivé : ni l'un ni
+ * l'autre ne reconnaissait « Lost », le nom réel de l'étape dans la plupart des
+ * pipelines. Une perte se rangeait alors en colonne d'avancement, tout à droite
+ * du tableau, comme si l'affaire était en train d'aboutir. Deux définitions du
+ * même mot, c'est deux occasions d'oublier le même cas : il n'en reste qu'une.
+ */
+export const isLostStage = (name: string) => stageRole(name) === 'perdu'
 
 /* ── Construction des colonnes ───────────────────────────────────────────── */
 

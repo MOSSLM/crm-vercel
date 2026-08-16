@@ -100,24 +100,31 @@ function hasStat(v: unknown): boolean {
  * Variables that must be present before a demo site can be generated cleanly.
  * Returns the human-readable labels missing.
  *
- * Le principe : tout ce que le site AFFICHE est obligatoire. D'où le logo et les
- * trois chiffres clés, en plus de l'identité (nom, ville, ville SEO, code
- * postal, téléphone) et des services — un site généré sans eux sort avec des
- * blocs vides qu'il faut ensuite rattraper à la main.
+ * Le principe : tout ce que le site AFFICHE SANS REPLI est obligatoire. D'où les
+ * trois chiffres clés, en plus de l'identité (nom, ville, ville SEO, code postal,
+ * téléphone) et des services — un site généré sans eux sort avec des blocs vides
+ * qu'il faut ensuite rattraper à la main.
  *
- * Avec un tempérament, sans quoi le principe devient un piège : une exigence
- * doit être SATISFIABLE. Les qualifications RGE, la note et le nombre d'avis
- * n'existent pas pour une partie du parc — 1210 entreprises sur 2797 n'ont même
- * pas de fiche Google. Les réclamer ne produisait pas une fiche plus complète,
- * seulement une fiche impossible à valider, dont la seule issue était d'inventer
- * un chiffre. Ce qu'on exige d'elles est donc leur COHÉRENCE : des avis annoncés
- * sans note affichent un bloc noté vide, l'inverse non.
+ * Avec deux tempéraments, sans quoi le principe devient un piège.
+ *
+ * Une exigence doit être SATISFIABLE. Les qualifications RGE, la note et le
+ * nombre d'avis n'existent pas pour une partie du parc — 1210 entreprises sur
+ * 2797 n'ont même pas de fiche Google. Les réclamer ne produisait pas une fiche
+ * plus complète, seulement une fiche impossible à valider, dont la seule issue
+ * était d'inventer un chiffre. Ce qu'on exige d'elles est donc leur COHÉRENCE :
+ * des avis annoncés sans note affichent un bloc noté vide, l'inverse non.
+ *
+ * Et une exigence tombe quand le REPLI devient correct. C'est ce qui est arrivé
+ * au logo : depuis `hydrate-logo`, une entreprise qui n'en a pas voit son nom
+ * composé à la place, dans la police du design. Rien ne manque plus à l'écran,
+ * donc rien n'est plus à réclamer. Le champ existe toujours et un vrai logo
+ * gagne toujours — il n'est simplement plus un verrou.
  *
  * Must stay in sync with `SITE_REQUIRED` in MarketingWebPipeline.tsx — including
- * the rule that everything living on `lead_magnet_projects` (SEO city, logo,
- * stats) is only required once that project exists. Le test
- * `missing-for-site.test.ts` compare les deux listes de libellés : la
- * synchronisation n'est plus une simple demande en commentaire.
+ * the rule that everything living on `lead_magnet_projects` (SEO city, stats) is
+ * only required once that project exists. Le test `missing-for-site.test.ts`
+ * compare les deux listes de libellés : la synchronisation n'est plus une simple
+ * demande en commentaire.
  */
 export function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
   const miss: string[] = [];
@@ -145,8 +152,24 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
   if (Number(ent.nombre_avis) > 0 && !(Number(ent.note_moyenne) > 0)) {
     miss.push("Note moyenne");
   }
-  // Logo : celui du projet prime au rendu, celui de l'entreprise sert de repli.
-  if (!str(project?.logo_url) && !str(ent.logo_url)) miss.push("Logo");
+  // Le logo n'est PLUS exigé, et ce n'est pas l'exigence qu'on abaisse : c'est
+  // son absence qui a changé de conséquence. Tant qu'une fiche sans logo sortait
+  // avec un `src=""` dans l'en-tête — donc une image cassée en haut de la démo —
+  // le réclamer était juste. Depuis `hydrate-logo`, l'emplacement est composé
+  // avec le nom de l'entreprise, dans la police du design : le rendu est correct
+  // sans logo, donc il n'y a plus rien à réclamer.
+  //
+  // Et l'exigence n'était de toute façon pas SATISFIABLE. 296 des 300
+  // entreprises de la cohorte de démarchage n'ont aucun logo — un artisan sans
+  // logo n'a pas oublié de le renseigner, il n'a jamais payé de graphiste. Les
+  // réclamer ne produisait pas 296 logos, seulement 296 fiches définitivement
+  // « incomplètes », dont la seule issue était d'aller chercher une image qui
+  // n'existe pas. Même raisonnement que les avis Google juste au-dessus.
+  //
+  // Ce qui reste vrai : un logo VÉRIFIÉ gagne toujours sur la signature. Celui
+  // du projet prime au rendu, celui de l'entreprise sert de repli (cf.
+  // `applyProjectEnrichment`) — le renseigner améliore la démo, mais ne
+  // conditionne plus sa génération.
   if (project) {
     // Le chiffre confirmé par le client satisfait l'exigence autant que
     // l'estimation : c'est celui qui s'affichera (cf. `effectiveStat`). Sans ce
@@ -181,8 +204,10 @@ type ProjectRow = {
   pret_pour_lm: boolean | null;
   /** Ville SEO — requise pour créer un site (voir `missingForSite`). */
   override_city: string | null;
-  /** Logo + chiffres clés : affichés par le site, donc requis eux aussi. */
+  /** Logo du projet : il prime sur celui de l'entreprise au rendu. Plus exigé —
+   *  son absence a un repli correct (voir `missingForSite`). */
   logo_url: string | null;
+  /** Chiffres clés : affichés par le site sans repli, donc requis. */
   stat_years_experience: string | null;
   stat_satisfied_clients: string | null;
   stat_installations_completed: string | null;

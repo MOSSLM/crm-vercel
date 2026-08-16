@@ -2,13 +2,59 @@
 
 import { Icon, Pill } from "./DemIcon";
 import { channelOf } from "@/lib/sales-pipeline/stages";
-import type { DemarchageSequenceInfo } from "./types";
+import { COHORTE_INFO } from "./cohortes";
+import type { DemCohorte, DemarchageSequenceInfo } from "./types";
 
 /**
  * La frise de la séquence : où en est ce prospect, et ce qui reste.
  * Rien à cliquer — c'est un repère, l'action se fait dans la carte en dessous.
+ *
+ * À FROID, LA FRISE N'A RIEN À DESSINER — MAIS LA BANDE A QUELQUE CHOSE À DIRE
+ * Un appel à froid n'a ni étapes ni relances : la frise rendait `null` et
+ * l'écran s'ouvrait directement sur la carte d'action, sans un mot sur QUI on
+ * appelle ni POURQUOI cette entreprise-là. On rend donc à sa place la seule
+ * chose qui compte dans ce cas : jamais contactée, et l'accroche de sa cohorte.
+ * Le `null` reste pour les tâches sans séquence qui ne sont pas à froid non
+ * plus (vieilles lignes) : rien de vrai à dire, donc rien à afficher.
  */
-export function DemSeqStrip({ sequence }: { sequence: DemarchageSequenceInfo | null }) {
+export function DemSeqStrip({
+  sequence,
+  horsSequence = false,
+  cohorte = null,
+}: {
+  sequence: DemarchageSequenceInfo | null;
+  /** Appel à froid : aucune séquence derrière cette ligne. */
+  horsSequence?: boolean;
+  cohorte?: DemCohorte | null;
+}) {
+  if (horsSequence && (!sequence || sequence.steps.length === 0)) {
+    const info = cohorte ? COHORTE_INFO[cohorte] : null;
+    return (
+      <section className="dm-seq froid">
+        <div className="dm-seq-h">
+          <span className="sq" style={{ background: "var(--warn)" }} />
+          <span className="n">Appel à froid</span>
+          <Pill kind="warn">
+            <Icon name="zap" className="ico-xs" />
+            jamais contactée
+          </Pill>
+          {info && (
+            <Pill kind="accent" style={{ marginLeft: 2 }}>
+              {info.long}
+            </Pill>
+          )}
+          <span className="m">aucune séquence · c&apos;est le premier contact</span>
+        </div>
+        {info && (
+          <div className="dm-froid-arg">
+            <Icon name="target" className="ico-sm" />
+            {info.argument}
+          </div>
+        )}
+      </section>
+    );
+  }
+
   if (!sequence || sequence.steps.length === 0) return null;
   const cur = sequence.stepIndex ?? 0;
 

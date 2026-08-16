@@ -1,4 +1,12 @@
-import { classifyEtape, joursRestants, progression, rythmeRequisCents } from "../agent-sprint";
+import {
+  CADRE_PAR_DEFAUT,
+  cibleContactsDepuisQuotas,
+  classifyEtape,
+  joursRestants,
+  lireCadreSprint,
+  progression,
+  rythmeRequisCents,
+} from "../agent-sprint";
 
 describe("classifyEtape — ce qui compte comme argent rentré", () => {
   it("reconnaît l'acompte comme encaissé", () => {
@@ -28,6 +36,74 @@ describe("classifyEtape — ce qui compte comme argent rentré", () => {
 
   it("donne la priorité au perdu, même si l'intitulé parle de signature", () => {
     expect(classifyEtape("Perdu après signature")).toBe("perdu");
+  });
+});
+
+describe("lireCadreSprint — le sprint se règle sans redéployer", () => {
+  it("retombe sur la campagne du 17 au 26 août quand rien n'est réglé", () => {
+    expect(lireCadreSprint({})).toEqual(CADRE_PAR_DEFAUT);
+    expect(CADRE_PAR_DEFAUT.deadline).toBe("2026-08-26");
+    expect(CADRE_PAR_DEFAUT.cibleContactsJour).toBe(100);
+  });
+
+  it("prend les quatre valeurs de l'environnement", () => {
+    expect(
+      lireCadreSprint({
+        SPRINT_OBJECTIF_CENTS: "500000",
+        SPRINT_DEBUT: "2026-09-01",
+        SPRINT_DEADLINE: "2026-09-30",
+        SPRINT_CIBLE_CONTACTS_JOUR: "60",
+      }),
+    ).toEqual({
+      objectifCents: 500000,
+      debut: "2026-09-01",
+      deadline: "2026-09-30",
+      cibleContactsJour: 60,
+    });
+  });
+
+  // Une faute de frappe dans une variable Vercel ne doit pas vider l'écran :
+  // mieux vaut le cadre par défaut qu'un objectif à zéro (100 % dès le départ)
+  // ou une échéance « Invalid Date » (rythme requis incalculable).
+  it("ignore ce qui n'est pas lisible plutôt que de le propager", () => {
+    const cadre = lireCadreSprint({
+      SPRINT_OBJECTIF_CENTS: "0",
+      SPRINT_DEBUT: "17/08/2026",
+      SPRINT_DEADLINE: "2026-08-32",
+      SPRINT_CIBLE_CONTACTS_JOUR: "-5",
+    });
+    expect(cadre).toEqual(CADRE_PAR_DEFAUT);
+  });
+
+  it("refuse une échéance antérieure au début", () => {
+    const cadre = lireCadreSprint({ SPRINT_DEBUT: "2026-08-17", SPRINT_DEADLINE: "2026-08-10" });
+    expect(cadre.deadline).toBe("2026-08-17");
+  });
+});
+
+describe("cibleContactsDepuisQuotas", () => {
+  it("somme les quotas par canal — c'est ça, la cible du jour", () => {
+    expect(cibleContactsDepuisQuotas({ call: 20, whatsapp: 60, linkedin: 20 })).toBe(100);
+  });
+
+  it("rend null quand rien n'est réglé, pour laisser la variable décider", () => {
+    expect(cibleContactsDepuisQuotas(null)).toBeNull();
+    expect(cibleContactsDepuisQuotas({})).toBeNull();
+    expect(cibleContactsDepuisQuotas({ call: 0 })).toBeNull();
+    expect(cibleContactsDepuisQuotas("60")).toBeNull();
+  });
+
+  it("compte la cadence RÉELLE de la file, défauts compris", () => {
+    // Un réglage partiel ne déplafonne pas les autres canaux : la file
+    // planifiera 60 WhatsApp + 20 appels + 20 LinkedIn. La cible du jour doit
+    // dire 100, pas 60 — sinon l'écran sprint annonce une journée deux fois
+    // plus courte que celle que la file distribue.
+    expect(cibleContactsDepuisQuotas({ whatsapp: 60 })).toBe(100);
+  });
+
+  it("ignore une valeur illisible sans perdre les autres", () => {
+    // `whatsapp` retombe sur son défaut (20), il ne disparaît pas du total.
+    expect(cibleContactsDepuisQuotas({ call: 20, whatsapp: "beaucoup" })).toBe(60);
   });
 });
 

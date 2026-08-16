@@ -13,6 +13,11 @@
  * Le pendant serveur est `missingForSite` (`src/app/api/marketing-pipeline/
  * _board.ts`), et `missing-for-site.test.ts` vérifie que les deux produisent
  * exactement les mêmes libellés.
+ *
+ * « Requis » est devenu le nom d'usage, plus la définition : cette liste décrit
+ * les champs que l'écran SAIT SAISIR, dont la plupart sont exigés. Un champ
+ * `facultatif` y reste pour son contrôle de saisie et ne réclame rien — c'est
+ * `ruleMet`, jamais `ok` seul, qui tranche ce qui manque.
  */
 
 export const toArr = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
@@ -69,16 +74,46 @@ export type RequiredRule = {
   ok: (f: RequiredValues) => boolean;
   /**
    * L'exigence a-t-elle seulement lieu d'être sur cette fiche ? Absent = oui,
-   * toujours. Seule la note s'en sert : sans avis, il n'y a rien à noter, et
+   * toujours. La note s'en sert : sans avis, il n'y a rien à noter, et
    * l'astérisque comme le rouge doivent disparaître plutôt que réclamer un
    * chiffre que l'entreprise n'a pas.
    */
   applies?: (f: RequiredValues) => boolean;
+  /**
+   * Le champ se SAISIT ici, mais ne se RÉCLAME plus nulle part.
+   *
+   * Une règle est le seul moyen qu'a un champ d'exister à l'écran : la fiche
+   * comme la grille ne rendent que ce que `SITE_REQUIRED_WITH_PROJECT` décrit
+   * (cf. `renderRequiredField`). Retirer la règle d'un champ devenu facultatif
+   * supprimerait donc aussi son contrôle — pour le logo, le seul téléversement
+   * de tout le CRM. Ce drapeau sépare les deux : le champ reste, l'exigence
+   * tombe. Ni astérisque, ni rouge, ni colonne dans la grille, ni « n
+   * manquants » — mais le jour où l'entreprise a un vrai logo, il y a toujours
+   * où le poser.
+   */
+  facultatif?: true;
 };
 
-/** L'exigence porte-t-elle sur cette fiche ? (cf. `RequiredRule.applies`) */
+/**
+ * L'exigence porte-t-elle sur cette fiche ? (cf. `applies` et `facultatif`)
+ *
+ * Un champ facultatif ne s'applique jamais : c'est ce qui éteint son astérisque.
+ */
 export const ruleApplies = (rule: RequiredRule, values: RequiredValues): boolean =>
-  rule.applies ? rule.applies(values) : true;
+  rule.facultatif ? false : rule.applies ? rule.applies(values) : true;
+
+/**
+ * La règle est-elle TENUE par cette fiche ? La seule question que doivent poser
+ * le rouge, les colonnes de la grille et le décompte « n manquants ».
+ *
+ * `ok` seul ne suffit pas : une exigence qui n'a pas lieu d'être est tenue
+ * d'office. Interroger `ok` sans `applies` a déjà failli coûter cher — c'est
+ * pour ça que la règle de la note encode sa condition DEUX fois, dans `applies`
+ * et à nouveau dans son `ok`. Cette ceinture reste (elle ne gêne pas), mais
+ * elle n'est plus ce qui tient : c'est ici que la question se tranche.
+ */
+export const ruleMet = (rule: RequiredRule, values: RequiredValues): boolean =>
+  !ruleApplies(rule, values) || rule.ok(values);
 
 /** Champ du formulaire porté par une règle de complétude. */
 export type RequiredField = RequiredRule["field"];
@@ -109,10 +144,10 @@ export const SITE_REQUIRED: RequiredRule[] = [
 ];
 
 // Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects` : ils ne
-// sont exigés que s'il y a un projet lead magnet, sinon la fiche d'une
+// sont saisis que s'il y a un projet lead magnet, sinon la fiche d'une
 // entreprise sans projet serait impossible à valider (ces champs n'ont nulle
-// part où être enregistrés). Tout ce que le site affiche est obligatoire — un
-// site généré sans logo ni chiffres clés sort avec des blocs vides.
+// part où être enregistrés). Tout ce que le site affiche SANS REPLI est
+// obligatoire — un site généré sans chiffres clés sort avec des blocs vides.
 export const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
   ...SITE_REQUIRED,
   {
@@ -121,10 +156,25 @@ export const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
     hint: "Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même.",
     ok: (f) => f.lm_override_city.trim().length > 0,
   },
+  // Le logo n'est plus une exigence, et ce n'est pas l'exigence qu'on abaisse :
+  // c'est son absence qui a changé de conséquence. Tant qu'une fiche sans logo
+  // sortait avec un `src=""` — donc une image cassée en haut de la démo — le
+  // réclamer était juste. Depuis `hydrate-logo`, l'emplacement est composé avec
+  // le nom de l'entreprise, dans la police du design.
+  //
+  // Elle n'était de toute façon pas SATISFIABLE : 296 des 300 entreprises de la
+  // cohorte de démarchage n'ont aucun logo. Un artisan sans logo n'a pas oublié
+  // de le renseigner, il n'a jamais payé de graphiste. La réclamer ne produisait
+  // pas 296 logos, seulement 296 fiches définitivement rouges. Même raisonnement
+  // que la note plus haut, et que `missingForSite` côté API.
+  //
+  // Le champ RESTE (`facultatif`, pas supprimé) : un vrai logo gagne toujours au
+  // rendu, et c'est ici qu'on le téléverse. Une invitation, plus un blocage.
   {
     field: "lm_logo_url",
     label: "Logo",
-    hint: "Affiché en en-tête du site : sans lui, la démo sort sans identité.",
+    hint: "Facultatif : sans lui, l'en-tête compose le nom de l'entreprise. Un vrai logo reste préférable.",
+    facultatif: true,
     ok: (f) => f.lm_logo_url.trim().length > 0,
   },
   // Un chiffre confirmé par le client satisfait l'exigence autant qu'une
@@ -158,7 +208,7 @@ export const siteRequiredFor = (hasProject: boolean): RequiredRule[] =>
 
 /** Les champs requis encore vides, dans l'ordre des règles. */
 export const missingFields = (values: RequiredValues, hasProject: boolean): RequiredField[] =>
-  siteRequiredFor(hasProject).filter((r) => !r.ok(values)).map((r) => r.field);
+  siteRequiredFor(hasProject).filter((r) => !ruleMet(r, values)).map((r) => r.field);
 
 /** Valeurs vides — point de départ d'une ligne de grille comme d'un formulaire. */
 export const EMPTY_REQUIRED_VALUES: RequiredValues = {

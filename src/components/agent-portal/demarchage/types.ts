@@ -9,6 +9,16 @@ import type { StageRole } from "@/lib/opportunites/stage-roles";
 /** Les canaux réellement possibles dans notre file (`wait` = attente-réponse). */
 export type DemKind = "call" | "whatsapp" | "linkedin" | "wait";
 
+/**
+ * La cohorte de la campagne d'août : « A » a déjà un site (mauvais), « B » n'a
+ * rien en ligne. Les deux se comparent AU MÊME ÂGE (J+1, J+3, J+7, J+14), d'où
+ * une colonne dédiée plutôt qu'une étiquette libre — un libellé qui dérive d'un
+ * jour à l'autre rendrait la comparaison ininterprétable.
+ *
+ * `null` = hors campagne : tout ce qui vivait dans la file avant le 17 août.
+ */
+export type DemCohorte = "A_site_faible" | "B_sans_site";
+
 export type DemarchageContact = {
   id: string;
   first_name: string | null;
@@ -79,6 +89,19 @@ export type DemarchageTask = {
    * les premiers contacts, pas les échanges avec ceux qui ont répondu.
    */
   in_conversation?: boolean;
+  /**
+   * La cohorte de campagne de l'entreprise. Absente sur tout ce qui a été
+   * enrôlé avant la campagne — d'où l'optionnel, qui n'est pas de la prudence
+   * mais l'état réel de la moitié de la file.
+   */
+  cohorte?: DemCohorte | null;
+  /**
+   * Appel à FROID : aucune séquence, aucune étape, aucun script préparé. C'est
+   * le mode de travail principal de la campagne (100 entreprises par jour), et
+   * c'est aussi le cas que tout l'écran ne prévoyait pas — il déduisait la
+   * moitié de ce qu'il affiche de `sequence`.
+   */
+  hors_sequence?: boolean;
 };
 
 /**
@@ -96,6 +119,16 @@ export type DemarchageQueueMeta = {
   done_today_by_kind: Record<string, number>;
   /** Messages de discussion bouclés aujourd'hui — hors cadence, pour mémoire. */
   done_today_conversation: number;
+  /**
+   * Les cadences quotidiennes EFFECTIVES de l'agent, par canal
+   * (`{"call":20,"whatsapp":60}`). Réglables par agent : la campagne d'août ne
+   * tient pas aux mêmes chiffres que le régime ordinaire.
+   *
+   * Absent ou incomplet, on retombe canal par canal sur `DAILY_QUOTA` — un
+   * agent sans réglage doit voir la cadence par défaut, jamais un plafond vide.
+   * Le contenu vient d'un `jsonb` : il se relit, il ne se croit pas.
+   */
+  quotas?: Record<string, number> | null;
 };
 
 export type DemarchagePatchBody = {

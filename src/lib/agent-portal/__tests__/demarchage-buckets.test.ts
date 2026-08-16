@@ -1,11 +1,14 @@
 import {
   DAILY_QUOTA,
+  cadenceEffective,
   countByKind,
   countBySignal,
   dayOfTask,
   firstPlannedTask,
   isLate,
+  normaliseQuotas,
   planTasks,
+  quotaOf,
   signalOf,
 } from "../demarchage-buckets";
 
@@ -240,6 +243,113 @@ describe("signalOf — les signaux passent devant la cadence", () => {
       t("froid", iso("2026-08-13")),
     ]);
     expect(countBySignal(jour(d, 0))).toEqual({ missed: 0, conversation: 2, hot: 1 });
+  });
+});
+
+describe("planTasks — la cadence se règle par agent", () => {
+  it("tient une campagne à 40 appels par jour quand l'agent est réglé ainsi", () => {
+    // Le cas de la campagne : 100 entreprises par jour ne rentrent pas dans les
+    // 20 appels du défaut, et ce qui ne rentre pas ne s'affiche pas.
+    const d = plan(lot("call", 40), { quotas: { call: 40, whatsapp: 60, linkedin: 20 } });
+    expect(jour(d, 0)).toHaveLength(40);
+    expect(jour(d, 1)).toHaveLength(0);
+  });
+
+  it("étale sur la cadence réglée, pas sur le défaut", () => {
+    const d = plan(lot("whatsapp", 90), { quotas: { call: 20, whatsapp: 60, linkedin: 20 } });
+    expect(jour(d, 0)).toHaveLength(60);
+    expect(jour(d, 1)).toHaveLength(30);
+  });
+
+  it("garde le défaut pour les canaux que le réglage ne nomme pas", () => {
+    // Un réglage partiel règle ce qu'il nomme : régler les WhatsApp ne doit pas
+    // déplafonner les appels au passage.
+    const quotas = normaliseQuotas({ whatsapp: 60 })!;
+    const d = plan([...lot("whatsapp", 60), ...lot("call", 25)], { quotas });
+    expect(countByKind(jour(d, 0)).whatsapp).toBe(60);
+    expect(countByKind(jour(d, 0)).call).toBe(DAILY_QUOTA.call);
+    expect(countByKind(jour(d, 1)).call).toBe(25 - DAILY_QUOTA.call);
+  });
+
+  it("laisse l'attente de réponse hors cadence, quel que soit le réglage", () => {
+    const d = plan(lot("wait", 40), { quotas: { call: 40 } });
+    expect(jour(d, 0)).toHaveLength(40);
+  });
+
+  it("retombe sur le défaut quand aucun réglage n'est fourni", () => {
+    expect(quotaOf("call")).toBe(DAILY_QUOTA.call);
+    expect(quotaOf("call", { whatsapp: 60 })).toBe(DAILY_QUOTA.call);
+    expect(quotaOf("wait", { call: 40 })).toBeNull();
+  });
+});
+
+describe("normaliseQuotas — un réglage fautif ne doit jamais vider la file", () => {
+  it("accepte un réglage propre et le pose sur le défaut", () => {
+    expect(normaliseQuotas({ call: 40, whatsapp: 60 })).toEqual({
+      ...DAILY_QUOTA,
+      call: 40,
+      whatsapp: 60,
+    });
+  });
+
+  it("refuse un quota nul ou négatif — il ferait disparaître la journée entière", () => {
+    // Avec un quota de 0, `planTasks` repousserait chaque tâche au lendemain,
+    // et le lendemain au surlendemain : la file ne rouvrirait jamais.
+    expect(normaliseQuotas({ call: 0 })).toBeNull();
+    expect(normaliseQuotas({ call: -5 })).toBeNull();
+    const secours = normaliseQuotas({ call: 0 }) ?? DAILY_QUOTA;
+    expect(jour(plan(lot("call", 25), { quotas: secours }), 0)).toHaveLength(DAILY_QUOTA.call);
+  });
+
+  it("refuse ce qui n'est pas un nombre, et ce qui n'est pas un objet", () => {
+    expect(normaliseQuotas({ call: "vingt" })).toBeNull();
+    expect(normaliseQuotas({ call: null })).toBeNull();
+    expect(normaliseQuotas([40, 20, 20])).toBeNull();
+    expect(normaliseQuotas("40")).toBeNull();
+    expect(normaliseQuotas(null)).toBeNull();
+    expect(normaliseQuotas(undefined)).toBeNull();
+    expect(normaliseQuotas({})).toBeNull();
+  });
+
+  it("refuse un chiffre hors d'échelle — un zéro de trop n'est pas une cadence", () => {
+    expect(normaliseQuotas({ call: 100000 })).toBeNull();
+  });
+
+  it("accepte un nombre écrit en toutes lettres numériques, et tronque les décimales", () => {
+    // Le jsonb est souvent saisi à la main : `{"call": "40"}` est une bonne
+    // intention, pas une faute qu'il faudrait punir d'un retour au défaut.
+    expect(normaliseQuotas({ call: "40" })?.call).toBe(40);
+    expect(normaliseQuotas({ call: 40.9 })?.call).toBe(40);
+  });
+
+  it("ne retient que les canaux valides d'un réglage à moitié fautif", () => {
+    // `{"call": 0, "whatsapp": 60}` : les WhatsApp passent, les appels
+    // retombent sur le défaut plutôt que d'emporter tout le réglage.
+    expect(normaliseQuotas({ call: 0, whatsapp: 60 })).toEqual({ ...DAILY_QUOTA, whatsapp: 60 });
+  });
+
+  it("ignore les clés qui ne sont pas des canaux plafonnés", () => {
+    expect(normaliseQuotas({ email: 999, wait: 5 })).toBeNull();
+    expect(normaliseQuotas({ email: 999, call: 40 })).toEqual({ ...DAILY_QUOTA, call: 40 });
+  });
+});
+
+describe("cadenceEffective — le plan et le rail lisent le même chiffre", () => {
+  it("rend une cadence utilisable quoi qu'on lui donne", () => {
+    expect(cadenceEffective({ call: 40 })).toEqual({ ...DAILY_QUOTA, call: 40 });
+    expect(cadenceEffective(null)).toEqual(DAILY_QUOTA);
+    expect(cadenceEffective({ call: 0 })).toEqual(DAILY_QUOTA);
+  });
+
+  it("plafonne la journée à ce que le rail affichera", () => {
+    // C'est TOUT l'enjeu de cette fonction : l'écran lit `meta.quotas` pour
+    // écrire « /60 » en tête de rail, et le plan doit répartir sur 60. Tant que
+    // le plan retombait sur `DAILY_QUOTA`, quarante entreprises du jour
+    // basculaient au lendemain derrière un compteur qui annonçait 60.
+    const cadence = cadenceEffective({ call: 60 });
+    const d = plan(lot("call", 60), { quotas: cadence });
+    expect(jour(d, 0)).toHaveLength(60);
+    expect(jour(d, 1)).toHaveLength(0);
   });
 });
 

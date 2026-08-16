@@ -16,6 +16,7 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
 import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateLogo, porteUneMarque } from "@/lib/site-builder/claude-design/hydrate-logo";
 import { corrigerLiensAvis } from "@/lib/site-builder/claude-design/corriger-liens-avis";
 import {
   etatBadgesDepuisVariables,
@@ -170,6 +171,27 @@ export async function LibrarySectionInline({
   // Aucun remplissage automatique d'image : un emplacement laissé vide dans le
   // template le reste. Les photos sont posées à la main, et seule une image
   // multi-candidats (`:image_set`) s'adapte aux services de l'entreprise.
+
+  // La marque de l'en-tête. Le token `{{ entreprise.logo_url }}` d'une
+  // entreprise sans logo rend `src=""` — et un `src` vide n'est pas une image
+  // absente : le navigateur redemande l'URL de la page et pose une image cassée
+  // à l'endroit exact où le prospect cherche son identité. 296 des 300
+  // entreprises de la cohorte de démarchage sont dans ce cas.
+  //
+  // Repli INVERSE de celui des certifications, pour une raison de fond : un logo
+  // de certification est une allégation, le nom d'une entreprise est un fait
+  // qu'on tient de sa propre fiche. Sans preuve, le silence ; avec un fait, la
+  // bonne composition (cf. l'en-tête de `hydrate-logo`).
+  //
+  // Le garde-fou vient du module et ne se recopie pas : c'est exactement la
+  // divergence qu'une liste de marqueurs écrite à la main a déjà coûtée aux
+  // certifications, avec l'aperçu qui réparait et le site publié qui non.
+  if (porteUneMarque(html)) {
+    html = hydrateLogo(html, {
+      nom: variables?.["entreprise.nom"],
+      logoUrl: variables?.["entreprise.logo_url"],
+    });
+  }
 
   // Hydrate review cards ([data-reviews]) from lead_magnet_reviews. Runs after
   // service-tag conditioning; no-op when the design has no data-reviews grid or

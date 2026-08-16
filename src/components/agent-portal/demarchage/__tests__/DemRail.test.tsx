@@ -76,6 +76,8 @@ function renderRail(
       setFilt={jest.fn()}
       step={step}
       setStep={jest.fn()}
+      cohorte={null}
+      setCohorte={jest.fn()}
       tasks={shown}
       meta={{
         done_today: 0,
@@ -86,6 +88,7 @@ function renderRail(
       loading={false}
       sel={null}
       onPick={jest.fn()}
+      onRechercher={jest.fn()}
     />,
   );
   const el = (sel: string) => container.querySelector<HTMLElement>(sel)!;

@@ -3,22 +3,20 @@ import { preflight } from "@/app/api/_lib/cors";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { dayStartIso } from "@/lib/agent-progress";
-import { classifyEtape, joursRestants, progression, rythmeRequisCents } from "@/lib/agent-sprint";
+import {
+  cibleContactsDepuisQuotas,
+  classifyEtape,
+  joursRestants,
+  lireCadreSprint,
+  progression,
+  rythmeRequisCents,
+} from "@/lib/agent-sprint";
 import { listDemoSites } from "@/lib/analytics-radar/demo-sites";
 import { ga4DateRangeFromDays, ga4RowsToObjects, getGa4Config, runGa4Report } from "@/lib/analytics-radar/ga4-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const OPTIONS = (req: Request) => preflight(req);
-
-/** Objectif du sprint en cours. Volontairement en dur : c'est un sprint daté,
- *  pas un réglage permanent — le jour où il en faut plusieurs, ça passera en
- *  base plutôt que de devenir un formulaire à moitié utilisé. */
-const OBJECTIF_CENTS = 200_000; // 2 000 €
-const DEADLINE = "2026-08-20";
-const SPRINT_START = "2026-08-13";
-/** Cible de nouveaux contacts par jour, pour situer la journée. */
-const CIBLE_CONTACTS_JOUR = 40;
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
 
@@ -32,12 +30,32 @@ const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
  * compteur qu'on ne sait pas mesurer n'est pas estimé : il vaut 0 et le
  * champ `mesure` dit d'où il vient, pour que personne ne pilote son activité
  * sur un chiffre décoratif.
+ *
+ * Le CADRE du sprint (objectif, dates, cible du jour) ne vit plus ici : il se
+ * règle sans redéployer, par `agent_settings.quotas_demarchage` et par les
+ * variables d'environnement de `lireCadreSprint`. Une échéance en dur finit
+ * toujours par annoncer « terminé » pendant que la campagne tourne encore.
  */
-export const GET = withAuth({}, async ({ cors }) => {
+export const GET = withAuth({}, async ({ user, cors }) => {
   const sb = getServiceClient();
   const now = new Date();
   const debutJour = dayStartIso(now);
-  const debutSprint = `${SPRINT_START}T00:00:00.000Z`;
+  const cadre = lireCadreSprint(process.env);
+  const debutSprint = `${cadre.debut}T00:00:00.000Z`;
+
+  // La cible du jour vient d'abord des quotas de l'agent : c'est le même
+  // réglage que la file de tâches, donc les deux écrans ne peuvent pas
+  // annoncer deux chiffres différents. À défaut, la variable, puis le défaut
+  // de campagne. Une lecture en échec (réglage absent, colonne pas encore
+  // déployée) n'est pas une panne : on retombe silencieusement.
+  const { data: reglages } = await sb
+    .from("agent_settings")
+    .select("quotas_demarchage")
+    .eq("agent_id", user.id)
+    .maybeSingle();
+  const cibleContacts =
+    cibleContactsDepuisQuotas((reglages as { quotas_demarchage?: unknown } | null)?.quotas_demarchage) ??
+    cadre.cibleContactsJour;
 
   // ── Pipeline : encaissé, ventes, décisions en cours ─────────────────────
   const { data: etapes } = await sb.from("etapes_pipeline").select("id, nom");
@@ -137,20 +155,21 @@ export const GET = withAuth({}, async ({ cors }) => {
     }
   }
 
-  const jours = joursRestants(DEADLINE, now);
+  const jours = joursRestants(cadre.deadline, now);
 
   return json(
     {
       objectif: {
-        cents: OBJECTIF_CENTS,
+        cents: cadre.objectifCents,
         encaisseCents,
-        progression: progression(encaisseCents, OBJECTIF_CENTS),
-        deadline: DEADLINE,
+        progression: progression(encaisseCents, cadre.objectifCents),
+        debut: cadre.debut,
+        deadline: cadre.deadline,
         joursRestants: jours,
-        rythmeRequisCents: rythmeRequisCents(encaisseCents, OBJECTIF_CENTS, jours),
+        rythmeRequisCents: rythmeRequisCents(encaisseCents, cadre.objectifCents, jours),
       },
       compteurs: {
-        nouveauxContacts: { today: contactsToday, total: contactsTotal, targetToday: CIBLE_CONTACTS_JOUR, mesure: "tâches de prospection terminées" },
+        nouveauxContacts: { today: contactsToday, total: contactsTotal, targetToday: cibleContacts, mesure: "tâches de prospection terminées" },
         reponsesWhatsapp: { today: whatsappToday, total: whatsappTotal, mesure: "tâches WhatsApp terminées" },
         demosEnvoyees: { today: demosToday, total: demosTotal, mesure: "sites publiés" },
         demosVisitees: { today: demosVisiteesToday, total: demosVisiteesTotal, mesure: "GA4 — sites avec au moins une session" },

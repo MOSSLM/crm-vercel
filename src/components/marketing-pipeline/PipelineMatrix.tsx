@@ -31,6 +31,7 @@ import {
   ChevronRight,
   MessageSquare,
   ListChecks,
+  BookOpen,
   Gauge,
   Rocket,
   Share2,
@@ -1166,6 +1167,11 @@ function BulkBar({
   const toVignette = rows.filter((r) => r.site);
   const toCreateAudit = rows.filter((r) => !r.audit);
   const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
+  // Il suffit d'une entreprise : la plaquette ne mesure rien, ne montre rien du
+  // prospect et ne dépend d'aucune étape du pipeline. Le compte n'exclut pas
+  // celles qui ont déjà un jeton — le board ne le sait pas, et la route est
+  // rejouable : elle dit elle-même combien existaient déjà.
+  const toPlaquette = rows.filter((r) => r.entreprise_id != null);
 
   const ct = (n: number) => <span className="ct">{n}</span>;
 
@@ -1317,6 +1323,23 @@ function BulkBar({
         <Check className="ico-sm" />
         Valider les audits
         {ct(toValidateAudit.length)}
+      </button>
+      {/*
+        Juste après les audits, parce que c'est l'autre document du même choix :
+        l'audit pour la cohorte qui a un site à mesurer, la plaquette pour celle
+        qui n'en a pas. Rien à valider ici — la plaquette n'est pas rédigée, elle
+        est la même pour tout le monde ; ce qui se prépare, c'est l'URL par
+        laquelle on saura qui l'a ouverte.
+      */}
+      <button
+        className="btn sm"
+        disabled={busy || toPlaquette.length === 0}
+        title="Préparer un lien de plaquette par entreprise — même document pour tous, une URL chacun, pour savoir qui l'ouvre. Sans effet sur celles qui en ont déjà un."
+        onClick={() => bulk.onCreerPlaquettes(toPlaquette)}
+      >
+        <BookOpen className="ico-sm" />
+        Créer les plaquettes
+        {ct(toPlaquette.length)}
       </button>
 
       {canAssign && agents.length > 0 && bulk.onAssign && (
