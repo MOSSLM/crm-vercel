@@ -3,6 +3,7 @@ export const crmEnterpriseTabs = [
   { label: "Explorer", href: "/entreprises/explorer" },
   { label: "Qualifiés", href: "/qualified" },
   { label: "Duplicats", href: "/duplicates" },
+  { label: "Fusionner", href: "/entreprises/doublons" },
   { label: "Réseaux", href: "/networks" },
   { label: "Blacklist", href: "/blacklist" },
   { label: "Concurrents", href: "/concurrents" },
