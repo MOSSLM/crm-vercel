@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
 import { lireAudits } from "@/lib/audit-site/lecture";
+import { urlPlaquette } from "@/lib/audit/plaquette-lien";
 import { collecterCanaux, type Canal } from "@/lib/prospects/canal";
 import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
 import type { BoardItem } from "@/components/marketing-pipeline/types";
@@ -257,6 +258,15 @@ type AuditRow = {
   opportunite_id: string | null;
   statut: string | null;
   pdf_url: string | null;
+};
+
+/** Une ligne de `entreprises_rapport_public`, réduite à la plaquette. */
+type PlaquetteRow = {
+  entreprise_id: number | null;
+  plaquette_token: string | null;
+  plaquette_cree_le: string | null;
+  plaquette_vues: number | null;
+  plaquette_vu_le: string | null;
 };
 
 type AgentRow = { id: string; full_name: string | null; email: string | null };
@@ -567,7 +577,7 @@ export async function buildBoard(
   // PostgREST plafonne une réponse à 1 000 lignes : avec assez de démos, un
   // « select all » finissait par tronquer la liste des templates (le template
   // choisi disparaissait du menu) et par perdre des sites d'entreprises.
-  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes] =
+  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes, plaquettesRes] =
     await Promise.all([
     supabase
       .from("entreprises")
@@ -608,11 +618,37 @@ export async function buildBoard(
           .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason")
           .in("status", ["active", "paused"])
       : Promise.resolve({ data: [] as EnrollmentCanalRow[], error: null }),
+    // Les plaquettes. `entreprises_rapport_public` porte aussi les jetons de
+    // rapport d'audit ; on ne lit que les quatre colonnes de la plaquette, et
+    // l'erreur n'est pas fatale — cf. `plaquetteParEnt` juste en dessous.
+    entIds.length > 0
+      ? supabase
+          .from("entreprises_rapport_public")
+          .select("entreprise_id, plaquette_token, plaquette_cree_le, plaquette_vues, plaquette_vu_le")
+          .in("entreprise_id", entIds)
+      : Promise.resolve({ data: [] as PlaquetteRow[], error: null }),
   ]);
 
   if (entsRes.error) return { ok: false, error: entsRes.error.message, status: 500 };
   if (sitesRes.error) return { ok: false, error: sitesRes.error.message, status: 500 };
   if (templatesRes.error) return { ok: false, error: templatesRes.error.message, status: 500 };
+
+  // LES PLAQUETTES, ET POURQUOI LEUR ÉCHEC N'EST PAS FATAL.
+  // Les quatre colonnes viennent de `sql/20260816_plaquettes_par_prospect.sql`.
+  // Un `select` qui nomme une colonne absente échoue ENTIÈREMENT : sur une base
+  // non migrée, faire remonter cette erreur ferait tomber TOUT le board pour une
+  // colonne d'appoint. On la cache donc — `has_plaquette` le dit à l'écran, qui
+  // retire la colonne au lieu d'afficher « aucune plaquette » sur toutes les
+  // lignes. C'est la même règle que `note_site` : une fonctionnalité non
+  // déployée ne doit pas ressembler à une donnée manquante.
+  const hasPlaquette = !plaquettesRes.error;
+  const plaquetteParEnt = new Map<number, PlaquetteRow>();
+  if (hasPlaquette) {
+    for (const p of (plaquettesRes.data ?? []) as unknown as PlaquetteRow[]) {
+      if (p.entreprise_id == null) continue;
+      plaquetteParEnt.set(Number(p.entreprise_id), p);
+    }
+  }
 
   // Tickets (notes agent ↔ admin) par opportunité, pour les badges du board.
   const notesByOpp = await noteSummaries(oppIds);
@@ -880,6 +916,20 @@ export async function buildBoard(
           holdReason: enr.hold_reason,
         };
       })(),
+      plaquette: (() => {
+        if (!hasPlaquette) return null;
+        const p = o.entreprise_id != null ? plaquetteParEnt.get(o.entreprise_id) : undefined;
+        if (!p) return null;
+        return {
+          // L'URL est composée ici et pas à l'écran : `urlPlaquette` est le seul
+          // endroit qui sait comment ce lien s'écrit, et il part par WhatsApp
+          // chez des prospects — le jour où il bouge, il doit bouger partout.
+          url: p.plaquette_token ? urlPlaquette(p.plaquette_token) : null,
+          cree_le: p.plaquette_cree_le,
+          vues: p.plaquette_vues ?? 0,
+          vu_le: p.plaquette_vu_le,
+        };
+      })(),
       missing_for_site: missing,
       notes: notesByOpp.get(o.id) ?? { open: 0, total: 0, open_subjects: [] },
       column,
@@ -936,6 +986,7 @@ export async function buildBoard(
       pipelines,
       has_validated_column: hasValidatedColumn,
       has_archivage: hasArchivage,
+      has_plaquette: hasPlaquette,
     },
   };
 }

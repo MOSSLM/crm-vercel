@@ -32,6 +32,8 @@ import {
   MessageSquare,
   ListChecks,
   BookOpen,
+  Copy,
+  Printer,
   Gauge,
   Rocket,
   Share2,
@@ -341,6 +343,139 @@ function VignetteCell({ item }: { item: BoardItem }) {
       </div>
     </div>
   );
+}
+
+/**
+ * La cellule « Plaquette » — le lien nominatif du prospect, et ce qu'il en a fait.
+ *
+ * POURQUOI UNE COLONNE, ET PAS UNE CASE DE PLUS DANS LA BARRE DE SÉLECTION. Le
+ * geste de masse existait déjà (« Créer les plaquettes ») et fabriquait trois
+ * cents jetons que RIEN n'affichait ensuite : ni le lien, ni le fait qu'il
+ * existe, ni le nombre d'ouvertures. Le compteur d'ouvertures est pourtant la
+ * raison d'être du jeton — « il l'a ouverte trois fois » vaut une relance, et
+ * c'est la seule mesure dont dispose la cohorte sans site, invisible de GA4.
+ * Une colonne est le seul endroit d'où l'on voit cet état ligne par ligne.
+ *
+ * DEUX LIENS, PARCE QU'ILS NE SERVENT PAS AU MÊME MOMENT. Celui qu'on copie part
+ * par WhatsApp et s'ouvre au pouce ; celui qu'on imprime ajoute `?a4&imprimer`
+ * et ouvre la boîte d'impression du navigateur — d'où l'on enregistre le PDF à
+ * joindre à un mail. C'est exactement la mécanique du document d'audit.
+ *
+ * ELLE NE DÉPEND D'AUCUNE ÉTAPE. La plaquette s'envoie à qui n'a pas de site,
+ * donc précisément aux lignes qui n'atteindront jamais la colonne « Audit ». La
+ * conditionner à une étape reviendrait à la cacher à sa propre cohorte. La seule
+ * exigence est d'avoir une entreprise : sans elle, il n'y a personne à nommer.
+ */
+function PlaquetteCell({ item }: { item: BoardItem }) {
+  const [url, setUrl] = React.useState<string | null>(item.plaquette?.url ?? null);
+  const [busy, setBusy] = React.useState(false);
+  const [copie, setCopie] = React.useState(false);
+
+  // La ligne peut être remplacée par un rafraîchissement du board : on suit la
+  // valeur venue du serveur tant qu'on n'a pas frappé le jeton nous-mêmes.
+  React.useEffect(() => {
+    setUrl((prev) => prev ?? item.plaquette?.url ?? null);
+  }, [item.plaquette?.url]);
+
+  const vues = item.plaquette?.vues ?? 0;
+
+  const preparer = async () => {
+    if (item.entreprise_id == null) return;
+    setBusy(true);
+    try {
+      // La MÊME route que le geste de masse, avec un seul identifiant : c'est
+      // elle qui garantit qu'un jeton déjà posé n'est jamais remplacé — un lien
+      // parti par WhatsApp doit continuer d'ouvrir.
+      const res = await authedFetch("/api/agent/marketing-pipeline/plaquette", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entreprise_ids: [item.entreprise_id] }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        liens?: Array<{ url: string }>;
+        echecs?: Array<{ motif: string }>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error || `Erreur ${res.status}`);
+      const lien = body.liens?.[0]?.url;
+      if (!lien) throw new Error(body.echecs?.[0]?.motif ?? "aucun lien rendu");
+      setUrl(lien);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Plaquette impossible à préparer");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copier = () => {
+    if (!url) return;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopie(true);
+    setTimeout(() => setCopie(false), 1600);
+  };
+
+  if (item.entreprise_id == null) {
+    return (
+      <div className="plaq-cell">
+        <div className="plaq-vide">Aucune entreprise rattachée</div>
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className="plaq-cell">
+        <div className="plaq-vide">
+          {busy ? "Préparation…" : "Lien collectif — l'ouverture ne sera attribuée à personne"}
+        </div>
+        <div className="plaq-actions">
+          <button className="btn ghost sm" disabled={busy} onClick={preparer}>
+            {busy ? <Loader2 className="ico-sm spin" /> : <BookOpen className="ico-sm" />}
+            Préparer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="plaq-cell">
+      {/* Le compteur d'abord : c'est lui qu'on vient chercher en balayant la
+          colonne, pas l'URL — qu'on ne lit jamais, on la copie. */}
+      <div className={`plaq-vues${vues > 0 ? " on" : ""}`}>
+        {vues > 0
+          ? `Ouverte ${vues} fois${item.plaquette?.vu_le ? ` · ${dateCourte(item.plaquette.vu_le)}` : ""}`
+          : "Pas encore ouverte"}
+      </div>
+      <div className="plaq-url" title={url}>
+        {url.replace(/^https?:\/\//, "")}
+      </div>
+      <div className="plaq-actions">
+        <button className="btn ghost sm" onClick={copier} title="Copier le lien à envoyer">
+          {copie ? <Check className="ico-sm" /> : <Copy className="ico-sm" />}
+          {copie ? "Copié" : "Copier"}
+        </button>
+        <a
+          className="btn ghost sm"
+          href={`${url}?a4&imprimer`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Ouvrir en A4 et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur"
+        >
+          <Printer className="ico-sm" />
+          PDF
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** `17 août` — le compteur d'ouvertures n'a que faire de l'heure ni de l'année. */
+function dateCourte(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
 /** Bouton « Signaler un problème » posé sur les cartes d'étape. */
@@ -1534,6 +1669,14 @@ interface PipelineMatrixProps {
    * faite. On le dit au lieu de le subir en silence.
    */
   hasValidatedColumn?: boolean;
+  /**
+   * `false` quand `sql/20260816_plaquettes_par_prospect.sql` n'est pas jouée :
+   * la colonne « Plaquette » disparaît alors entièrement. Une colonne qui
+   * annoncerait « aucune plaquette » sur toutes les lignes ferait cliquer pour
+   * rien, et ressemblerait à une donnée manquante plutôt qu'à une migration
+   * absente.
+   */
+  hasPlaquette?: boolean;
   /** Jeu d'étapes à afficher. `STAGES` (5) côté admin, `AGENT_STAGES` (4) côté agent. */
   stages?: StageDef[];
   /**
@@ -1574,6 +1717,7 @@ export function PipelineMatrix({
   handlers,
   bulk,
   hasValidatedColumn = true,
+  hasPlaquette = false,
   stages = STAGES,
   canAssign = true,
   agentMode = false,
@@ -2093,7 +2237,13 @@ export function PipelineMatrix({
 
       {/* ── matrix ── */}
       <div className="mx-scroll">
-        <div className="matrix" style={{ "--ncol": stages.length } as React.CSSProperties}>
+        {/* `avec-plaquette` ajoute une piste à la grille. Les colonnes de fin ne
+            sont pas des étapes : `--ncol` ne compte que celles-ci, et chaque
+            colonne d'appoint a sa propre largeur en CSS. */}
+        <div
+          className={`matrix${hasPlaquette ? " avec-plaquette" : ""}`}
+          style={{ "--ncol": stages.length } as React.CSSProperties}
+        >
           <div className="mx-corner">
             <label className="cnr-sel" title="Tout sélectionner / désélectionner">
               <input
@@ -2132,6 +2282,20 @@ export function PipelineMatrix({
               <span className="nm">Vignette</span>
             </div>
           </div>
+          {hasPlaquette && (
+            <div
+              className="mx-colhead"
+              style={{ "--seg": "#8A5A2B" } as React.CSSProperties}
+              title="Le dépliant nominatif : son lien, son PDF, et combien de fois il a été ouvert"
+            >
+              <div className="hd">
+                <span className="sw" style={{ background: rgba("#8A5A2B", 0.12), color: "#8A5A2B" }}>
+                  <BookOpen className="ico-sm" />
+                </span>
+                <span className="nm">Plaquette</span>
+              </div>
+            </div>
+          )}
 
           {loading && visibleRows.length === 0 ? (
             <div className="empty">
@@ -2189,6 +2353,7 @@ export function PipelineMatrix({
                   );
                 })}
                 <VignetteCell item={r} />
+                {hasPlaquette && <PlaquetteCell item={r} />}
               </React.Fragment>
             ))
           )}

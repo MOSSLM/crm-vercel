@@ -4,6 +4,7 @@ import {
   estA4,
   metadonneesPlaquette,
   RenduPlaquette,
+  veutImprimer,
   viewportPlaquette,
   type SearchParamsPlaquette,
 } from "./rendu";
@@ -47,5 +48,10 @@ export async function generateViewport({ searchParams }: PlaquetteProps): Promis
 }
 
 export default async function PlaquettePubliquePage({ searchParams }: PlaquetteProps) {
-  return <RenduPlaquette a4={estA4(await searchParams)} />;
+  const sp = await searchParams;
+  // `prospect={null}` ÉCRIT PLUTÔT QU'OMIS, et c'est le verrou : sans jeton on ne
+  // sait pas à qui on parle, donc le document ne peut pas nommer quelqu'un. Le
+  // dire explicitement rend les deux routes littéralement comparables — c'est ce
+  // que vérifie `page-jeton.test.tsx`, et un défaut implicite lui échapperait.
+  return <RenduPlaquette a4={estA4(sp)} imprimer={veutImprimer(sp)} prospect={null} />;
 }

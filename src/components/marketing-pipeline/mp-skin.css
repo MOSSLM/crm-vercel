@@ -27,7 +27,7 @@
   --font-serif: "Instrument Serif", "Times New Roman", serif;
   /* Fixed columns, middle ground: narrower than the stretched original but
      roomy enough for the cards; height unchanged. */
-  --rowh: 216px; --colw: 230px; --vignw: 268px;
+  --rowh: 216px; --colw: 230px; --vignw: 268px; --plaqw: 236px;
 
   display: flex;
   flex-direction: column;
@@ -138,6 +138,10 @@
    scrolls horizontally when the stages don't fit, and leaves a clean paper
    margin on the right on wide screens. */
 .mp-scope .matrix{ display:grid; grid-template-columns:var(--rowh) repeat(var(--ncol),var(--colw)) var(--vignw); gap:1px; background:var(--border); width:max-content; position:relative; }
+/* La colonne « Plaquette » n'apparaît que si sa migration est jouée : sans piste
+   ajoutée, ses cellules retomberaient sur la ligne suivante et décaleraient tout
+   le tableau d'une case. */
+.mp-scope .matrix.avec-plaquette{ grid-template-columns:var(--rowh) repeat(var(--ncol),var(--colw)) var(--vignw) var(--plaqw); }
 .mp-scope .mx-corner{ position:sticky; top:0; left:0; z-index:40; background:var(--bg-2); padding:13px 16px; display:flex; flex-direction:column; justify-content:center; min-height:60px; }
 .mp-scope .mx-corner .t{ font-size:12px; font-weight:600; color:var(--text); }
 .mp-scope .mx-corner .s{ font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); margin-top:2px; }
@@ -340,6 +344,16 @@
 .mp-scope .vign-vide{ width:100%; aspect-ratio:1200/630; border-radius:6px; border:1px dashed var(--border-2); display:flex; align-items:center; justify-content:center; text-align:center; font-size:11px; color:var(--text-3); padding:0 12px; }
 .mp-scope .vign-warn{ font-size:10.5px; line-height:1.45; color:var(--warn); }
 .mp-scope .vign-actions{ display:flex; gap:6px; align-items:center; }
+
+/* ── plaquette ── */
+.mp-scope .plaq-cell{ background:var(--surface); padding:10px; display:flex; flex-direction:column; gap:7px; justify-content:center; }
+.mp-scope .plaq-vide{ border-radius:6px; border:1px dashed var(--border-2); padding:12px; text-align:center; font-size:11px; line-height:1.45; color:var(--text-3); }
+/* Le compteur porte la couleur seulement quand il compte quelque chose : une
+   colonne entière de « 0 ouverture » en vert se lirait comme un succès. */
+.mp-scope .plaq-vues{ font-size:11.5px; font-weight:600; color:var(--text-3); }
+.mp-scope .plaq-vues.on{ color:var(--ok); }
+.mp-scope .plaq-url{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mp-scope .plaq-actions{ display:flex; gap:6px; align-items:center; }
 
 /* ── Agent : un menu, sous le nom de l'entreprise ─────────────────────────
    L'agent est une PROPRIÉTÉ de la ligne, pas une étape du parcours. Il se règle

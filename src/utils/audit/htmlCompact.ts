@@ -613,3 +613,80 @@ export function corpsPlaquette(c: AuditContent): string {
   return `<div class="sheet no-mark">${cCouverturePlaquette(impersonnel)}${cRecu(impersonnel, f, '01')}</div>
 <div class="sheet">${cInvestissement(impersonnel)}${cEtapes(impersonnel, m, f, '02')}</div>`;
 }
+
+/**
+ * Ce que la plaquette nominative sait de son destinataire. Rien d'autre n'entre.
+ *
+ * Quatre champs, et pas un de plus : c'est ce qui rend le verrou vérifiable.
+ * `contenuImpersonnel` protège le document collectif en vidant les champs du
+ * contenu ; ici la protection est inverse et vaut mieux — le prospect n'arrive
+ * pas par le contenu, il arrive par un paramètre qu'il faut fournir exprès.
+ */
+export interface ProspectPlaquette {
+  /** Le nom de l'entreprise, tel qu'il s'écrit sur la couverture. */
+  nom: string;
+  /** La ligne du dessous : « Secteur · Ville ». Vide si on ne sait pas. */
+  meta: string;
+  /** L'adresse de sa démo. Sans elle, il n'y a rien de nominatif à montrer. */
+  demoUrl: string;
+  /** La capture de cette démo (`sites.og_shot_url`), ou null : le squelette suffit. */
+  captureDemo: string | null;
+}
+
+/**
+ * La couverture nominative : son nom, sa démo, sa capture.
+ *
+ * ELLE NE PASSE PAS PAR `contenuImpersonnel`, ET C'EST TOUT L'INTÉRÊT. Le verrou
+ * du dépliant collectif interdit qu'un `demo_url` sorte sur un document envoyé à
+ * trois cents personnes — un accident que personne ne verrait avant le prospect.
+ * Ce document-ci ne part pas à trois cents personnes : son URL porte un jeton
+ * qui désigne UNE entreprise, et le prospect est passé en paramètre plutôt que
+ * lu dans le contenu, si bien qu'on ne peut pas en produire un par distraction.
+ * Le verrou n'est pas levé, il est déplacé là où il se vérifie.
+ *
+ * `blocDemo` est celui de l'audit, pas une copie : le cadre de navigateur, le
+ * squelette sous l'image et l'appel à l'action doivent rester les mêmes dans les
+ * deux documents, sans quoi ils divergeront à la première retouche.
+ */
+function cCouverturePlaquetteNominative(c: AuditContent, pr: ProspectPlaquette): string {
+  const p = c.page1;
+
+  return `<div class="half half-cover" id="plaquette-h1" data-screen-label="A4-1 couverture">
+<div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
+<div class="cover-in">
+  <div class="cover-top"><div class="logo-block">${logoSvg(22, C.brume)}<span class="logo-wm">SAMA</span></div><span class="cover-date">${esc(p.date)}</span></div>
+  <div class="cover-main">
+    <div class="cover-eyebrow">${esc(p.eyebrow)}</div>
+    <div class="cover-title">${esc(p.title_line1)}<br>${esc(p.title_line2)} <em>${esc(p.title_line3)}</em></div>
+    <div class="cover-subtitle">${esc(p.subtitle)}</div>
+  </div>
+  <div class="cover-foot">
+    <div class="cover-client"><div class="cover-client-label">Préparé pour</div><div class="cover-client-name">${texte(pr.nom, 'Votre entreprise')}</div><div class="cover-client-meta">${esc(pr.meta)}</div></div>
+    ${blocDemo(pr.demoUrl, pr.captureDemo)}
+  </div>
+</div></div>`;
+}
+
+/**
+ * Le corps de la plaquette NOMINATIVE — deux feuilles, quatre demi-pages.
+ *
+ * MÊME PAGINATION QUE LE DÉPLIANT COLLECTIF, et c'est délibéré : la couverture
+ * est remplacée, elle n'est pas ajoutée. `.sheet` est une grille `1fr 1fr` en
+ * `overflow:hidden`, une cinquième demi-page disparaîtrait sans le moindre
+ * signal — c'est la règle posée sur `corpsPlaquette`, et elle vaut ici mot pour
+ * mot. La capture de la démo entre donc DANS la couverture, à la place exacte
+ * qu'elle occupe sur l'audit.
+ *
+ * Les trois demi-pages du bas restent dépersonnalisées : ce qu'on livre, ce que
+ * ça coûte, comment on démarre ne dépendent de personne. Elles passent par
+ * `contenuImpersonnel` comme dans le dépliant — un `demo_url` n'a rien à faire
+ * dans la grille tarifaire, quel que soit le document.
+ */
+export function corpsPlaquetteNominative(c: AuditContent, pr: ProspectPlaquette): string {
+  const impersonnel = contenuImpersonnel(c);
+  const f = FEUILLETS_PLAQUETTE;
+  const m = mesuresVides();
+
+  return `<div class="sheet no-mark">${cCouverturePlaquetteNominative(c, pr)}${cRecu(impersonnel, f, '01')}</div>
+<div class="sheet">${cInvestissement(impersonnel)}${cEtapes(impersonnel, m, f, '02')}</div>`;
+}

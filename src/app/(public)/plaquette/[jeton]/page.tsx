@@ -1,11 +1,12 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
 import { getServiceClient } from "@/app/api/_lib/service-client";
-import { marquerPlaquetteVue } from "@/lib/audit/plaquette";
+import { chargerProspectPlaquette, marquerPlaquetteVue } from "@/lib/audit/plaquette";
 import {
   estA4,
   metadonneesPlaquette,
   RenduPlaquette,
+  veutImprimer,
   viewportPlaquette,
   type SearchParamsPlaquette,
 } from "../rendu";
@@ -13,10 +14,16 @@ import {
 /**
  * La plaquette d'un prospect : `/plaquette/{jeton}`.
  *
- * MÊME DOCUMENT, MOT POUR MOT. Le jeton ne personnalise rien et ne doit rien
- * personnaliser : la plaquette est le dépliant de la cohorte sans site, et le
- * jour où elle nommerait son lecteur, il faudrait vérifier trois cents fois
- * qu'elle le nomme bien. Il sert à une seule chose : savoir QUI a ouvert.
+ * LE JETON NOMME, DÉSORMAIS — ET SEULEMENT EN A4. Il a d'abord servi à une seule
+ * chose, savoir QUI a ouvert. Mais il désigne UNE entreprise et une seule, ce
+ * qui est exactement la garantie qui manquait pour montrer à quelqu'un la
+ * capture de SA démo sans risquer de l'envoyer à la cohorte entière. Le rendu
+ * mobile — celui qui part par WhatsApp, donc celui qui se transfère — reste le
+ * dépliant neutre.
+ *
+ * TROIS REPLIS VERS LE DOCUMENT COLLECTIF, jamais vers une erreur : jeton
+ * inconnu, entreprise sans démo montrable, base injoignable. Le prospect a
+ * cliqué ; il doit voir un document.
  *
  * UN JETON MORT, RÉVOQUÉ OU INCONNU REND LE DOCUMENT QUAND MÊME, et c'est une
  * décision, pas un oubli :
@@ -66,5 +73,13 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
     /* mesure perdue, document servi */
   }
 
-  return <RenduPlaquette a4={estA4(await searchParams)} />;
+  const sp = await searchParams;
+  const a4 = estA4(sp);
+
+  // La lecture du prospect n'est TENTÉE qu'en A4 : c'est le seul rendu qui sache
+  // quoi en faire, et deux requêtes de plus sur chaque ouverture WhatsApp se
+  // paieraient trois cents fois pour rien.
+  const prospect = a4 ? await chargerProspectPlaquette(getServiceClient(), jeton) : null;
+
+  return <RenduPlaquette a4={a4} imprimer={veutImprimer(sp)} prospect={prospect} />;
 }

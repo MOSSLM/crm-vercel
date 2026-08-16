@@ -2,8 +2,13 @@ import React from "react";
 import type { Metadata, Viewport } from "next";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getAppUrl } from "@/lib/app-url";
-import { chargerOffresPlaquette, construirePlaquette, rendrePlaquetteMobile } from "@/lib/audit/plaquette";
-import { corpsPlaquette } from "@/utils/audit/htmlCompact";
+import {
+  chargerOffresPlaquette,
+  construirePlaquette,
+  rendrePlaquetteMobile,
+  type ProspectPlaquette,
+} from "@/lib/audit/plaquette";
+import { corpsPlaquette, corpsPlaquetteNominative } from "@/utils/audit/htmlCompact";
 import { CSS_COMPACT } from "@/utils/audit/compactCss";
 import { AUDIT_MOBILE_CSS } from "@/utils/audit/mobileCss";
 
@@ -27,6 +32,37 @@ const POLICES =
 
 /** `?a4` sert le document imprimable ; sans lui, le rendu mobile. */
 export const estA4 = (sp: SearchParamsPlaquette | undefined): boolean => sp?.a4 !== undefined;
+
+/**
+ * `?a4&imprimer` ouvre la boîte d'impression du navigateur — d'où l'on choisit
+ * « Enregistrer en PDF ».
+ *
+ * C'EST EXACTEMENT LA MÉCANIQUE DE L'AUDIT, et il faut savoir ce qu'elle est :
+ * le CRM ne fabrique aucun fichier PDF. Le bouton « Exporter PDF » de l'éditeur
+ * d'audit ouvre une fenêtre, y écrit le document et appelle `window.print()`
+ * (`SCRIPT_IMPRESSION`, compactCss.ts). Aucune librairie de PDF n'est installée,
+ * et Chromium ne tient pas dans une fonction Vercel — la seule autre voie serait
+ * un service externe, qui n'est pas configuré en production.
+ *
+ * Séparé de `?a4` parce que les deux usages diffèrent : on relit une plaquette à
+ * l'écran en A4 pour la vérifier avant de l'envoyer, et une boîte d'impression
+ * qui s'ouvre toute seule à chaque relecture serait insupportable.
+ */
+export const veutImprimer = (sp: SearchParamsPlaquette | undefined): boolean =>
+  estA4(sp) && sp?.imprimer !== undefined;
+
+/**
+ * On n'imprime pas avant que les polices soient arrivées.
+ *
+ * Le même garde que l'audit, pour la même raison : `window.print()` appelé trop
+ * tôt fige la mise en page sur la police de repli, et le document sort avec des
+ * césures et des débordements que personne n'a vus à l'écran. La rallonge de
+ * quatre secondes couvre le cas où les polices Google ne répondent pas du tout —
+ * mieux vaut un document en police de repli qu'une boîte qui ne s'ouvre jamais.
+ */
+const SCRIPT_IMPRESSION_PLAQUETTE = `(function(){var f=false;function go(){if(f)return;f=true;window.focus();window.print();}
+if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(go,120)});}else{setTimeout(go,400);}
+setTimeout(go,4000);})();`;
 
 /**
  * Les mêmes métadonnées avec ou sans jeton — y compris le titre.
@@ -69,14 +105,33 @@ export const viewportPlaquette = (sp: SearchParamsPlaquette | undefined): Viewpo
  * plaquette n'est stockée nulle part, c'est ce qui l'empêche d'annoncer un tarif
  * périmé comme le font quatre audits en base.
  */
-export async function RenduPlaquette({ a4 }: { a4: boolean }) {
+export async function RenduPlaquette({
+  a4,
+  imprimer = false,
+  prospect = null,
+}: {
+  a4: boolean;
+  imprimer?: boolean;
+  prospect?: ProspectPlaquette | null;
+}) {
   const offres = await chargerOffresPlaquette(getServiceClient());
   const contenu = construirePlaquette(offres);
 
   // Le rendu mobile est le cas NORMAL : la plaquette s'ouvre au pouce, depuis un
   // lien WhatsApp. Le A4 est la version qu'on imprime ou qu'on joint à un mail,
   // et il se demande explicitement — comme `?complet` sur le rapport.
-  const html = a4 ? corpsPlaquette(contenu) : rendrePlaquetteMobile(contenu);
+  //
+  // LA VERSION NOMINATIVE N'EXISTE QU'EN A4. Elle porte la capture de la démo
+  // dans un cadre de navigateur, dessiné pour une demi-page de 794 px ; le rendu
+  // mobile n'a pas cet emplacement, et l'y bricoler ferait deux couvertures à
+  // maintenir pour le même document. Le mobile reste donc le dépliant neutre,
+  // celui qu'on colle dans un WhatsApp — et c'est aussi le plus prudent des
+  // deux, puisqu'un message se transfère.
+  const html = a4
+    ? prospect
+      ? corpsPlaquetteNominative(contenu, prospect)
+      : corpsPlaquette(contenu)
+    : rendrePlaquetteMobile(contenu);
 
   return (
     <>
@@ -87,6 +142,7 @@ export async function RenduPlaquette({ a4 }: { a4: boolean }) {
       {/* Le rendu est produit serveur, à partir du catalogue d'offres et du
           contenu par défaut, et tout passe par `esc()` dans les rendus. */}
       <div dangerouslySetInnerHTML={{ __html: html }} />
+      {imprimer && <script dangerouslySetInnerHTML={{ __html: SCRIPT_IMPRESSION_PLAQUETTE }} />}
     </>
   );
 }
