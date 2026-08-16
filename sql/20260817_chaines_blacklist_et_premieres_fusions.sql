@@ -1,0 +1,124 @@
+-- Chaînes, blacklist, et les 21 premières fusions réelles du CRM.
+--
+-- CE QUI A CHANGÉ DANS LA LECTURE DES DOUBLONS
+-- On prenait pour des doublons ce qui était en fait des CHAÎNES : « Ma
+-- climatisation & pompe à chaleur » a huit agences, MCI en a sept. Elles
+-- partagent un site et se distinguent par leur adresse. La règle, énoncée par
+-- le propriétaire le 17/08 :
+--
+--     même URL (ou même base d'URL) + adresses différentes = une chaîne,
+--     pas un doublon.
+--
+-- Une chaîne ne se fusionne pas et ne se qualifie pas agence par agence : elle
+-- se met de côté, taguée, pour être démarchée plus tard au niveau du groupe
+-- avec une offre adaptée. Le CRM avait déjà l'objet pour ça —
+-- `reseaux_entreprises` + `entreprises.reseau_id` — et quatre réseaux existants.
+--
+-- Vérifié après coup sur les grappes restantes : 437 ont des adresses
+-- différentes (donc des chaînes) contre 190 qui ont la même adresse, le même
+-- code postal et le même SIREN (donc de vrais doublons). La règle tient.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 1. Le blacklist couvre enfin les sous-domaines
+-- ─────────────────────────────────────────────────────────────────────────────
+-- `facebook.com` était blacklisté depuis longtemps, et onze fiches sur
+-- `fr-fr.facebook.com` continuaient de remonter dans la file de qualification :
+-- `canonicalizeDomain` ne retire que `www.`, donc chaque variante d'hôte
+-- demandait sa propre entrée, qu'on ne découvrait qu'en voyant la fiche revenir.
+-- Corrigé côté code (`src/app/api/agent/qualification/_lib.ts`, fonction
+-- `couvertParDomaine`) : un domaine blacklisté couvre ses sous-domaines, avec le
+-- point-séparateur pour que `action.com` n'avale pas `notaction.com`.
+-- Gain immédiat et mesuré : 13 fiches de plus écartées, sans rien ajouter.
+--
+-- 17 domaines ajoutés (3 y étaient déjà), en trois familles :
+--   · locations touristiques — booking.com, bluepillow.com, vrbo.com,
+--     toulouseroseconciergerie.com. Ce ne sont pas des entreprises du bâtiment.
+--   · négoces et magasins — tereva.fr, cedeo.fr, richardson.fr,
+--     pieces-chauffe.fr, cd-sud.com, euromaster.fr. Ils vendent le matériel,
+--     ils ne l'installent pas.
+--   · enseignes hors métier — komilfo.fr, tryba.com, laboutiquedumenuisier.fr,
+--     monsieurstore.com, caseo-maison.com, fenetres-lorenove.fr, batiman.fr,
+--     groupemcc.com, acielouvert.com (fermetures, menuiserie, stores), et
+--     eiffageconstruction.com (major du BTP).
+--
+-- Blacklister N'ARCHIVE RIEN et ne supprime rien : la fiche sort simplement de
+-- la file de qualification (`isBlacklisted`, qualification/_lib.ts). Total après
+-- opération : 79 domaines actifs, 229 fiches hors file.
+--
+-- CE QU'ON N'A PAS BLACKLISTÉ, ET POURQUOI. `sites.google.com` porte 29 fiches
+-- dont 10 en cohorte. C'est un hébergeur générique : ce sont de vrais artisans
+-- qui ont bricolé une page Google Sites. Les écarter reviendrait à jeter des
+-- prospects parfaits pour la cohorte « site faible ».
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. Vingt-six chaînes taguées
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 271 fiches rattachées à 26 nouveaux réseaux, de « Avenir Rénovations » (78
+-- agences) à « Batif » (5). Dont les deux nommément citées : « Ma climatisation
+-- & pompe à chaleur » (8) et « MCI » (7).
+-- Total : 30 réseaux, 756 fiches.
+--
+-- 20 de ces fiches étaient dans les cohortes de la campagne : elles en sont
+-- sorties, parce que démarcher une agence de groupe avec l'offre individuelle
+-- est exactement ce que le tag existe pour empêcher. Cohortes après coup :
+-- A = 282, B = 297 (au lieu de 300 — arbitrage assumé par le propriétaire).
+--
+-- L'état d'avant est dans `archive_reseaux_blacklist_20260817` : 26 224 lignes
+-- (reseau_id et domaine de chaque fiche), plus une ligne `sortie_cohorte_*` par
+-- fiche retirée de la campagne. Rien n'est perdu, tout se remet.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. Les 21 premières fusions réelles
+-- ─────────────────────────────────────────────────────────────────────────────
+-- `archive_fusion_entreprises` était à 0 depuis toujours — la fonction échouait
+-- (cf. sql/20260817_reparer_fusion_search_path.sql). Elle marche depuis
+-- aujourd'hui, et voici son premier usage.
+--
+-- Le lot a été volontairement étroit, pour éprouver la chaîne complète avant de
+-- l'ouvrir en grand. Chaque grappe retenue devait :
+--   · ne contenir aucune fiche de chaîne ni de domaine blacklisté ;
+--   · avoir UNE seule ville, UN seul code postal, au plus UN SIREN ;
+--   · ne toucher AUCUNE fiche de la campagne en cours ;
+--   · porter au plus une affaire, pour n'avoir rien à réconcilier ;
+--   · être une paire, pas une grappe de trois.
+-- La gagnante est la fiche la plus ancienne : c'est autour d'elle que le reste
+-- du CRM s'est déjà construit.
+--
+-- Résultat : 21 réussies, 4 refusées. Les refus ne sont pas des pannes — la
+-- fonction dit « ces perdantes sont déjà la CIBLE d'une fusion : {2522}.
+-- Fusionner d'abord leurs propres perdantes vers 722 » — et se protège d'une
+-- chaîne de fusions incohérente.
+--
+-- Contrôlé après coup : 21 perdantes archivées avec `merged_into_id`, 21
+-- gagnantes vivantes, 99 lignes filles repointées, 1 seul conflit résiduel.
+-- Le journal complet, rapport JSON par fusion, est dans
+-- `public.journal_fusions_20260817`.
+--
+-- RESTE À FAIRE : 169 grappes de vrais doublons attendent encore (190 moins les
+-- 21 faites), plus 437 chaînes que le tri par domaine n'a pas attrapées parce
+-- qu'elles ont moins de cinq agences. Elles se traitent à l'écran, onglet
+-- « Fusionner ».
+
+-- Ce fichier consigne des écritures DÉJÀ APPLIQUÉES le 17/08 via execute_sql.
+-- Il est ici pour la trace et pour le rollback, pas à rejouer tel quel.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Contrôles
+-- ─────────────────────────────────────────────────────────────────────────────
+-- select count(*) from public.reseaux_entreprises;                   -- 30
+-- select count(*) from public.entreprises where reseau_id is not null; -- 756
+-- select count(*) from public.url_blacklist where active and scope='domain'; -- 79
+-- select count(*) from public.archive_fusion_entreprises;            -- 21
+-- select count(*) filter (where ok) from public.journal_fusions_20260817; -- 21
+--
+-- ROLLBACK des réseaux et des cohortes retirées :
+-- update public.entreprises e set reseau_id = a.reseau_id_avant
+--   from public.archive_reseaux_blacklist_20260817 a
+--  where a.quoi = 'etat_avant' and a.entreprise_id = e.id;
+-- update public.entreprises e
+--    set cohorte_demarchage = replace(a.quoi, 'sortie_cohorte_', '')
+--   from public.archive_reseaux_blacklist_20260817 a
+--  where a.quoi like 'sortie_cohorte_%' and a.entreprise_id = e.id;
+--
+-- ROLLBACK d'une fusion : lire l'état d'avant dans archive_fusion_entreprises,
+-- via l'`archive_id` que porte chaque rapport de journal_fusions_20260817.

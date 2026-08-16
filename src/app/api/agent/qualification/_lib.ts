@@ -65,13 +65,35 @@ export const loadBlacklist = async (): Promise<{ domains: Set<string>; urls: Set
   return { domains, urls };
 };
 
+/**
+ * Le domaine blacklisté couvre-t-il cet hôte ?
+ *
+ * UN DOMAINE BLACKLISTÉ COUVRE SES SOUS-DOMAINES, et ça n'était pas le cas.
+ * `canonicalizeDomain` ne retire que `www.` : `facebook.com` était blacklisté
+ * depuis longtemps, et `fr-fr.facebook.com` continuait pourtant de sortir dans
+ * la file de qualification — onze fiches. Même chose pour `br.bluepillow.com`
+ * face à `bluepillow.com`, ou n'importe quel `magasin.<enseigne>.fr`. Chaque
+ * variante d'hôte obligeait à une entrée de plus, qu'on ne découvrait qu'en
+ * voyant la fiche remonter.
+ *
+ * Le point-séparateur n'est pas décoratif : sans lui, blacklister `action.com`
+ * attraperait `notaction.com`, qui n'a rien à voir.
+ */
+const couvertParDomaine = (hote: string, domaines: Set<string>): boolean => {
+  if (domaines.has(hote)) return true;
+  for (const d of domaines) {
+    if (hote.endsWith(`.${d}`)) return true;
+  }
+  return false;
+};
+
 export const isBlacklisted = (
   company: Pick<QueueCompany, "canonical_url" | "site_web_canonique">,
   blacklist: { domains: Set<string>; urls: Set<string> },
 ): boolean => {
   const site = companyCanonicalSite(company);
   if (!site) return false;
-  return blacklist.urls.has(site) || blacklist.domains.has(canonicalizeDomain(site));
+  return blacklist.urls.has(site) || couvertParDomaine(canonicalizeDomain(site), blacklist.domains);
 };
 
 /**
