@@ -62,9 +62,31 @@ export const GET = withAuth({}, async ({ user, cors }) => {
   // d'erreur. La RPC renvoie une table à une ligne.
   const ligne = Array.isArray(compteurs.data) ? compteurs.data[0] : compteurs.data;
 
+  /**
+   * Les logos stockés en `data:` URI ne partent pas dans cette réponse.
+   *
+   * Seize fiches portent leur logo en base64 dans `logo_url` au lieu d'une URL
+   * — la plus grosse fait 668 ko à elle seule. Ces seize lignes pesaient 2,3 Mo
+   * des 3,7 Mo de la réponse, rechargés à chaque ouverture d'un écran du CRM,
+   * et rapprochaient dangereusement de la limite de 4,5 Mo qu'une fonction
+   * serverless Vercel peut renvoyer.
+   *
+   * La fiche détaillée, elle, recharge la ligne complète par
+   * `companiesApi.getById` : le logo reste consultable là où il sert vraiment.
+   * `/api/media/rehost-logos` existe justement pour convertir ces base64 en
+   * fichiers hébergés ; ce filtre est le garde-fou en attendant qu'il soit
+   * passé sur tout le parc.
+   */
+  const entreprises = (perimetre.data ?? []).map((e) => {
+    const fiche = e as { logo_url?: string | null };
+    return typeof fiche.logo_url === "string" && fiche.logo_url.startsWith("data:")
+      ? { ...fiche, logo_url: null }
+      : fiche;
+  });
+
   return json(
     {
-      entreprises: perimetre.data ?? [],
+      entreprises,
       compteurs: (ligne as CompteursEntreprises | null) ?? COMPTEURS_VIDES,
     },
     { headers: cors },

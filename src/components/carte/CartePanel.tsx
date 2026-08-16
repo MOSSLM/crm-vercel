@@ -10,12 +10,20 @@ const nf = new Intl.NumberFormat("fr-FR");
 
 export type Repartition = Record<StatutCarte, number> & { total: number };
 
+/**
+ * Répartition par statut.
+ *
+ * On somme `poids` et non le nombre d'éléments : à l'échelle nationale un point
+ * est une CELLULE de densité qui vaut plusieurs fiches (cf. `FicheCarte.poids`).
+ * Compter les éléments annoncerait 7 200 entreprises au lieu de 60 687.
+ */
 export function compter(fiches: FicheCarte[]): Repartition {
   const out = { total: 0 } as Repartition;
   for (const statut of STATUTS) out[statut.id] = 0;
   for (const fiche of fiches) {
-    out.total++;
-    out[fiche.statut]++;
+    const poids = fiche.poids || 1;
+    out.total += poids;
+    out[fiche.statut] += poids;
   }
   return out;
 }
@@ -84,8 +92,8 @@ function VueFrance({
       couverts: parDept.size,
       classement: departements
         .map((dept) => ({ dept, fiches: parDept.get(dept.code) ?? [] }))
-        .filter((row) => row.fiches.length > 0)
-        .sort((a, b) => b.fiches.length - a.fiches.length)
+        .filter((row) => row.dept.total > 0)
+        .sort((a, b) => b.dept.total - a.dept.total)
         .slice(0, 20)
         .map((row) => ({ ...row, repartition: compter(row.fiches) })),
     };
@@ -177,11 +185,21 @@ function VueDepartement({
   onFicheActive,
   onSelectDept,
 }: CartePanelProps & { dept: DeptCarte }) {
+  // Les vraies fiches du département, une fois qu'il est ouvert. Tant qu'elles
+  // ne sont pas arrivées, il ne reste que ses cellules de densité : elles
+  // portent le bon compte mais n'ont ni nom ni ville, donc on ne les liste pas.
   const duDept = React.useMemo(
-    () => fiches.filter((fiche) => fiche.dept === dept.code),
+    () => fiches.filter((fiche) => fiche.dept === dept.code && fiche.poids === 1),
     [fiches, dept.code],
   );
-  const repartition = React.useMemo(() => compter(duDept), [duDept]);
+  const chargees = duDept.length > 0;
+  const repartition = React.useMemo(
+    () =>
+      chargees
+        ? compter(duDept)
+        : compter(fiches.filter((fiche) => fiche.dept === dept.code)),
+    [chargees, duDept, fiches, dept.code],
+  );
 
   const listees = React.useMemo(() => {
     const q = recherche.trim().toLowerCase();
@@ -299,7 +317,7 @@ function VueDepartement({
 
       <div className="carte-p-foot">
         <span className="carte-mono">
-          {nf.format(listees.length)} / {nf.format(duDept.length)} fiches
+          {nf.format(listees.length)} / {nf.format(dept.total)} fiches
         </span>
       </div>
     </>

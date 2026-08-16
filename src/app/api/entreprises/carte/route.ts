@@ -18,16 +18,16 @@ const carteQuerySchema = z.object({
     .trim()
     .regex(/^(?:[0-9]{2}|2[AB])$/, "dept doit être un code de département")
     .optional(),
-  /**
-   * `agregat` (défaut) : compteurs par département + grille de densité, 101 ko.
-   * `fiches` : toutes les fiches, statut et département déjà calculés.
-   */
-  detail: z.enum(["agregat", "fiches"]).default("agregat"),
 });
 
 /**
  * GET /api/entreprises/carte            → agrégat national
  * GET /api/entreprises/carte?dept=69    → les fiches d'un département
+ *
+ * L'agrégat est le SEUL mode viable à l'échelle nationale : les 60 687 fiches
+ * individuelles pèsent 21 Mo de JSON, très au-dessus des 4,5 Mo qu'une fonction
+ * serverless Vercel peut renvoyer. Une version intermédiaire les servait quand
+ * même — elle passait en local et échouait une fois déployée.
  *
  * /carte faisait trois paginations complètes depuis le navigateur — 61 requêtes
  * pour `entreprises` seule — puis recomposait le statut de chaque fiche en JS et
@@ -52,19 +52,6 @@ export const GET = withAuth({}, async ({ req, user, cors }) => {
     const { data, error } = await sc.rpc("entreprises_carte_departement", {
       p_dept: parsed.data.dept,
     });
-    if (error) return jsonError(error.message, 500, {}, cors);
-    return json({ fiches: data ?? [] }, { headers: cors });
-  }
-
-  if (parsed.data.detail === "fiches") {
-    // `entreprises_carte()` renvoie des LIGNES, pas un tableau jsonb : replier
-    // 60 000 fiches en une seule valeur jsonb dépassait 60 s côté base. En
-    // lignes, la même fonction met 139 ms.
-    //
-    // Aucun plafond ne s'applique : ce projet n'a pas de `db-max-rows`
-    // configuré (vérifié — `current_setting('pgrst.db_max_rows')` est null),
-    // donc la réponse n'est pas tronquée.
-    const { data, error } = await sc.rpc("entreprises_carte");
     if (error) return jsonError(error.message, 500, {}, cors);
     return json({ fiches: data ?? [] }, { headers: cors });
   }
