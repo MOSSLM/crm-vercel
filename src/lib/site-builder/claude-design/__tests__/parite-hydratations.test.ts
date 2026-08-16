@@ -67,9 +67,13 @@ describe("parité des hydratations entre le rendu publié et l'aperçu", () => {
   const publie = source(PUBLIE);
   const apercu = source(APERCU);
 
-  for (const [module, role] of Object.entries(HYDRATATIONS)) {
-    it(`${module} — ${role}`, () => {
-      const chemin = `claude-design/${module}`;
+  // `module` serait le nom naturel, et il est INTERDIT : la règle
+  // `@next/next/no-assign-module-variable` fait échouer le build de production
+  // sur toute liaison portant ce nom, y compris dans un test — Jest, lui, ne
+  // dit rien. C'est ce qui a cassé quatre déploiements d'affilée.
+  for (const [hydratation, role] of Object.entries(HYDRATATIONS)) {
+    it(`${hydratation} — ${role}`, () => {
+      const chemin = `claude-design/${hydratation}`;
       expect(publie.includes(chemin)).toBe(true);
       expect(apercu.includes(chemin)).toBe(true);
     });
@@ -78,15 +82,15 @@ describe("parité des hydratations entre le rendu publié et l'aperçu", () => {
   it("les asymétries connues sont celles qu'on a écrites", () => {
     // Le sens du test : une exemption doit rester vraie. Si `resolve-image-sets`
     // arrive un jour dans l'aperçu, la ligne qui l'excuse doit partir avec.
-    for (const module of Object.keys(ASYMETRIES)) {
-      expect(publie.includes(`claude-design/${module}`)).toBe(true);
-      expect(apercu.includes(`claude-design/${module}`)).toBe(false);
+    for (const hydratation of Object.keys(ASYMETRIES)) {
+      expect(publie.includes(`claude-design/${hydratation}`)).toBe(true);
+      expect(apercu.includes(`claude-design/${hydratation}`)).toBe(false);
     }
   });
 
   it("aucune hydratation n'est à la fois listée et exemptée", () => {
-    for (const module of Object.keys(ASYMETRIES)) {
-      expect(HYDRATATIONS[module]).toBeUndefined();
+    for (const hydratation of Object.keys(ASYMETRIES)) {
+      expect(HYDRATATIONS[hydratation]).toBeUndefined();
     }
   });
 });
