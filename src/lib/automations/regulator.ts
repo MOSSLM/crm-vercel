@@ -122,6 +122,7 @@ export type HoldReason =
   | 'awaiting_reply' // étape « attendre une réponse » : on attend un humain, pas l'horloge
   | 'lien_manquant' // le message promet l'audit, l'entreprise n'a aucune mesure à montrer
   | 'demo_manquante' // le message promet la démo, aucun site n'est marqué « Prêt à envoyer »
+  | 'message_vide' // l'étape n'a ni modèle ni texte — la tâche serait posée sans rien à dire
 
 /** Une entrée de la file, telle qu'elle sort de la base. */
 export interface QueueItem {
@@ -644,6 +645,10 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
       return 'audit à faire — le message le promet'
     case 'demo_manquante':
       return 'démo à finir — le message la promet'
+    case 'message_vide':
+      // Le geste attendu est d'écrire, pas d'attendre. Un libellé vague
+      // laisserait croire à un report technique et l'étape dormirait.
+      return 'message à écrire — l’étape est vide'
     default:
       return ''
   }

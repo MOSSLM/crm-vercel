@@ -1300,6 +1300,20 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
     // diverger.
     const rendu = await renderStepMessage(sb, step, ent.vars, forced)
     const message = rendu.body
+    // UNE ÉTAPE SANS MESSAGE NE POSE PAS DE TÂCHE.
+    // `renderStepMessage` retombe sur `interpolate(step.message)`, qui vaut `''`
+    // quand l'étape n'a ni modèle ni texte. Le builder laisse enregistrer ça, et
+    // c'est arrivé : la branche « sans réponse » de « WhatsApp seul — site
+    // direct » porte une étape WhatsApp vide — c'est-à-dire précisément le
+    // chemin qu'emprunte la majorité des prospects. Poser la tâche quand même
+    // mettrait l'agent devant un écran blanc au moment d'ouvrir WhatsApp, et ce
+    // silence se lirait comme une panne de l'application plutôt que comme un
+    // modèle oublié. On gèle : l'inscription attend qu'on écrive le message et
+    // repart d'elle-même à la relecture suivante.
+    if (!message.trim()) {
+      await holdForEmptyMessage(sb, enrollment.id)
+      return
+    }
     const scriptName = rendu.source ?? undefined
     // À qui revient la tâche : propriétaire du contact, celui qui a lancé la
     // séquence, puis l'admin — selon la règle d'attribution du régulateur.
@@ -1468,6 +1482,25 @@ export async function holdForMissingDemo(sb: SupabaseClient, enrollmentId: strin
     .update({
       send_at: null,
       hold_reason: 'demo_manquante',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape manuelle dont le message est vide.
+ *
+ * Le geste attendu n'est pas d'attendre : c'est d'ouvrir la séquence et d'écrire
+ * le message, ou d'y rattacher un modèle. On repousse `next_run_at` de deux
+ * heures comme les autres gels — rien ne changera d'ici là sans qu'un humain
+ * touche la séquence, et repasser chaque minute ne ferait que bruiter le journal.
+ */
+export async function holdForEmptyMessage(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'message_vide',
       next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
     })
     .eq('id', enrollmentId)

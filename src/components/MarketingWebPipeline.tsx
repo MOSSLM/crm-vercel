@@ -22,6 +22,7 @@ import { CompleteDataDialog } from "./marketing-pipeline/CompleteDataDialog";
 import {
   MESSAGE_MIGRATION_PLAQUETTE,
   fonctionPlaquetteAbsente,
+  urlPlaquette,
 } from "@/lib/audit/plaquette-lien";
 // Les exigences de complétude vivaient ici ; elles sont désormais partagées avec
 // la grille de complétion en masse et avec le test qui les compare à
@@ -1162,6 +1163,27 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
    * liens alors qu'on en a peut-être refait douze — et laisserait un agent
    * penser que recliquer a réparé quelque chose.
    */
+  /** Un lien de plaquette, tel que la route et la fonction SQL le rendent. */
+  type LienPlaquette = { nom: string | null; url: string };
+
+  /**
+   * Les liens fabriqués, mis dans le presse-papier — un par ligne, nom puis URL
+   * séparés par une tabulation, donc collables tels quels dans un tableur.
+   *
+   * SANS ÇA, LE LOT NE SERT À RIEN. Fabriquer trois cents jetons qu'aucun écran
+   * ne montre, c'est ce que faisait cette action jusqu'ici : la route rendait
+   * `liens`, le board les jetait, et l'agent repartait coller le lien collectif
+   * — celui dont l'ouverture ne s'attribue à personne. Le presse-papier plutôt
+   * qu'un tableau à l'écran : ces liens sortent du CRM pour aller dans un
+   * message, ils n'ont aucune raison d'y rester affichés.
+   */
+  const copierLiens = (liens: LienPlaquette[]): boolean => {
+    if (liens.length === 0 || !navigator.clipboard) return false;
+    const tsv = liens.map((l) => `${l.nom ?? ""}\t${l.url}`).join("\n");
+    navigator.clipboard.writeText(tsv).catch(() => {});
+    return true;
+  };
+
   const annoncerPlaquettes = (creees: number, deja: number, echecs: EchecPlaquette[]) => {
     if (creees > 0) {
       toast.success(
@@ -1227,10 +1249,15 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           creees?: number;
           deja?: number;
           echecs?: EchecPlaquette[];
+          liens?: LienPlaquette[];
           error?: string;
         };
         if (!res.ok) throw new Error(data.error || "Échec");
         annoncerPlaquettes(data.creees ?? 0, data.deja ?? 0, data.echecs ?? []);
+        const liens = data.liens ?? [];
+        if (copierLiens(liens)) {
+          toast.success(`${liens.length} lien(s) copiés — nom puis URL, un par ligne.`);
+        }
       } else {
         // Côté admin, le même travail passe par la MÊME fonction SQL : c'est
         // elle qui garantit qu'un jeton déjà posé n'est jamais remplacé. Une
@@ -1250,10 +1277,26 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
             fonctionPlaquetteAbsente(error) ? MESSAGE_MIGRATION_PLAQUETTE : error.message,
           );
         }
-        const lignes = (data ?? []) as Array<{ entreprise_id: number; deja_prete: boolean }>;
+        const lignes = (data ?? []) as Array<{
+          entreprise_id: number;
+          jeton: string | null;
+          deja_prete: boolean;
+        }>;
         const rendues = new Set(lignes.map((l) => Number(l.entreprise_id)));
         const creees = lignes.filter((l) => l.deja_prete !== true).length;
         const nomParId = new Map(items.map((it) => [Number(it.entreprise_id), displayName(it)]));
+        // Le même presse-papier que côté agent : c'est `urlPlaquette` qui compose
+        // l'URL des deux côtés, pour qu'un changement de chemin n'ait qu'un seul
+        // endroit à corriger.
+        const liensAdmin = lignes
+          .filter((l) => l.jeton)
+          .map((l) => ({
+            nom: nomParId.get(Number(l.entreprise_id)) ?? null,
+            url: urlPlaquette(l.jeton),
+          }));
+        if (copierLiens(liensAdmin)) {
+          toast.success(`${liensAdmin.length} lien(s) copiés — nom puis URL, un par ligne.`);
+        }
         annoncerPlaquettes(
           creees,
           lignes.length - creees,
