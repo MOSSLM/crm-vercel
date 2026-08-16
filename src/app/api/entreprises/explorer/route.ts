@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
+import { FLAGS_CONNUS, SOURCES_CONNUES } from "./criteres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,19 +25,6 @@ export const OPTIONS = (req: Request) => preflight(req);
  * On ne fait ici que valider les entrées et traduire la forme de réponse — la
  * fonction SQL reste la seule source de vérité sur ce qu'un drapeau signifie.
  */
-
-const FLAGS_CONNUS = new Set([
-  "vivantes",
-  "sans_site",
-  "sans_google",
-  "sans_siret",
-  "qualite",
-  "fusionnee",
-  "archivee",
-  "masquee",
-]);
-
-const SOURCES_CONNUES = new Set(["ademe_rge", "api_gouv", "google_maps", "reseau_proeco"]);
 
 const LIMITE_DEFAUT = 50;
 const LIMITE_MAX = 200;

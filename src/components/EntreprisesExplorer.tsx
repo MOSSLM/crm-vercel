@@ -8,7 +8,8 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Search, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Loader2, Bookmark, X } from "lucide-react";
+import { toast } from "sonner";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
 
 /**
@@ -70,6 +71,13 @@ const PAGE = 50;
 
 const LABEL_SOURCE: Record<string, string> = Object.fromEntries(SOURCES.map((s) => [s.valeur, s.label]));
 
+/** Un segment : une recherche enregistrée sous un nom. */
+type Segment = {
+  id: string;
+  nom: string;
+  criteres: { q?: string | null; flags?: string[]; sources?: string[] };
+};
+
 export function EntreprisesExplorer() {
   const [q, setQ] = React.useState("");
   const [qDebounce, setQDebounce] = React.useState("");
@@ -81,6 +89,14 @@ export function EntreprisesExplorer() {
   const [total, setTotal] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [erreur, setErreur] = React.useState<string | null>(null);
+
+  const [segments, setSegments] = React.useState<Segment[]>([]);
+  // `null` = les segments ne sont pas lisibles (migration non jouée, panne). La
+  // barre disparaît alors, plutôt que d'annoncer « aucun segment » sur une base
+  // qui n'a pas encore de quoi en porter — une fonctionnalité absente ne doit
+  // pas ressembler à une liste vide.
+  const [segmentsLisibles, setSegmentsLisibles] = React.useState<boolean | null>(null);
+  const [enregistrement, setEnregistrement] = React.useState(false);
 
   // Recherche au fil de la frappe, mais pas à chaque lettre : sur 60 000
   // lignes, chaque frappe non filtrée serait un aller-retour serveur pour rien.
@@ -131,6 +147,73 @@ export function EntreprisesExplorer() {
       vivant = false;
     };
   }, [chargement]);
+
+  const chargerSegments = React.useCallback(async () => {
+    try {
+      const res = await authedFetch("/api/entreprises/segments");
+      const body = (await res.json().catch(() => ({}))) as { segments?: Segment[]; error?: string };
+      if (!res.ok) throw new Error(body.error || `Erreur ${res.status}`);
+      setSegments(body.segments ?? []);
+      setSegmentsLisibles(true);
+    } catch {
+      // Muet volontairement : ne pas savoir lire les segments n'empêche pas de
+      // chercher, et un bandeau d'erreur sur une fonction d'appoint détournerait
+      // de l'écran qui marche.
+      setSegmentsLisibles(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void chargerSegments();
+  }, [chargerSegments]);
+
+  /** Rejoue un segment : ses critères remplacent les filtres courants. */
+  const appliquerSegment = (s: Segment) => {
+    setQ(s.criteres.q ?? "");
+    setQDebounce(s.criteres.q ?? "");
+    setFlags(new Set((s.criteres.flags ?? []) as Flag[]));
+    setSources(new Set(s.criteres.sources ?? []));
+    setOffset(0);
+  };
+
+  const enregistrerSegment = async () => {
+    const nom = window.prompt("Nom du segment ?")?.trim();
+    if (!nom) return;
+
+    setEnregistrement(true);
+    try {
+      const res = await authedFetch("/api/entreprises/segments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nom,
+          criteres: { q: qDebounce || null, flags: [...flags], sources: [...sources] },
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error || `Erreur ${res.status}`);
+      await chargerSegments();
+      toast.success(`Segment « ${nom} » enregistré.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Enregistrement impossible");
+    } finally {
+      setEnregistrement(false);
+    }
+  };
+
+  const supprimerSegment = async (s: Segment) => {
+    // Pas de confirmation : supprimer un segment ne supprime AUCUNE entreprise.
+    // C'est une requête qu'on jette, et la refaire coûte trois clics.
+    try {
+      const res = await authedFetch(`/api/entreprises/segments?id=${encodeURIComponent(s.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setSegments((prev) => prev.filter((x) => x.id !== s.id));
+    } catch {
+      toast.error("Suppression impossible");
+    }
+  };
 
   const toggleFlag = (f: Flag) =>
     setFlags((s) => {
@@ -203,6 +286,58 @@ export function EntreprisesExplorer() {
               <span className="text-xs text-muted-foreground">— toutes, si aucune n&apos;est cochée</span>
             )}
           </div>
+
+          {/* Les segments. Un segment est une REQUÊTE enregistrée, pas une liste
+              d'entreprises : le rejouer relance la recherche, donc une fiche
+              enrichie entre-temps en sort d'elle-même. C'est exactement ce qui
+              le distingue d'un lot de campagne, qui lui ne doit plus bouger. */}
+          {segmentsLisibles && (
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+              <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Segments :</span>
+
+              {segments.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  aucun pour l&apos;instant — règle les filtres, puis enregistre
+                </span>
+              )}
+
+              {segments.map((s) => (
+                <span
+                  key={s.id}
+                  className="inline-flex items-center gap-1 text-xs rounded-full border border-border bg-background hover:bg-muted transition-colors"
+                >
+                  <button
+                    type="button"
+                    className="pl-2.5 py-1"
+                    title="Rejouer cette recherche"
+                    onClick={() => appliquerSegment(s)}
+                  >
+                    {s.nom}
+                  </button>
+                  <button
+                    type="button"
+                    className="pr-2 py-1 text-muted-foreground hover:text-destructive"
+                    title="Oublier ce segment (aucune entreprise n'est supprimée)"
+                    onClick={() => supprimerSegment(s)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7 ml-auto"
+                disabled={enregistrement}
+                onClick={enregistrerSegment}
+              >
+                {enregistrement ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bookmark className="h-3.5 w-3.5" />}
+                Enregistrer cette recherche
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
