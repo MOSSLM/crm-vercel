@@ -717,3 +717,53 @@ $$;
 
 revoke all on function public.service_tag_usage() from public, anon;
 grant execute on function public.service_tag_usage() to authenticated, service_role;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 8. Reponses hors du plafond de lignes de PostgREST
+-- ───────────────────────────────────────────────────────────────────────────
+--
+-- PostgREST plafonne le nombre de LIGNES d'une reponse (reglage « Max rows »,
+-- 1000 par defaut chez Supabase). Le depassement est SILENCIEUX : ni erreur, ni
+-- en-tete, juste une liste incomplete.
+--
+-- Deux jeux depassaient ou allaient depasser ce seuil : le perimetre actif
+-- (1 095 fiches, donc 95 perdues) et l'univers des tags. Les replier en UNE
+-- valeur jsonb les met hors de portee du reglage, quelle qu'en soit la valeur.
+--
+-- C'est la meme raison qui fait que `entreprises_carte_agregat()` et
+-- `entreprises_carte_departement()` renvoient du jsonb et non des lignes.
+
+create or replace function public.entreprises_perimetre()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(to_jsonb(t) order by t.created_at desc), '[]'::jsonb)
+  from (
+    select
+      e.id, e.canonical_url, e.name, e.adresse, e.lat, e.lng, e.premiers_tags,
+      e.service_tags, e.sources, e.raw_ids, e.qualifie, e.hidden_in_qualification,
+      e.created_at, e.updated_at, e.ca_estime_band, e.nb_employes_band,
+      e.nb_employes_exact, e.linkedin_url, e.site_web_canonique, e.manually_enriched,
+      e.enriched_at, e.enriched_by, e.reseau_id, e.telephone, e.email,
+      e.note_moyenne, e.nombre_avis, e.ville, e.code_postal, e.pays,
+      -- Seize fiches stockent leur logo en `data:` URI base64 au lieu d'une URL,
+      -- la plus grosse faisant 668 ko : elles pesaient 2,3 Mo des 3,7 Mo de la
+      -- reponse, rechargees a chaque ouverture d'un ecran du CRM. La fiche
+      -- detaillee recharge la ligne complete et les affiche la ou ils servent.
+      case when e.logo_url like 'data:%' then null else e.logo_url end as logo_url,
+      e.archived_at, e.archived_by, e.archive_reason, e.archive_note,
+      e.archive_concurrent_id
+    from public.v_entreprises_perimetre_actif e
+  ) t;
+$$;
+
+create or replace function public.service_tag_usage_json()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select jsonb_agg(jsonb_build_object('source', source, 'tag', tag, 'n', n))
+     from public.service_tag_usage()),
+    '[]'::jsonb);
+$$;
+
+revoke all on function public.entreprises_perimetre() from public, anon;
+revoke all on function public.service_tag_usage_json() from public, anon;
+grant execute on function public.entreprises_perimetre() to authenticated, service_role;
+grant execute on function public.service_tag_usage_json() to authenticated, service_role;
