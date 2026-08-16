@@ -1,6 +1,6 @@
 import { construirePlaquette, rendrePlaquetteMobile } from "../plaquette";
 import type { OffreAudit } from "../offres-audit";
-import { corpsCompact, corpsPlaquette } from "@/utils/audit/htmlCompact";
+import { corpsCompact, corpsPlaquette, corpsPlaquetteNominative } from "@/utils/audit/htmlCompact";
 import { fmtEur } from "@/utils/audit/htmlShared";
 import { getDefaultAuditContent } from "../default-content";
 import { mesuresVides } from "../mesures";
@@ -250,5 +250,77 @@ describe("le rendu mobile — celui qu’on envoie par WhatsApp", () => {
     const rendu = mobile();
     expect(rendu).toContain("SAMA · Agence digitale indépendante");
     expect(rendu).toContain("01 / ");
+  });
+});
+
+/**
+ * LA PLAQUETTE NOMINATIVE — le verrou déplacé, pas levé.
+ *
+ * `contenuImpersonnel` protège le dépliant collectif en vidant les champs du
+ * contenu. La version nominative ne peut pas s'en remettre à lui, puisqu'elle
+ * existe justement pour nommer quelqu'un : sa garantie est ailleurs, dans le
+ * fait que le prospect arrive par un PARAMÈTRE — il faut le fournir exprès, et
+ * on ne peut donc pas produire un document nominatif par distraction.
+ *
+ * Ces tests gardent les deux moitiés de cette affirmation : le nominatif nomme
+ * vraiment, et le collectif ne nomme toujours pas.
+ */
+describe("la plaquette nominative", () => {
+  const PROSPECT = {
+    nom: "Menuiserie Berthier",
+    meta: "Menuiserie · Rennes",
+    demoUrl: "https://berthier.exemple.fr",
+    captureDemo: "https://cdn.exemple/shot-berthier.jpg",
+  };
+
+  const nominatif = (p = PROSPECT) =>
+    corpsPlaquetteNominative(construirePlaquette(OFFRES), p);
+
+  it("porte le nom du prospect, sa démo et sa capture", () => {
+    const rendu = nominatif();
+    expect(rendu).toContain("Menuiserie Berthier");
+    expect(rendu).toContain("Menuiserie · Rennes");
+    expect(rendu).toContain("https://berthier.exemple.fr");
+    expect(rendu).toContain("https://cdn.exemple/shot-berthier.jpg");
+  });
+
+  it("garde le squelette sous l’image quand la capture manque", () => {
+    // L'état vide DÉFINI : une capture absente laisse une forme de page plutôt
+    // qu'un rectangle mort, et le document ne trahit pas ce qui lui manque.
+    const rendu = nominatif({ ...PROSPECT, captureDemo: null });
+    expect(rendu).toContain("mockup-skeleton");
+    expect(rendu).not.toContain("<img src=");
+    expect(rendu).toContain("https://berthier.exemple.fr");
+  });
+
+  it("tient dans les mêmes deux feuilles que le dépliant collectif", () => {
+    // La couverture est REMPLACÉE, pas ajoutée. Une cinquième demi-page
+    // disparaîtrait sans le moindre signal — on ne s'en apercevrait que devant
+    // le prospect.
+    const rendu = nominatif();
+    const feuilles = rendu.match(/<div class="sheet[ "]/g) ?? [];
+    const demiPages = rendu.match(/<div class="half[ "]/g) ?? [];
+    expect(feuilles).toHaveLength(2);
+    expect(demiPages).toHaveLength(4);
+    expect(rendu).toContain("02 / 2");
+    expect(rendu).not.toContain("/ 3");
+  });
+
+  it("ne laisse fuir le nom NI la démo dans les trois demi-pages du bas", () => {
+    // Ce qu'on livre, ce que ça coûte, comment on démarre ne dépendent de
+    // personne : elles restent dépersonnalisées, dans les deux documents.
+    const basDePage = nominatif().split('<div class="sheet">')[1] ?? "";
+    expect(basDePage).not.toContain("Menuiserie Berthier");
+    expect(basDePage).not.toContain("berthier.exemple.fr");
+  });
+
+  it("laisse le dépliant collectif exactement où il était", () => {
+    // LE TEST QUI COMPTE. Ajouter un chemin nominatif ne doit rien changer au
+    // document qui part à trois cents personnes.
+    const collectif = corpsPlaquette(construirePlaquette(OFFRES));
+    expect(collectif).not.toContain("Menuiserie Berthier");
+    expect(collectif).not.toContain("Préparé pour");
+    expect(collectif).not.toContain("mockup");
+    expect(collectif).toContain("Pour qui");
   });
 });

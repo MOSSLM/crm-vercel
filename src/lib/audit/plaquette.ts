@@ -3,7 +3,12 @@ import type { AuditContent } from "@/types";
 import { FORME_JETON } from "@/lib/audit/plaquette-lien";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
 import { construirePage5, versOffreAudit, type OffreAudit } from "@/lib/audit/offres-audit";
-import { contenuImpersonnel } from "@/utils/audit/htmlCompact";
+import { contenuImpersonnel, type ProspectPlaquette } from "@/utils/audit/htmlCompact";
+import {
+  choisirSiteMontrable,
+  urlPubliqueDuSite,
+  type SiteMontrableLike,
+} from "@/lib/site-builder/demo-share-url";
 import { buildScreens } from "@/utils/audit/htmlMobile";
 import { esc, logoSvg, makeGrainSvgUrl } from "@/utils/audit/htmlShared";
 
@@ -130,6 +135,7 @@ export {
   urlPlaquette,
 } from "./plaquette-lien";
 export { FORME_JETON };
+export type { ProspectPlaquette };
 
 export interface JetonPlaquette {
   entrepriseId: number;
@@ -298,4 +304,113 @@ export function rendrePlaquetteMobile(c: AuditContent): string {
 <div class="m-foot"><span>${esc(MENTION_PIED)}</span><b>${String(i + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}</b></div></div></div>`,
     )
     .join("")}</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Le prospect derrière le jeton
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Qui est ce jeton, et qu'a-t-on à lui montrer.
+ *
+ * POURQUOI CETTE LECTURE N'EXISTAIT PAS. Le jeton a été posé pour COMPTER, pas
+ * pour nommer : `/plaquette/{jeton}` rendait mot pour mot ce que rendait
+ * `/plaquette`. Il désigne pourtant UNE entreprise et une seule, et c'est
+ * exactement ce qu'il faut pour montrer à un prospect la capture de SA démo sans
+ * risquer de l'envoyer à la cohorte entière.
+ *
+ * TOUT EST BEST-EFFORT ET REND `null` PLUTÔT QUE DE LEVER. Un prospect qui a
+ * cliqué doit voir le document : jeton inconnu, entreprise disparue, base
+ * injoignable, colonne absente — le résultat est le dépliant collectif, jamais
+ * une page d'erreur. C'est la même règle que le compteur d'ouvertures, pour la
+ * même raison.
+ *
+ * SANS DÉMO MONTRABLE, PAS DE VERSION NOMINATIVE. `choisirSiteMontrable` écarte
+ * les gabarits et les sites encore en chantier : une couverture qui annoncerait
+ * « Votre site démo est en ligne » en pointant une page à moitié faite coûte
+ * plus cher que le dépliant neutre.
+ */
+export async function chargerProspectPlaquette(
+  sb: SupabaseClient,
+  jeton: string,
+): Promise<ProspectPlaquette | null> {
+  if (!FORME_JETON.test(jeton)) return null;
+
+  try {
+    const { data: lien } = await sb
+      .from("entreprises_rapport_public")
+      .select("entreprise_id")
+      .eq("plaquette_token", jeton)
+      .maybeSingle();
+    const entrepriseId = (lien as { entreprise_id?: number } | null)?.entreprise_id;
+    if (entrepriseId == null) return null;
+
+    const { data: ent } = await sb
+      .from("entreprises")
+      .select("name, ville, service_tags")
+      .eq("id", entrepriseId)
+      .maybeSingle();
+    const e = ent as LigneEntreprisePlaquette | null;
+    if (!e?.name) return null;
+
+    const site = await lireSiteMontrable(sb, entrepriseId);
+    if (!site) return null;
+
+    return {
+      nom: e.name,
+      meta: metaProspect(e),
+      demoUrl: urlPubliqueDuSite(site),
+      // `og_shot_url` est la capture ORDINATEUR (1200×750), celle qui remplit un
+      // cadre de navigateur. La capture mobile est haute et étroite : dans le
+      // mockup de la couverture, elle sortirait rognée par le haut.
+      captureDemo: site.og_shot_url ?? null,
+    };
+  } catch {
+    // Configuration manquante, base injoignable : le document collectif reste
+    // servi. Une plaquette neutre vaut infiniment mieux qu'une page d'erreur.
+    return null;
+  }
+}
+
+type LigneEntreprisePlaquette = {
+  name: string | null;
+  ville: string | null;
+  service_tags: unknown;
+};
+
+/** Le site démo de ce prospect, ou `null` s'il n'y en a pas de montrable. */
+async function lireSiteMontrable(
+  sb: SupabaseClient,
+  entrepriseId: number,
+): Promise<(SiteMontrableLike & { og_shot_url: string | null }) | null> {
+  const BASE = "id, published_subdomain, published_domain, is_published, build_stage, is_template";
+
+  // `og_shot_url` vient de sql/20260810_sites_og.sql. Un `select` qui nomme une
+  // colonne absente échoue ENTIÈREMENT : sans ce repli, un environnement non
+  // migré ne perdrait pas la capture, il perdrait le site — donc la couverture
+  // nominative tout entière, sans que rien ne le signale.
+  for (const colonnes of [`${BASE}, og_shot_url`, BASE]) {
+    const { data, error } = await sb.from("sites").select(colonnes).eq("enterprise_id", entrepriseId);
+    if (error) continue;
+    const lignes = (data ?? []) as unknown as Array<SiteMontrableLike & { og_shot_url?: string | null }>;
+    const choisi = choisirSiteMontrable(lignes);
+    if (!choisi) return null;
+    return { ...choisi, og_shot_url: choisi.og_shot_url ?? null };
+  }
+  return null;
+}
+
+/**
+ * La ligne sous le nom : « Secteur · Ville ».
+ *
+ * Le secteur vient du premier `service_tags`, jamais d'une déduction : sur un
+ * document qu'on remet à quelqu'un, une activité fausse se remarque tout de
+ * suite et discrédite le reste. Sans étiquette, la ville seule ; sans ville non
+ * plus, la ligne disparaît — le gabarit s'en accommode.
+ */
+function metaProspect(e: LigneEntreprisePlaquette): string {
+  const tags = Array.isArray(e.service_tags) ? e.service_tags : [];
+  const secteur = typeof tags[0] === "string" ? tags[0].trim() : "";
+  const ville = (e.ville ?? "").trim();
+  return [secteur, ville].filter(Boolean).join(" · ");
 }
