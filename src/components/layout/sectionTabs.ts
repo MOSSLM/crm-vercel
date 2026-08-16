@@ -1,5 +1,6 @@
 export const crmEnterpriseTabs = [
   { label: "Toutes les entreprises", href: "/companies" },
+  { label: "Explorer", href: "/entreprises/explorer" },
   { label: "Qualifiés", href: "/qualified" },
   { label: "Duplicats", href: "/duplicates" },
   { label: "Réseaux", href: "/networks" },
