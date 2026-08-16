@@ -1414,23 +1414,56 @@ const createFallbackOpportunity = (): Opportunity => {
 };
 
 export const opportunitiesApi = {
+  /**
+   * TOUTES les affaires, paginées — et non les 500 premières.
+   *
+   * `.limit(LIST_QUERY_LIMIT)` a tenu tant que le parc en comptait moins de 500 :
+   * la troncature existait, mais ne mordait jamais. L'attribution des deux
+   * cohortes du 16/08 en a créé 517 d'un coup, portant le total à 880, et le
+   * dashboard s'est mis à annoncer 500 affaires sans qu'aucun écran ne signale
+   * qu'il en manquait 380. C'est le pire mode de panne d'un tableau de bord :
+   * un chiffre faux qui a l'air d'un chiffre.
+   *
+   * La pagination est bornée par `MAX_PAGES` plutôt que par la seule fin des
+   * données : si le parc grossit d'un ordre de grandeur, on veut un plafond
+   * volontaire et journalisé, pas une boucle qui ramène tout en silence.
+   */
   getAll: async (): Promise<Opportunity[]> => {
+    const MAX_PAGES = 20;
     try {
-      const { data: opportunitiesData, error: opportunitiesError } = await supabase
-        .from('opportunites')
-        .select(OPPORTUNITY_SELECT)
-        .order('created_at', { ascending: false })
-        .limit(LIST_QUERY_LIMIT);
+      const pages: unknown[] = [];
+      let erreur: unknown = null;
 
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const debut = page * LIST_QUERY_LIMIT;
+        const { data, error } = await supabase
+          .from('opportunites')
+          .select(OPPORTUNITY_SELECT)
+          .order('created_at', { ascending: false })
+          .range(debut, debut + LIST_QUERY_LIMIT - 1);
+
+        if (error) {
+          erreur = error;
+          break;
+        }
+        const lot = Array.isArray(data) ? (data as unknown[]) : [];
+        pages.push(...lot);
+        if (lot.length < LIST_QUERY_LIMIT) break;
+        if (page === MAX_PAGES - 1) {
+          logger.error(
+            `opportunitiesApi.getAll : ${MAX_PAGES * LIST_QUERY_LIMIT} affaires atteintes, la suite est ignorée`,
+          );
+        }
+      }
+
+      const opportunitiesError = erreur;
       if (opportunitiesError) {
         logger.error('Supabase error:', opportunitiesError);
         // Return mock data as fallback
         return [createFallbackOpportunity()];
       }
 
-      const opportunitiesRows = Array.isArray(opportunitiesData)
-        ? (opportunitiesData as unknown[])
-        : [];
+      const opportunitiesRows = pages;
 
       if (opportunitiesRows.length === 0) {
         return [];
