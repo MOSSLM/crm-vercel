@@ -654,3 +654,57 @@ revoke all on function public.entreprises_carte_departement(text) from public, a
 grant execute on function public.entreprises_carte() to authenticated, service_role;
 grant execute on function public.entreprises_carte_agregat() to authenticated, service_role;
 grant execute on function public.entreprises_carte_departement(text) to authenticated, service_role;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 7. Univers des service tags
+-- ───────────────────────────────────────────────────────────────────────────
+--
+-- `loadServiceTagUniverse` lisait les 60 944 lignes de `entreprises` — 8,3 Mo
+-- de `service_tags` — a chaque ouverture de Reglages > Tags et du catalogue du
+-- site builder, puis comptait en JS. Or il n'existe que ~280 libelles distincts.
+--
+-- `n` = nombre de PORTEURS distincts du libelle, pas d'occurrences : l'ecran
+-- s'en sert pour annoncer combien de lignes une fusion va modifier.
+--
+-- La normalisation (cle canonique, taxonomie, exclusions) reste cote JS, dans
+-- src/utils/serviceTags.ts, qui en est la seule reference. On renvoie donc des
+-- libelles BRUTS, que l'appelant regroupe par `serviceTagKey`. La dupliquer ici
+-- aurait cree une seconde source de verite qui aurait derive.
+create or replace function public.service_tag_usage()
+returns table (source text, tag text, n bigint)
+language sql stable security definer set search_path = public as $$
+  select 'entreprises'::text, t.tag, count(distinct t.id)
+  from (
+    select e.id, btrim(x) as tag
+    from public.entreprises e,
+         lateral (
+           select case
+             when jsonb_array_length(coalesce(e.service_tags, '[]'::jsonb)) > 0
+               then array(select jsonb_array_elements_text(e.service_tags))
+             else regexp_split_to_array(coalesce(e.premiers_tags, ''), ',')
+           end as tags
+         ) src,
+         unnest(src.tags) as x
+    where e.merged_into_id is null and btrim(x) <> ''
+  ) t
+  group by t.tag
+  union all
+  select 'lead_magnets'::text, btrim(x), count(distinct p.id)
+  from public.lead_magnet_projects p,
+       lateral jsonb_array_elements_text(
+         case when jsonb_typeof(p.service_tags_snapshot) = 'array'
+              then p.service_tags_snapshot else '[]'::jsonb end) as x
+  where btrim(x) <> ''
+  group by btrim(x)
+  union all
+  select 'media'::text, btrim(x), count(distinct m.id)
+  from public.media_library m,
+       lateral jsonb_array_elements_text(
+         case when jsonb_typeof(m.service_tags) = 'array'
+              then m.service_tags else '[]'::jsonb end) as x
+  where btrim(x) <> ''
+  group by btrim(x);
+$$;
+
+revoke all on function public.service_tag_usage() from public, anon;
+grant execute on function public.service_tag_usage() to authenticated, service_role;

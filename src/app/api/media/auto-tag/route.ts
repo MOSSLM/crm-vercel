@@ -31,8 +31,12 @@ interface MediaRow {
 /** Authorized service-tag catalogue — distinct company tags, minus excluded,
  *  minus tags disabled in the allowlist (same source as the site-builder). */
 async function loadAllowedTags(sb: ReturnType<typeof getServiceClient>): Promise<string[]> {
+  // Lisait les 60 944 lignes de `entreprises` pour n'en tirer qu'une liste de
+  // ~280 libellés distincts. `service_tag_usage()` fait ce regroupement en base
+  // — même agrégat que `loadServiceTagUniverse`, même repli de `service_tags`
+  // vers `premiers_tags`.
   const [{ data: rows }, { data: settings }] = await Promise.all([
-    sb.from("entreprises").select("service_tags, premiers_tags").not("service_tags", "is", null),
+    sb.rpc("service_tag_usage"),
     sb.from("enrichment_tag_settings").select("tag, allowed"),
   ]);
   const disallowed = new Set(
@@ -41,8 +45,11 @@ async function loadAllowedTags(sb: ReturnType<typeof getServiceClient>): Promise
       .map((s) => formatServiceTag(s.tag as string)),
   );
   const set = new Set<string>();
-  for (const row of (rows ?? []) as Array<{ service_tags?: unknown; premiers_tags?: string | null }>) {
-    for (const t of normalizeServiceTags(row.service_tags, row.premiers_tags ?? null)) {
+  for (const row of (rows ?? []) as Array<{ source?: string; tag?: string }>) {
+    // Le catalogue ne retient que ce que portent les ENTREPRISES : un tag qui
+    // ne vit que sur une image ou un snapshot n'est pas un service proposable.
+    if (row.source !== "entreprises" || typeof row.tag !== "string") continue;
+    for (const t of normalizeServiceTags([row.tag])) {
       if (!disallowed.has(formatServiceTag(t))) set.add(t);
     }
   }
