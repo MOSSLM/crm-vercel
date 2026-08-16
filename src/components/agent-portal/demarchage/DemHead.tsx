@@ -6,7 +6,8 @@ import { stageTint } from "@/components/agent-portal/format";
 import { trancheEffectifLabel } from "@/lib/donnees-publiques/effectif";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
-import type { CompanyBundle, DemarchageSequenceInfo, DemAudit } from "./types";
+import { COHORTE_INFO } from "./cohortes";
+import type { CompanyBundle, DemCohorte, DemarchageSequenceInfo, DemAudit } from "./types";
 
 /** Euros courts — « 1,25 M€ », « 480 k€ ». Même règle que la maquette. */
 export function eurShort(n: number | null | undefined): string | null {
@@ -104,10 +105,16 @@ export function DemHead({
   company,
   sequence,
   audit,
+  cohorte = null,
+  horsSequence = false,
 }: {
   company: CompanyBundle;
   sequence: DemarchageSequenceInfo | null;
   audit: DemAudit;
+  /** La cohorte de campagne — elle décide de l'accroche, elle se lit ici. */
+  cohorte?: DemCohorte | null;
+  /** Appel à froid : la ligne « séquence » de l'en-tête n'a rien à dire. */
+  horsSequence?: boolean;
 }) {
   const [ouvert, basculer] = useDossierDeploye();
   const { entreprise: e, donneesPubliques: dp, contacts, opportunite } = company;
@@ -172,6 +179,21 @@ export function DemHead({
                     {sequence.stepIndex}/{sequence.totalSteps}
                   </span>
                 )}
+              </span>
+            )}
+            {/* À froid, la place de la séquence ne reste pas vide : elle dit
+                que c'est le premier contact. Sans ça, l'en-tête d'un appel à
+                froid et celui d'une quatrième relance sont indiscernables. */}
+            {!sequence?.name && horsSequence && (
+              <span className="it">
+                <Icon name="zap" className="ico-xs" style={{ color: "var(--warn)" }} />
+                appel à froid — premier contact
+              </span>
+            )}
+            {cohorte && (
+              <span className="it" title={COHORTE_INFO[cohorte].argument}>
+                <Icon name="target" className="ico-xs" style={{ color: "var(--accent)" }} />
+                {COHORTE_INFO[cohorte].long}
               </span>
             )}
             {siren && (

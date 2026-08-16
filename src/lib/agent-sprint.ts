@@ -7,6 +7,8 @@
  * là-dessus, c'est afficher un chiffre d'affaires qui n'existe pas.
  */
 
+import { normaliseQuotas } from "@/lib/agent-portal/demarchage-buckets";
+
 /** Étapes où l'argent est réellement rentré. */
 const ENCAISSE = /acompte/i;
 /** Étapes où l'affaire est gagnée (signée), encaissée ou non. */
@@ -34,6 +36,111 @@ export function classifyEtape(nom: string): EtapeKind {
   if (GAGNE.test(nom)) return "gagne";
   if (EN_DECISION.test(nom)) return "en_decision";
   return "en_cours";
+}
+
+/* ── Le cadre du sprint : ce qui change d'une campagne à l'autre ─────────── */
+
+/**
+ * Objectif, dates et cible quotidienne du sprint en cours.
+ *
+ * POURQUOI CE N'EST PLUS DANS LE CODE
+ * Les quatre valeurs étaient écrites en dur dans `/api/agent/sprint`, avec le
+ * commentaire « volontairement en dur : c'est un sprint daté ». Un sprint daté,
+ * justement, PÉRIME : l'échéance codée au 20 août est dépassée le 21, et l'écran
+ * de l'agent annonce alors « terminé » au beau milieu d'une campagne qui court
+ * jusqu'au 26 — avec un rythme requis calculé sur zéro jour restant. Déployer
+ * pour déplacer une date, personne ne le fait un mardi matin ; l'écran ment donc
+ * jusqu'à ce que quelqu'un s'en aperçoive.
+ *
+ * D'OÙ VIENNENT LES VALEURS, DANS L'ORDRE
+ *   1. `agent_settings.quotas_demarchage` pour la cible du jour — voir
+ *      `cibleContactsDepuisQuotas` ;
+ *   2. les variables d'environnement ci-dessous ;
+ *   3. les défauts, qui sont ceux de la campagne du 17 au 26 août 2026.
+ * Une valeur illisible (date mal formée, nombre négatif) est IGNORÉE plutôt que
+ * propagée : une faute de frappe dans une variable Vercel ne doit pas remettre
+ * l'objectif à zéro ni faire disparaître l'échéance.
+ */
+export interface CadreSprint {
+  objectifCents: number;
+  /** Début du sprint, ISO (YYYY-MM-DD) — origine des cumuls. */
+  debut: string;
+  /** Fin du sprint, ISO (YYYY-MM-DD). */
+  deadline: string;
+  cibleContactsJour: number;
+}
+
+/** La campagne réelle : 100 nouvelles entreprises par jour, du 17 au 26 août. */
+export const CADRE_PAR_DEFAUT: CadreSprint = {
+  objectifCents: 200_000,
+  debut: "2026-08-17",
+  deadline: "2026-08-26",
+  cibleContactsJour: 100,
+};
+
+/** Les noms des quatre variables, réunis pour qu'on puisse les documenter d'un bloc. */
+export const VARIABLES_SPRINT = {
+  objectifCents: "SPRINT_OBJECTIF_CENTS",
+  debut: "SPRINT_DEBUT",
+  deadline: "SPRINT_DEADLINE",
+  cibleContactsJour: "SPRINT_CIBLE_CONTACTS_JOUR",
+} as const;
+
+/** Un jour ISO réel, ou `null`. `2026-08-32` a la bonne forme mais n'existe pas. */
+const jourIso = (v: string | undefined): string | null => {
+  const s = (v ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : s;
+};
+
+/** Un entier strictement positif, ou `null` — un objectif nul ferait 100 % dès le départ. */
+const entierPositif = (v: string | undefined): number | null => {
+  const n = Number((v ?? "").trim());
+  return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : null;
+};
+
+export function lireCadreSprint(env: Record<string, string | undefined>): CadreSprint {
+  const debut = jourIso(env[VARIABLES_SPRINT.debut]) ?? CADRE_PAR_DEFAUT.debut;
+  const deadline = jourIso(env[VARIABLES_SPRINT.deadline]) ?? CADRE_PAR_DEFAUT.deadline;
+  return {
+    objectifCents: entierPositif(env[VARIABLES_SPRINT.objectifCents]) ?? CADRE_PAR_DEFAUT.objectifCents,
+    debut,
+    // Une échéance ANTÉRIEURE au début n'est pas un sprint : on garde la date de
+    // début, `joursRestants` rendra 0 et l'écran dira « terminé » — ce qui est
+    // vrai — au lieu d'afficher un intervalle à l'envers.
+    deadline: deadline < debut ? debut : deadline,
+    cibleContactsJour:
+      entierPositif(env[VARIABLES_SPRINT.cibleContactsJour]) ?? CADRE_PAR_DEFAUT.cibleContactsJour,
+  };
+}
+
+/**
+ * La cible de contacts du jour, lue dans les quotas de l'agent.
+ *
+ * `agent_settings.quotas_demarchage` porte déjà les quotas par canal
+ * (`{"call":20,"whatsapp":60,"linkedin":20}`) : leur SOMME est le nombre de
+ * prospects que l'agent doit toucher dans la journée. La lire là plutôt que de
+ * la redéclarer garantit que l'écran sprint et la file de tâches ne peuvent pas
+ * annoncer deux chiffres différents — c'est le même réglage, pas une copie.
+ *
+ * ET C'EST `normaliseQuotas` QUI LE LIT, pas une somme maison. Une somme brute
+ * additionnait ce que la file, elle, refuse : un canal hors des trois canaux
+ * plafonnés, une valeur au-delà du plafond de saisie. Surtout, elle ignorait la
+ * fusion sur le défaut — `{"whatsapp":60}` donnait « cible 60 » ici pendant que
+ * la file en planifiait 100 (60 WhatsApp + les 20 appels et 20 LinkedIn restés
+ * au défaut). Deux écrans, deux chiffres, un seul réglage : exactement ce que
+ * cette fonction prétendait empêcher.
+ *
+ * Renvoie `null` (et non 0) quand rien n'est réglé : l'appelant retombe alors
+ * sur la variable d'environnement. Un total nul serait un quota de zéro appel,
+ * pas une absence de réglage.
+ */
+export function cibleContactsDepuisQuotas(quotas: unknown): number | null {
+  const cadence = normaliseQuotas(quotas);
+  if (!cadence) return null;
+  const total = Object.values(cadence).reduce((somme, n) => somme + n, 0);
+  return total > 0 ? total : null;
 }
 
 export interface SprintCounter {

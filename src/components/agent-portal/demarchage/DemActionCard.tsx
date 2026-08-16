@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Icon, Pill } from "./DemIcon";
 import { demCh, isMessageKind } from "./channels";
+import { COHORTE_INFO } from "./cohortes";
 import { DEM_OBJECTIONS } from "./DemObjections";
 import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
 import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from "@/lib/automations/variables";
@@ -88,6 +89,17 @@ export function DemActionCard({
   const ent = one(task.entreprise);
   const contact = one(task.contact);
   const tel = useTelephonyOptional();
+
+  /**
+   * Appel à froid : ni séquence, ni étape, ni texte préparé par le moteur.
+   *
+   * La carte déduisait tout de la séquence — jusqu'au message d'erreur, qui
+   * conseillait d'« ajouter un texte à l'étape dans la séquence » à quelqu'un
+   * qui n'en a pas. Ce n'est pas un défaut de données à corriger : c'est le
+   * mode de travail principal de la campagne, cent fois par jour.
+   */
+  const froid = task.hors_sequence === true;
+  const cohorte = task.cohorte ?? null;
 
   const dec = company?.contacts.find((c) => c.is_decision_maker) ?? company?.contacts[0] ?? null;
   const ctName = dec
@@ -378,10 +390,14 @@ export function DemActionCard({
         <div style={{ minWidth: 0 }}>
           <div className="ti">
             {ch.cta}
-            {seq?.stepIndex != null && ` · étape ${seq.stepIndex}/${seq.totalSteps}`}
+            {seq?.stepIndex != null
+              ? ` · étape ${seq.stepIndex}/${seq.totalSteps}`
+              : froid
+                ? " · à froid"
+                : ""}
           </div>
           <div className="su">
-            {seq?.stepLabel || task.title || ch.lb}
+            {seq?.stepLabel || task.title || (froid ? "Premier contact — jamais appelée" : ch.lb)}
             {ent?.name && <span style={{ color: "var(--text-4)" }}> · {ent.name}</span>}
           </div>
         </div>
@@ -399,6 +415,19 @@ export function DemActionCard({
         {/* ── message ── */}
         {isMessageKind(task.kind) && (
           <>
+            {/* Message à froid : la zone de saisie est vide et le restera — le
+                moteur n'a rien rendu, faute d'étape. On le dit, plutôt que de
+                laisser croire à un modèle qui n'a pas chargé.
+                `versionsPreparees` rend TOUJOURS une version, fût-elle vide :
+                c'est le texte qu'on teste, jamais le nombre de versions. */}
+            {froid && !versions.some((v) => v.message.trim()) && (
+              <div className="dm-hint">
+                <Icon name="info" className="ico-sm" />
+                Message à froid : aucun modèle préparé.{" "}
+                {cohorte ? COHORTE_INFO[cohorte].argument : "Écris le message, il partira tel quel."}
+              </div>
+            )}
+
             {/* Les deux versions du modèle de l'étape — le même geste que la
                 carte WhatsApp du pipeline commercial. Une seule version
                 préparée ⇒ aucun choix affiché, plutôt qu'un faux choix. */}
@@ -585,6 +614,17 @@ export function DemActionCard({
 
                 {callScript.trim() ? (
                   <p className="tx">{callScript}</p>
+                ) : froid ? (
+                  /* Un appel à froid N'A PAS de script préparé, et ce n'est pas
+                     une anomalie : il n'y a pas d'étape où en ranger un. Lui
+                     afficher l'avertissement de séquence enverrait corriger
+                     quelque chose qui n'existe pas — cent fois par jour. */
+                  <div className="dm-hint">
+                    <Icon name="info" className="ico-sm" />
+                    Appel à froid : aucun texte préparé, c&apos;est normal.{" "}
+                    {cohorte ? `${COHORTE_INFO[cohorte].argument} ` : ""}La trame générique et les
+                    objections sont dans l&apos;onglet à côté.
+                  </div>
                 ) : (
                   <div className="dm-hint warn">
                     <Icon name="warning" className="ico-sm" />

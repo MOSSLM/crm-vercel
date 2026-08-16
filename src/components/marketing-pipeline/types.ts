@@ -303,6 +303,19 @@ export interface BulkHandlers {
   onPublierSites: (items: BoardItem[]) => void;
   onCreateAudits: (items: BoardItem[]) => void;
   onValidateAudits: (items: BoardItem[]) => void;
+  /**
+   * Prépare une plaquette PAR PROSPECT : un jeton par entreprise, donc une URL
+   * par entreprise pour un document strictement identique.
+   *
+   * C'est le pendant de « Créer les audits » pour la cohorte SANS site : il n'y
+   * a rien à mesurer chez elle, donc pas d'audit à rédiger, mais il faut quand
+   * même savoir qui ouvre le document — sinon l'étage « document ouvert » de
+   * l'entonnoir reste vide pour la moitié de la campagne.
+   *
+   * Rejouable : une entreprise déjà pourvue garde son jeton, et l'action dit
+   * combien ont été créées et combien existaient déjà.
+   */
+  onCreerPlaquettes: (items: BoardItem[]) => void;
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
   onAssign?: (items: BoardItem[], agentId: string) => void;
   /**

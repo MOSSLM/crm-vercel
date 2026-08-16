@@ -4,6 +4,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
+import { getIssueDef } from "@/data/auditIssues";
+import type { AuditAvantApres, AuditContent, AuditProblem } from "@/types";
 import { logPipelineStep } from "../_lib";
 
 export const runtime = "nodejs";
@@ -15,6 +17,64 @@ const bodySchema = z.object({
   opportunite_ids: z.array(z.string().uuid()).min(1).max(100),
 });
 type Body = z.infer<typeof bodySchema>;
+
+/* ── Le garde-fou de la validation ───────────────────────────────────────── */
+//
+// CE QUI S'EST PASSÉ LE 12/08
+// La validation faisait `SELECT id` puis `UPDATE statut='ready'` : elle ne
+// LISAIT pas le document qu'elle déclarait prêt. 67 audits sont passés « prêts »
+// en dix secondes, tous porteurs du contenu par défaut, mot pour mot le même —
+// il a fallu `sql/ROLLBACK_20260814_devalidation_audits.sql` pour les défaire.
+// « Prêt » veut dire « envoyable à un artisan » : ça se vérifie sur le contenu,
+// pas sur la présence d'une ligne.
+//
+// CE QUI DISTINGUE UN AUDIT RÉDIGÉ D'UN GABARIT — deux marques, et elles sont
+// laissées par la préparation (`/api/audit/preparation`), jamais par la création :
+//   · `page2.problems[]` : la création pose les cartes du catalogue telles
+//     quelles ; la préparation remplace `title` et `desc` par le texte écrit
+//     pour CE prospect. Un titre identique au catalogue = personne n'a écrit.
+//   · `page3.avant_apres` : absent du contenu par défaut. C'est le tableau des
+//     mesures, le seul endroit du document qui parle de l'entreprise en face.
+//     Vide, il ne reste qu'une plaquette.
+// Un audit peut être excellent et ne pas encore être relu ; ces deux marques ne
+// jugent pas la qualité, elles constatent qu'un travail a eu lieu.
+
+/** Une carte de constat a-t-elle été écrite pour ce prospect ? */
+function constatRedige(p: AuditProblem): boolean {
+  const titre = (p.title ?? "").trim();
+  const texte = (p.desc ?? "").trim();
+  if (!titre || !texte) return false;
+  const catalogue = p.key ? getIssueDef(p.key) : undefined;
+  // Une carte libre (sans clé de catalogue) n'a pas pu naître d'un gabarit :
+  // quelqu'un l'a forcément tapée.
+  if (!catalogue) return true;
+  return titre !== catalogue.problem.title.trim() || texte !== catalogue.problem.desc.trim();
+}
+
+/**
+ * Ce qui manque à un audit pour être envoyable. Tableau vide = il est prêt.
+ *
+ * On renvoie les raisons plutôt qu'un booléen : l'agent doit savoir QUOI ouvrir,
+ * sinon le refus n'est qu'un bouton qui ne marche pas.
+ */
+function raisonsDeRefus(contenu: unknown): string[] {
+  const c = (contenu ?? {}) as Partial<AuditContent>;
+  const raisons: string[] = [];
+
+  const constats = (c.page2?.problems ?? []) as AuditProblem[];
+  if (constats.length === 0) raisons.push("aucun constat");
+  else if (!constats.some(constatRedige)) raisons.push("constats laissés au texte du catalogue");
+
+  const lignes = (c.page3?.avant_apres ?? []) as AuditAvantApres[];
+  const completes = lignes.filter(
+    (l) => (l.avant ?? "").trim() !== "" && (l.apres ?? "").trim() !== "",
+  );
+  if (completes.length === 0) raisons.push("avant/après vide — aucune mesure dans le document");
+
+  if (!(c.page1?.client_name ?? "").trim()) raisons.push("le client n'est pas nommé");
+
+  return raisons;
+}
 
 /**
  * POST /api/agent/marketing-pipeline/audit
@@ -52,30 +112,70 @@ export const POST = withAuth<Body>(
 
     if (body.action === "validate") {
       const allowedOppIds = allowed.map((o) => o.id as string);
-      const { data: audits } = await sc
+      const { data: audits, error: auditErr } = await sc
         .from("audits")
-        .select("id, opportunite_id")
+        // `content` EST LA RAISON D'ÊTRE DE CETTE REQUÊTE : sans lui, la
+        // validation ne peut que faire confiance, et c'est exactement ce qui a
+        // produit 67 audits « prêts » vides le 12/08.
+        .select("id, opportunite_id, content")
         .in("opportunite_id", allowedOppIds);
-      const auditIds = (audits ?? []).map((a) => a.id as string);
-      if (auditIds.length === 0) return jsonError("aucun_audit", 404, {}, cors);
+      if (auditErr) return jsonError(auditErr.message, 500, {}, cors);
+      if ((audits ?? []).length === 0) return jsonError("aucun_audit", 404, {}, cors);
+
+      const auditParOpp = new Map(
+        (audits ?? []).map((a) => [String(a.opportunite_id), a as { id: string; content: unknown }]),
+      );
+
+      // On trie AVANT d'écrire, opportunité par opportunité : un lot mixte doit
+      // valider ce qui est prêt et nommer le reste. Refuser les 300 parce que
+      // deux ne sont pas rédigés, c'est se faire contourner dès le lendemain.
+      const aValider: Array<{ auditId: string; oppId: string; entrepriseId: number }> = [];
+      const refuses: Array<{ opportunite_id: string; audit_id: string | null; raisons: string[] }> = [];
+
+      for (const o of allowed) {
+        const oppId = o.id as string;
+        const audit = auditParOpp.get(oppId);
+        if (!audit) {
+          refuses.push({ opportunite_id: oppId, audit_id: null, raisons: ["aucun audit créé"] });
+          continue;
+        }
+        const raisons = raisonsDeRefus(audit.content);
+        if (raisons.length > 0) {
+          refuses.push({ opportunite_id: oppId, audit_id: audit.id, raisons });
+          continue;
+        }
+        aValider.push({ auditId: audit.id, oppId, entrepriseId: Number(o.entreprise_id) });
+      }
+
+      if (aValider.length === 0) {
+        // 422 et non 200 : le bouton doit se voir refuser. `refuses` dit lequel
+        // et pourquoi — le lot n'échoue pas « en bloc », il est motivé ligne à ligne.
+        return jsonError("audits_non_rediges", 422, { validated: 0, refuses }, cors);
+      }
 
       const { error } = await sc
         .from("audits")
         .update({ statut: "ready", updated_at: new Date().toISOString() })
-        .in("id", auditIds);
+        .in(
+          "id",
+          aValider.map((v) => v.auditId),
+        );
       if (error) return jsonError(error.message, 500, {}, cors);
 
+      // Le journal ne consigne QUE ce qui a été validé : un événement
+      // `validate_audit` sur un audit refusé rendrait l'historique inutilisable
+      // pour comprendre ce qui est réellement parti chez le prospect.
       await Promise.all(
-        allowed.map((o) =>
+        aValider.map((v) =>
           logPipelineStep({
             agentId: user.id,
-            entrepriseId: Number(o.entreprise_id),
+            entrepriseId: v.entrepriseId,
             action: "validate_audit",
-            metadata: { opportunite_id: o.id },
+            metadata: { opportunite_id: v.oppId, audit_id: v.auditId },
           }),
         ),
       );
-      return json({ ok: true, validated: auditIds.length }, { headers: cors });
+      return json({ ok: true, validated: aValider.length, refuses }, { headers: cors });
     }
 
     // action === "create" — on saute les opportunités qui ont déjà un audit.

@@ -73,11 +73,19 @@ export const SIGNAL_LABEL: Record<DemarchageSignal, string> = {
 };
 
 /**
- * Combien de tâches manuelles de chaque canal une journée peut absorber.
+ * Combien de tâches manuelles de chaque canal une journée peut absorber, À
+ * DÉFAUT de réglage propre à l'agent.
  *
  * Ce sont des cadences de travail, pas des limites techniques : elles disent
  * « voilà une journée tenable », et c'est ce qui permet d'annoncer un nombre
  * honnête pour aujourd'hui au lieu de déverser toute la file.
+ *
+ * CE N'EST PLUS UN PLAFOND EN DUR. Ces trois chiffres additionnés font
+ * 60 entreprises par jour ; une campagne peut en viser davantage (100 par jour
+ * du 17 au 26 août 2026), et un plafond en dur ne fait alors pas « travailler
+ * moins » : il fait disparaître de la file le travail décidé. L'agent porte
+ * donc son propre réglage (`agent_settings.quotas_demarchage`), et ces
+ * valeurs-ci restent le repli — cf. `normaliseQuotas`.
  *
  * Un canal absent de cette table n'a pas de plafond — c'est le cas de
  * l'attente de réponse, qui ne coûte aucun effort : déclarer qu'un prospect a
@@ -91,6 +99,65 @@ export const DAILY_QUOTA: Readonly<Record<string, number>> = {
 
 /** Les canaux plafonnés, dans l'ordre où la file les présente. */
 export const QUOTA_KINDS: readonly string[] = ["call", "whatsapp", "linkedin"] as const;
+
+/** Une cadence quotidienne, canal par canal. */
+export type QuotasDemarchage = Readonly<Record<string, number>>;
+
+/**
+ * Au-delà, ce n'est plus une cadence : c'est une saisie fautive (un zéro de
+ * trop) ou une unité qui n'est pas la bonne. La file du serveur ne remonte de
+ * toute façon pas plus de tâches que ça.
+ */
+const QUOTA_MAX = 1000;
+
+/**
+ * Le réglage lu en base (`agent_settings.quotas_demarchage`, jsonb libre),
+ * ramené à une cadence utilisable — ou `null` s'il n'y a rien d'exploitable.
+ *
+ * POURQUOI VALIDER PLUTÔT QUE FAIRE CONFIANCE
+ * Ce jsonb n'a pas de forme garantie : personne n'empêche `{"call": 0}`,
+ * `{"call": "vingt"}` ou un tableau d'y atterrir. Or un quota nul ou négatif ne
+ * fait pas « moins d'appels », il fait DISPARAÎTRE la journée : `planTasks`
+ * repousserait chaque tâche au lendemain, indéfiniment. Une valeur aberrante
+ * doit donc coûter le retour au défaut, jamais une file vide un matin de
+ * campagne.
+ *
+ * Deux conséquences voulues :
+ *   · le réglage est fusionné SUR le défaut — un canal absent du jsonb garde
+ *     son plafond habituel, on ne déplafonne pas un canal par omission ;
+ *   · une valeur textuelle mais numérique (`"40"`, ce que donne un jsonb saisi
+ *     à la main) est acceptée : la refuser punirait la bonne intention.
+ */
+export function normaliseQuotas(brut: unknown): QuotasDemarchage | null {
+  if (!brut || typeof brut !== "object" || Array.isArray(brut)) return null;
+  const source = brut as Record<string, unknown>;
+
+  const retenus: Record<string, number> = {};
+  for (const kind of QUOTA_KINDS) {
+    const valeur = source[kind];
+    const n =
+      typeof valeur === "number" ? valeur : typeof valeur === "string" ? Number(valeur.trim()) : NaN;
+    if (!Number.isFinite(n)) continue;
+    const entier = Math.floor(n);
+    if (entier < 1 || entier > QUOTA_MAX) continue;
+    retenus[kind] = entier;
+  }
+
+  return Object.keys(retenus).length > 0 ? { ...DAILY_QUOTA, ...retenus } : null;
+}
+
+/**
+ * La cadence à appliquer, quoi qu'on ait reçu — `meta.quotas` de
+ * `/api/agent/tasks`, ou n'importe quel jsonb.
+ *
+ * Deux lecteurs s'en servent : le plan (`planTasks`) et le rail qui affiche
+ * « 3 / 20 ». Ils DOIVENT lire le même chiffre, sinon l'écran annonce une
+ * cadence que la file ne suit pas — et c'est invisible, parce que les deux
+ * nombres sont plausibles. D'où cette fonction plutôt qu'un repli recopié de
+ * chaque côté : le repli est une règle, pas un détail d'affichage.
+ */
+export const cadenceEffective = (brut: unknown): QuotasDemarchage =>
+  normaliseQuotas(brut) ?? DAILY_QUOTA;
 
 /**
  * Les canaux dont une discussion ouverte échappe au quota.
@@ -110,8 +177,15 @@ export const QUOTA_KINDS: readonly string[] = ["call", "whatsapp", "linkedin"] a
  */
 const CONVERSATION_KINDS: readonly string[] = ["whatsapp", "linkedin"] as const;
 
-/** Le plafond d'un canal, ou `null` quand il n'en a pas. */
-export const quotaOf = (kind: string): number | null => DAILY_QUOTA[kind] ?? null;
+/**
+ * Le plafond d'un canal, ou `null` quand il n'en a pas.
+ *
+ * `quotas` est la cadence effective de l'agent (cf. `normaliseQuotas`). Un
+ * canal qu'elle ne cite pas retombe sur le défaut plutôt que sur « aucun
+ * plafond » : un réglage partiel règle ce qu'il nomme, rien d'autre.
+ */
+export const quotaOf = (kind: string, quotas: QuotasDemarchage = DAILY_QUOTA): number | null =>
+  quotas[kind] ?? DAILY_QUOTA[kind] ?? null;
 
 /**
  * Cette tâche fait-elle partie d'une discussion en cours ?
@@ -221,6 +295,13 @@ export type DemarchagePlanOptions = {
    * suivante viendrait remplir, et « aujourd'hui » afficherait éternellement 20.
    */
   doneToday?: Readonly<Record<string, number>>;
+  /**
+   * La cadence de CET agent, telle que `/api/agent/tasks` la renvoie dans
+   * `meta.quotas`. Absente, on retombe sur `DAILY_QUOTA` : le plan d'un écran
+   * qui n'a pas encore reçu la réponse reste celui d'hier, jamais une file
+   * vide.
+   */
+  quotas?: QuotasDemarchage;
 };
 
 /** Une journée du plan — c'est exactement un onglet de la file. */
@@ -250,7 +331,12 @@ export type DemarchageDay<T> = {
  */
 export function planTasks<T extends DemarchageTaskLike>(
   tasks: T[],
-  { now = new Date(), timeZone = AGENT_TIMEZONE, doneToday = {} }: DemarchagePlanOptions = {},
+  {
+    now = new Date(),
+    timeZone = AGENT_TIMEZONE,
+    doneToday = {},
+    quotas = DAILY_QUOTA,
+  }: DemarchagePlanOptions = {},
 ): Array<DemarchageDay<T>> {
   /** Les tâches de chaque décalage de jour, avant mise en forme. */
   const parJour = new Map<number, T[]>();
@@ -284,7 +370,7 @@ export function planTasks<T extends DemarchageTaskLike>(
 
   for (const task of aPlanifier) {
     const kind = task.kind ?? "";
-    const quota = quotaOf(kind);
+    const quota = quotaOf(kind, quotas);
 
     // Canal sans plafond (l'attente de réponse) : rien à étaler, et rien à
     // reporter non plus — déclarer une réponse prend deux secondes, la clôture

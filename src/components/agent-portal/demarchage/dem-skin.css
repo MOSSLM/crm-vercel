@@ -593,3 +593,88 @@
    numéro d'étape est donc traité comme une information de premier plan, pas
    comme la mention grise qu'il était. */
 .dm-skin .dm-tk .st.stp{background:var(--accent-tint);color:var(--accent-2);font-weight:600}
+
+/* ── « Une entreprise rappelle… » ─────────────────────────────────────────
+   Le bouton ouvre la recherche, et il est le PREMIER élément du rail : quand
+   le téléphone sonne, retrouver la fiche passe avant le compteur du jour. Le
+   raccourci est imprimé dessus — ⌘K et ⌘J étant déjà pris par le menu de
+   commandes et le cockpit RDV, c'est « / », une seule touche. */
+.dm-skin .dm-rech-b{appearance:none;display:flex;align-items:center;gap:7px;width:100%;
+  height:34px;padding:0 10px;border:0;border-bottom:1px solid var(--border);
+  background:var(--surface);color:var(--text-2);font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.dm-skin .dm-rech-b:hover{background:var(--hover);color:var(--text)}
+.dm-skin .dm-rech-b .l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-rech-b kbd,.dm-skin .dm-rech .ft kbd{font-family:var(--font-mono);font-size:9.5px;
+  border:1px solid var(--border-2);border-radius:4px;padding:1px 5px;color:var(--text-3);background:var(--surface-2)}
+
+/* La recherche elle-même : une couche au-dessus de l'écran, pas une page.
+   On ne quitte pas le démarchage pour répondre au téléphone — la file reste
+   derrière, et Échap y revient sans avoir rien changé. */
+.dm-skin .dm-rech{position:fixed;inset:0;z-index:60;background:rgba(18,40,68,.34);
+  display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;backdrop-filter:blur(2px)}
+.dark .dm-skin .dm-rech{background:rgba(0,0,0,.55)}
+.dm-skin .dm-rech .pan{width:min(620px,100%);max-height:76vh;display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--border-2);border-radius:14px;box-shadow:var(--shadow-pop);overflow:hidden}
+.dm-skin .dm-rech .hd{display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid var(--border);color:var(--text-3)}
+.dm-skin .dm-rech .hd input{flex:1;min-width:0;border:0;background:transparent;outline:none;
+  font:inherit;font-size:15px;color:var(--text)}
+.dm-skin .dm-rech .hd input::placeholder{color:var(--text-4)}
+.dm-skin .dm-rech .rs{flex:1;min-height:0;overflow:auto;padding:5px}
+.dm-skin .dm-rech .r{appearance:none;width:100%;display:flex;align-items:center;gap:10px;
+  padding:8px 9px;border:0;border-radius:9px;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:left}
+.dm-skin .dm-rech .r[aria-selected="true"]{background:var(--accent-tint)}
+.dm-skin .dm-rech .r .bd{flex:1;min-width:0}
+.dm-skin .dm-rech .r .n{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;
+  letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* La pastille « qualifiée » : un point, pas un mot. Sur une liste de douze
+   lignes lue en trois secondes, un mot de plus par ligne se lit moins vite. */
+.dm-skin .dm-rech .r .n .q{width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.dm-skin .dm-rech .r .m{display:block;font-family:var(--font-mono);font-size:10.5px;color:var(--text-3);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-rech .r .tg{font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);
+  background:var(--bg-2);border-radius:5px;padding:2px 6px;flex-shrink:0}
+/* L'état « rien trouvé » DIT QUOI FAIRE. Muet, il laisse conclure que la fiche
+   n'existe pas, alors que c'est presque toujours la frappe qui ne colle pas. */
+.dm-skin .dm-rech .vide{padding:16px 14px;font-size:12px;line-height:1.6;color:var(--text-2)}
+.dm-skin .dm-rech .vide b{display:block;font-size:13px;color:var(--text);margin-bottom:3px}
+.dm-skin .dm-rech .vide a{color:var(--accent);text-decoration:underline}
+.dm-skin .dm-rech .ft{display:flex;align-items:center;gap:14px;padding:8px 13px;border-top:1px solid var(--border);
+  background:var(--surface-2);font-size:11px;color:var(--text-3)}
+.dm-skin .dm-rech .ft span{display:inline-flex;align-items:center;gap:4px}
+
+/* ── La cohorte, troisième dimension de la file ───────────────────────────
+   Ni un canal ni un signal : une propriété de l'entreprise, figée le jour du
+   démarchage. Elle a donc sa barre, avec son propre « toutes », et une palette
+   qui n'emprunte rien aux trois signaux (vert/orange/rouge) — sinon on lirait
+   une cohorte comme une urgence. */
+.dm-skin .dm-filt.coh{padding:6px 10px}
+.dm-skin .dm-filt.coh .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--text-3);margin-right:1px}
+.dm-skin .dm-chip[data-coh="A_site_faible"]{border-color:rgba(14,147,166,.45);color:var(--info)}
+.dm-skin .dm-chip[data-coh="A_site_faible"][aria-pressed="true"]{background:var(--info);border-color:var(--info);color:#fff}
+.dm-skin .dm-chip[data-coh="B_sans_site"]{border-color:rgba(122,90,224,.45);color:var(--magic)}
+.dm-skin .dm-chip[data-coh="B_sans_site"][aria-pressed="true"]{background:var(--magic);border-color:var(--magic);color:#fff}
+.dm-skin .dm-tk .st.coh[data-coh="A_site_faible"]{background:var(--info-tint);color:var(--info);font-weight:600}
+.dm-skin .dm-tk .st.coh[data-coh="B_sans_site"]{background:var(--magic-tint);color:var(--magic);font-weight:600}
+
+/* ── L'appel à froid ──────────────────────────────────────────────────────
+   Cent par jour pendant la campagne : ce n'est pas le cas dégradé d'une
+   séquence, c'est le cas ordinaire. La ligne le dit (« à froid »), et la bande
+   qui remplace la frise dit l'accroche de la cohorte — la seule chose qu'on
+   ait besoin de relire en composant le numéro. */
+.dm-skin .dm-tk .st.froid{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
+.dark .dm-skin .dm-tk .st.froid{color:var(--warn)}
+.dm-skin .dm-seq.froid{border-color:var(--border-2)}
+.dm-skin .dm-froid-arg{display:flex;align-items:flex-start;gap:8px;padding:10px 13px;
+  font-size:12px;line-height:1.5;color:var(--text-2)}
+.dm-skin .dm-froid-arg .ico-sm{margin-top:2px;color:var(--warn);flex-shrink:0}
+
+/* ── La fiche ouverte hors file ───────────────────────────────────────────
+   Elle rappelle, donc elle n'a rien de prévu : la carte ne propose aucune
+   issue à cocher, seulement de quoi tenir la conversation en cours — les
+   numéros connus (le décideur d'abord, le standard ensuite) et où en est
+   l'affaire. */
+.dm-skin .dm-hf-tel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dm-skin .dm-hf-tel .l{display:inline-flex;align-items:center;gap:4px}
+.dm-skin .dm-hf-tel .q{font-size:11.5px;color:var(--text-3)}
+.dm-skin .dm-hf-et{display:flex;align-items:center;gap:6px;flex-wrap:wrap}

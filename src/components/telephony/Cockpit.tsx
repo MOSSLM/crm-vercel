@@ -11,6 +11,9 @@ import { CallJournal } from "./CallJournal";
 import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
 import { LeadMagnetsPanel } from "./LeadMagnetsPanel";
 import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
+// La table des issues vit hors de ce fichier : la route qui les journalise et
+// l'entonnoir qui les recompte lisent la même — cf. `dispositions.ts`.
+import { DISPOSITIONS_APPEL } from "@/lib/telephony/dispositions";
 
 interface QueueItem {
   oppId: string;
@@ -22,15 +25,6 @@ interface QueueItem {
   /** Alimente l'envoi d'email du panneau lead magnets. */
   email: string | null;
 }
-
-const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
-  { id: "rdv", label: "RDV pris", kind: "magic" },
-  { id: "interesse", label: "Intéressé", kind: "ok" },
-  { id: "rappel", label: "À rappeler", kind: "warn" },
-  { id: "repondeur", label: "Répondeur", kind: "info" },
-  { id: "absent", label: "Pas de réponse", kind: "muted" },
-  { id: "refus", label: "Pas intéressé", kind: "danger" },
-];
 
 const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
 function colorOf(name: string): string {
@@ -96,11 +90,28 @@ export function Cockpit() {
 
   const logOutcome = async (disposition: string) => {
     if (!current) return;
-    await authedFetch("/api/telephony/cockpit/outcome", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ opportunite_id: current.oppId, disposition, note: note.trim() || null }),
-    }).catch(() => {});
+    // LE `.catch(() => {})` MUET A COÛTÉ DES SEMAINES D'HISTORIQUE. La route
+    // écrivait dans une table inexistante ; elle a été corrigée, mais l'écran
+    // aurait continué de dire « Issue enregistrée » à chaque 500, parce qu'un
+    // 4xx/5xx RÉSOUT la promesse de `fetch` — il ne la rejette pas. On lit donc
+    // `res.ok`, et un échec laisse la fiche dans la file plutôt que de la
+    // marquer traitée : à cent appels par jour, une note perdue est une note
+    // qu'on ne repassera jamais.
+    let ok = false;
+    try {
+      const res = await authedFetch("/api/telephony/cockpit/outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunite_id: current.oppId, disposition, note: note.trim() || null }),
+      });
+      ok = res.ok;
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      toast.error("Issue non enregistrée — la fiche reste dans la file.");
+      return;
+    }
     setDone((d) => new Set(d).add(current.oppId));
     toast.success("Issue enregistrée");
     setNote("");
@@ -281,7 +292,7 @@ export function Cockpit() {
                 <div className="ck-dispo-bar">
                   <div className="lb">Marquer l'issue</div>
                   <div className="chips">
-                    {DISPOSITIONS.map((d) => (
+                    {DISPOSITIONS_APPEL.map((d) => (
                       <button
                         key={d.id}
                         type="button"

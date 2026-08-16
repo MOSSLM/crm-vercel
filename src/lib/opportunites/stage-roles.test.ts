@@ -35,6 +35,25 @@ describe("stageRole", () => {
     expect(stageRole("Devis perdu")).toBe("perdu");
   });
 
+  // LE TEST QUI GARDE LE BUG FERMÉ. « Lost » est le nom de l'étape de perte dans
+  // la majorité des pipelines en production ; tant qu'il tombait en « autre », la
+  // vue fondue affichait les affaires perdues dans une colonne d'avancement et
+  // l'entonnoir les comptait comme vivantes. On le nomme donc à part, sous toutes
+  // les formes vues en base, pour qu'une réécriture du motif ne le reperde pas.
+  it("reconnaît « Lost » comme une perte, pas comme une étape d'avancement", () => {
+    expect(stageRole("Lost")).toBe("perdu");
+    expect(stageRole("LOST")).toBe("perdu");
+    expect(stageRole("Closed Lost")).toBe("perdu");
+    expect(stageRole("Lost / Perdu")).toBe("perdu");
+    expect(stageRole("Deal lost")).toBe("perdu");
+  });
+
+  it("classe aussi les fins négatives françaises", () => {
+    expect(stageRole("Refusé")).toBe("perdu");
+    expect(stageRole("Annulé")).toBe("perdu");
+    expect(stageRole("Abandonné")).toBe("perdu");
+  });
+
   it("retombe sur « autre » plutôt que de deviner", () => {
     expect(stageRole("Étape maison")).toBe("autre");
     expect(stageRole(null)).toBe("autre");

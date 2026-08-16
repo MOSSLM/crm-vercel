@@ -157,7 +157,9 @@ function projectByEnt(projects: ProjRow[]): Map<number, NonNullable<ProjRow>> {
  * `SITE_REQUIRED_WITH_PROJECT`, qu'elle doit de toute façon réévaluer à chaque
  * frappe pour suivre la saisie — un verdict figé au chargement ne servirait qu'à
  * introduire une seconde vérité. Ces règles et `missingForSite` produisent
- * exactement les mêmes libellés ; `missing-for-site.test.ts` compare les deux.
+ * exactement les mêmes libellés — à ceci près que l'écran porte AUSSI des champs
+ * facultatifs, qu'il sait saisir et que personne ne réclame (le logo).
+ * `missing-for-site.test.ts` compare les deux listes sur ce partage.
  */
 export const GET = withAuth({}, async ({ req, cors }) => {
   const url = new URL(req.url);

@@ -92,7 +92,12 @@ export async function GET(req: Request) {
           .eq("id", row.opportunite_id)
           .maybeSingle();
 
-        await db.from("opportunite_tasks").insert({
+        // `throw` et non `return` : l'échec doit tomber dans le `catch` du
+        // dessous, qui incrémente `attempts` et refera l'action au prochain
+        // passage. Sans ce contrôle, la ligne était marquée `executed` alors
+        // que rien n'avait été écrit — et une action de workflow ne se rejoue
+        // jamais deux fois.
+        const { error: tacheErr } = await db.from("opportunite_tasks").insert({
           opportunite_id: row.opportunite_id,
           entreprise_id:  opp?.entreprise_id ?? null,
           titre:          actionParams.titre ?? "Tâche automatique",
@@ -101,12 +106,36 @@ export async function GET(req: Request) {
           due_date:       new Date().toISOString(),
           workflow_id:    row.workflow_id,
         });
+        if (tacheErr) throw new Error(`opportunite_tasks: ${tacheErr.message}`);
       } else if (actionType === "add_note") {
-        await db.from("opportunite_notes").insert({
+        // CETTE ACTION N'A JAMAIS RIEN ÉCRIT. Elle visait
+        // `public.opportunite_notes`, qui n'existe pas dans cette base
+        // (`to_regclass` vaut NULL, vérifié le 16/08/2026) : PostgREST rendait
+        // une erreur que personne ne lisait, et la ligne passait `executed`.
+        // Toute note programmée par un workflow est perdue depuis l'origine.
+        //
+        // On écrit là où les notes VIVENT réellement : `email_logs` en
+        // `channel:'note'`, la forme que posent déjà `PATCH /api/agent/tasks` et
+        // l'issue d'appel du cockpit, et la seule que `/api/agent/history` sait
+        // relire. `entreprise_id` n'est pas facultatif — l'historique filtre sur
+        // lui, une note sans entreprise serait écrite puis jamais relue.
+        const { data: opp } = await db
+          .from("opportunites")
+          .select("entreprise_id")
+          .eq("id", row.opportunite_id)
+          .maybeSingle();
+
+        const { error: noteErr } = await db.from("email_logs").insert({
+          channel:        "note",
+          entreprise_id:  opp?.entreprise_id ?? null,
           opportunite_id: row.opportunite_id,
-          theme:          "autre",
-          contenu:        actionParams.content ?? "",
+          outcome:        "other",
+          to_email:       "",
+          subject:        "Note automatique",
+          body_text:      actionParams.content ?? "",
+          status:         "sent",
         });
+        if (noteErr) throw new Error(`email_logs: ${noteErr.message}`);
       }
 
       await db

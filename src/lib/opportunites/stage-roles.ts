@@ -42,7 +42,14 @@ export interface StageLike {
 export function stageRole(nom: string | null | undefined): StageRole {
   const n = (nom ?? "").toLowerCase();
   if (!n) return "autre";
-  if (/perdu|abandon|refus|annul/.test(n)) return "perdu";
+  // « LOST » EST UNE PERTE. C'est le nom que l'étape porte dans la majorité des
+  // pipelines en production (les pipelines importés n'ont jamais été traduits),
+  // et le motif ne le connaissait pas : l'étape tombait en `autre`, donc dans la
+  // vue fondue elle prenait une COLONNE D'AVANCEMENT en fin de file et
+  // l'entonnoir comptait les affaires perdues parmi celles qui progressent.
+  // Toute la lecture du démarchage repose sur cette ligne — d'où le test qui la
+  // nomme explicitement (`stage-roles.test.ts`).
+  if (/perdu|abandon|refus|annul|lost/.test(n)) return "perdu";
   if (/sign|gagn|acompte|vendu|closed won/.test(n)) return "signe";
   if (/rdv|rendez/.test(n)) return "rdv";
   if (/propo|devis|offre|estimation/.test(n)) return "propo";

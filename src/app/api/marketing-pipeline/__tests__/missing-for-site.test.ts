@@ -3,13 +3,14 @@ import { missingForSite } from "../_board";
 
 /**
  * Ce que le board considère comme « prêt pour créer le site ». La règle tenue
- * ici : tout ce que la page AFFICHE est obligatoire — logo et chiffres clés
- * compris — sinon la démo sort avec des blocs vides.
+ * ici : tout ce que la page affiche SANS REPLI est obligatoire — les chiffres
+ * clés, par exemple — sinon la démo sort avec des blocs vides.
  *
- * Avec une limite que la première version ignorait : une exigence doit être
- * SATISFIABLE. Réclamer les avis Google d'une entreprise qui n'a pas de fiche
+ * Avec deux limites que la première version ignorait. Une exigence doit être
+ * SATISFIABLE : réclamer les avis Google d'une entreprise qui n'a pas de fiche
  * Google (1210 sur 2797) ou zéro avis (217) laissait sa fiche définitivement
- * incomplète, sans autre issue que d'inventer une note.
+ * incomplète, sans autre issue que d'inventer une note. Et une exigence tombe
+ * quand le repli devient correct — c'est ce qui est arrivé au logo.
  *
  * Doit rester aligné sur `SITE_REQUIRED` (`components/marketing-pipeline/
  * required-fields.ts`) — le dernier test de ce fichier compare les deux listes
@@ -66,12 +67,20 @@ describe("missingForSite", () => {
     expect(missingForSite(ent(), project())).toEqual([]);
   });
 
-  it("exige le logo — le site l'affiche en en-tête", () => {
-    expect(missingForSite(ent({ logo_url: null }), project({ logo_url: null }))).toEqual(["Logo"]);
+  it("n'exige plus le logo — son absence a désormais un rendu correct", () => {
+    // 296 des 300 entreprises de la cohorte de démarchage n'ont aucun logo. Ce
+    // n'est pas un oubli de saisie : elles n'ont jamais payé de graphiste.
+    // `hydrate-logo` compose leur nom à la place, dans la police du design —
+    // l'en-tête est juste, donc il n'y a plus rien à réclamer.
+    expect(missingForSite(ent({ logo_url: null }), project({ logo_url: null }))).toEqual([]);
+    expect(missingForSite(ent({ logo_url: "" }), project({ logo_url: "" }))).toEqual([]);
   });
 
-  it("accepte le logo de l'entreprise quand le projet n'en a pas", () => {
+  it("un logo renseigné ne rend pas la fiche moins complète", () => {
+    // Le champ n'a pas disparu et un vrai logo gagne toujours au rendu : il a
+    // seulement cessé d'être un verrou.
     expect(missingForSite(ent({ logo_url: "https://cdn/l.png" }), project({ logo_url: null }))).toEqual([]);
+    expect(missingForSite(ent({ logo_url: null }), project({ logo_url: "https://cdn/l.png" }))).toEqual([]);
   });
 
   it("exige les trois chiffres clés obligatoires", () => {
@@ -189,11 +198,32 @@ describe("alignement avec les règles de l'écran", () => {
     return found;
   };
 
+  /**
+   * Les libellés que l'écran peut RÉCLAMER — pas ceux qu'il sait saisir.
+   *
+   * Les deux listes ont cessé d'être la même chose le jour où le logo est devenu
+   * facultatif : son champ reste dans `SITE_REQUIRED_WITH_PROJECT`, parce qu'une
+   * règle est le seul moyen qu'a un champ d'exister à l'écran et que c'est le
+   * seul téléversement de logo du CRM — mais plus rien ne le réclame, ici comme
+   * là-bas. Le filtre lit ce drapeau au lieu de nommer le champ : une exception
+   * écrite en dur aurait survécu à la règle qu'elle excuse.
+   */
+  const labelsReclamesParEcran = (): string[] =>
+    SITE_REQUIRED_WITH_PROJECT.filter((r) => !r.facultatif).map((r) => r.label);
+
   it("produit exactement les libellés de l'écran", () => {
     // Lus sur les règles de l'écran elles-mêmes. Toute divergence doit casser
     // ici, pas en production.
-    const ecran = new Set(SITE_REQUIRED_WITH_PROJECT.map((r) => r.label));
-    expect([...labelsFromApi()].sort()).toEqual([...ecran].sort());
+    expect([...labelsFromApi()].sort()).toEqual([...labelsReclamesParEcran()].sort());
+  });
+
+  it("le logo est saisissable à l'écran, réclamé par personne", () => {
+    // Les deux moitiés de la décision, tenues ensemble : supprimer la règle
+    // emporterait le téléversement, la rendre obligatoire rouvrirait un verrou
+    // que 296 des 300 entreprises de la cohorte ne peuvent pas lever.
+    expect(SITE_REQUIRED_WITH_PROJECT.some((r) => r.field === "lm_logo_url")).toBe(true);
+    expect(labelsReclamesParEcran()).not.toContain("Logo");
+    expect(labelsFromApi().has("Logo")).toBe(false);
   });
 
   it("ne réclame plus « Nombre d'avis » nulle part", () => {

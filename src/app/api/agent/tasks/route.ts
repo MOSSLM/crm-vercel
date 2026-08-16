@@ -10,6 +10,7 @@ import { daysSince, isMissedSignal } from "@/lib/analytics-radar/intent";
 import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeline/stages";
 import { readReplies } from "@/lib/automations/week";
 import { stepIsInConversation } from "@/lib/agent-portal/conversation";
+import { DAILY_QUOTA, normaliseQuotas } from "@/lib/agent-portal/demarchage-buckets";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
@@ -88,33 +89,93 @@ const stepViews = (steps: SequenceStep[]): StepView[] =>
     label: s.label?.trim() || channelOf(s.kind).label,
   }));
 
-// Démarchage queue: the pending manual tasks for the prospects this agent
-// owns, STRICTLY scoped to prospects actually enrolled on a sequence
-// (`enrollment_id IS NOT NULL`) — cold-call tasks seeded without a sequence
-// (fresh assignment, ad-hoc workflow actions) are deliberately excluded, per
-// product decision: this page only shows "entreprises en séquence".
-// Automated channels (sequence emails) are run centrally by the ticker, so
-// they never produce a manual task here.
-export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
+/**
+ * Les deux cohortes de la campagne d'août 2026 (`entreprises.cohorte_demarchage`).
+ * A = entreprises AVEC un site faible, B = entreprises SANS site : c'est la
+ * comparaison que toute la semaine sert à trancher.
+ */
+const COHORTES: readonly string[] = ["A_site_faible", "B_sans_site"] as const;
+
+/**
+ * La cohorte portée par l'entreprise jointe.
+ *
+ * L'embed postgrest rend tantôt un objet, tantôt un tableau d'un élément selon
+ * la façon dont la relation est inférée : les deux formes se lisent ici, comme
+ * ailleurs dans la route pour `owner_id`.
+ */
+const cohorteDe = (entreprise: unknown): string | null => {
+  const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
+    | { cohorte_demarchage?: unknown }
+    | null
+    | undefined;
+  const valeur = e?.cohorte_demarchage;
+  return typeof valeur === "string" && valeur ? valeur : null;
+};
+
+// La file de démarchage : les tâches manuelles en attente sur les prospects de
+// cet agent, EN SÉQUENCE OU NON.
+//
+// POURQUOI L'APPEL À FROID EST ENTRÉ DANS LA FILE
+// Cette route a longtemps filtré `enrollment_id IS NOT NULL`, au nom d'une
+// décision produit assumée : « cet écran ne montre que les entreprises en
+// séquence ». Cette décision supposait que le démarchage COMMENCE par une
+// inscription. Ce n'est plus vrai : à partir du 17 août 2026, cent entreprises
+// par jour sont assignées et appelées à froid, et l'inscription en séquence ne
+// vient qu'APRÈS le premier contact. Le filtre ne cachait donc plus un cas
+// marginal — il cachait le mode de travail principal (65 tâches d'appel
+// invisibles en production le jour où on l'a mesuré), et aucune des cent
+// entreprises du jour n'aurait jamais paru dans le cockpit.
+//
+// Une tâche à froid n'a ni séquence, ni étape, ni réponse enregistrée : elle
+// sort d'ici avec `sequence: null`, `hors_sequence: true`, et n'est JAMAIS
+// « en discussion » (cf. `enDiscussion`). Elle consomme en revanche le quota du
+// jour au même titre qu'une relance : c'est le même temps d'agent.
+//
+// `?froid=0` restitue l'ancien comportement — utile pour comparer une file à
+// l'autre, ou pour une séance consacrée aux seules relances.
+// `?cohorte=A_site_faible|B_sans_site` restreint la file à une cohorte de la
+// campagne : sans ce filtre, les deux cohortes se mélangent et il devient
+// impossible de les comparer au même âge.
+//
+// Les canaux automatisés (emails de séquence) sont joués centralement par le
+// ticker : ils ne produisent jamais de tâche manuelle ici.
+export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) => {
   const sc = getServiceClient();
 
-  const { data, error } = await sc
+  const params = new URL(req.url).searchParams;
+  // Le froid est le défaut : il faut le demander explicitement pour le perdre.
+  const avecFroid = params.get("froid") !== "0";
+  // Vocabulaire fermé : une valeur inconnue (faute de frappe, vieux lien) est
+  // ignorée plutôt que passée à Postgres, qui rendrait une file vide sans dire
+  // pourquoi. Une file trop large se voit ; une file vide se croit.
+  const cohorteDemandee = params.get("cohorte");
+  const cohorte = COHORTES.includes(cohorteDemandee ?? "") ? cohorteDemandee : null;
+
+  let filesQuery = sc
     .from("prospection_tasks")
     .select(
       "id, kind, status, title, due_at, contact_id, entreprise_id, opportunite_id, payload, " +
         "enrollment_id, automation_id, step_id, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage)",
     )
     .eq("entreprise.owner_id", user.id)
     // `snoozed` reste dans la file : c'est une tâche « pas le bon moment »
     // replanifiée (`due_at` déplacé), pas une tâche terminée. Sans elle, une
     // relance disparaîtrait de la frise au lieu de reparaître le jour choisi.
     .in("status", ["pending", "snoozed"])
-    .in("kind", ["call", "whatsapp", "linkedin"])
-    .not("enrollment_id", "is", null)
+    .in("kind", ["call", "whatsapp", "linkedin"]);
+  if (!avecFroid) filesQuery = filesQuery.not("enrollment_id", "is", null);
+  if (cohorte) filesQuery = filesQuery.eq("entreprise.cohorte_demarchage", cohorte);
+
+  const { data, error } = await filesQuery
     .order("due_at", { ascending: true })
-    .limit(500);
+    // Le plafond a doublé avec l'entrée du froid : cent entreprises par jour
+    // pendant dix jours, plus les relances de la cohorte précédente, dépassent
+    // les 500 d'avant. L'ordre est croissant sur l'échéance, donc ce qui saute
+    // au-delà de la limite est le plus lointain — le plan n'y arriverait pas de
+    // la journée de toute façon.
+    .limit(1000);
 
   if (error) return jsonError(error.message, 500, {}, cors);
   const tasks = (data ?? []) as unknown as TaskRow[];
@@ -124,33 +185,55 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   // l'inscription (`hold_reason = 'awaiting_reply'`) et attend qu'un humain
   // déclare que le prospect a répondu. Sans cette requête, ces entreprises
   // seraient invisibles ici — et personne ne débloquerait la séquence.
-  const { data: waitRows } = await sc
+  let attentesQuery = sc
     .from("sequence_enrollments")
     .select(
       "id, automation_id, current_step, contact_id, entreprise_id, opportunite_id, updated_at, entered_at, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage)",
     )
     .eq("entreprise.owner_id", user.id)
     .eq("status", "active")
-    .eq("hold_reason", "awaiting_reply")
-    .limit(200);
+    .eq("hold_reason", "awaiting_reply");
+  if (cohorte) attentesQuery = attentesQuery.eq("entreprise.cohorte_demarchage", cohorte);
+  const { data: waitRows } = await attentesQuery.limit(200);
   const waitEnrollments = (waitRows ?? []) as unknown as WaitEnrollmentRow[];
 
   // ── Ce qui a été bouclé aujourd'hui ────────────────────────────────────
   // Lu ICI, et pas en fin de route, parce que le classement premier contact /
   // discussion a besoin des mêmes séquences et des mêmes inscriptions que la
   // file : un seul aller-retour pour les deux.
+  //
+  // Le froid compte ICI AUSSI, et sans filtre de cohorte. Ces tâches-là
+  // alimentent `done_today_by_kind`, c'est-à-dire la part de cadence DÉJÀ
+  // consommée aujourd'hui : vingt appels à froid passés ce matin occupent
+  // vingt places de la journée, qu'ils viennent d'une séquence ou non, et que
+  // l'écran regarde la cohorte A ou l'ensemble. Les oublier rouvrirait une
+  // journée déjà pleine.
   const todayStart = dayStartIso();
-  const { data: doneRows } = await sc
+  let doneQuery = sc
     .from("prospection_tasks")
     .select("kind, step_id, automation_id, enrollment_id, entreprise:entreprises!inner(owner_id)")
     .eq("entreprise.owner_id", user.id)
     .eq("status", "done")
-    .not("enrollment_id", "is", null)
-    .gte("done_at", todayStart)
-    .limit(1000);
+    .gte("done_at", todayStart);
+  if (!avecFroid) doneQuery = doneQuery.not("enrollment_id", "is", null);
+  const { data: doneRows } = await doneQuery.limit(1000);
   const done = (doneRows ?? []) as unknown as DoneRow[];
+
+  // ── La cadence de CET agent ────────────────────────────────────────────
+  // `quotas_demarchage` est un jsonb libre, souvent null : `normaliseQuotas`
+  // le ramène à une cadence utilisable, ou rend `null` s'il n'y a rien
+  // d'exploitable — un réglage fautif coûte le défaut, jamais une file vide.
+  // Une lecture qui échoue (colonne absente, table pas encore migrée) tombe
+  // dans le même repli : la file du jour ne dépend pas de ce réglage.
+  const { data: settingsRow } = await sc
+    .from("agent_settings")
+    .select("quotas_demarchage")
+    .eq("agent_id", user.id)
+    .maybeSingle();
+  const reglage = (settingsRow as { quotas_demarchage?: unknown } | null)?.quotas_demarchage;
+  const quotas = normaliseQuotas(reglage) ?? DAILY_QUOTA;
 
   // Étapes de séquence : un seul aller-retour pour TOUTES les automatisations
   // citées, qu'elles viennent d'une tâche, d'une attente ou d'une tâche bouclée
@@ -236,6 +319,12 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     step_id: string | null;
     enrollment_id: string | null;
   }): boolean => {
+    // Une tâche à froid n'a pas d'inscription : ni séquence, ni étape, ni
+    // réponse enregistrée. Elle ne peut donc pas être une discussion — et il
+    // faut le dire ici, sinon elle échapperait au quota du jour (les canaux
+    // écrits en discussion n'ont pas de plafond) et la cadence ne voudrait
+    // plus rien dire dès la première journée d'appels à froid.
+    if (!row.enrollment_id) return false;
     const auto = row.automation_id ? stepsByAutomation.get(row.automation_id) : undefined;
     if (!auto) return false;
     const idx = auto.steps.findIndex((s) => s.id === row.step_id);
@@ -253,6 +342,10 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     return {
       ...t,
       in_conversation: enDiscussion(t),
+      // Un appel à froid : rien à afficher comme frise, et une carte d'action
+      // qui doit dire « premier contact » plutôt que d'inventer une étape.
+      hors_sequence: t.enrollment_id == null,
+      cohorte: cohorteDe(t.entreprise),
       sequence: auto
         ? {
             name: auto.name,
@@ -314,6 +407,10 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
       // n'a encore répondu à CETTE étape — il n'y a rien à traiter, seulement à
       // patienter.
       in_conversation: false,
+      // Une attente naît d'une inscription : elle est, par construction, dans
+      // une séquence.
+      hors_sequence: false,
+      cohorte: cohorteDe(e.entreprise),
       sequence: auto
         ? {
             name: auto.name,
@@ -387,6 +484,15 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
         done_today: done.length,
         done_today_by_kind: doneByKind,
         done_today_conversation: doneConversation,
+        // La cadence EFFECTIVE — défaut compris. L'écran planifie la journée
+        // avec exactement ces chiffres : s'il retombait sur sa propre
+        // constante, il afficherait « 20 » quand le serveur en autorise 40, et
+        // la moitié de la journée disparaîtrait de la file.
+        quotas,
+        // Ce que la file a réellement montré, pour que l'écran puisse le dire
+        // au lieu de le supposer.
+        cohorte,
+        froid: avecFroid,
       },
     },
     { headers: cors },
@@ -444,6 +550,35 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
 
   if (error) return jsonError(error.message, 500, {}, cors);
   if (!data) return jsonError("introuvable", 404, {}, cors);
+
+  // ── La première touche, posée une seule fois ───────────────────────────
+  //
+  // `premiere_touche_le` est le socle de la comparaison des deux cohortes : on
+  // ne les compare pas à la même DATE, on les compare au même ÂGE (J+1, J+3,
+  // J+7, J+14 après le premier contact). La cohorte A est démarchée du 17 au
+  // 19, la B du 20 au 22 : sans cet horodatage, le 24 août on mettrait cinq
+  // jours de relances de A en face d'un seul de B et on conclurait n'importe
+  // quoi.
+  //
+  // `.is(..., null)` fait tout le travail : la toute première tâche bouclée
+  // pose la date, les suivantes ne la déplacent pas — sinon la « première »
+  // touche serait en réalité la dernière, et l'âge de chaque entreprise
+  // resterait éternellement à zéro.
+  //
+  // Best-effort assumé : rien de ce qui suit ne doit faire échouer un « Fait ».
+  // L'agent a passé l'appel ; refuser d'enregistrer son travail parce qu'une
+  // colonne de mesure résiste serait le pire échange possible.
+  if (status === "done" && task.entreprise_id != null) {
+    try {
+      await sc
+        .from("entreprises")
+        .update({ premiere_touche_le: new Date().toISOString() })
+        .eq("id", task.entreprise_id)
+        .is("premiere_touche_le", null);
+    } catch {
+      // la mesure est perdue pour cette entreprise, la tâche reste faite
+    }
+  }
 
   // A completed sequence step resumes the paused enrollment.
   if (status === "done" && task.enrollment_id) {

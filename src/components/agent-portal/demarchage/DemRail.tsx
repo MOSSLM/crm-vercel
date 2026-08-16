@@ -4,9 +4,10 @@ import { useMemo } from "react";
 import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
-import type { DemarchageQueueMeta, DemarchageTask } from "./types";
+import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
+import type { DemCohorte, DemarchageQueueMeta, DemarchageTask } from "./types";
 import {
-  DAILY_QUOTA,
+  cadenceEffective,
   SIGNAL_LABEL,
   SIGNAL_ORDER,
   countByKind,
@@ -137,12 +138,15 @@ export function DemRail({
   setFilt,
   step,
   setStep,
+  cohorte,
+  setCohorte,
   tasks,
   meta,
   agentName,
   loading,
   sel,
   onPick,
+  onRechercher,
 }: {
   days: Array<DemarchageDay<DemarchageTask>>;
   /** Date civile (YYYY-MM-DD) du jour affiché. */
@@ -153,6 +157,9 @@ export function DemRail({
   /** Étape de séquence filtrée, `null` = toutes. */
   step: number | null;
   setStep: (s: number | null) => void;
+  /** Cohorte filtrée, `null` = les deux. Se propage à la route en `?cohorte=…`. */
+  cohorte: DemCohorte | null;
+  setCohorte: (c: DemCohorte | null) => void;
   /** La liste RÉELLEMENT affichée : le jour choisi, passé aux filtres. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
@@ -160,9 +167,23 @@ export function DemRail({
   loading: boolean;
   sel: string | null;
   onPick: (id: string) => void;
+  /** Ouvre la recherche d'entreprise — le geste de « quelqu'un rappelle ». */
+  onRechercher: () => void;
 }) {
   const courant = days.find((d) => d.date === day) ?? days[0];
   const duJour = useMemo(() => courant?.tasks ?? [], [courant]);
+
+  /**
+   * Les cadences à afficher — exactement celles avec lesquelles `planTasks` a
+   * réparti les journées.
+   *
+   * Le rail avait sa propre fusion sur `DAILY_QUOTA`, et elle divergeait déjà
+   * de celle du plan : elle acceptait un quota à 0, que `normaliseQuotas`
+   * refuse. Un « /0 » s'affichait donc en tête de rail pendant que le plan
+   * répartissait à 20 — le genre d'écart qu'on ne voit jamais, parce que les
+   * deux chiffres sont plausibles. Une seule fonction, une seule cadence.
+   */
+  const quotas = useMemo(() => cadenceEffective(meta.quotas), [meta.quotas]);
 
   // Les compteurs regardent la journée ENTIÈRE, pas la liste filtrée : cliquer
   // « Appels » ne doit pas faire tomber le compteur Messages à zéro.
@@ -225,6 +246,24 @@ export function DemRail({
     return [...set].sort((a, b) => a - b);
   }, [duJour]);
 
+  /**
+   * Les pastilles de cohorte, et leur compte quand on le connaît.
+   *
+   * Le filtre de cohorte part au SERVEUR : filtrée sur A, la file ne contient
+   * plus une seule ligne B, et compter B dans ce qui est chargé donnerait
+   * « 0 » — un chiffre faux, pas une file vide. On affiche donc les deux
+   * pastilles dès qu'un filtre est actif (sans quoi on ne pourrait plus passer
+   * de A à B sans repasser par « toutes »), mais SANS compte pour celle qu'on
+   * n'a pas chargée. Un compte affiché est un compte vrai.
+   */
+  const cohortes = useMemo(() => {
+    const par = countByCohorte(duJour);
+    return COHORTE_ORDER.filter((c) => par[c] > 0 || cohorte != null).map((c) => ({
+      id: c,
+      n: par[c] > 0 || c === cohorte ? par[c] : null,
+    }));
+  }, [duJour, cohorte]);
+
   const nb = meta.done_today;
   // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui.
   const aujourdhui = days.find((d) => d.offset === 0)?.tasks.length ?? 0;
@@ -244,7 +283,7 @@ export function DemRail({
   const tuileCadence = (ic: string, lb: string, kind: string) => {
     const prevu = cadenceParCanal[kind] ?? 0;
     const fait = meta.done_today_by_kind[kind] ?? 0;
-    const quota = DAILY_QUOTA[kind] ?? null;
+    const quota = quotas[kind] ?? null;
     const debord = reporte[kind] ?? 0;
     return cejour ? (
       <Tile ic={ic} lb={lb} n={fait} quota={quota} sub={prevu > 0 ? `${prevu} à faire` : null} />
@@ -255,6 +294,16 @@ export function DemRail({
 
   return (
     <aside className="dm-rail">
+      {/* PREMIER élément du rail, avant même le compteur du jour : quand le
+          téléphone sonne, retrouver la fiche passe avant tout le reste, et on
+          n'a pas le temps de la chercher. Le raccourci est écrit dessus — un
+          raccourci qu'on ne voit pas est un raccourci que personne n'utilise. */}
+      <button type="button" className="dm-rech-b" onClick={onRechercher}>
+        <Icon name="phone" className="ico-sm" />
+        <span className="l">Une entreprise rappelle…</span>
+        <kbd>/</kbd>
+      </button>
+
       <div className="dm-sess">
         <div className="lb">Ma file · {dayTitle(courant)}</div>
         <div className="vl">
@@ -291,8 +340,8 @@ export function DemRail({
         </div>
         <div className="cad">
           <Icon name="info" className="ico-xs" />
-          cadence : {DAILY_QUOTA.call} appels et {DAILY_QUOTA.whatsapp} premiers contacts WhatsApp par
-          jour — le surplus part au lendemain. Les discussions en cours ne comptent pas.
+          cadence : {quotas.call} appels et {quotas.whatsapp} premiers contacts WhatsApp par jour — le
+          surplus part au lendemain. Les discussions en cours ne comptent pas.
         </div>
         {nbDiscussion > 0 && (
           <div className="cad">
@@ -337,6 +386,33 @@ export function DemRail({
           </button>
         ))}
       </div>
+
+      {/* La cohorte a sa PROPRE barre : c'est une troisième dimension, pas un
+          signal de plus. Filtrer « site faible » et « appels » en même temps
+          est une demande légitime — deux vocabulaires dans la même barre ne le
+          permettraient pas. La barre disparaît hors campagne, quand aucune
+          ligne ne porte de cohorte : un filtre qui ne trie rien est du bruit. */}
+      {cohortes.length > 0 && (
+        <div className="dm-filt coh">
+          <span className="lb">Cohorte</span>
+          <button className="dm-chip" aria-pressed={cohorte === null} onClick={() => setCohorte(null)}>
+            toutes
+          </button>
+          {cohortes.map((c) => (
+            <button
+              key={c.id}
+              className="dm-chip"
+              data-coh={c.id}
+              aria-pressed={cohorte === c.id}
+              title={`${COHORTE_INFO[c.id].long} — ${COHORTE_INFO[c.id].argument}`}
+              onClick={() => setCohorte(cohorte === c.id ? null : c.id)}
+            >
+              {COHORTE_INFO[c.id].court}
+              {c.n != null && <span className="n">{c.n}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {etapes.length > 1 && (
         <div className="dm-filt steps">
@@ -411,7 +487,9 @@ export function DemRail({
                     </span>
                   ) : null}
                 </div>
-                <div className="wy">{t.sequence?.stepLabel || t.title || ch.lb}</div>
+                <div className="wy">
+                  {t.sequence?.stepLabel || t.title || (t.hors_sequence ? "Jamais contactée" : ch.lb)}
+                </div>
                 <div className="mt">
                   <span className="kc" style={{ background: ch.c + "1a", color: ch.c }}>
                     <Icon name={ch.ic} className="ico-xs" />
@@ -424,6 +502,16 @@ export function DemRail({
                     <span className="st stp">
                       étape {t.sequence.stepIndex}
                       {t.sequence.totalSteps > 0 ? `/${t.sequence.totalSteps}` : ""}
+                    </span>
+                  )}
+                  {/* À froid : ni étape, ni script, ni historique. Le dire sur
+                      la ligne évite de chercher une frise qui n'existe pas. */}
+                  {t.hors_sequence && <span className="st froid">à froid</span>}
+                  {/* La cohorte décide de l'accroche ET du document : elle se
+                      lit AVANT de composer le numéro, donc sur la ligne. */}
+                  {t.cohorte && (
+                    <span className="st coh" data-coh={t.cohorte} title={COHORTE_INFO[t.cohorte].long}>
+                      {COHORTE_INFO[t.cohorte].court}
                     </span>
                   )}
                   {signal === "conversation" && <span className="st conv">a répondu</span>}
@@ -450,7 +538,8 @@ export function DemRail({
 
       <div className="dm-rail-ft">
         <Icon name="info" className="ico-xs" />
-        Chaque relance de séquence crée sa propre ligne — appels compris.
+        Chaque relance de séquence crée sa propre ligne — appels compris. Un appel à froid n&apos;en a
+        qu&apos;une : la première.
       </div>
     </aside>
   );

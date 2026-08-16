@@ -19,6 +19,10 @@ import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/E
 import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
 import { NotesDialog } from "./marketing-pipeline/NotesDialog";
 import { CompleteDataDialog } from "./marketing-pipeline/CompleteDataDialog";
+import {
+  MESSAGE_MIGRATION_PLAQUETTE,
+  fonctionPlaquetteAbsente,
+} from "@/lib/audit/plaquette-lien";
 // Les exigences de complétude vivaient ici ; elles sont désormais partagées avec
 // la grille de complétion en masse et avec le test qui les compare à
 // `missingForSite` côté API.
@@ -27,6 +31,7 @@ import {
   fromArr,
   numStr,
   ruleApplies,
+  ruleMet,
   siteRequiredFor,
   toArr,
   type RequiredField,
@@ -1111,8 +1116,24 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-        const data = (await res.json()) as { validated: number };
+        // `refuses` N'EST PAS DÉCORATIF. La route trie audit par audit : elle
+        // valide ce qui est rédigé et refuse le reste, avec la raison. N'afficher
+        // que `validated`, c'est annoncer « 8 audits validés » sur un lot de 12
+        // et laisser croire que les 4 autres sont partis aussi — la panne du
+        // 12/08 en plus discrète, puisque cette fois la route a raison.
+        const data = (await res.json()) as { validated: number; refuses?: Array<{ raisons: string[] }> };
         toast.success(`${data.validated} audit(s) validé(s)`);
+        const refuses = data.refuses ?? [];
+        if (refuses.length > 0) {
+          // Les raisons sont regroupées : « 4 audits non validés — avant/après
+          // vide » se lit et s'agit ; quatre lignes identiques se balaient.
+          const parRaison = new Map<string, number>();
+          for (const r of refuses) {
+            for (const raison of r.raisons) parRaison.set(raison, (parRaison.get(raison) ?? 0) + 1);
+          }
+          const motifs = [...parRaison.entries()].map(([raison, n]) => `${raison} (${n})`).join(" · ");
+          toast.warning(`${refuses.length} audit(s) non validé(s) — ${motifs}`, { duration: 8000 });
+        }
       } else {
         const { error } = await supabase
           .from("audits")
@@ -1124,6 +1145,129 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la validation");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /* ── Les plaquettes de la cohorte sans site ────────────────────────────── */
+
+  /** Une ligne refusée par la préparation des plaquettes. */
+  type EchecPlaquette = { entreprise_id: number; nom: string | null; motif: string };
+
+  /**
+   * Ce que le lot a produit, dit en trois temps parce que ce sont trois faits
+   * différents : ce qui vient d'être créé, ce qui existait déjà, et ce qui a
+   * échoué. Annoncer le total ferait croire qu'on vient de fabriquer trois cents
+   * liens alors qu'on en a peut-être refait douze — et laisserait un agent
+   * penser que recliquer a réparé quelque chose.
+   */
+  const annoncerPlaquettes = (creees: number, deja: number, echecs: EchecPlaquette[]) => {
+    if (creees > 0) {
+      toast.success(
+        `${creees} plaquette(s) créée(s)` + (deja > 0 ? ` — ${deja} déjà prête(s)` : ""),
+      );
+    } else if (deja > 0) {
+      // Ce n'est ni un succès ni une erreur : c'est l'idempotence qui se voit.
+      // Le dire explicitement évite le second clic « au cas où ».
+      toast.info(
+        `${deja} plaquette(s) déjà prête(s) — aucun nouveau lien, ceux déjà envoyés restent valables`,
+      );
+    }
+    if (echecs.length === 0) return;
+
+    // Regroupé par motif, comme les refus de validation d'audit : quatre lignes
+    // identiques se balaient, « 4 · entreprise non attribuée » se lit et s'agit.
+    const parMotif = new Map<string, string[]>();
+    for (const e of echecs) {
+      const noms = parMotif.get(e.motif) ?? [];
+      noms.push(e.nom || `#${e.entreprise_id}`);
+      parMotif.set(e.motif, noms);
+    }
+    const detail = [...parMotif.entries()]
+      .map(([motif, noms]) => {
+        const visibles = noms.slice(0, 3).join(", ");
+        return `${motif} (${noms.length}) : ${visibles}${noms.length > 3 ? "…" : ""}`;
+      })
+      .join(" · ");
+    toast.error(`${echecs.length} plaquette(s) non préparée(s) — ${detail}`, { duration: 8000 });
+  };
+
+  /**
+   * Prépare une plaquette PAR PROSPECT sur la sélection.
+   *
+   * Le document ne change pas d'un prospect à l'autre : ce qu'on fabrique ici,
+   * c'est une URL par entreprise, pour qu'une ouverture s'attribue à quelqu'un.
+   * Sans elle, les trois cents entreprises de la cohorte B partagent un lien et
+   * l'étage « document ouvert » de l'entonnoir reste vide toute la campagne.
+   *
+   * Aucun filtre sur « en a déjà une » : le board ne porte pas l'information, et
+   * l'inventer côté écran ferait afficher un compte que le clic ne tiendrait
+   * pas. La route est rejouable et rend elle-même la répartition créées / déjà
+   * prêtes — c'est la seule qui la connaisse au moment d'écrire.
+   *
+   * Pas de `afterAction()` non plus : rien de ce que le board affiche ne change,
+   * et recharger trois cents lignes pour rien coûte plus que ça ne montre.
+   */
+  const creerPlaquettes = async (items: BoardItem[]) => {
+    const ids = [...new Set(items.map((it) => it.entreprise_id).filter((v): v is number => v != null))];
+    if (ids.length === 0) {
+      toast.error("Aucune entreprise dans la sélection");
+      return;
+    }
+    setWorking("create-plaquette");
+    try {
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/plaquette", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entreprise_ids: ids }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          creees?: number;
+          deja?: number;
+          echecs?: EchecPlaquette[];
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error || "Échec");
+        annoncerPlaquettes(data.creees ?? 0, data.deja ?? 0, data.echecs ?? []);
+      } else {
+        // Côté admin, le même travail passe par la MÊME fonction SQL : c'est
+        // elle qui garantit qu'un jeton déjà posé n'est jamais remplacé. Une
+        // écriture faite à la main depuis le navigateur perdrait cette garantie
+        // et pourrait tuer un lien déjà envoyé.
+        const { data: session } = await supabase.auth.getUser();
+        const { data, error } = await supabase.rpc("assurer_jetons_plaquette", {
+          p_entreprise_ids: ids,
+          p_cree_par: session.user?.id ?? null,
+        });
+        // Même diagnostic que la route côté agent : une migration non jouée se
+        // corrige en jouant un fichier, et le message doit dire lequel. Sans ça
+        // l'admin lit « Could not find the function assurer_jetons_plaquette »
+        // et part chercher un bug dans le code.
+        if (error) {
+          throw new Error(
+            fonctionPlaquetteAbsente(error) ? MESSAGE_MIGRATION_PLAQUETTE : error.message,
+          );
+        }
+        const lignes = (data ?? []) as Array<{ entreprise_id: number; deja_prete: boolean }>;
+        const rendues = new Set(lignes.map((l) => Number(l.entreprise_id)));
+        const creees = lignes.filter((l) => l.deja_prete !== true).length;
+        const nomParId = new Map(items.map((it) => [Number(it.entreprise_id), displayName(it)]));
+        annoncerPlaquettes(
+          creees,
+          lignes.length - creees,
+          ids
+            .filter((id) => !rendues.has(id))
+            .map((id) => ({
+              entreprise_id: id,
+              nom: nomParId.get(id) ?? null,
+              motif: "entreprise introuvable",
+            })),
+        );
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la préparation des plaquettes");
     } finally {
       setWorking(null);
     }
@@ -1404,6 +1548,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onPublierSites: (items) => publierSites(items),
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),
+    onCreerPlaquettes: (items) => creerPlaquettes(items),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
     onEnroll: isAgent ? undefined : (items, sId) => enrollInSequence(items, sId),
     onMove: (items, pId) => movePipeline(items, pId),
@@ -1786,7 +1931,7 @@ const OpportunityEditModal: React.FC<{
       setForm(loaded);
       // Le dossier lead magnet est créé à l'enregistrement quand il manque : on
       // évalue donc toujours la liste complète, celle de `siteRequiredFor(true)`.
-      setMissingAtOpen(SITE_REQUIRED_WITH_PROJECT.filter((r) => !r.ok(loaded)).map((r) => r.field));
+      setMissingAtOpen(SITE_REQUIRED_WITH_PROJECT.filter((r) => !ruleMet(r, loaded)).map((r) => r.field));
       setLoading(false);
     })();
     return () => {
@@ -1812,8 +1957,8 @@ const OpportunityEditModal: React.FC<{
   // champs sont donc toujours exigés, sinon une fiche « complète » sans ville
   // SEO ni chiffres clés resterait bloquée à l'étape suivante.
   const requiredRules = siteRequiredFor(true);
-  const missingRequired = requiredRules.filter((r) => !r.ok(form)).map((r) => r.label);
-  const invalidFields = new Set(requiredRules.filter((r) => !r.ok(form)).map((r) => r.field));
+  const missingRequired = requiredRules.filter((r) => !ruleMet(r, form)).map((r) => r.label);
+  const invalidFields = new Set(requiredRules.filter((r) => !ruleMet(r, form)).map((r) => r.field));
   // Plus conditionné à `siteRequirement` : un champ requis vide se signale quelle
   // que soit la porte par laquelle on est entré. Ouverte depuis « Fiche », la
   // modale n'affichait AUCUN rouge — c'est pourtant là qu'on vient compléter, et

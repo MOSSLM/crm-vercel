@@ -4,16 +4,19 @@
 // Le bloc « À compléter » de la fiche a réglé le dossier OUVERT : les champs
 // requis vides remontent en tête au lieu d'être dispersés dans quatre sections.
 // Reste qu'on n'en traite qu'un à la fois — et sur le board, ce sont une
-// soixantaine de lignes qui attendent, pour trois champs chacune en moyenne
-// (trente-six pour le seul logo).
+// soixantaine de lignes qui attendent, pour plusieurs champs chacune.
 //
 // Cette grille les met côte à côte : une ligne par fiche, une colonne par champ
 // réellement manquant, et un seul enregistrement pour tout le lot.
 //
 // Ce qu'elle ne fait PAS : redéfinir « ce qui manque ». Les colonnes, le rouge
-// et le vert sortent de `SITE_REQUIRED_WITH_PROJECT`, la saisie de
-// `requiredFieldControl` — les mêmes que la fiche. Une troisième définition
+// et le vert sortent de `SITE_REQUIRED_WITH_PROJECT` lu par `ruleMet`, la saisie
+// de `requiredFieldControl` — les mêmes que la fiche. Une troisième définition
 // aurait divergé de la deuxième au premier correctif.
+//
+// `ruleMet` et non `ok` : une règle facultative (le logo) décrit un champ qu'on
+// SAIT saisir, pas un manque. Interroger `ok` seul rouvrirait ici une colonne
+// rouge que 296 des 300 entreprises de la cohorte ne peuvent pas remplir.
 
 import React from "react";
 import { toast } from "sonner";
@@ -26,6 +29,7 @@ import {
   EMPTY_REQUIRED_VALUES,
   SITE_REQUIRED_WITH_PROJECT,
   ruleApplies,
+  ruleMet,
   type RequiredField,
   type RequiredValues,
 } from "./required-fields";
@@ -132,7 +136,7 @@ export const CompleteDataDialog: React.FC<{
         // on évalue toujours la liste complète (même raison que la fiche).
         const needed = SITE_REQUIRED_WITH_PROJECT.filter(
           (rule) =>
-            loaded.some((row) => !rule.ok(row.initial)) &&
+            loaded.some((row) => !ruleMet(rule, row.initial)) &&
             // Une règle sans contrôle ouvrirait une colonne vide sous un en-tête
             // qui la réclame. Elle reste signalée, mais dans la fiche.
             requiredFieldControl({
@@ -285,7 +289,7 @@ export const CompleteDataDialog: React.FC<{
                 </thead>
                 <tbody>
                   {rows.map((row) => {
-                    const stillMissing = SITE_REQUIRED_WITH_PROJECT.filter((r) => !r.ok(row.values));
+                    const stillMissing = SITE_REQUIRED_WITH_PROJECT.filter((r) => !ruleMet(r, row.values));
                     const complete = stillMissing.length === 0;
                     const item = itemById.get(row.opportunite_id);
                     return (
@@ -336,7 +340,7 @@ export const CompleteDataDialog: React.FC<{
                           const rule = SITE_REQUIRED_WITH_PROJECT.find((r) => r.field === field);
                           // Un champ que la règle ne réclame pas sur CETTE ligne
                           // (la note sans avis) reste saisissable, mais sans rouge.
-                          const invalid = !!rule && !rule.ok(row.values) && ruleApplies(rule, row.values);
+                          const invalid = !!rule && !ruleMet(rule, row.values);
                           return (
                             <td
                               key={field}

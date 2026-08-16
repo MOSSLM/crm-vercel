@@ -41,6 +41,12 @@ export function applyCompanyAliases(vars: Record<string, string>): void {
   vars["company.rating"] = vars["entreprise.note_moyenne"] ?? "";
   vars["company.reviews"] = vars["entreprise.nombre_avis"] ?? "";
   vars["company.services"] = vars["entreprise.services"] ?? "";
+  // `company.logo` reste VIDE quand l'entreprise n'a pas de logo, et c'est
+  // voulu : y glisser un repli (le nom, une image générique) ferait poser cette
+  // valeur dans un `src`, où elle produirait une image cassée. L'absence de logo
+  // se traite au rendu, par `hydrate-logo`, qui remplace l'emplacement d'image
+  // par une signature typographique — 296 des 300 entreprises de la cohorte de
+  // démarchage sont dans ce cas.
   vars["company.logo"] = vars["entreprise.logo_url"] ?? "";
   vars["company.website"] = site;
 }

@@ -4,6 +4,8 @@ import {
   SITE_REQUIRED_WITH_PROJECT,
   filledStat,
   missingFields,
+  ruleApplies,
+  ruleMet,
   siteRequiredFor,
   toArr,
   type RequiredValues,
@@ -35,9 +37,14 @@ const values = (over: Partial<RequiredValues> = {}): RequiredValues => ({
   ...over,
 });
 
+/**
+ * Ce que l'écran réclame — posé comme l'écran le pose, par `ruleMet`. Filtrer
+ * sur `ok` seul testerait une question que plus personne ne pose : une exigence
+ * qui n'a pas lieu d'être est tenue d'office, et c'est `ruleMet` qui le sait.
+ */
 const missing = (over: Partial<RequiredValues> = {}, hasProject = true): string[] =>
   siteRequiredFor(hasProject)
-    .filter((r) => !r.ok(values(over)))
+    .filter((r) => !ruleMet(r, values(over)))
     .map((r) => r.label);
 
 describe("règles de complétude", () => {
@@ -55,7 +62,32 @@ describe("règles de complétude", () => {
 
   it("réclame ce que porte le dossier lead magnet", () => {
     expect(missing({ lm_override_city: "" })).toEqual(["Ville SEO"]);
-    expect(missing({ lm_logo_url: "" })).toEqual(["Logo"]);
+  });
+});
+
+/**
+ * Le logo a cessé d'être une exigence le jour où son absence a eu un rendu
+ * correct : `hydrate-logo` compose le nom de l'entreprise à sa place, dans la
+ * police du design. 296 des 300 entreprises de la cohorte de démarchage n'ont
+ * aucun logo — le réclamer ne produisait pas 296 logos, seulement 296 fiches
+ * définitivement rouges.
+ *
+ * Mais le CHAMP reste, et ces tests tiennent les deux moitiés ensemble : sans le
+ * second, un futur nettoyage supprimerait la règle « inutile » et emporterait
+ * avec elle le seul téléversement de logo du CRM.
+ */
+describe("logo — champ conservé, exigence levée", () => {
+  it("ne réclame plus rien sans logo", () => {
+    expect(missing({ lm_logo_url: "" })).toEqual([]);
+    expect(missing({ lm_logo_url: "   " })).toEqual([]);
+  });
+
+  it("garde sa règle, donc son contrôle de saisie et son libellé", () => {
+    const regle = SITE_REQUIRED_WITH_PROJECT.find((r) => r.field === "lm_logo_url");
+    expect(regle).toBeDefined();
+    expect(regle?.facultatif).toBe(true);
+    // Pas d'astérisque : `ruleApplies` est ce que lit l'habillage du champ.
+    expect(ruleApplies(regle!, values({ lm_logo_url: "" }))).toBe(false);
   });
 });
 
@@ -133,8 +165,10 @@ describe("chiffres clés", () => {
 
 /**
  * Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects` : sans
- * dossier, ils n'ont nulle part où être enregistrés, et les exiger rendrait la
- * fiche définitivement invalidable.
+ * dossier, ils n'ont nulle part où être enregistrés. Exiger la ville SEO ou les
+ * chiffres clés rendrait donc la fiche définitivement invalidable ; le logo, lui,
+ * ne s'exige plus nulle part — ce qui se vérifie ici, c'est qu'il ne se SAISIT
+ * pas non plus tant qu'il n'a pas de dossier où atterrir.
  */
 describe("sans dossier lead magnet", () => {
   it("n'exige que ce que porte l'entreprise", () => {
@@ -147,10 +181,17 @@ describe("sans dossier lead magnet", () => {
 
 describe("missingFields", () => {
   it("rend les champs dans l'ordre des règles, pas dans celui de la saisie", () => {
-    expect(missingFields(values({ lm_logo_url: "", ville: "" }), true)).toEqual([
+    expect(missingFields(values({ ville: "", lm_override_city: "" }), true)).toEqual([
       "ville",
-      "lm_logo_url",
+      "lm_override_city",
     ]);
+  });
+
+  it("ne remonte jamais un champ facultatif", () => {
+    // C'est ce décompte qui commande le bandeau « n manquants » et le bloc « À
+    // compléter » remonté en tête de fiche : un facultatif qui s'y glisserait
+    // enverrait l'agent chercher un logo qui n'existe pas.
+    expect(missingFields(values({ lm_logo_url: "" }), true)).toEqual([]);
   });
 });
 
