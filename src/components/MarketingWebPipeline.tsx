@@ -1614,6 +1614,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         handlers={matrixHandlers}
         bulk={bulkHandlers}
         hasValidatedColumn={board?.has_validated_column ?? true}
+        hasPlaquette={board?.has_plaquette === true}
         stages={isAgent ? AGENT_STAGES : STAGES}
         canAssign={!isAgent}
         agentMode={isAgent}

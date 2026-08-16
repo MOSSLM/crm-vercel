@@ -87,6 +87,26 @@ export interface BoardItem {
     status: string;
     holdReason: string | null;
   } | null;
+  /**
+   * La plaquette de ce prospect — le lien nominatif et ce qu'il a fait.
+   *
+   * PORTÉE PAR L'ENTREPRISE, PAS PAR L'AFFAIRE : `entreprises_rapport_public` est
+   * indexée par `entreprise_id`, et deux affaires d'une même entreprise
+   * partagent donc le même jeton. C'est voulu — on n'envoie pas deux plaquettes
+   * à la même personne parce qu'elle a deux lignes au tableau.
+   *
+   * Optionnel : absent tant que `sql/20260816_plaquettes_par_prospect.sql` n'est
+   * pas appliquée. La colonne se cache alors, plutôt que d'annoncer « aucune
+   * plaquette » sur une base qui n'a pas encore de quoi en porter.
+   */
+  plaquette?: {
+    /** L'URL nominative, déjà composée. Null tant qu'aucun jeton n'est frappé. */
+    url: string | null;
+    cree_le: string | null;
+    /** Combien de fois le prospect a ouvert le document. Le signal qui vaut une relance. */
+    vues: number;
+    vu_le: string | null;
+  } | null;
   missing_for_site: string[];
   /**
    * Tickets (notes agent ↔ admin) de la ligne. Optionnel : une réponse d'API
@@ -229,6 +249,12 @@ export interface BoardData {
   has_validated_column: boolean;
   /** `false` tant que la migration d'archivage n'est pas jouée : pas de bascule. */
   has_archivage?: boolean;
+  /**
+   * `false` tant que `sql/20260816_plaquettes_par_prospect.sql` n'est pas jouée.
+   * La colonne « Plaquette » disparaît alors entièrement : une colonne qui
+   * afficherait « aucune » sur toutes les lignes ferait cliquer pour rien.
+   */
+  has_plaquette?: boolean;
 }
 
 /**
