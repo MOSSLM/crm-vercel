@@ -1,5 +1,14 @@
 import { supabase } from './supabase/client';
+import { authedFetch } from './authedFetch';
 import { LIST_QUERY_LIMIT } from './constants';
+import {
+  ARCHIVE_COLUMNS,
+  COMPANY_COLUMNS,
+  COMPANY_SELECT,
+  COMPTEURS_VIDES,
+  type CompanySearchResult,
+  type CompteursEntreprises,
+} from '@/lib/entreprises/colonnes';
 import {
   Achievement,
   Company,
@@ -89,54 +98,10 @@ const SEARCH_RESULTS_COLUMNS = [
 const SEARCH_RESULTS_SELECT = SEARCH_RESULTS_COLUMNS.join(',');
 
 /**
- * Les colonnes d'archivage, communes à `entreprises` et `opportunites`. Elles
- * sont lues par les vues (pour masquer et badger les fiches archivées) mais
- * jamais écrites depuis le navigateur : seule `/api/archive` les modifie.
+ * `ARCHIVE_COLUMNS`, `COMPANY_COLUMNS` et `COMPANY_SELECT` vivent désormais dans
+ * `@/lib/entreprises/colonnes` : les routes serveur `/api/entreprises/*` lisent
+ * les mêmes colonnes, et ce module-ci est « use client ».
  */
-const ARCHIVE_COLUMNS = [
-  'archived_at',
-  'archived_by',
-  'archive_reason',
-  'archive_note',
-  'archive_concurrent_id'
-] as const;
-
-const COMPANY_COLUMNS = [
-  'id',
-  'canonical_url',
-  'name',
-  'adresse',
-  'lat',
-  'lng',
-  'premiers_tags',
-  'service_tags',
-  'sources',
-  'raw_ids',
-  'qualifie',
-  'hidden_in_qualification',
-  'created_at',
-  'updated_at',
-  'ca_estime_band',
-  'nb_employes_band',
-  'nb_employes_exact',
-  'linkedin_url',
-  'site_web_canonique',
-  'manually_enriched',
-  'enriched_at',
-  'enriched_by',
-  'reseau_id',
-  'telephone',
-  'email',
-  'note_moyenne',
-  'nombre_avis',
-  'ville',
-  'code_postal',
-  'pays',
-  'logo_url',
-  ...ARCHIVE_COLUMNS
-] as const;
-const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
-
 const COMPANY_WRITEABLE_COLUMNS = COMPANY_COLUMNS.filter(
   (column) =>
     column !== 'id' &&
@@ -322,8 +287,6 @@ const fetchIncludedItemsByParent = async (parentOfferIds: string[]): Promise<Map
 
   return includedByParent;
 };
-
-const COMPANIES_PAGE_SIZE = 500;
 
 type CompanyMetadata = {
   id: number;
@@ -692,106 +655,81 @@ export const searchResultsApi = {
 
 // Companies API with enhanced fields (table: entreprises)
 export const companiesApi = {
-  getAll: async () => {
+  /**
+   * Le périmètre actif : les ~1 100 fiches que le CRM exploite réellement
+   * (qualifiées, archivées, en réseau, attribuées, ou portant une opportunité ou
+   * un contact), plus les compteurs de stock.
+   *
+   * Cette fonction paginait `entreprises` par tranches de 500 jusqu'à épuisement
+   * de la table. À 61 000 lignes ça faisait 122 allers-retours séquentiels et
+   * ~100 Mo de JSON — et comme `AppDataProvider` enveloppe tout le groupe
+   * `(crm)`, c'était le prix d'entrée de chaque écran, pas seulement de la
+   * qualification.
+   *
+   * Le corpus non qualifié n'est plus jamais chargé en mémoire : il ne sert
+   * qu'à la file de qualification, au compteur de stock et à la carte, qui
+   * passent tous par des routes paginées ou agrégées.
+   */
+  getPerimetreActif: async (): Promise<{
+    entreprises: Company[];
+    compteurs: CompteursEntreprises;
+  }> => {
     try {
-      const allCompanies: Company[] = [];
-      let from = 0;
-      let to = COMPANIES_PAGE_SIZE - 1;
-      let pageIndex = 0;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from('entreprises')
-          .select(COMPANY_SELECT)
-          .order('created_at', { ascending: false })
-          .range(from, to);
-
-        if (error) {
-          logger.error('Supabase error while fetching companies:', error);
-          throw error;
-        }
-
-        const rows = Array.isArray(data) ? (data as unknown[]) : [];
-        const validCompanies = rows.filter(isCompanyRow);
-        if (validCompanies.length > 0) {
-          allCompanies.push(...validCompanies);
-        }
-
-        if (rows.length < COMPANIES_PAGE_SIZE) {
-          break;
-        }
-
-        pageIndex += 1;
-        from += COMPANIES_PAGE_SIZE;
-        to += COMPANIES_PAGE_SIZE;
+      const response = await authedFetch('/api/entreprises/perimetre');
+      if (!response.ok) {
+        throw new Error(`perimetre_failed_${response.status}`);
       }
-
-      const deduped: Company[] = [];
-      const seenIds = new Set<number>();
-      for (const company of allCompanies) {
-        if (!company) {
-          continue;
-        }
-        if (typeof company?.id === 'number') {
-          if (seenIds.has(company.id)) {
-            continue;
-          }
-          seenIds.add(company.id);
-        }
-        deduped.push(company);
-      }
-
-      return deduped;
+      const payload = (await response.json()) as {
+        entreprises?: unknown;
+        compteurs?: CompteursEntreprises;
+      };
+      const rows = Array.isArray(payload.entreprises) ? payload.entreprises : [];
+      return {
+        entreprises: rows.filter(isCompanyRow),
+        compteurs: payload.compteurs ?? COMPTEURS_VIDES,
+      };
     } catch (error) {
-      logger.error('API Error:', error);
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error('Failed to fetch companies');
+      logger.error('Error fetching active company scope:', error);
+      throw error instanceof Error ? error : new Error('Failed to fetch companies');
     }
   },
 
-  getQualifiedOnly: async () => {
-    const pageSize = COMPANIES_PAGE_SIZE;
-    let from = 0;
-    let to = pageSize - 1;
-    const allQualified: Company[] = [];
+  getAll: async (): Promise<Company[]> => {
+    const { entreprises } = await companiesApi.getPerimetreActif();
+    return entreprises;
+  },
+
+  /**
+   * Recherche serveur sur tout le corpus, pour les sélecteurs d'entreprise.
+   * Sert les écrans qui doivent pouvoir atteindre un prospect non qualifié —
+   * donc hors périmètre actif, donc absent de la mémoire du navigateur.
+   */
+  rechercher: async (
+    q: string,
+    options?: { limit?: number; qualifieesSeulement?: boolean },
+  ): Promise<CompanySearchResult[]> => {
+    const terme = q.trim();
+    if (!terme) return [];
 
     try {
-      while (true) {
-        const { data, error } = await supabase
-          .from('entreprises')
-          .select(COMPANY_SELECT)
-          .eq('qualifie', true)
-          .order('created_at', { ascending: false })
-          .range(from, to);
+      const params = new URLSearchParams({ q: terme });
+      if (options?.limit) params.set('limit', String(options.limit));
+      if (options?.qualifieesSeulement) params.set('qualifiees_seulement', 'true');
 
-        if (error) {
-          logger.error('Supabase error:', error);
-          break;
-        }
+      const response = await authedFetch(`/api/entreprises/recherche?${params}`);
+      if (!response.ok) return [];
 
-        const rows = Array.isArray(data) ? (data as unknown[]) : [];
-        const validCompanies = rows.filter(isCompanyRow);
-        if (validCompanies.length > 0) {
-          allQualified.push(...validCompanies);
-        }
-
-        if (rows.length < pageSize) {
-          break;
-        }
-
-        from += pageSize;
-        to += pageSize;
-      }
-
-      return allQualified;
+      const payload = (await response.json()) as { entreprises?: unknown };
+      return Array.isArray(payload.entreprises)
+        ? (payload.entreprises as CompanySearchResult[])
+        : [];
     } catch (error) {
-      logger.error('API Error:', error);
+      logger.error('Error searching companies:', error);
       return [];
     }
   },
-  
+
+
   create: async (
     companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>
   ) => {

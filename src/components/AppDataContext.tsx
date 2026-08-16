@@ -31,6 +31,10 @@ import {
 } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
+import {
+  COMPTEURS_VIDES,
+  type CompteursEntreprises,
+} from '@/lib/entreprises/colonnes';
 import { journalApi } from '../utils/journalApi';
 import { type EnPriority, enToFrPriority, type FrPriority, frToEnPriority } from '@/lib/constants/priority';
 import {
@@ -129,6 +133,12 @@ interface AppDataContextType {
   activeOpportunities: Opportunity[];
 
   // Computed values
+  /**
+   * Chiffres de stock sur l'ENSEMBLE de `entreprises`, calculés en SQL.
+   * `companies` ne portant plus que le périmètre actif, ils ne peuvent plus se
+   * déduire d'un `.filter().length` côté navigateur.
+   */
+  compteurs: CompteursEntreprises;
   totalCompanies: number;
   totalQualifiedCompanies: number;
   keywordStats: Record<string, number>;
@@ -398,7 +408,16 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // State
 const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+/**
+ * Le périmètre actif uniquement (~1 100 fiches), pas le corpus.
+ *
+ * Les ~60 000 prospects non qualifiés ne transitent plus par le navigateur :
+ * ils ne servent qu'à la file de qualification, au compteur de stock et à la
+ * carte, qui lisent tous des routes paginées ou agrégées.
+ */
 const [companies, setCompanies] = useState<Company[]>([]);
+/** Chiffres de stock calculés en SQL (RPC `entreprises_compteurs`). */
+const [compteurs, setCompteurs] = useState<CompteursEntreprises>(COMPTEURS_VIDES);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
 const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -474,16 +493,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       // Achievements, stats, networks, blacklist and contacts load in the background after.
       const [
         searchResultsResult,
-        companiesResult,
-        qualifiedCompaniesResult,
+        perimetreResult,
         opportunitiesResult,
         pipelinesResult,
         offersResult,
         pipelineStagesResult,
       ] = await Promise.allSettled([
         searchResultsApi.getAll(),
-        companiesApi.getAll(),
-        companiesApi.getQualifiedOnly(),
+        // Un seul appel, ~1 100 fiches. Avant : `getAll()` + `getQualifiedOnly()`
+        // en parallèle, deux boucles qui paginaient les 61 000 lignes de
+        // `entreprises` par tranches de 500 — soit ~122 allers-retours et
+        // ~100 Mo de JSON avant le premier pixel, sur *chaque* écran du CRM
+        // puisque ce provider enveloppe tout le groupe `(crm)`.
+        companiesApi.getPerimetreActif(),
         opportunitiesApi.getAll(),
         pipelinesApi.getAll(),
         offersApi.getAll(),
@@ -499,8 +521,10 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       };
 
       const searchResultsData = getSettledValue(searchResultsResult, [] as SearchResult[]);
-      const companiesData = getSettledValue(companiesResult, [] as Company[]);
-      const qualifiedCompaniesData = getSettledValue(qualifiedCompaniesResult, [] as Company[]);
+      const perimetreData = getSettledValue(perimetreResult, {
+        entreprises: [] as Company[],
+        compteurs: COMPTEURS_VIDES,
+      });
       const opportunitiesData = getSettledValue(opportunitiesResult, [] as Opportunity[]);
       const pipelinesData = getSettledValue(pipelinesResult, [] as Pipeline[]);
       const offersData = getSettledValue(offersResult, [] as Offer[]);
@@ -509,18 +533,10 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       const safeSearchResults = searchResultsData.filter(isSearchResultRow);
       const safeOpportunities = opportunitiesData.filter(isOpportunityRow);
 
-      const companiesMap = new Map<number, Company>();
-      [...companiesData, ...qualifiedCompaniesData].forEach((company: Company) => {
-        if (typeof company?.id !== 'number') return;
-        const existing = companiesMap.get(company.id);
-        companiesMap.set(company.id, { ...existing, ...company });
-      });
-
-      const combinedCompanies = Array.from(companiesMap.values()).sort((a, b) => {
-        const dateA = new Date(a.created_at ?? 0).getTime();
-        const dateB = new Date(b.created_at ?? 0).getTime();
-        return dateB - dateA;
-      });
+      // La fusion Map + tri qui vivait ici réconciliait les deux appels
+      // (`getAll` et `getQualifiedOnly`) qui se recouvraient. Une seule source
+      // désormais, et déjà triée par `created_at desc` en SQL.
+      const combinedCompanies = perimetreData.entreprises;
 
       const mappedSearchResults = safeSearchResults.map((result) => ({
         ...result,
@@ -540,6 +556,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       // Commit primary data → UI becomes usable immediately
       setSearchResults(mappedSearchResults);
       setCompanies(normalizedCompanies);
+      setCompteurs(perimetreData.compteurs);
       setOpportunities(safeOpportunities);
       setPipelines(pipelinesData);
       setOffers(offersData);
@@ -599,10 +616,15 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
             .map((company: Company) => company.id)
             .filter((id): id is number => typeof id === 'number');
 
-          const additionalQualifiedIds = qualifiedCompaniesData
+          // Les 20 premières fiches ne couvrent pas forcément les qualifiées :
+          // on complète, comme avant, pour que leurs contacts soient présents
+          // dès le premier rendu. Les qualifiées se lisent maintenant dans le
+          // périmètre, qui les contient toutes par construction.
+          const dejaPris = new Set(baseInitialCompanyIds);
+          const additionalQualifiedIds = combinedCompanies
+            .filter((c: Company) => c.qualifie)
             .map((c: Company) => c.id)
-            .filter((id): id is number => typeof id === 'number')
-            .filter((id) => !baseInitialCompanyIds.includes(id));
+            .filter((id): id is number => typeof id === 'number' && !dejaPris.has(id));
 
           const initialCompanyIds = [...baseInitialCompanyIds, ...additionalQualifiedIds];
 
@@ -636,8 +658,10 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     [opportunities],
   );
 
-  const totalCompanies = activeCompanies.length;
-  const totalQualifiedCompanies = activeCompanies.filter((c) => c.qualifie).length;
+  // Comptés en SQL, plus en JS : `activeCompanies` ne contient désormais que le
+  // périmètre actif, il ne peut plus servir à mesurer le stock.
+  const totalCompanies = compteurs.stock_total;
+  const totalQualifiedCompanies = compteurs.qualifiees;
 
   const getCompanyCanonicalSite = React.useCallback((company: Company): string | undefined => {
     const legacySite = 'site_web_canonique' in company
@@ -681,8 +705,27 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       .map(([domain, list]) => ({ domain, companies: list }));
   }, [companies, getCompanyCanonicalSite, isCompanyBlacklisted]);
 
-  const isDuplicate = (id: number): boolean =>
-    duplicateGroups.some((group) => group.companies.some((c) => c.id === id));
+  /**
+   * Les identifiants en doublon, à plat.
+   *
+   * `isDuplicate` balayait `duplicateGroups` puis, pour chaque groupe, la liste
+   * de ses entreprises — et il était appelé une fois par fiche à l'intérieur des
+   * filtres de la qualification. Sur un tableau de 60 000 objets ça faisait un
+   * coût quadratique, réévalué à chaque frappe clavier. Le `Set` ramène le test
+   * à un accès constant.
+   */
+  const duplicateIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    for (const group of duplicateGroups) {
+      for (const company of group.companies) ids.add(company.id);
+    }
+    return ids;
+  }, [duplicateGroups]);
+
+  const isDuplicate = React.useCallback(
+    (id: number): boolean => duplicateIds.has(id),
+    [duplicateIds],
+  );
 
   // LOGIQUE CORRIGÉE POUR ACCUMULER LES ACTIONS (JAMAIS DE DÉCRÉMENTATION)
   const calculateCumulativeActionsFromPipeline = (opportunity: Opportunity) => {
@@ -1395,11 +1438,35 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     [],
   );
 
-  const getCompaniesBySearchId = (searchId: string) => filterCompaniesBySearchId(companies, searchId);
+  /**
+   * ATTENTION — ces trois getters ne renvoient rien, et c'est antérieur au
+   * passage au périmètre actif : ils comparent `entreprises.raw_ids` (des
+   * `bigint` qui pointent vers `entreprises_raw.id`) à `recherches.id`, qui est
+   * un `uuid`. Vérifié en base : zéro fiche matche, quelle que soit la
+   * recherche.
+   *
+   * Le vrai chemin est `entreprises.raw_ids → entreprises_raw.id →
+   * entreprises_raw.recherche_id`. Il ne peut pas se refaire ici : une seule
+   * recherche porte 56 000 fiches, c'est exactement ce qu'on vient de sortir de
+   * la mémoire du navigateur. Il faut une route paginée — cf. la note laissée à
+   * `SearchDetailPage`.
+   *
+   * `useCallback` en attendant, pour ne pas changer d'identité à chaque rendu.
+   */
+  const getCompaniesBySearchId = React.useCallback(
+    (searchId: string) => filterCompaniesBySearchId(companies, searchId),
+    [companies],
+  );
 
-  const getMapCompanies = (searchId: string) => filterMapCompanies(companies, searchId);
+  const getMapCompanies = React.useCallback(
+    (searchId: string) => filterMapCompanies(companies, searchId),
+    [companies],
+  );
 
-  const getGoogleCompanies = (searchId: string) => filterGoogleCompanies(companies, searchId);
+  const getGoogleCompanies = React.useCallback(
+    (searchId: string) => filterGoogleCompanies(companies, searchId),
+    [companies],
+  );
 
   const toggleLeadMagnet = async (opportunityId: string) => {
     const opportunity = opportunities.find((opp) => opp.id === opportunityId);
@@ -1486,6 +1553,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     pipelines,
     pipelineStages,
     offers,
+    compteurs,
     totalCompanies,
     totalQualifiedCompanies,
     keywordStats,

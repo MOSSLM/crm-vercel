@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { useAppData } from "./AppDataContext";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
 import { contactsApi } from "../utils/api";
+import { useRechercheEntreprises } from "@/hooks/useRechercheEntreprises";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus,
   Loader2,
@@ -51,10 +60,26 @@ const defaultFormData = {
 };
 
 export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, className }) => {
-  const { companies } = useAppData();
   const [formData, setFormData] = useState(defaultFormData);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  /**
+   * Sélecteur d'entreprise en recherche serveur.
+   *
+   * Ce champ était un `<Select>` qui montait une `<SelectItem>` par entreprise.
+   * À 60 000 fiches, l'ouvrir figeait l'onglet — 60 000 nœuds DOM Radix d'un
+   * coup. Et depuis que le contexte ne porte plus que le périmètre actif, la
+   * liste en mémoire ne contiendrait de toute façon plus les prospects non
+   * qualifiés, à qui on rattache justement des contacts.
+   */
+  const [ouvertSelecteur, setOuvertSelecteur] = useState(false);
+  const [requeteEntreprise, setRequeteEntreprise] = useState("");
+  const [entrepriseChoisie, setEntrepriseChoisie] = useState<{ id: number; libelle: string } | null>(
+    null,
+  );
+  const { resultats: entreprisesTrouvees, chargement: rechercheEnCours } =
+    useRechercheEntreprises(requeteEntreprise, { actif: ouvertSelecteur });
 
   const set = (field: string, value: string | boolean) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -126,18 +151,70 @@ export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, 
             <Building className="h-4 w-4" />
             Entreprise *
           </Label>
-          <Select value={formData.entreprise_id} onValueChange={(v) => set("entreprise_id", v)} disabled={isLoading} required>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une entreprise" />
-            </SelectTrigger>
-            <SelectContent>
-              {companies.map((company) => (
-                <SelectItem key={company.id} value={company.id.toString()}>
-                  {getCompanyDisplayName(company.name, company.canonical_url)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={ouvertSelecteur} onOpenChange={setOuvertSelecteur}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={ouvertSelecteur}
+                disabled={isLoading}
+                className="w-full justify-between font-normal"
+              >
+                <span className={entrepriseChoisie ? "truncate" : "truncate text-muted-foreground"}>
+                  {entrepriseChoisie?.libelle ?? "Rechercher une entreprise…"}
+                </span>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              {/* `shouldFilter={false}` : c'est Postgres qui filtre, pas cmdk. */}
+              <Command shouldFilter={false}>
+                <CommandInput
+                  value={requeteEntreprise}
+                  onValueChange={setRequeteEntreprise}
+                  placeholder="Nom, ville ou téléphone…"
+                />
+                <CommandList>
+                  <CommandEmpty>
+                    {requeteEntreprise.trim().length === 0
+                      ? "Tape au moins un mot pour chercher."
+                      : rechercheEnCours
+                        ? "Recherche…"
+                        : "Aucune entreprise ne correspond."}
+                  </CommandEmpty>
+                  {entreprisesTrouvees.length > 0 && (
+                    <CommandGroup>
+                      {entreprisesTrouvees.map((company) => {
+                        const libelle =
+                          getCompanyDisplayName(company.name, company.canonical_url) ||
+                          company.name ||
+                          `Entreprise #${company.id}`;
+                        return (
+                          <CommandItem
+                            key={company.id}
+                            value={String(company.id)}
+                            onSelect={() => {
+                              set("entreprise_id", String(company.id));
+                              setEntrepriseChoisie({ id: company.id, libelle });
+                              setOuvertSelecteur(false);
+                            }}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">{libelle}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {[company.ville, company.telephone].filter(Boolean).join(" · ") || "—"}
+                              </span>
+                            </span>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  )}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Name row */}

@@ -13,6 +13,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { useAppData } from "@/components/AppDataContext";
+import { useRechercheEntreprises } from "@/hooks/useRechercheEntreprises";
 import { getAllTools } from "@/components/layout/spaces";
 
 const MAX_PER_GROUP = 6;
@@ -31,8 +32,12 @@ const QUICK_ACTIONS = [
 
 /**
  * Universal Cmd+K palette. Mounted once in the shell. Searches the live
- * AppData (contacts, companies, opportunities), every Studio tool, and a set
- * of quick actions. Filtering is controlled so large datasets stay snappy.
+ * AppData (contacts, opportunities), every Studio tool, and a set of quick
+ * actions. Filtering is controlled so large datasets stay snappy.
+ *
+ * Les entreprises font exception : elles partent en recherche serveur, parce
+ * que le contexte ne porte plus que le périmètre actif alors que la palette
+ * doit atteindre les ~61 000 fiches.
  */
 export function StudioCommandMenu({
   open,
@@ -42,7 +47,7 @@ export function StudioCommandMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const { contacts, companies, opportunities } = useAppData();
+  const { contacts, opportunities } = useAppData();
   const [query, setQuery] = React.useState("");
 
   const q = query.trim().toLowerCase();
@@ -61,11 +66,12 @@ export function StudioCommandMenu({
       .slice(0, MAX_PER_GROUP);
   }, [contacts, q]);
 
-  const companyResults = React.useMemo(() => {
-    return companies
-      .filter((c) => match(`${c.name ?? ""} ${c.email ?? ""}`))
-      .slice(0, MAX_PER_GROUP);
-  }, [companies, q]);
+  // Recherche serveur : le contexte ne porte plus que le périmètre actif, or
+  // Cmd+K doit pouvoir atteindre n'importe laquelle des ~61 000 fiches.
+  const { resultats: companyResults } = useRechercheEntreprises(query, {
+    actif: open,
+    limit: MAX_PER_GROUP,
+  });
 
   const opportunityResults = React.useMemo(() => {
     return opportunities

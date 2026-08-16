@@ -2,8 +2,8 @@
 
 import React from "react";
 import { Building2, Search } from "lucide-react";
-import type { Company } from "@/types";
-import { useAppData } from "@/components/AppDataContext";
+import { companiesApi } from "@/utils/api";
+import { useRechercheEntreprises } from "@/hooks/useRechercheEntreprises";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 
 /** Au-delà, la liste devient illisible et le rendu rame pendant la frappe. */
@@ -35,73 +35,66 @@ export function noterRecente(id: number): void {
   }
 }
 
-const sansAccents = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
 /**
- * Filtre sur le nom, la ville et le téléphone.
- *
- * Le téléphone compte autant que le nom : quand quelqu'un appelle, le numéro
- * affiché est souvent la seule chose qu'on sache de lui. On compare les
- * chiffres seuls pour que « 06 12 34 » retrouve « +33 6 12 34 56 78 ».
- *
- * Seul `entreprises.telephone` est comparé, pas `telephones[]` : la liste
- * chargée en mémoire par `AppDataContext` ne porte pas la colonne tableau. Le
- * cockpit récupère tous les numéros une fois l'entreprise choisie.
+ * Le strict nécessaire pour afficher une ligne et la choisir. Défini en
+ * structure plutôt qu'en `Pick<…>` pour accepter indifféremment une
+ * `CompanySearchResult` (recherche serveur, champs `| null`) et une `Company`
+ * (fiche récente rechargée par identifiant, champs `| undefined`).
  */
-export function filtrerEntreprises(entreprises: Company[], requete: string): Company[] {
-  const q = sansAccents(requete.trim());
-  if (!q) return [];
-
-  const chiffres = q.replace(/\D/g, "");
-  const resultats: Company[] = [];
-
-  for (const e of entreprises) {
-    if (resultats.length >= MAX_RESULTATS) break;
-    const nom = sansAccents(getCompanyDisplayName(e.name, e.canonical_url) || e.name || "");
-    const ville = sansAccents(e.ville ?? "");
-    const tel = (e.telephone ?? "").replace(/\D/g, "");
-
-    if (nom.includes(q) || ville.includes(q) || (chiffres.length >= 4 && tel.includes(chiffres))) {
-      resultats.push(e);
-    }
-  }
-
-  return resultats;
-}
+export type FicheSelectionnable = {
+  id: number;
+  name?: string | null;
+  canonical_url?: string | null;
+  ville?: string | null;
+  telephone?: string | null;
+};
 
 interface Props {
-  onChoisir: (entreprise: Company) => void;
+  onChoisir: (entreprise: FicheSelectionnable) => void;
 }
 
 export function SelecteurEntreprise({ onChoisir }: Props) {
-  const { companies } = useAppData();
   const [requete, setRequete] = React.useState("");
+  const [recentes, setRecentes] = React.useState<FicheSelectionnable[]>([]);
   const champRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     champRef.current?.focus();
   }, []);
 
-  const resultats = React.useMemo(
-    () => filtrerEntreprises(companies, requete),
-    [companies, requete],
-  );
+  /**
+   * La recherche part en base et couvre les ~61 000 fiches — nom, ville,
+   * adresse, et le numéro de téléphone en chiffres seuls (« 06 12 34 » retrouve
+   * « +33 6 12 34 56 78 »), via la colonne générée `telephone_chiffres`.
+   *
+   * Elle filtrait auparavant le tableau `companies` du contexte. Celui-ci ne
+   * porte plus que le périmètre actif : chercher dedans ne trouverait plus
+   * aucun prospect non qualifié, alors que c'est justement ceux qu'on décroche
+   * au téléphone.
+   */
+  const { resultats } = useRechercheEntreprises(requete, { limit: MAX_RESULTATS });
 
-  const recentes = React.useMemo(() => {
-    if (requete.trim()) return [];
+  // Les récentes sont des identifiants en localStorage : on les résout une à
+  // une, faute de pouvoir les chercher par nom. Six au maximum.
+  React.useEffect(() => {
+    let vivant = true;
     const ids = lireRecentes();
-    return ids
-      .map((id) => companies.find((c) => c.id === id))
-      .filter((c): c is Company => Boolean(c));
-  }, [companies, requete]);
+    if (ids.length === 0) {
+      setRecentes([]);
+      return;
+    }
+    void Promise.all(ids.map((id) => companiesApi.getById(id))).then((fiches) => {
+      if (!vivant) return;
+      setRecentes(fiches.filter((f): f is NonNullable<typeof f> => Boolean(f)));
+    });
+    return () => {
+      vivant = false;
+    };
+  }, []);
 
   const affichees = requete.trim() ? resultats : recentes;
 
-  const choisir = (entreprise: Company) => {
+  const choisir = (entreprise: FicheSelectionnable) => {
     noterRecente(entreprise.id);
     onChoisir(entreprise);
   };

@@ -1,29 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { supabase } from "@/utils/supabase/client";
+import { authedFetch } from "@/utils/authedFetch";
 import logger from "@/utils/logger";
 import {
   CONTOURS_URL,
   DEPARTEMENT_BY_CODE,
-  departementFromCodePostal,
   type Departement,
 } from "@/lib/carte/departements";
-import { fetchContours, resolveDepartement, type DeptGeometry } from "@/lib/carte/geo";
-import {
-  avancementDeLEtape,
-  avancementLePlusAvance,
-  statutEntreprise,
-  type AvancementAffaire,
-  type StatutCarte,
-} from "@/lib/carte/statuts";
+import { fetchContours, type DeptGeometry } from "@/lib/carte/geo";
+import { STATUTS, type StatutCarte } from "@/lib/carte/statuts";
 
-/**
- * Supabase plafonne une réponse à 1000 lignes : on pagine jusqu'au bout, en
- * ordonnant toujours sur une colonne unique — un tri à égalités ne garantit pas
- * un ordre stable entre deux pages, et des fiches disparaîtraient de la carte.
- */
-const PAGE_SIZE = 1000;
+/** Statuts connus, pour valider ce que renvoie la base avant de l'afficher. */
+const STATUTS_CONNUS = new Set<string>(STATUTS.map((s) => s.id));
 
 export type FicheCarte = {
   id: number;
@@ -57,120 +46,76 @@ export type CarteData = {
   horsCarte: FicheCarte[];
 };
 
-type EntrepriseRow = {
+/** Une fiche telle que la renvoie `/api/entreprises/carte?detail=fiches`. */
+type FicheApi = {
   id: number;
-  name: string | null;
+  nom: string | null;
   ville: string | null;
   code_postal: string | null;
   telephone: string | null;
-  site_web_canonique: string | null;
-  premiers_tags: string | null;
-  service_tags: unknown;
+  site_web: string | null;
+  tags: unknown;
   lat: number | null;
   lng: number | null;
-  qualifie: boolean | null;
-  hidden_in_qualification: boolean | null;
-  archived_at: string | null;
+  dept: string | null;
+  statut: string | null;
 };
-
-type OpportuniteRow = {
-  id: string;
-  entreprise_id: number | null;
-  stage_id: number | null;
-};
-
-type EtapeRow = {
-  id: number;
-  nom: string | null;
-  ordre: number | null;
-};
-
-const ENTREPRISE_SELECT =
-  "id,name,ville,code_postal,telephone,site_web_canonique,premiers_tags,service_tags,lat,lng,qualifie,hidden_in_qualification,archived_at";
-
-async function fetchAllPages<T>(table: string, select: string): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(select)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    const page = (data ?? []) as unknown as T[];
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) return rows;
-  }
-}
 
 /** `service_tags` est un jsonb qui a porté plusieurs formes au fil du temps. */
-function readTags(row: EntrepriseRow): string[] {
+function readTags(valeur: unknown): string[] {
+  if (!Array.isArray(valeur)) return [];
   const out: string[] = [];
-  if (Array.isArray(row.service_tags)) {
-    for (const tag of row.service_tags) {
-      if (typeof tag === "string" && tag.trim()) out.push(tag.trim());
-    }
-  }
-  if (out.length === 0 && row.premiers_tags) {
-    for (const tag of row.premiers_tags.split(/[,;|]/)) {
-      const clean = tag.trim();
-      if (clean) out.push(clean);
-    }
+  for (const tag of valeur) {
+    if (typeof tag === "string" && tag.trim()) out.push(tag.trim());
   }
   return out;
 }
 
+/**
+ * Le statut vient de la base ; on le valide quand même avant de s'en servir
+ * pour indexer la table des couleurs — une valeur inattendue ferait planter le
+ * rendu plutôt que d'afficher une pastille neutre.
+ */
+function lireStatut(valeur: string | null): StatutCarte {
+  return valeur && STATUTS_CONNUS.has(valeur) ? (valeur as StatutCarte) : "prospect";
+}
+
+/**
+ * Les fiches de la carte, en UNE requête.
+ *
+ * Cette fonction paginait `entreprises` par tranches de 1 000 (61 requêtes
+ * séquentielles), plus `opportunites` et `etapes_pipeline`, puis recomposait le
+ * statut de chaque fiche en JS et résolvait son département par
+ * `resolveDepartement` — un test point-dans-polygone exécuté 60 000 fois sur le
+ * thread principal, qui figeait l'onglet à chaque ouverture de /carte.
+ *
+ * Statut et département sont maintenant calculés en base
+ * (cf. sql/20260820_perf_60k_entreprises.sql) : le département se dérive du
+ * code postal, que 98 % des fiches portent, et le statut reprend exactement les
+ * règles de `src/lib/carte/statuts.ts`.
+ */
 async function loadCarte(signal: AbortSignal): Promise<CarteData> {
-  const [geometries, entreprises, opportunites, etapes] = await Promise.all([
+  const [geometries, reponse] = await Promise.all([
     fetchContours(CONTOURS_URL, signal),
-    fetchAllPages<EntrepriseRow>("entreprises", ENTREPRISE_SELECT),
-    fetchAllPages<OpportuniteRow>("opportunites", "id,entreprise_id,stage_id"),
-    fetchAllPages<EtapeRow>("etapes_pipeline", "id,nom,ordre"),
+    authedFetch("/api/entreprises/carte?detail=fiches", { signal }),
   ]);
 
-  const avancementParEtape = new Map<number, AvancementAffaire>(
-    etapes.map((e) => [e.id, avancementDeLEtape(e.nom ?? "", e.ordre ?? 0)]),
-  );
+  if (!reponse.ok) throw new Error(`carte_${reponse.status}`);
+  const charge = (await reponse.json()) as { fiches?: FicheApi[] };
 
-  // Une entreprise peut porter plusieurs affaires (un pipeline par offre) :
-  // c'est la plus avancée qui décide de sa couleur.
-  const avancementParEntreprise = new Map<number, AvancementAffaire>();
-  for (const opp of opportunites) {
-    if (opp.entreprise_id == null || opp.stage_id == null) continue;
-    const etape = avancementParEtape.get(opp.stage_id) ?? "aucun";
-    const courant = avancementParEntreprise.get(opp.entreprise_id) ?? "aucun";
-    avancementParEntreprise.set(opp.entreprise_id, avancementLePlusAvance(courant, etape));
-  }
-
-  const fiches: FicheCarte[] = entreprises.map((row) => {
-    const lat = typeof row.lat === "number" ? row.lat : null;
-    const lng = typeof row.lng === "number" ? row.lng : null;
-    const dept =
-      lat != null && lng != null
-        ? resolveDepartement(geometries, lng, lat)
-        : departementFromCodePostal(row.code_postal);
-
-    return {
-      id: row.id,
-      nom: row.name?.trim() || `Fiche #${row.id}`,
-      ville: row.ville,
-      codePostal: row.code_postal,
-      telephone: row.telephone,
-      siteWeb: row.site_web_canonique,
-      tags: readTags(row),
-      lat,
-      lng,
-      dept,
-      statut: statutEntreprise(
-        {
-          qualifie: Boolean(row.qualifie),
-          hidden_in_qualification: row.hidden_in_qualification,
-          archived_at: row.archived_at,
-        },
-        avancementParEntreprise.get(row.id) ?? "aucun",
-      ),
-    };
-  });
+  const fiches: FicheCarte[] = (charge.fiches ?? []).map((row) => ({
+    id: row.id,
+    nom: row.nom?.trim() || `Fiche #${row.id}`,
+    ville: row.ville,
+    codePostal: row.code_postal,
+    telephone: row.telephone,
+    siteWeb: row.site_web,
+    tags: readTags(row.tags),
+    lat: typeof row.lat === "number" ? row.lat : null,
+    lng: typeof row.lng === "number" ? row.lng : null,
+    dept: row.dept,
+    statut: lireStatut(row.statut),
+  }));
 
   const departements: DeptCarte[] = geometries
     .map((geometry) => {
