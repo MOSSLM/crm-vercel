@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Icon } from "./DemIcon";
+import { authedFetch } from "@/utils/authedFetch";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
 import { urlPlaquette } from "@/lib/audit/plaquette-lien";
 import { lienNonMesure } from "@/lib/analytics/trafic-interne";
@@ -68,6 +69,88 @@ function CopyUrl({ url }: { url: string }) {
   );
 }
 
+/**
+ * Le lien de la plaquette pour CE prospect — collectif tant qu'on ne l'a pas
+ * demandé, nominatif dès qu'on clique.
+ *
+ * POURQUOI LE JETON SE FRAPPE AU CLIC, ET NON À L'OUVERTURE DE LA FICHE. Ouvrir
+ * une fiche n'est pas envoyer un document. Poser un jeton à chaque coup d'œil
+ * remplirait la table de liens jamais partis, et l'entonnoir compterait comme
+ * « plaquette prête » des prospects à qui personne n'a rien proposé. Le clic,
+ * lui, précède toujours l'envoi.
+ *
+ * L'appel est IDEMPOTENT — `assurer_jetons_plaquette` ne remplace jamais un
+ * jeton déjà posé — donc recliquer rend le même lien, et ceux qui sont partis
+ * par WhatsApp continuent d'ouvrir.
+ *
+ * LE REPLI EST LE LIEN COLLECTIF, JAMAIS RIEN. Si la route tombe pendant un
+ * appel, l'agent doit pouvoir coller quelque chose qui ouvre le bon document :
+ * il perd l'attribution de l'ouverture, pas la conversation.
+ */
+function PlaquetteLien({ entrepriseId }: { entrepriseId: number | null }) {
+  const [urlNominative, setUrlNominative] = useState<string | null>(null);
+  const [enCours, setEnCours] = useState(false);
+
+  const preparer = async () => {
+    if (entrepriseId == null) return;
+    setEnCours(true);
+    try {
+      const res = await authedFetch("/api/agent/marketing-pipeline/plaquette", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entreprise_ids: [entrepriseId] }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        liens?: Array<{ url: string }>;
+        echecs?: Array<{ motif: string }>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Échec");
+      // L'URL entière vient de la route : c'est elle qui sait comment le lien se
+      // construit, et la recomposer ici ferait un second endroit à corriger le
+      // jour où le chemin bouge.
+      const url = data.liens?.[0]?.url;
+      if (!url) throw new Error(data.echecs?.[0]?.motif ?? "aucun lien rendu");
+      setUrlNominative(url);
+      navigator.clipboard?.writeText(url).catch(() => {});
+      toast.success("Lien nominatif prêt — et copié.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Lien nominatif indisponible");
+    } finally {
+      setEnCours(false);
+    }
+  };
+
+  if (urlNominative) {
+    return (
+      <div style={{ marginTop: 9 }}>
+        <CopyUrl url={urlNominative} />
+        <div className="dm-hint" style={{ marginTop: 6 }}>
+          <Icon name="check" className="ico-sm" />
+          Lien nominatif — son ouverture remonte dans l&apos;entonnoir.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 9 }}>
+      <CopyUrl url={urlPlaquette()} />
+      {entrepriseId != null && (
+        <button
+          className="btn outline sm"
+          style={{ width: "100%", justifyContent: "center", marginTop: 6 }}
+          onClick={preparer}
+          disabled={enCours}
+        >
+          <Icon name="link" className="ico-sm" />
+          {enCours ? "Préparation…" : "Préparer le lien nominatif"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function DemSide({
   company,
   audit,
@@ -122,20 +205,12 @@ export function DemSide({
                 envoyer. La plaquette ne nomme personne — elle est bâtie pour
                 partir telle quelle (cf. `contenuImpersonnel`).
 
-                LIEN COLLECTIF, ET C'EST UNE PERTE CONNUE : une ouverture depuis
-                cette URL ne s'attribue à personne. La version par prospect
-                existe — le board la fabrique en lot (« Créer les plaquettes »,
-                `/api/agent/marketing-pipeline/plaquette`) — mais la fiche ne
-                transporte pas encore le jeton, et sa migration n'est pas jouée.
-                Tant que les deux ne sont pas là, le lien collectif ouvre le bon
-                document ; c'est le compteur qui manque, pas la plaquette.
-
-                `urlPlaquette()` plutôt que le chemin recopié : cette URL part
-                par WhatsApp chez des prospects, elle doit bouger d'un seul
-                geste le jour où elle bouge. */}
-            <div style={{ marginTop: 9 }}>
-              <CopyUrl url={urlPlaquette()} />
-            </div>
+                DEUX LIENS, ET LE CHOIX SE FAIT AU CLIC. Le collectif est là
+                tout de suite, parce qu'un agent au téléphone ne peut pas
+                attendre ; le nominatif se frappe à la demande et c'est le seul
+                dont l'ouverture remonte dans l'entonnoir. Voir `PlaquetteLien`
+                pour la raison de ne pas le poser d'office. */}
+            <PlaquetteLien entrepriseId={e.id ?? null} />
           </>
         )}
       </div>
