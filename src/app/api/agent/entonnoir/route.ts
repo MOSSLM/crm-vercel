@@ -48,7 +48,7 @@ type LigneEntreprise = {
 };
 
 type LigneOpportunite = { id: string; entreprise_id: number | null; stage_id: number | null };
-type LigneTache = { entreprise_id: number | null; done_at: string | null };
+type LigneTache = { entreprise_id: number | null; done_at: string | null; status: string | null };
 type LigneInscription = { entreprise_id: number | null; vars: unknown };
 type LigneNote = { entreprise_id: number | null; created_at: string | null };
 type LigneEtat = { opportunite_id: string; replied: boolean | null; state: string | null; updated_at: string | null };
@@ -173,7 +173,39 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     });
   }
 
-  if (faits.size === 0) return json(vide(null, effectifs), { headers: cors });
+  // UN ÉCRAN À ZÉRO DOIT DIRE POURQUOI — c'est la règle n°1 de `etages.ts`, et
+  // elle valait pour les étages sans valoir pour la page entière. La route ne lit
+  // que les fiches de `owner_id = user.id` : ouverte avec un compte qui n'en
+  // possède aucune — l'admin, un second agent, le compte propriétaire du CRM —
+  // elle affichait « A 0 · B 0 » sans un mot, et rien ne distinguait ça d'une
+  // campagne qui n'aurait jamais démarré.
+  if (faits.size === 0) {
+    const enCohorte = effectifs.A_site_faible + effectifs.B_sans_site;
+    if (filtre && enCohorte > 0) {
+      // L'autre cohorte, elle, est peuplée : le sélecteur le montre déjà en haut
+      // d'écran. Ne pas parler de compte ici, ce serait envoyer chercher très loin.
+      return json(vide(`aucune entreprise dans la cohorte ${filtre} sur ce compte`, effectifs), {
+        headers: cors,
+      });
+    }
+    // Le comptage ne part QUE dans cette branche : il coûte un aller-retour le
+    // jour où l'écran est vide, jamais les autres jours.
+    const { count } = await sc
+      .from("entreprises")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", user.id)
+      .is("archived_at", null);
+    const possedees = count ?? 0;
+    return json(
+      vide(
+        possedees === 0
+          ? "ce compte ne possède aucune entreprise — les fiches de la campagne appartiennent au compte de démarchage, c'est avec lui qu'il faut ouvrir l'entonnoir"
+          : `aucune des ${possedees} entreprises de ce compte n'est rattachée à une cohorte de campagne`,
+        effectifs,
+      ),
+      { headers: cors },
+    );
+  }
 
   /** Marque un étage atteint. La PREMIÈRE fois fait foi — sinon la lecture par âge glisse. */
   const marquer = (entrepriseId: number | null | undefined, cle: CleEtage, le: string | null) => {
@@ -218,9 +250,12 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     parLots<LigneTache>(idsEntreprises, 300, (lot) =>
       sc
         .from("prospection_tasks")
-        .select("entreprise_id, done_at")
+        .select("entreprise_id, done_at, status")
         .eq("kind", "call")
-        .eq("status", "done")
+        // `skipped` est lu SANS être compté : seul « fait » marque l'étage, mais
+        // savoir qu'il n'y a que des « passé » est la différence entre un zéro
+        // qui mesure et un zéro qui ne mesure rien. Voir plus bas.
+        .in("status", ["done", "skipped"])
         .in("entreprise_id", lot)
         .limit(5000),
     ),
@@ -322,8 +357,29 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
   }
 
   // ── Étage 5 : conversation ─────────────────────────────────────────────
-  for (const t of taches.lignes) marquer(t.entreprise_id, "conversation", t.done_at);
-  if (taches.erreur) muettes.conversation = `prospection_tasks illisible — ${taches.erreur}`;
+  let appelsFaits = 0;
+  let appelsPasses = 0;
+  for (const t of taches.lignes) {
+    if (t.status === "done") {
+      appelsFaits += 1;
+      marquer(t.entreprise_id, "conversation", t.done_at);
+    } else {
+      appelsPasses += 1;
+    }
+  }
+  if (taches.erreur) {
+    muettes.conversation = `prospection_tasks illisible — ${taches.erreur}`;
+  } else if (appelsFaits === 0 && appelsPasses > 0) {
+    // Pour la file de démarchage, « passé » et « fait » sont deux gestes
+    // différents. Pour la mesure, ils disent la même chose : on a décroché le
+    // téléphone. Tant que la file n'est bouclée qu'en « passé », ce zéro ne
+    // compte pas les conversations — il compte une habitude de saisie. Le dire
+    // vaut mieux qu'afficher 0 sous une étiquette « mesuré », ce que la règle
+    // n°1 de ce module interdit.
+    muettes.conversation =
+      `${appelsPasses} appel(s) marqués « passé » et aucun « fait » — ` +
+      `l'étage ne mesurera les conversations qu'une fois la file bouclée en « fait »`;
+  }
 
   // ── Étage 6 : offre envoyée ────────────────────────────────────────────
   for (const o of offres.lignes) {
