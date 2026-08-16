@@ -12,12 +12,17 @@ export const dynamic = "force-dynamic";
 export const OPTIONS = (req: Request) => preflight(req);
 
 const carteQuerySchema = z.object({
-  /** Code de département (`01`…`95`, `2A`, `2B`). Absent = agrégat national. */
+  /** Code de département (`01`…`95`, `2A`, `2B`). Absent = national. */
   dept: z
     .string()
     .trim()
     .regex(/^(?:[0-9]{2}|2[AB])$/, "dept doit être un code de département")
     .optional(),
+  /**
+   * `agregat` (défaut) : compteurs par département + grille de densité, 101 ko.
+   * `fiches` : toutes les fiches, statut et département déjà calculés.
+   */
+  detail: z.enum(["agregat", "fiches"]).default("agregat"),
 });
 
 /**
@@ -47,6 +52,19 @@ export const GET = withAuth({}, async ({ req, user, cors }) => {
     const { data, error } = await sc.rpc("entreprises_carte_departement", {
       p_dept: parsed.data.dept,
     });
+    if (error) return jsonError(error.message, 500, {}, cors);
+    return json({ fiches: data ?? [] }, { headers: cors });
+  }
+
+  if (parsed.data.detail === "fiches") {
+    // `entreprises_carte()` renvoie des LIGNES, pas un tableau jsonb : replier
+    // 60 000 fiches en une seule valeur jsonb dépassait 60 s côté base. En
+    // lignes, la même fonction met 139 ms.
+    //
+    // Aucun plafond ne s'applique : ce projet n'a pas de `db-max-rows`
+    // configuré (vérifié — `current_setting('pgrst.db_max_rows')` est null),
+    // donc la réponse n'est pas tronquée.
+    const { data, error } = await sc.rpc("entreprises_carte");
     if (error) return jsonError(error.message, 500, {}, cors);
     return json({ fiches: data ?? [] }, { headers: cors });
   }

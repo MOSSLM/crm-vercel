@@ -532,6 +532,125 @@ grant execute on function public.entreprises_file(text, text, text[], text, bool
 -- construction du tableau depassait 60 s. C'etait le bon signal — la carte se
 -- dessine avec des compteurs, pas avec 60 000 points ; les fiches d'un
 -- departement se chargent au clic.
---
--- Les definitions exactes appliquees en base sont celles des migrations
--- perf_60k_entreprises_departement, _carte et _carte_agregat.
+
+create or replace function public.departement_du_cp(cp text)
+returns text language sql immutable parallel safe as $$
+  select case
+    when cp is null then null
+    when regexp_replace(cp, '\s', '', 'g') !~ '^[0-9]{5}$' then null
+    when left(regexp_replace(cp, '\s', '', 'g'), 2) = '20' then
+      case when substring(regexp_replace(cp, '\s', '', 'g') from 3)::int < 200
+           then '2A' else '2B' end
+    else left(regexp_replace(cp, '\s', '', 'g'), 2)
+  end;
+$$;
+
+alter table public.entreprises
+  add column if not exists departement text
+  generated always as (public.departement_du_cp(code_postal)) stored;
+
+create index if not exists entreprises_departement_idx
+  on public.entreprises (departement)
+  where departement is not null;
+
+/**
+ * Les fiches de la carte, statut deja calcule.
+ *
+ * Reproduit exactement src/lib/carte/statuts.ts : classement par nom d'etape
+ * normalise puis repli sur `ordre >= 3`, affaire la plus avancee quand une
+ * entreprise en porte plusieurs (aucun < perdu < contact < client), et
+ * « masquee » qui prime sur « qualifiee » — c'est un geste humain explicite, et
+ * la carte sert justement a retrouver ces fiches-la.
+ */
+create or replace function public.entreprises_carte()
+returns table (
+  id bigint, nom text, ville text, code_postal text, telephone text,
+  site_web text, tags jsonb, lat double precision, lng double precision,
+  dept text, statut text
+)
+language sql stable security definer set search_path = public as $$
+  with avancement as (
+    select
+      o.entreprise_id,
+      max(
+        case
+          when lower(unaccent(btrim(coalesce(ep.nom, '')))) in ('lost', 'perdu') then 1
+          when lower(unaccent(btrim(coalesce(ep.nom, '')))) in ('signature', 'acompte', 'client signe') then 3
+          when lower(unaccent(btrim(coalesce(ep.nom, '')))) in ('qualifie', 'lm deploye', 'nouveau lead') then 0
+          when lower(unaccent(btrim(coalesce(ep.nom, '')))) = 'en attente' or coalesce(ep.ordre, 0) >= 3 then 2
+          else 0
+        end
+      ) as rang
+    from public.opportunites o
+    join public.etapes_pipeline ep on ep.id = o.stage_id
+    where o.entreprise_id is not null
+    group by o.entreprise_id
+  )
+  select
+    e.id,
+    coalesce(nullif(btrim(coalesce(e.name, '')), ''), 'Fiche #' || e.id),
+    e.ville, e.code_postal, e.telephone, e.site_web_canonique,
+    -- `service_tags` d'abord, sinon repli sur `premiers_tags`, le CSV
+    -- historique. 1 011 fiches actives ne tiennent leurs tags que de ce repli :
+    -- s'en passer les afficherait sans aucun tag sur la carte.
+    case
+      when jsonb_array_length(coalesce(e.service_tags, '[]'::jsonb)) > 0 then e.service_tags
+      else coalesce((
+        select jsonb_agg(t)
+        from (
+          select btrim(x) as t
+          from unnest(regexp_split_to_array(coalesce(e.premiers_tags, ''), '[,;|]')) as x
+          where btrim(x) <> ''
+        ) s
+      ), '[]'::jsonb)
+    end,
+    e.lat, e.lng, e.departement,
+    case
+      when e.archived_at is not null then 'ecartee'
+      when a.rang = 3 then 'client'
+      when a.rang = 2 then 'contact'
+      when a.rang = 1 then 'ecartee'
+      when e.hidden_in_qualification then 'masquee'
+      when e.qualifie then 'qualifie'
+      else 'prospect'
+    end
+  from public.entreprises e
+  left join avancement a on a.entreprise_id = e.id
+  where e.merged_into_id is null;
+$$;
+
+/** Ce qui se dessine a l'echelle nationale : compteurs, jamais 60 000 points. */
+create or replace function public.entreprises_carte_agregat()
+returns jsonb language sql stable security definer set search_path = public as $$
+  with base as (select * from public.entreprises_carte())
+  select jsonb_build_object(
+    'total', (select count(*) from base),
+    'hors_carte', (select count(*) from base where dept is null),
+    'departements', coalesce((
+      select jsonb_agg(jsonb_build_object('dept', dept, 'statut', statut, 'n', n) order by dept, statut)
+      from (select dept, statut, count(*) as n from base where dept is not null group by 1, 2) t
+    ), '[]'::jsonb),
+    'densite', coalesce((
+      select jsonb_agg(jsonb_build_array(lat, lng, n))
+      from (
+        select round(lat::numeric, 1) as lat, round(lng::numeric, 1) as lng, count(*) as n
+        from base where lat is not null and lng is not null group by 1, 2
+      ) g
+    ), '[]'::jsonb)
+  );
+$$;
+
+/** Les fiches d'un seul departement, chargees au clic. */
+create or replace function public.entreprises_carte_departement(p_dept text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select jsonb_agg(to_jsonb(c)) from public.entreprises_carte() c where c.dept = p_dept),
+    '[]'::jsonb);
+$$;
+
+revoke all on function public.entreprises_carte() from public, anon;
+revoke all on function public.entreprises_carte_agregat() from public, anon;
+revoke all on function public.entreprises_carte_departement(text) from public, anon;
+grant execute on function public.entreprises_carte() to authenticated, service_role;
+grant execute on function public.entreprises_carte_agregat() to authenticated, service_role;
+grant execute on function public.entreprises_carte_departement(text) to authenticated, service_role;
