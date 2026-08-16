@@ -512,3 +512,26 @@ $$;
 
 revoke all on function public.entreprises_file(text, text, text[], text, boolean, int, int) from public, anon;
 grant execute on function public.entreprises_file(text, text, text[], text, boolean, int, int) to authenticated, service_role;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 6. Carte de France
+-- ───────────────────────────────────────────────────────────────────────────
+--
+-- /carte faisait trois paginations completes depuis le navigateur — 61 requetes
+-- pour `entreprises` seule — puis recomposait le statut de chaque fiche en JS et
+-- resolvait son departement par un test point-dans-polygone execute 60 000 fois
+-- sur le thread principal.
+--
+-- Le departement se derive du code postal : 59 676 fiches sur 60 944 (98 %) en
+-- portent un exploitable. Le statut se derive de `qualifie`,
+-- `hidden_in_qualification`, `archived_at` et de l'etape de pipeline la plus
+-- avancee, en reproduisant src/lib/carte/statuts.ts.
+--
+-- L'agregat national pese 101 ko contre ~10 Mo de fiches individuelles. Une
+-- premiere version repliait les 60 000 fiches en un seul jsonb : la
+-- construction du tableau depassait 60 s. C'etait le bon signal — la carte se
+-- dessine avec des compteurs, pas avec 60 000 points ; les fiches d'un
+-- departement se chargent au clic.
+--
+-- Les definitions exactes appliquees en base sont celles des migrations
+-- perf_60k_entreprises_departement, _carte et _carte_agregat.
