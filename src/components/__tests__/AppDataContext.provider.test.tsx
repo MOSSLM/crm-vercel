@@ -17,8 +17,7 @@ const mockToast = {
 jest.mock('sonner', () => ({ toast: mockToast }));
 
 const mockSearchResultsGetAll = jest.fn();
-const mockCompaniesGetAll = jest.fn();
-const mockCompaniesGetQualifiedOnly = jest.fn();
+const mockCompaniesGetPerimetre = jest.fn();
 const mockOpportunitiesGetAll = jest.fn();
 const mockPipelinesGetAll = jest.fn();
 const mockOffersGetAll = jest.fn();
@@ -33,8 +32,7 @@ const mockGetManyByCompanyIds = jest.fn();
 jest.mock('../../utils/api', () => ({
   searchResultsApi: { getAll: (...a: unknown[]) => mockSearchResultsGetAll(...a) },
   companiesApi: {
-    getAll: (...a: unknown[]) => mockCompaniesGetAll(...a),
-    getQualifiedOnly: (...a: unknown[]) => mockCompaniesGetQualifiedOnly(...a),
+    getPerimetreActif: (...a: unknown[]) => mockCompaniesGetPerimetre(...a),
   },
   contactsApi: {
     getManyByCompanyIds: (...a: unknown[]) => mockGetManyByCompanyIds(...a),
@@ -74,6 +72,7 @@ jest.mock('../../utils/journalApi', () => ({
 
 // Now import the provider AFTER the mocks are registered.
 import { AppDataProvider, useAppData } from '../AppDataContext';
+import { COMPTEURS_VIDES } from '@/lib/entreprises/colonnes';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -83,8 +82,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 const setAllPrimaryFetchesEmpty = () => {
   mockSearchResultsGetAll.mockResolvedValue([]);
-  mockCompaniesGetAll.mockResolvedValue([]);
-  mockCompaniesGetQualifiedOnly.mockResolvedValue([]);
+  mockCompaniesGetPerimetre.mockResolvedValue({ entreprises: [], compteurs: COMPTEURS_VIDES });
   mockOpportunitiesGetAll.mockResolvedValue([]);
   mockPipelinesGetAll.mockResolvedValue([]);
   mockOffersGetAll.mockResolvedValue([]);
@@ -121,7 +119,7 @@ describe('AppDataProvider', () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(mockCompaniesGetAll).not.toHaveBeenCalled();
+      expect(mockCompaniesGetPerimetre).not.toHaveBeenCalled();
       expect(mockOpportunitiesGetAll).not.toHaveBeenCalled();
     });
 
@@ -131,19 +129,18 @@ describe('AppDataProvider', () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(mockCompaniesGetAll).not.toHaveBeenCalled();
+      expect(mockCompaniesGetPerimetre).not.toHaveBeenCalled();
     });
   });
 
   describe('happy path', () => {
-    it('runs the 7 primary fetches in parallel and ends with loading=false', async () => {
+    it('runs the 6 primary fetches in parallel and ends with loading=false', async () => {
       mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: adminUser });
       const { result } = renderHook(() => useAppData(), { wrapper });
 
       await waitFor(() => expect(result.current.loading).toBe(false));
       expect(mockSearchResultsGetAll).toHaveBeenCalledTimes(1);
-      expect(mockCompaniesGetAll).toHaveBeenCalledTimes(1);
-      expect(mockCompaniesGetQualifiedOnly).toHaveBeenCalledTimes(1);
+      expect(mockCompaniesGetPerimetre).toHaveBeenCalledTimes(1);
       expect(mockOpportunitiesGetAll).toHaveBeenCalledTimes(1);
       expect(mockPipelinesGetAll).toHaveBeenCalledTimes(1);
       expect(mockOffersGetAll).toHaveBeenCalledTimes(1);
@@ -152,9 +149,12 @@ describe('AppDataProvider', () => {
 
     it('populates companies and opportunities from the fetches', async () => {
       mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: adminUser });
-      mockCompaniesGetAll.mockResolvedValue([
-        { id: 1, name: 'Acme', created_at: '2026-01-01', canonical_url: 'https://acme.com' },
-      ]);
+      mockCompaniesGetPerimetre.mockResolvedValue({
+        entreprises: [
+          { id: 1, name: 'Acme', created_at: '2026-01-01', canonical_url: 'https://acme.com' },
+        ],
+        compteurs: { ...COMPTEURS_VIDES, stock_total: 60687, qualifiees: 361 },
+      });
       mockOpportunitiesGetAll.mockResolvedValue([
         { id: 'opp-1', name: 'Deal', entreprise_id: 1, stage_id: 1 },
       ]);
@@ -165,6 +165,26 @@ describe('AppDataProvider', () => {
       expect(result.current.companies[0].id).toBe(1);
       expect(result.current.opportunities).toHaveLength(1);
       expect(result.current.opportunities[0].id).toBe('opp-1');
+    });
+
+    it('tire les compteurs de stock de la base, pas de la longueur du tableau', async () => {
+      // Le point de toute la bascule : `companies` ne porte plus que le
+      // périmètre actif (~1 100 fiches), donc le stock (~60 000) ne peut plus
+      // s'en déduire. Si quelqu'un rebranche `totalCompanies` sur
+      // `companies.length`, ce test tombe.
+      mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: adminUser });
+      mockCompaniesGetPerimetre.mockResolvedValue({
+        entreprises: [{ id: 1, name: 'Acme', created_at: '2026-01-01' }],
+        compteurs: { ...COMPTEURS_VIDES, stock_total: 60687, qualifiees: 361 },
+      });
+
+      const { result } = renderHook(() => useAppData(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.companies).toHaveLength(1);
+      expect(result.current.totalCompanies).toBe(60687);
+      expect(result.current.totalQualifiedCompanies).toBe(361);
+      expect(result.current.compteurs.a_qualifier).toBe(0);
     });
 
     it('persists primary slices to localStorage for next-load hydration', async () => {
@@ -187,7 +207,7 @@ describe('AppDataProvider', () => {
   describe('per-slice failure (current silent-swallow shape — see review #7-A)', () => {
     it('falls back to [] for the failed slice and keeps other slices populated', async () => {
       mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: adminUser });
-      mockCompaniesGetAll.mockRejectedValue(new Error('rls denied'));
+      mockCompaniesGetPerimetre.mockRejectedValue(new Error('rls denied'));
       mockOpportunitiesGetAll.mockResolvedValue([{ id: 'opp-1', name: 'D' }]);
 
       const { result } = renderHook(() => useAppData(), { wrapper });

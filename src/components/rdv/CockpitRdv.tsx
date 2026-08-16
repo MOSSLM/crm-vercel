@@ -115,7 +115,10 @@ export function CockpitRdv({
     setOuvertureDemandee((d) => ({ ...d, compteRenduId: undefined }));
   }, [contexte, ouvertureDemandee.compteRenduId]);
 
-  const choisirEntreprise = (entreprise: Company) => {
+  // Seul l'identifiant compte ici : le cockpit recharge le contexte complet de
+  // l'entreprise juste après. Le sélecteur renvoie donc la projection réduite de
+  // la recherche serveur, pas une `Company` entière.
+  const choisirEntreprise = (entreprise: { id: number }) => {
     setEntrepriseId(entreprise.id);
     setCompteRendu(null);
     setOnglet("contexte");
