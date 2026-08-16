@@ -1,6 +1,6 @@
-import type { AuditContent } from '@/types';
+import type { AuditContent, AuditPage5 } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
-import { LIBELLE_DEMO, detailNote, sousTitreNote } from '@/lib/audit/mesures';
+import { LIBELLE_DEMO, detailNote, mesuresVides, sousTitreNote } from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
 import { C } from '@/components/audit/AuditShared';
 
@@ -89,8 +89,52 @@ ${z('div', 'panel-title', { field: champs.titre })}${esc(titre ?? '')}${em ? ` <
 ${intro ? `${z('div', 'panel-intro', { field: champs.intro })}${esc(intro)}</div>` : ''}</div>`;
 }
 
-function sheetFoot(nom: string, n: string): string {
-  return `<div class="sheet-foot"><span>Confidentiel · préparé pour ${esc(nom)}</span><b>${n} / 3</b></div>`;
+/**
+ * Ce qui distingue les deux documents que ce fichier rend, réduit au strict
+ * minimum : un nombre de feuilles et deux mentions.
+ *
+ * Ces trois valeurs étaient écrites en dur dans les demi-pages, ce qui allait
+ * tant qu'il n'y avait qu'un document. Une plaquette de deux feuilles aurait
+ * affiché « 01 / 3 · préparé pour Entreprise cliente » — un total qui envoie le
+ * lecteur chercher une troisième feuille inexistante, et un destinataire nommé
+ * sur un document envoyé à trois cents personnes.
+ */
+interface Feuillets {
+  /** Le nombre de feuilles A4, pour le « n / total » du pied. */
+  total: number;
+  /** La mention de gauche du pied de feuille. */
+  mention: string;
+  /** La ligne de signature, sous la dernière demi-page. */
+  signature: string;
+}
+
+/** Le destinataire de l'audit, jamais vide : un pied à trou se remarque. */
+function destinataire(c: AuditContent): string {
+  return (c.page1.client_name ?? '').trim() || 'Entreprise cliente';
+}
+
+function feuilletsAudit(c: AuditContent): Feuillets {
+  const nom = destinataire(c);
+  return {
+    total: 3,
+    mention: `Confidentiel · préparé pour ${nom}`,
+    signature: `Document confidentiel préparé exclusivement pour ${nom}`,
+  };
+}
+
+/**
+ * La plaquette ne nomme personne, et ne se dit pas confidentielle : elle part
+ * telle quelle à toute une cohorte. Ce qu'elle doit dire à la place, c'est
+ * jusqu'à quand ses prix valent — parce qu'ils sont ceux du jour de l'édition.
+ */
+const FEUILLETS_PLAQUETTE: Feuillets = {
+  total: 2,
+  mention: 'SAMA · Agence digitale indépendante',
+  signature: 'Tarifs en vigueur au jour de l’édition — devis définitif sur demande.',
+};
+
+function sheetFoot(f: Feuillets, n: string): string {
+  return `<div class="sheet-foot"><span>${esc(f.mention)}</span><b>${n} / ${f.total}</b></div>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +277,7 @@ ${panelHead(p.section_label, p.section_title, p.section_title_em, intro, {
   ${reglette(m)}${cartesAxes(m)}
   ${blocMethode(m)}
 </div>
-${sheetFoot(c.page1.client_name || 'Entreprise cliente', '01')}</div>`;
+${sheetFoot(feuilletsAudit(c), '01')}</div>`;
 }
 
 /**
@@ -328,7 +372,7 @@ ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_intr
 // 03 · Ce qui change
 // ─────────────────────────────────────────────────────────────────────────────
 
-function cRecu(c: AuditContent): string {
+function cRecu(c: AuditContent, f: Feuillets, n: string): string {
   const p = c.page4;
   const entetes = p.recu_head ?? ['Le volet', 'Ce que vous recevez', 'Ce que ça corrige'];
 
@@ -351,7 +395,7 @@ ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_subt
       .join('')}
   </div>
 </div>
-${sheetFoot(c.page1.client_name || 'Entreprise cliente', '02')}</div>`;
+${sheetFoot(f, n)}</div>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,9 +409,26 @@ function cInvestissement(c: AuditContent): string {
   const additions = p.additional_services ?? [];
   const sc = p.secondary_card;
 
+  /*
+   * LE CALAGE VERTICAL DÉPEND DE CE QU'IL Y A À CALER, et ce n'est pas une
+   * coquetterie.
+   *
+   * Un audit remplit cette demi-page : grille tarifaire, formule alternative,
+   * jusqu'à trois additions conseillées. Elle doit donc démarrer en haut, sinon
+   * la dernière addition passe sous la ligne de coupe — et `overflow:hidden` la
+   * ferait disparaître sans rien dire.
+   *
+   * La plaquette n'a ni addition (aucun constat retenu, donc rien à conseiller)
+   * ni forcément d'alternative (le catalogue n'en porte pas toujours une). La
+   * même consigne y laisse deux cents pixels de crème sous le bloc de prix, ce
+   * qui ne se lit pas comme de l'air mais comme une page tronquée. Un audit sans
+   * addition ni alternative souffrait déjà du même trou.
+   */
+  const pleine = additions.length > 0 || Boolean(sc);
+
   return `<div class="half" id="audit-h5" data-screen-label="A4-3 · 04 Investissement">
 <div class="panel-head">${z('div', 'panel-eyebrow', { field: 'page5.section_label' })}${esc(p.section_label ?? '')}</div></div>
-<div class="panel-body" style="justify-content:flex-start;padding-top:6px">
+<div class="panel-body" style="justify-content:${pleine ? 'flex-start' : 'center'};padding-top:${pleine ? '6px' : '0'}">
   ${p.pricing_subtitle ? `${z('div', 'invest-subtitle', { field: 'page5.pricing_subtitle' })}${esc(p.pricing_subtitle)}</div>` : ''}
   ${z('div', 'invest-block', { field: 'page5.pricing' })}<div class="invest-gradient"></div>${p.show_grain !== false ? grainLayer(c.global_style?.grain_opacity) : ''}
     <div class="invest-inner">
@@ -400,14 +461,22 @@ function cInvestissement(c: AuditContent): string {
 // 05 · Prochaines étapes
 // ─────────────────────────────────────────────────────────────────────────────
 
-function cEtapes(c: AuditContent, m: MesuresAudit): string {
+function cEtapes(c: AuditContent, m: MesuresAudit, f: Feuillets, n: string): string {
   const p = c.page6;
+  /*
+   * `demo` commande le contenu ET le calage, pour la même raison que sur la
+   * demi-page tarifs : le bloc « allez voir votre site démo » occupe cent
+   * quinze pixels, exactement le trou qu'il laisse en son absence. Calé en haut
+   * sans lui, le document se termine sur une bande de crème qui se lit comme
+   * une page coupée. La plaquette n'a jamais de démo à montrer — elle part avant
+   * qu'on en construise un — et un audit sans site préparé non plus.
+   */
   const demo = c.page1.demo_url;
 
   return `<div class="half" id="audit-h6" data-screen-label="A4-3 · 05 Prochaines étapes">
 <div class="panel-head">${z('div', 'panel-eyebrow', { field: 'page6.section_label' })}${esc(p.section_label ?? '')}</div></div>
 ${z('div', 'panel-title', { field: 'page6.section_heading' })}${esc(p.section_title ?? '')} ${esc(p.section_title_line2 ?? '')} <em>${esc(p.section_title_em ?? '')}</em></div>
-<div class="panel-body" style="justify-content:flex-start;padding-top:14px;gap:11px">
+<div class="panel-body" style="justify-content:${demo ? 'flex-start' : 'center'};padding-top:${demo ? '14px' : '0'};gap:11px">
   <div class="steps-grid">${p.next_steps
     .map(
       (s, i) =>
@@ -425,16 +494,122 @@ ${z('div', 'panel-title', { field: 'page6.section_heading' })}${esc(p.section_ti
   ${z('div', 'cta-block', { field: 'page6.cta' })}<div><div class="cta-title">${esc(p.cta_title)}</div><div class="cta-sub">${esc(p.cta_sub)}</div>${p.contact_website ? `<div class="cta-contact-web">${esc(p.contact_website)}</div>` : ''}</div>
     <div class="cta-contact">${p.contact_phone ? `<a class="cta-btn cta-btn-tel" href="tel:${esc(p.contact_phone.replace(/\s/g, ''))}"><span>Appeler</span><b>${esc(p.contact_phone)}</b></a>` : ''}${p.contact_email ? `<a class="cta-btn cta-btn-mail" href="mailto:${esc(p.contact_email)}"><span>Écrire</span><b>${esc(p.contact_email)}</b></a>` : ''}</div>
   </div>
-  <div class="sign">${logoSvg(18, C.azur)}<div class="sign-text">SAMA · Agence digitale indépendante<br>Document confidentiel préparé exclusivement pour ${texte(c.page1.client_name, 'Entreprise cliente')}</div></div>
+  <div class="sign">${logoSvg(18, C.azur)}<div class="sign-text">SAMA · Agence digitale indépendante<br>${esc(f.signature)}</div></div>
 </div>
-${sheetFoot(c.page1.client_name || 'Entreprise cliente', '03')}</div>`;
+${sheetFoot(f, n)}</div>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Le corps du document — trois feuilles, six demi-pages. */
 export function corpsCompact(c: AuditContent, m: MesuresAudit): string {
+  const f = feuilletsAudit(c);
   return `<div class="sheet no-mark">${cCouverture(c, m)}${cReleve(c, m)}</div>
-<div class="sheet">${cConstats(c, m)}${cRecu(c)}</div>
-<div class="sheet">${cInvestissement(c)}${cEtapes(c, m)}</div>`;
+<div class="sheet">${cConstats(c, m)}${cRecu(c, f, '02')}</div>
+<div class="sheet">${cInvestissement(c)}${cEtapes(c, m, f, '03')}</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La plaquette
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La couverture de la plaquette : ce qu'on vend, et à qui.
+ *
+ * `cCouverture` ne convient pas — elle est bâtie autour du destinataire (nom,
+ * secteur, ville) et de la capture de son site démo. Un prospect sans site n'a
+ * ni l'un ni l'autre, et la case « Préparé pour » se remplirait de « Entreprise
+ * cliente », ce qui signale à l'ouverture que le document n'est pas pour lui.
+ *
+ * Le titre, le chapô et la date viennent quand même de `page1` : le contenu
+ * reste la source unique des mots, comme pour l'audit. Ce sont les DEUX BLOCS DU
+ * BAS qui changent de nature — à la place du destinataire et de son démo, la
+ * cible et le prix. Le prix se lit sur la couverture parce que la plaquette part
+ * à froid : un document qu'on ouvre sans nous connaître doit répondre « combien »
+ * avant qu'on le referme, et il est relu de `page5`, jamais recopié.
+ */
+function cCouverturePlaquette(c: AuditContent): string {
+  const p = c.page1;
+  const tarif = teaserTarif(c.page5);
+
+  return `<div class="half half-cover" id="plaquette-h1" data-screen-label="A4-1 couverture">
+<div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
+<div class="cover-in">
+  <div class="cover-top"><div class="logo-block">${logoSvg(22, C.brume)}<span class="logo-wm">SAMA</span></div><span class="cover-date">${esc(p.date)}</span></div>
+  <div class="cover-main">
+    <div class="cover-eyebrow">${esc(p.eyebrow)}</div>
+    <div class="cover-title">${esc(p.title_line1)}<br>${esc(p.title_line2)} <em>${esc(p.title_line3)}</em></div>
+    <div class="cover-subtitle">${esc(p.subtitle)}</div>
+  </div>
+  <div class="cover-foot"><div class="pq-duo">
+    <div class="cover-client"><div class="cover-client-label">Pour qui</div><div class="cover-client-name">Artisans du bâtiment</div><div class="cover-client-meta">Couvreurs, menuisiers, plombiers, électriciens, maçons.</div></div>
+    ${tarif ? `<div class="cover-client"><div class="cover-client-label">Nos tarifs</div><div class="cover-client-name">${esc(tarif.montant)}</div><div class="cover-client-meta">${esc(tarif.detail)}</div></div>` : ''}
+  </div></div>
+</div></div>`;
+}
+
+/**
+ * Le prix de couverture, relu de la page tarifs — jamais écrit ici.
+ *
+ * `audits.content` fige les prix au moment où le document est créé : quatre
+ * audits en base annoncent encore un tarif qu'on ne pratique plus. La plaquette
+ * n'est justement pas stockée, elle est reconstruite à chaque ouverture depuis
+ * la table `offres` ; recopier un montant dans ce fichier lui ferait perdre la
+ * seule propriété qui la distingue.
+ *
+ * Rien à afficher si le catalogue ne rend rien : un bloc « Nos tarifs » vide sur
+ * une couverture est pire que pas de bloc du tout.
+ */
+function teaserTarif(p: AuditPage5): { montant: string; detail: string } | null {
+  const services = getServices(p).filter((s) => s.enabled);
+  const ponctuel = services.find((s) => !s.is_mrr);
+  if (!ponctuel) return null;
+
+  const mensuel = services.find((s) => s.is_mrr);
+  return {
+    montant: `${ponctuel.from ? 'Dès ' : ''}${fmtEur(ponctuel.amount)} HT`,
+    detail: mensuel
+      ? `puis ${fmtEur(mensuel.amount)}/mois — hébergement, maintenance et modifications comprises.`
+      : 'Prix HT. Devis définitif sur demande.',
+  };
+}
+
+/**
+ * Le verrou de la plaquette : un contenu qui ne PEUT pas nommer un destinataire.
+ *
+ * Les trois champs vidés sont les seuls par lesquels le prospect entre dans le
+ * document — son nom, son secteur/ville, l'adresse du site démo préparé à son
+ * intention. Ils sont retirés à l'ENTRÉE des rendus, pas seulement laissés vides
+ * par le constructeur : un `demo_url` qui traînerait ferait sortir « Allez voir
+ * VOTRE site démo » et sa capture sur un document envoyé à toute une cohorte,
+ * et personne ne le verrait avant le prospect.
+ */
+export function contenuImpersonnel(c: AuditContent): AuditContent {
+  return { ...c, page1: { ...c.page1, client_name: '', client_meta: '', demo_url: '' } };
+}
+
+/**
+ * Le corps de la plaquette — DEUX feuilles, QUATRE demi-pages.
+ *
+ * PAIR, ET CE N'EST PAS UN CHOIX DE MISE EN PAGE. `.sheet` est une grille
+ * `1fr 1fr` en `overflow:hidden` (compactCss.ts) : une feuille tient exactement
+ * deux demi-pages, et une cinquième disparaîtrait sans le moindre signal — on ne
+ * s'en apercevrait que devant le prospect. Tout ajout ici se fait par paire.
+ *
+ * Les trois demi-pages reprises de l'audit sont celles qui ne lisent rien du
+ * prospect : ce qu'il reçoit, ce que ça coûte, comment on démarre. Elles ne sont
+ * pas recopiées — c'est le même code, donc une correction de la grille tarifaire
+ * ou du bloc de contact vaut pour les deux documents le même jour.
+ *
+ * LE CONTENU EST NEUTRALISÉ À L'ENTRÉE, et pas seulement construit neutre par
+ * `construirePlaquette`. La plaquette part à trois cents personnes : elle ne doit
+ * pas POUVOIR nommer quelqu'un, quel que soit le contenu qu'on lui passe.
+ */
+export function corpsPlaquette(c: AuditContent): string {
+  const impersonnel = contenuImpersonnel(c);
+  const f = FEUILLETS_PLAQUETTE;
+  const m = mesuresVides();
+
+  return `<div class="sheet no-mark">${cCouverturePlaquette(impersonnel)}${cRecu(impersonnel, f, '01')}</div>
+<div class="sheet">${cInvestissement(impersonnel)}${cEtapes(impersonnel, m, f, '02')}</div>`;
 }

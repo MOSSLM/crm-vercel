@@ -114,6 +114,20 @@ a{color:var(--azur);text-decoration:none}a:hover{color:#2C63AE}
 .sk-btn{height:15px;width:48px;background:rgba(${AZUR},.32);border-radius:3px;margin-top:3px}
 .demo-cta-link{margin-top:8px;font-size:10px;color:var(--brume);font-weight:500;display:flex;align-items:center;justify-content:space-between}
 .demo-cta-link b{font-weight:500;color:#8FC0FF}
+/* ── Couverture de plaquette ───────────────────────────────────────
+   Deux blocs côte à côte — la cible, le prix — là où l'audit met le
+   destinataire et son site démo. Ils réutilisent .cover-client plutôt que
+   d'ouvrir une seconde famille de styles : c'est le même objet visuel sur la
+   même couverture, et deux définitions divergeraient à la première retouche de
+   la charte. Le align-items:stretch de la grille est ce qui empêche le bloc de
+   droite, plus court d'une ligne, de flotter au-dessus du vide.
+
+   AUCUN ACCENT GRAVE DANS CETTE FEUILLE : elle vit dans un String.raw, et une
+   paire de backticks posée dans un commentaire CSS referme le littéral au
+   milieu d'une phrase française. Le compilateur signale alors une virgule
+   manquante trente lignes plus bas, ce qui n'aide personne. */
+.pq-duo{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
+.pq-duo .cover-client{display:flex;flex-direction:column;justify-content:center}
 /* ── En-tête de demi-page ─────────────────────────────────────────── */
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .panel-eyebrow{font-size:9px;letter-spacing:.25em;text-transform:uppercase;color:var(--azur);font-weight:500}

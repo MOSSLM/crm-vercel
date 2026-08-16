@@ -16,6 +16,7 @@ import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime"
 import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateLogo } from "@/lib/site-builder/claude-design/hydrate-logo";
 import { corrigerLiensAvis } from "@/lib/site-builder/claude-design/corriger-liens-avis";
 import {
   etatBadgesDepuisVariables,
@@ -539,6 +540,23 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     body = stampDomPaths(body);
     if (variables) {
       body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
+      // La marque de l'en-tête, au MÊME rang que dans le rendu publié : après le
+      // conditionnement, avant les avis. Sans ce passage, l'agent qui ouvre une
+      // fiche sans logo — 296 des 300 entreprises de la cohorte de démarchage —
+      // verrait ici l'image cassée du `src=""` alors que le site publié, lui,
+      // affiche la signature typographique. Il corrigerait donc à la main un
+      // défaut qui n'existe pas en ligne, ou tiendrait la démo pour inutilisable.
+      //
+      // C'est exactement la divergence aperçu/publié que les certifications ont
+      // déjà payée une fois (cf. le commentaire de `hydrateCertifications` plus
+      // bas) ; elle n'est pas plus acceptable dans ce sens-ci.
+      //
+      // Pas de garde-fou recopié : `hydrateLogo` teste `porteUneMarque` lui-même
+      // et rend le markup intact s'il n'y a ni bloc de marque, ni nom, ni logo.
+      body = hydrateLogo(body, {
+        nom: variables["entreprise.nom"],
+        logoUrl: variables["entreprise.logo_url"],
+      });
       body = hydrateReviews(body, variables["__reviews"]);
       // Même passage que le rendu publié : l'aperçu doit montrer le vrai lien
       // vers la fiche Google du client, pas la recherche générique que portent
