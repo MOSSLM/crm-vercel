@@ -54,3 +54,7 @@ next-env.d.ts
 # Collectes locales des scripts de données publiques : 2 Mo de jsonl
 # qui ne sont ni du code ni une source — ils se régénèrent depuis les API.
 data/
+
+# Dossiers web montés en local par scripts/prospection/dossier-web.mjs.
+# Des centaines de fichiers de travail, régénérables : ils ne rentrent pas dans l'historique.
+.prospection/

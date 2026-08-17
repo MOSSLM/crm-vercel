@@ -13,7 +13,9 @@
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
-    "audit:rescorer": "ts-node -O '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"isolatedModules\":false}' scripts/audit/rescorer.ts"
+    "audit:rescorer": "ts-node -O '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"isolatedModules\":false}' scripts/audit/rescorer.ts",
+    "dossiers": "node scripts/prospection/dossier-web.mjs",
+    "dossiers:recap": "node scripts/prospection/dossier-web.mjs --recap"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
@@ -100,6 +102,7 @@
     "eslint-config-next": "15.4.6",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "playwright": "^1.62.1",
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.1.12",
     "tailwindcss-animate": "^1.0.7",
