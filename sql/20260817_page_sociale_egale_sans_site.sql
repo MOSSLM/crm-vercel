@@ -1,0 +1,80 @@
+-- Une page Facebook n'est pas un site : c'est le signe qu'il n'y en a pas.
+--
+-- LA DÉCISION, prise par le propriétaire le 17/08 :
+--   « Je pense qu'on devrait pas blacklister car ça peut vouloir dire que c'est
+--     une entreprise sans site web, mais au moins ils ont une page pour qu'on
+--     puisse prendre des infos sur eux, c'est super intéressant. On les
+--     comptabilise comme sans site web. »
+--
+-- Elle renverse ce qui avait été fait le matin même : `facebook.com`,
+-- `instagram.com` et `fr.linkedin.com` sortent du blacklist (`active = false`,
+-- pas supprimés — la trace du motif reste). Ces 107 fiches sont exactement le
+-- cœur de la cible « sans site », et leur page sociale est une source
+-- d'informations gratuite pour préparer l'appel.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 1. `host_est_generique` couvre enfin ses sous-domaines
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Son ancre était `^(www\.)?` : `facebook.com` était reconnu, `fr-fr.facebook.com`
+-- non — les onze mêmes fiches qui échappaient au blacklist par la même faille.
+-- `ww.facebook.com` (faute de frappe), `business.google.com`, `vm.tiktok.com`
+-- passaient aussi. Remplacée par `(^|\.)`, et les bornes vérifiées : ni
+-- `energie-free.fr`, ni `orange-energie.fr`, ni `monbeaufacebook.fr` ne sont
+-- génériques.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. « Sans site » veut dire ce qu'il dit
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Le prédicat était `site_web_canonique is null and canonical_url is null`.
+-- Il devient `host_est_generique(host_key(coalesce(...)))`, ce qui range
+-- ensemble les trois cas qui n'ont jamais différé pour un commercial :
+--   · aucune URL ;
+--   · une URL VIDE — 793 fiches portent la chaîne '' et non NULL, et étaient
+--     donc comptées comme ayant un site. Personne ne pouvait le voir ;
+--   · une URL qui n'est pas un site à soi : Facebook (62), Google Sites (29),
+--     Instagram (9), Wix, e-monsite, pagesperso-orange, LinkedIn (3), TikTok.
+--
+-- Effet mesuré : « sans site » passe de 33 663 à 34 699 fiches vivantes.
+-- +1 036, dont 793 URL vides et ~243 pages sociales ou hébergeurs gratuits.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. LE DÉFAUT QUE CE TEST A RÉVÉLÉ : les drapeaux étaient tous en OU
+-- ─────────────────────────────────────────────────────────────────────────────
+-- En vérifiant le point 2, le compteur a rendu 60 698 au lieu de 34 699, et la
+-- liste affichait des entreprises avec un vrai site sous le filtre « sans site ».
+-- La cause est d'origine, et documentée dans la fonction : « Chaque flag est un
+-- OU : cocher deux cases élargit. » C'était juste pour l'usage d'alors —
+-- l'arbitrage des doublons, où l'on veut voir « archivée OU fusionnée ».
+-- C'est faux pour un explorateur, où chaque case doit restreindre.
+--
+-- Les drapeaux se lisent donc maintenant en DEUX familles :
+--   · l'ÉTAT (vivantes, archivee, masquee, fusionnee) s'additionne — OU entre
+--     eux, et aucun coché veut dire « tous les états » ;
+--   · le MANQUE (sans_site, sans_google, sans_siret, qualite) se cumule — ET,
+--     chacun indépendamment.
+--
+-- Contrôlé après coup :
+--   vivantes                            → 60 447
+--   vivantes + sans_site                → 34 699
+--   vivantes + sans_site + sans_google  → 33 871   (restreint bien)
+--   archivee + fusionnee                →    279   (élargit bien)
+--   et aucun site non générique ne ressort sous « sans site ».
+--
+-- `chercher_entreprises` n'a qu'un seul appelant — /api/entreprises/explorer —
+-- donc ce changement de sémantique ne casse rien d'autre. L'écran affiche
+-- désormais les deux familles séparément, avec « chaque case restreint » et
+-- « chaque case élargit » écrits à côté.
+
+-- Écritures DÉJÀ APPLIQUÉES le 17/08 via execute_sql. Consigné pour la trace.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Contrôles
+-- ─────────────────────────────────────────────────────────────────────────────
+-- select public.host_est_generique('fr-fr.facebook.com');   -- t
+-- select public.host_est_generique('monbeaufacebook.fr');   -- f
+-- select max(total) from public.chercher_entreprises(null, array['vivantes','sans_site'], '{}', 1, 0); -- 34699
+-- select value, active from public.url_blacklist where value in ('facebook.com','instagram.com');      -- active = f
+--
+-- ROLLBACK du blacklist social :
+-- update public.url_blacklist set active = true
+--  where scope = 'domain' and value in ('facebook.com','instagram.com','fr.linkedin.com');
