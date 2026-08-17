@@ -132,6 +132,7 @@ function lireArgs(argv) {
     sansWeb: false,
     moteur: null,
     sansFenetre: false,
+    attendreHumain: false,
   };
   for (let i = 2; i < argv.length; i++) {
     const cle = argv[i];
@@ -187,6 +188,9 @@ function lireArgs(argv) {
       case "--sans-fenetre":
         a.sansFenetre = true;
         break;
+      case "--attendre-humain":
+        a.attendreHumain = true;
+        break;
       case "--aide":
       case "-h":
         console.log(AIDE);
@@ -221,8 +225,11 @@ Usage : node scripts/prospection/dossier-web.mjs [options]
                             navigateur, profil persistant (défaut)
                           cse : API Google Custom Search (demande GOOGLE_CSE_ID)
                           ddg : DuckDuckGo HTML — dépanne, mais coupe vite
-  --sans-fenetre          navigateur masqué. À éviter : un CAPTCHA dans une
-                          fenêtre invisible est un blocage sans issue.
+  --sans-fenetre          navigateur masqué
+  --attendre-humain       s'arrêter devant un CAPTCHA et attendre qu'on le
+                          résolve. Déconseillé : celui de Google se réémet
+                          indéfiniment face à un navigateur piloté. Par défaut
+                          la fiche est simplement passée.
   --sans-google           ne pas appeler l'API Places (économise le quota)
   --sans-web              passe fiche Google seule, sans aucune recherche web
   --refaire               retraiter même si le dossier existe
@@ -407,6 +414,105 @@ const CHAMPS_PLACE =
   "id,displayName,formattedAddress,websiteUri,rating,userRatingCount," +
   "nationalPhoneNumber,businessStatus,googleMapsUri,primaryTypeDisplayName";
 
+/** Le nom compacté : ce qui reste quand la ponctuation et la forme juridique partent. */
+const nomCompact = (n) =>
+  sansAccents(n ?? "").toLowerCase().replace(FORMES, " ").replace(/[^a-z0-9]/g, "");
+
+/**
+ * Le vocabulaire du métier, qui n'identifie personne.
+ *
+ * Toutes nos entreprises font du chauffage, de la clim ou de la plomberie :
+ * ces mots sont dans un nom sur deux. Les compter comme une preuve d'identité,
+ * c'est déclarer que deux chauffagistes de la même ville sont la même
+ * entreprise.
+ */
+const MOTS_DE_METIER = new Set([
+  "climatisation", "clim", "chauffage", "chauffagiste", "plomberie", "plombier",
+  "sanitaire", "sanitaires", "energie", "energies", "renouvelable", "renouvelables",
+  "pompe", "pompes", "chaleur", "froid", "thermique", "thermiques", "electricite",
+  "electrique", "electricien", "batiment", "travaux", "service", "services",
+  "france", "groupe", "maison", "habitat", "confort", "technique", "techniques",
+  "installation", "installations", "depannage", "entretien", "isolation",
+  "menuiserie", "couverture", "toiture", "renovation", "solaire", "photovoltaique",
+  "ventilation", "genie", "conseil", "conseils", "expert", "experts", "pro", "pros",
+  // Les sigles du métier, aussi courts que trompeurs : « Pac Access » s'accordait
+  // avec « PAC GLASS - Remplacement pare-brise » sur le seul « pac ».
+  "pac", "cvc", "vmc", "rge", "sav", "eau", "gaz", "air", "sud", "nord", "est", "ouest",
+]);
+
+/** Les types de voie : présents dans toutes les adresses, donc discriminants dans aucune. */
+const VOIES = new Set([
+  "rue", "avenue", "boulevard", "chemin", "route", "impasse", "place", "allee",
+  "quai", "cours", "square", "lieu", "dit", "zone", "parc", "residence", "bis",
+]);
+
+/**
+ * CETTE FICHE GOOGLE EST-ELLE BIEN LA SIENNE ?
+ *
+ * Le code postal ne suffit pas, et c'est ce qui a été découvert en écrivant :
+ * l'entreprise 3 porte une ville en 69560 et une adresse en 44700 — deux données
+ * qui se contredisent dans sa propre fiche. La recherche a donc rendu « Air
+ * Pr'eau », un autre commerce de la commune, et l'ancien code l'acceptait parce
+ * que le code postal tombait juste. Sur 289 fiches, une douzaine étaient dans ce
+ * cas : 4 % d'identifiants faux, qui seraient ensuite partis alimenter
+ * l'enrichissement puis le site démo, sans que rien ne les signale jamais.
+ *
+ * On exige donc qu'AU MOINS UN des trois s'accorde :
+ *   · le téléphone — 9 chiffres, le signal le plus fort ;
+ *   · le nom — soit un mot significatif commun, soit l'un contenu dans l'autre
+ *     une fois compacté, ce qui rattrape les sigles : « S.N.2.E » et « SN2E »,
+ *     « SARL E.T.I.R. » et « Etir SARL », « CCL » et « CCL Home » ;
+ *   · l'adresse — le numéro ET un mot de voie en commun.
+ *
+ * Aucun accord : la fiche n'est pas écartée, elle est MARQUÉE. Elle reste dans le
+ * dossier avec la mention, parce qu'un rapprochement douteux se relit ; c'est
+ * l'écriture automatique qui s'arrête, pas l'information.
+ */
+function accordFiche(entreprise, place) {
+  const par = [];
+
+  const telCrm = chiffresTel(entreprise.telephone);
+  if (telCrm && telCrm === chiffresTel(place.nationalPhoneNumber)) par.push("téléphone");
+
+  // Le nom, débarrassé du métier. Sans ce filtre, « Pac Access » s'accordait
+  // avec « PAC GLASS - Remplacement pare-brise » sur le seul mot « pac », et
+  // « Metche Co / Climatisation » avec « STME L'Union / Climatisation » sur
+  // « climatisation ». Deux entreprises du même métier partagent toujours le
+  // vocabulaire du métier : c'est ce qui les rend indistinguables, pas ce qui
+  // les identifie.
+  const propres = (n) => motsDuNom(n).filter((m) => !MOTS_DE_METIER.has(m));
+  const motsCommuns = propres(entreprise.name).filter((m) => propres(place.displayName?.text).includes(m));
+  if (motsCommuns.length) par.push(`nom (${motsCommuns.join(", ")})`);
+  else {
+    // Le sigle : « S.N.2.E » = « SN2E », « SARL E.T.I.R. » = « Etir SARL ».
+    // L'inclusion seule ne suffit pas — « CLIP » est inclus dans
+    // « CLIPESERVICES » sans être la même entreprise. On exige que le plus court
+    // couvre l'essentiel du plus long.
+    const a = nomCompact(entreprise.name);
+    const b = nomCompact(place.displayName?.text);
+    const [court, long] = a.length <= b.length ? [a, b] : [b, a];
+    if (court.length >= 3 && long.includes(court) && court.length >= long.length * 0.75) {
+      par.push("nom (sigle)");
+    }
+  }
+
+  // L'adresse : le numéro EN TÊTE, et un vrai mot de voie. L'ancienne version
+  // prenait le premier nombre venu — donc parfois un morceau de code postal —
+  // et comparait des « mots » qui étaient des nombres : « AECO » s'accordait
+  // avec « AE2I » sur « adresse (1 90400) », c'est-à-dire sur rien.
+  const numero = (entreprise.adresse ?? "").trim().match(/^(\d{1,4})\b/)?.[1];
+  const voie = (s) =>
+    motsDuNom(s).filter(
+      (m) => /^[a-z]/.test(m) && m.length >= 4 && !VOIES.has(m) && !MOTS_DE_METIER.has(m),
+    );
+  const voieCommune = voie(entreprise.adresse).filter((m) => voie(place.formattedAddress).includes(m));
+  if (numero && new RegExp(`\\b${numero}\\b`).test(place.formattedAddress ?? "") && voieCommune.length) {
+    par.push(`adresse (${numero} ${voieCommune[0]})`);
+  }
+
+  return { ok: par.length > 0, par };
+}
+
 /**
  * `google_place_id` d'abord, recherche textuelle ensuite.
  *
@@ -431,7 +537,12 @@ async function ficheGoogle(e) {
         `https://places.googleapis.com/v1/places/${encodeURIComponent(e.google_place_id)}?languageCode=fr`,
         { headers: enTetes(CHAMPS_PLACE) },
       );
-      if (res.ok) return { statut: "trouvee", origine: "place_id", place: await res.json() };
+      if (res.ok) {
+        // Un `place_id` déjà en base a été posé par un geste antérieur : on ne
+        // le remet pas en cause, l'accord n'a de sens que sur ce qu'on découvre.
+        const place = await res.json();
+        return { statut: "trouvee", origine: "place_id", place, accord: { ok: true, par: ["déjà en base"] } };
+      }
       // Un place_id périmé arrive : on retombe sur la recherche plutôt que d'abandonner.
     }
 
@@ -451,16 +562,21 @@ async function ficheGoogle(e) {
     const places = corps.places ?? [];
     if (!places.length) return { statut: "aucune", requete };
 
-    // Choix du bon parmi les homonymes : le code postal tranche, sinon le
-    // premier — l'API classe déjà par pertinence géographique.
-    const bonne =
-      places.find((p) => e.code_postal && (p.formattedAddress ?? "").includes(e.code_postal)) ??
-      places[0];
+    // Le choix parmi les candidats : on préfère celui qui S'ACCORDE, et pas
+    // seulement celui dont le code postal tombe juste — c'est précisément
+    // l'erreur qui a produit « Air Pr'eau » pour « Roud EPC ».
+    const notees = places.map((p) => ({ p, accord: accordFiche(e, p) }));
+    const retenue =
+      notees.find((x) => x.accord.ok) ??
+      notees.find((x) => e.code_postal && (x.p.formattedAddress ?? "").includes(e.code_postal)) ??
+      notees[0];
+
     return {
       statut: "trouvee",
       origine: "recherche",
       requete,
-      place: bonne,
+      place: retenue.p,
+      accord: retenue.accord,
       autres: places.length - 1,
     };
   } catch (err) {
@@ -596,6 +712,9 @@ async function ouvrirMoteur(a) {
     return ouvrirMoteurPlaywright({
       racine: path.dirname(a.sortie),
       sansFenetre: a.sansFenetre,
+      // 0 = on n'attend personne devant un CAPTCHA. Voir le commentaire de
+      // `attendreLHumain` : celui de Google se réémet à l'infini.
+      attenteHumaine: a.attendreHumain ? 300000 : 0,
     });
   }
   throw new Error(`Moteur inconnu : ${choisi} (playwright, cse ou ddg)`);
@@ -887,6 +1006,16 @@ function redigerDossier(e, fiche, recherche, examines, reco) {
     const site = p.websiteUri;
     L.push(`**${p.displayName?.text ?? "(sans nom)"}** — ${p.primaryTypeDisplayName?.text ?? "type inconnu"}`);
     L.push("");
+    if (fiche.accord?.ok) {
+      L.push(`✅ C'est bien elle : ${fiche.accord.par.join(" · ")}.`);
+    } else {
+      L.push(
+        "⚠️ **Rapprochement non confirmé** — ni le téléphone, ni le nom, ni l'adresse " +
+          "ne concordent avec la fiche du CRM. Rien ne sera écrit automatiquement à partir " +
+          "de cette fiche : à vérifier à l'œil.",
+      );
+    }
+    L.push("");
     L.push(`| | |`);
     L.push(`|---|---|`);
     L.push(`| Adresse | ${p.formattedAddress ?? "—"} |`);
@@ -1050,6 +1179,33 @@ async function main() {
 
   const entreprises = await selectionner(a);
   const blacklist = await blacklistActive();
+
+  /*
+   * CE QUI A DÉJÀ ÉTÉ TROUVÉ NE SE PERD PAS EN REPASSANT.
+   *
+   * Découvert en le cassant : une repasse `--sans-web --refaire`, lancée pour
+   * corriger l'appariement des fiches Google, a réécrit les 48 dossiers dont le
+   * site avait été trouvé par recherche web — et les a rendus « aucun site ».
+   * ITSI LIARD, le cas témoin, avait reperdu itsi-liard-chauffage.fr.
+   *
+   * Une recherche web coûte cher (un CAPTCHA, parfois un lot entier) et ne
+   * périme pas en une heure. On relit donc l'index précédent, et un passage qui
+   * n'interroge aucun moteur REPREND ce que le précédent avait trouvé au lieu de
+   * le remplacer par du vide.
+   */
+  const precedents = new Map();
+  const indexPrecedent = path.join(a.sortie, "_index.jsonl");
+  if (existsSync(indexPrecedent)) {
+    for (const ligne of (await readFile(indexPrecedent, "utf8")).split("\n").filter(Boolean)) {
+      try {
+        const o = JSON.parse(ligne);
+        // On ne garde que les passages qui ont VRAIMENT interrogé un moteur.
+        if (o.url && o.moteur && o.moteur !== "non consulté") precedents.set(o.id, o);
+      } catch {
+        /* ligne tronquée par un Ctrl-C : sans importance */
+      }
+    }
+  }
   const dejaFaits = new Set(
     (await readdir(a.sortie)).map((f) => Number(f.split("-")[0])).filter(Number.isFinite),
   );
@@ -1104,22 +1260,25 @@ async function main() {
         ? { moteur: declareUtilisable ? "inutile" : "non consulté", requete, html: "", resultats: [], bloque: false }
         : await moteur.chercher(requete);
 
-    // Un moteur qui refuse ne se force pas. Trois refus d'affilée et on s'arrête :
-    // continuer ne ferait qu'écrire 500 dossiers vides et aggraver le blocage.
+    /*
+     * UN BLOCAGE WEB NE DOIT RIEN COÛTER À LA FICHE GOOGLE.
+     *
+     * La première version faisait `continue` : le dossier n'était pas écrit du
+     * tout, et l'appel Places déjà payé partait à la poubelle avec. Sur le lot
+     * du 17/08 c'était le plus cher des défauts — 126 fiches sur 174 étaient
+     * réglées par Places SANS aucune recherche, et un blocage aurait pu en
+     * emporter autant pour rien.
+     *
+     * Le dossier est donc écrit quand même, avec ce qu'on a et la mention du
+     * blocage. Seul le compteur d'arrêt reste : trois refus d'affilée signifient
+     * que Google nous a coupés, et insister n'apporterait plus que du vide.
+     */
     if (recherche.bloque) {
       blocsConsecutifs++;
-      console.warn(`${etiquette} — moteur muet (${recherche.detail ?? "0 résultat"})`);
-      if (blocsConsecutifs >= 3) {
-        console.error(
-          "\nTrois refus d'affilée : le moteur nous a coupés. On s'arrête là.\n" +
-            "Reprendre plus tard avec la même commande — les dossiers déjà écrits sont conservés.",
-        );
-        break;
-      }
-      await dormir(a.pause * 4);
-      continue;
+      console.warn(`${etiquette} — recherche web refusée (${recherche.detail ?? "0 résultat"})`);
+    } else {
+      blocsConsecutifs = 0;
     }
-    blocsConsecutifs = 0;
 
     // La page brute est gardée pour pouvoir revérifier une décision sans
     // relancer la recherche — donc sans rebrûler du quota ni risquer un blocage.
@@ -1164,7 +1323,15 @@ async function main() {
       examines.push({ ...r, categorie, nomDansDomaine, sonde });
     }
 
-    const reco = recommander(e, fiche, examines, blacklist);
+    let reco = recommander(e, fiche, examines, blacklist);
+    const repris = precedents.get(e.id);
+    if (!reco.url && repris && recherche.moteur === "non consulté") {
+      reco = {
+        url: repris.url,
+        confiance: repris.confiance,
+        motif: `${repris.motif} — repris du passage web du ${repris.moteur}, non refait ici`,
+      };
+    }
     const fichier = `${e.id}-${slug(e.name)}.md`;
     await writeFile(path.join(a.sortie, fichier), redigerDossier(e, fiche, recherche, examines, reco), "utf8");
     await appendFile(
@@ -1181,6 +1348,11 @@ async function main() {
         confiance: reco.confiance,
         motif: reco.motif,
         ficheGoogle: fiche.statut === "trouvee",
+        // `accord` gouverne l'écriture automatique : sans lui, aucun place_id
+        // ni aucun avis ne part en base. Voir `accordFiche`.
+        accord: fiche.accord?.ok ?? false,
+        accordPar: fiche.accord?.par ?? [],
+        nomGoogle: fiche?.place?.displayName?.text ?? null,
         siteSurFiche: fiche?.place?.websiteUri ?? null,
         avis: fiche?.place?.userRatingCount ?? 0,
         note: fiche?.place?.rating ?? null,
@@ -1195,6 +1367,18 @@ async function main() {
     console.log(
       `${etiquette} — ${reco.url ? `${reco.confiance} : ${reco.url}` : "aucun site"} (${examines.length} résultats)`,
     );
+    // L'arrêt ne vient qu'APRÈS l'écriture du dossier : la fiche en cours garde
+    // ce que Places a rendu, même si c'est elle qui a essuyé le troisième refus.
+    if (blocsConsecutifs >= 3) {
+      console.error(
+        "\nTrois refus d'affilée : Google nous a coupés. On s'arrête là.\n" +
+          "Les dossiers déjà écrits sont conservés — relancer la même commande\n" +
+          "plus tard reprend exactement où on en est. `--sans-web` termine le lot\n" +
+          "tout de suite si seule la fiche Google vous intéresse.",
+      );
+      break;
+    }
+
     // Pas de pause quand rien n'a été demandé au moteur : une fiche réglée par
     // l'API Places n'a aucune raison d'attendre 2,5 s.
     if (recherche.html) await dormir(a.pause);

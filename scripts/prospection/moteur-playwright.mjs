@@ -87,7 +87,7 @@ const EXTRACTION = () => {
  * surtout, repartirait d'un profil froid : c'est le meilleur moyen de se faire
  * prendre pour un robot à la dixième recherche.
  */
-export async function ouvrirMoteurPlaywright({ racine, sansFenetre = false, attenteHumaine = 300000 }) {
+export async function ouvrirMoteurPlaywright({ racine, sansFenetre = false, attenteHumaine = 0 }) {
   let chromium;
   try {
     ({ chromium } = await import("playwright"));
@@ -109,17 +109,39 @@ export async function ouvrirMoteurPlaywright({ racine, sansFenetre = false, atte
 
   const page = contexte.pages()[0] ?? (await contexte.newPage());
 
-  /** Attend qu'un humain règle ce qu'un script n'a pas le droit de régler. */
+  /**
+   * Le mur de Google, et ce qu'on en fait — c'est-à-dire RIEN, par défaut.
+   *
+   * La première version appelait un humain et attendait. Essayée en vrai le
+   * 17/08, sur le lot de la cohorte B : « le captcha était infini, j'ai galéré à
+   * le faire, je finissais d'en faire un et ça m'en faisait un autre ». C'est le
+   * comportement normal du `/sorry/` de Google face à un navigateur piloté — il
+   * ne valide jamais, il réémet. Demander à quelqu'un de le résoudre, c'est lui
+   * demander de perdre son après-midi sur une porte qui ne s'ouvre pas.
+   *
+   * Donc : on n'insiste pas. La fiche est marquée « moteur bloqué », le lot
+   * continue, et trois refus d'affilée arrêtent proprement la campagne. Ce n'est
+   * pas grave : la recherche web ne sert qu'à la minorité de fiches dont la
+   * fiche Google est muette — sur la cohorte B, l'écrasante majorité était déjà
+   * réglée par l'API Places sans qu'aucun moteur soit interrogé.
+   *
+   * `--attendre-humain` rétablit l'ancienne attente, pour qui veut vraiment
+   * pousser une fiche précise.
+   */
   const attendreLHumain = async (quoi) => {
+    if (!attenteHumaine) {
+      console.warn(`  ⤫  ${quoi} — fiche passée, on n'insiste pas.`);
+      return false;
+    }
     if (sansFenetre) {
-      throw new Error(
-        `${quoi} — et la fenêtre est masquée, donc personne ne peut y répondre.\n` +
-          "Relancer sans --sans-fenetre pour pouvoir le traiter à la main.",
-      );
+      console.warn(`  ⤫  ${quoi} — fenêtre masquée, fiche passée.`);
+      return false;
     }
     console.warn(
       `\n  ⏸  ${quoi}\n` +
-        `     La fenêtre Chromium est ouverte : réglez-le à la main, le script reprend tout seul.\n` +
+        `     La fenêtre Chromium est ouverte. Attention : le CAPTCHA de Google\n` +
+        `     se réémet souvent à l'infini face à un navigateur piloté — inutile\n` +
+        `     d'insister s'il revient deux fois. Ctrl-C arrête proprement.\n` +
         `     (abandon automatique dans ${Math.round(attenteHumaine / 1000)} s)\n`,
     );
     const limite = Date.now() + attenteHumaine;
