@@ -46,6 +46,15 @@ const MAX_OCTETS_FEUILLE = 400_000;
 const MAX_RESSOURCES_PESEES = 12;
 const PESEE_TIMEOUT_MS = 2_500;
 
+/**
+ * Gratuit, sans clé, mais plus lent et moins prévisible qu'un `HEAD` sur le
+ * même hébergeur : web.archive.org sert parfois en plusieurs secondes. Un
+ * budget large plutôt qu'un budget serré, parce qu'un échec ici ne coûte
+ * qu'un `null` — jamais une exception, jamais un budget de lot dépassé au-delà
+ * de ce délai puisque la sonde tourne en parallèle des autres.
+ */
+const WAYBACK_TIMEOUT_MS = 6_000;
+
 export async function collecter(rawUrl: string): Promise<CollecteSite> {
   const base: CollecteSite = {
     urlDemandee: rawUrl,
@@ -68,6 +77,10 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     nbFeuillesLues: 0,
     robotsTxt: null,
     sitemapXml: null,
+    derniereModifHtml: null,
+    derniereModifRessource: null,
+    waybackPremiereCaptureLe: null,
+    waybackDerniereModifLe: null,
   };
 
   let url: URL;
@@ -142,14 +155,15 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
   // Sondes annexes seulement si la page principale a répondu : les lancer sur
   // un domaine mort ferait payer deux délais d'attente pour rien.
   //
-  // Les trois sondes partent ENSEMBLE : elles sont indépendantes, et les
-  // enchaîner additionnerait leurs délais sur chacun des 2 000 sites de la file.
+  // Les sondes partent ENSEMBLE : elles sont indépendantes, et les enchaîner
+  // additionnerait leurs délais sur chacun des 2 000 sites de la file.
   const origine = origineDe(urlFinale);
-  const [robotsTxt, sitemapXml, feuilles, pesee] = await Promise.all([
+  const [robotsTxt, sitemapXml, feuilles, pesee, wayback] = await Promise.all([
     origine ? sonder(`${origine}/robots.txt`) : Promise.resolve(null),
     origine ? sonder(`${origine}/sitemap.xml`) : Promise.resolve(null),
     html ? lireFeuillesExternes(html, urlFinale) : Promise.resolve(FEUILLES_VIDES),
     html ? peserRessources(html, urlFinale, poidsOctets) : Promise.resolve(PESEE_VIDE),
+    origine ? sonderWayback(urlFinale) : Promise.resolve(null),
   ]);
 
   return {
@@ -175,6 +189,10 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     nbFeuillesLues: feuilles.lues,
     robotsTxt,
     sitemapXml,
+    derniereModifHtml: parseDateHttp(enTetes["last-modified"]),
+    derniereModifRessource: pesee.derniereModif,
+    waybackPremiereCaptureLe: wayback?.premiereCaptureLe ?? null,
+    waybackDerniereModifLe: wayback?.derniereModifLe ?? null,
   };
 }
 
@@ -237,7 +255,11 @@ export function extraireHrefsFeuilles(html: string, base: string): string[] {
 // Pesée réelle de la page
 // ---------------------------------------------------------------------------
 
-const PESEE_VIDE: { total: number | null; pesees: number } = { total: null, pesees: 0 };
+const PESEE_VIDE: { total: number | null; pesees: number; derniereModif: string | null } = {
+  total: null,
+  pesees: 0,
+  derniereModif: null,
+};
 
 /**
  * Poids de la page = document + ressources déclarées, additionné depuis les
@@ -249,23 +271,30 @@ const PESEE_VIDE: { total: number | null; pesees: number } = { total: null, pese
  *
  * Renvoie `null` si aucun serveur n'expose de taille : « on n'a pas pu peser »
  * n'est pas « c'est léger », et la preuve restera `inconnu`.
+ *
+ * Le même `HEAD` rend aussi `Last-Modified` : une deuxième en-tête lue sur une
+ * réponse qu'on paie de toute façon, gardée comme la plus récente vue sur
+ * l'ensemble des ressources — un thème dont le CSS date de 2016 se voit ici
+ * sans sonde de plus.
  */
 async function peserRessources(
   html: string,
   urlFinale: string,
   poidsDocument: number | null,
-): Promise<{ total: number | null; pesees: number }> {
+): Promise<{ total: number | null; pesees: number; derniereModif: string | null }> {
   const urls = extraireRessources(html, urlFinale).slice(0, MAX_RESSOURCES_PESEES);
   // Aucune ressource déclarée : le document EST la page, son poids suffit.
-  if (urls.length === 0) return { total: poidsDocument, pesees: 0 };
+  if (urls.length === 0) return { total: poidsDocument, pesees: 0, derniereModif: null };
 
-  const tailles = await Promise.all(urls.map(tailleParHead));
-  const connues = tailles.filter((t): t is number => t !== null);
-  if (connues.length === 0) return PESEE_VIDE;
+  const inspections = await Promise.all(urls.map(inspecterRessource));
+  const connues = inspections.map((r) => r.taille).filter((t): t is number => t !== null);
+  const derniereModif = plusRecente(inspections.map((r) => r.derniereModif));
+  if (connues.length === 0) return { ...PESEE_VIDE, derniereModif };
 
   return {
     total: connues.reduce((a, b) => a + b, 0) + (poidsDocument ?? 0),
     pesees: connues.length,
+    derniereModif,
   };
 }
 
@@ -290,7 +319,7 @@ export function extraireRessources(html: string, base: string): string[] {
   return out;
 }
 
-async function tailleParHead(url: string): Promise<number | null> {
+async function inspecterRessource(url: string): Promise<{ taille: number | null; derniereModif: string | null }> {
   try {
     const u = new URL(url);
     await assertPublicHost(u.hostname);
@@ -300,12 +329,29 @@ async function tailleParHead(url: string): Promise<number | null> {
       redirect: "follow",
       signal: AbortSignal.timeout(PESEE_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { taille: null, derniereModif: null };
     const n = Number(res.headers.get("content-length"));
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return {
+      taille: Number.isFinite(n) && n > 0 ? n : null,
+      derniereModif: parseDateHttp(res.headers.get("last-modified")),
+    };
   } catch {
-    return null;
+    return { taille: null, derniereModif: null };
   }
+}
+
+/** `Wed, 21 Oct 2015 07:28:00 GMT` (RFC 1123) → ISO 8601. `null` sur tout format inattendu. */
+function parseDateHttp(valeur: string | null | undefined): string | null {
+  if (!valeur) return null;
+  const t = Date.parse(valeur);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
+/** La plus récente d'une liste de dates ISO, `null` compris. Comparaison lexicographique valide sur ce format. */
+function plusRecente(dates: Array<string | null>): string | null {
+  let max: string | null = null;
+  for (const d of dates) if (d && (!max || d > max)) max = d;
+  return max;
 }
 
 /** Corps textuel d'une ressource, plafonné. `null` au moindre incident. */
@@ -353,9 +399,68 @@ async function sonder(url: string): Promise<boolean | null> {
   }
 }
 
+/**
+ * Historique Wayback Machine de la page d'accueil du domaine — gratuit, sans
+ * clé, jamais bloquant : `null` au moindre incident, comme `sonder()`.
+ *
+ * Deux appels, pas un : `limit=1` rend la PREMIÈRE capture connue (proxy de
+ * « en ligne depuis »), `limit=-1` — fonctionnalité documentée du serveur CDX —
+ * rend la DERNIÈRE (proxy de « dernier changement visible »). `collapse=digest`
+ * ne compte que les captures où le contenu a réellement changé, pas chaque
+ * passage du robot : sans lui, un site inchangé depuis 2019 mais recrawlé
+ * chaque mois ferait croire à une mise à jour récente.
+ */
+async function sonderWayback(
+  urlFinale: string,
+): Promise<{ premiereCaptureLe: string | null; derniereModifLe: string | null } | null> {
+  const origine = origineDe(urlFinale);
+  if (!origine) return null;
+  const cible = `${origine}/`;
+
+  const [premiereCaptureLe, derniereModifLe] = await Promise.all([
+    interrogerCdx(cible, 1),
+    interrogerCdx(cible, -1),
+  ]);
+  if (!premiereCaptureLe && !derniereModifLe) return null;
+  return { premiereCaptureLe, derniereModifLe };
+}
+
+async function interrogerCdx(url: string, limite: number): Promise<string | null> {
+  try {
+    const api = new URL("https://web.archive.org/cdx/search/cdx");
+    api.searchParams.set("url", url);
+    api.searchParams.set("output", "json");
+    api.searchParams.set("fl", "timestamp");
+    api.searchParams.set("collapse", "digest");
+    api.searchParams.set("filter", "statuscode:200");
+    api.searchParams.set("limit", String(limite));
+
+    const res = await fetch(api.href, {
+      headers: BROWSER_HEADERS,
+      signal: AbortSignal.timeout(WAYBACK_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+
+    const lignes = (await res.json()) as unknown;
+    // La ligne 0 nomme les colonnes (["timestamp"]) ; le résultat, s'il existe, est en ligne 1.
+    if (!Array.isArray(lignes) || lignes.length < 2) return null;
+    return timestampCdxVersIso(String((lignes[1] as unknown[])?.[0] ?? ""));
+  } catch {
+    return null;
+  }
+}
+
+/** `20150421072800` (UTC, sans séparateurs) → ISO 8601. */
+function timestampCdxVersIso(brut: string): string | null {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(brut);
+  if (!m) return null;
+  const [, y, mo, j, h, mi, s] = m;
+  return `${y}-${mo}-${j}T${h}:${mi}:${s}Z`;
+}
+
 /** Les seuls en-têtes qui servent à la note — on ne stocke pas tout le reste. */
 function collecterEnTetes(headers: Headers): Record<string, string> {
-  const garder = ["content-encoding", "cache-control", "content-type", "server", "content-length"];
+  const garder = ["content-encoding", "cache-control", "content-type", "server", "content-length", "last-modified"];
   const out: Record<string, string> = {};
   for (const k of garder) {
     const v = headers.get(k);

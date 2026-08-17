@@ -225,6 +225,19 @@ export interface CollecteSite {
   /** null quand la vérification n'a pas pu aboutir — distinct de `false`. */
   robotsTxt: boolean | null;
   sitemapXml: boolean | null;
+
+  /** En-tête `Last-Modified` de la page elle-même, en ISO — rare mais gratuit quand présent. */
+  derniereModifHtml: string | null;
+  /**
+   * La plus récente des dates `Last-Modified` vues sur les ressources pesées
+   * (images, CSS, JS) — même `HEAD` que celui déjà fait pour le poids, une
+   * deuxième en-tête lue sur la même réponse.
+   */
+  derniereModifRessource: string | null;
+  /** Première capture connue de la page d'accueil sur web.archive.org, en ISO. */
+  waybackPremiereCaptureLe: string | null;
+  /** Dernier changement de contenu que Wayback ait observé, en ISO. */
+  waybackDerniereModifLe: string | null;
 }
 
 /** Les signaux bruts extraits du HTML. Aucun jugement ici : que des faits. */
@@ -330,6 +343,28 @@ export interface SignauxSite {
    * `null` quand l'entreprise n'en détient aucune — la question ne se pose pas.
    */
   mentionneRge: boolean | null;
+
+  // ── Technologie ─────────────────────────────────────────────────────────
+  /** CMS/plateforme reconnu — "wordpress", "wix", "shopify"… `null` si aucune signature ne correspond. */
+  cms: string | null;
+  /** Version du CMS, quand elle est lisible — pour l'instant WordPress seul. */
+  cmsVersion: string | null;
+  /** Thème WordPress (slug de `/wp-content/themes/<slug>/`). */
+  theme: string | null;
+  /** Constructeur de pages détecté par-dessus le CMS — "elementor", "divi"… */
+  constructeur: string | null;
+  /** Le `<meta name="generator">` brut, pour vérification humaine. */
+  generateurBrut: string | null;
+  /**
+   * La date la plus récente qu'on ait pu constater, tous indices confondus —
+   * en-tête HTML, en-tête d'une ressource, ou dernier changement vu par
+   * Wayback. Sa source voyage avec elle : une preuve sans provenance ne se
+   * défend pas devant un prospect qui demanderait « comment vous le savez ? ».
+   */
+  derniereModifDetecteeLe: string | null;
+  sourceDerniereModif: "en_tete_html" | "en_tete_ressource" | "wayback" | null;
+  /** Première capture connue sur web.archive.org — proxy d'ancienneté du site. */
+  waybackPremiereCaptureLe: string | null;
 }
 
 /**

@@ -102,6 +102,22 @@ export interface AuditLu {
   analyse_le: string | null;
   psi_performance: number | null;
   psi_recupere_le: string | null;
+  /**
+   * Ce que l'analyseur a reconnu de la technologie du site — `null` sur les
+   * lignes écrites avant cette détection (l'analyse n'a pas encore été rejouée)
+   * ou quand aucune signature n'a matché. Vient tel quel de `signaux`, sans
+   * recalcul : voir `detecterTechno` dans `techno.ts`.
+   */
+  technologie: {
+    cms: string | null;
+    cmsVersion: string | null;
+    theme: string | null;
+    constructeur: string | null;
+    generateurBrut: string | null;
+    derniereModifDetecteeLe: string | null;
+    sourceDerniereModif: string | null;
+    waybackPremiereCaptureLe: string | null;
+  } | null;
 }
 
 export type LectureAudit =
@@ -355,6 +371,18 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     analyse_le: str(row.analyse_le),
     psi_performance: num(row.psi_performance),
     psi_recupere_le: str(row.psi_recupere_le),
+    technologie: signaux
+      ? {
+          cms: signaux.cms ?? null,
+          cmsVersion: signaux.cmsVersion ?? null,
+          theme: signaux.theme ?? null,
+          constructeur: signaux.constructeur ?? null,
+          generateurBrut: signaux.generateurBrut ?? null,
+          derniereModifDetecteeLe: signaux.derniereModifDetecteeLe ?? null,
+          sourceDerniereModif: signaux.sourceDerniereModif ?? null,
+          waybackPremiereCaptureLe: signaux.waybackPremiereCaptureLe ?? null,
+        }
+      : null,
   };
 }
 
