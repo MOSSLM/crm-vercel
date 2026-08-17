@@ -52,6 +52,7 @@ function renderCard(
       onLogged={jest.fn()}
       onNext={over.onNext ?? jest.fn()}
       onReplied={jest.fn()}
+      onRetire={jest.fn()}
     />,
   );
 }
@@ -153,6 +154,7 @@ describe("DemActionCard — l'attente de réponse", () => {
         onLogged={jest.fn()}
         onNext={onNext}
         onReplied={jest.fn()}
+      onRetire={jest.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Tâche suivante/ }));
@@ -171,6 +173,7 @@ describe("DemActionCard — l'attente de réponse", () => {
         onLogged={jest.fn()}
         onNext={onNext}
         onReplied={jest.fn()}
+      onRetire={jest.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: /Le prospect a répondu/ })).toBeInTheDocument();

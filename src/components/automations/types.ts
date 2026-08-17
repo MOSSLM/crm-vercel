@@ -250,6 +250,14 @@ export interface ProspectionTaskPayload {
    */
   variant?: 'company' | 'contact'
   variantAlt?: { variant: 'company' | 'contact'; message: string } | null
+  /**
+   * La MISE DE CÔTÉ, telle que `PATCH /api/agent/tasks` l'a posée.
+   *
+   * Le motif vit ici et pas seulement dans l'historique : quand la tâche
+   * ressort trois semaines plus tard, « il est en congés jusqu'au 8 » doit être
+   * sur la carte, pas à retrouver en déroulant tous les échanges.
+   */
+  mise_de_cote?: { jusquau: string; motif: string | null; le: string } | null
   [k: string]: unknown
 }
 

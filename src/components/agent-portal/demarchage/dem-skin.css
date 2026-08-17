@@ -678,3 +678,55 @@
 .dm-skin .dm-hf-tel .l{display:inline-flex;align-items:center;gap:4px}
 .dm-skin .dm-hf-tel .q{font-size:11.5px;color:var(--text-3)}
 .dm-skin .dm-hf-et{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* ── Ni un oui, ni un non ─────────────────────────────────────────────────
+   Deux gestes que la carte n'avait pas, et qui ne sont pas des « issues de
+   l'échange » : mettre le prospect DE CÔTÉ (il n'est pas dispo en ce moment,
+   il revient de lui-même à la date choisie) et le sortir d'un CANAL où il
+   n'est pas joignable (le numéro n'a pas de compte WhatsApp).
+
+   Ils vivent au-dessus des pastilles d'issue, en retrait : ce sont des
+   sorties de secours fréquentes, pas le geste principal de la carte. Le
+   panneau ne s'ouvre qu'au clic — replié, il ne coûte rien à l'œil. */
+.dm-skin .dm-side-acts{display:flex;gap:6px;flex-wrap:wrap}
+.dm-skin .dm-side-b{appearance:none;display:inline-flex;align-items:center;gap:6px;height:32px;
+  padding:0 11px;border-radius:8px;border:1px dashed var(--border-2);background:transparent;
+  font-size:11.5px;font-weight:500;color:var(--text-3);cursor:pointer}
+.dm-skin .dm-side-b:hover{border-style:solid;border-color:var(--text);color:var(--text)}
+.dm-skin .dm-side-b[aria-pressed="true"]{border-style:solid;border-color:var(--text);
+  background:var(--surface-2);color:var(--text)}
+.dm-skin .dm-side-b.danger:hover,.dm-skin .dm-side-b.danger[aria-pressed="true"]{
+  border-color:var(--danger);color:var(--danger)}
+.dm-skin .dm-side-b:disabled{opacity:.5;cursor:not-allowed}
+.dm-skin .dm-panel{display:flex;flex-direction:column;gap:9px;padding:11px;border-radius:10px;
+  border:1px solid var(--border-2);background:var(--surface-2)}
+.dm-skin .dm-panel .dm-outs{gap:6px;flex-wrap:wrap;display:flex}
+.dm-skin .dm-panel .dm-out{padding:0 11px;height:32px}
+.dm-skin .dm-check{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45;
+  color:var(--text-2);cursor:pointer}
+.dm-skin .dm-check input{margin-top:2px;flex-shrink:0}
+
+/* Une ligne de file rangée volontairement. Sans cette mention, elle se relit
+   comme un oubli — et on la rappelle, ce qui défait exactement le geste. */
+.dm-skin .dm-tk .st.cote{background:var(--bg-2);color:var(--text-3);font-weight:600}
+
+/* ── S'attribuer des entreprises ──────────────────────────────────────────
+   Le bouton reprend la forme de « une entreprise rappelle… », juste en
+   dessous : ce sont les deux entrées qui ne viennent pas de la file du jour.
+   Il porte le nombre d'entreprises encore disponibles — « m'attribuer des
+   entreprises » sans savoir s'il en reste trois ou trois cents ne décide de
+   rien. */
+.dm-skin .dm-rech-b.attr{border-style:dashed}
+.dm-skin .dm-rech-b .n{font-family:var(--font-mono);font-size:10px;font-weight:700;
+  padding:2px 6px;border-radius:20px;background:var(--accent-tint);color:var(--accent)}
+.dm-skin .dm-attr .pan{width:min(760px,100%);max-height:82vh}
+.dm-skin .dm-attr-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:8px 13px;border-bottom:1px solid var(--border)}
+.dm-skin .dm-attr-bar .resume{margin-left:auto;font-size:11px;color:var(--text-3)}
+.dm-skin .dm-attr .r .ck{width:17px;height:17px;border-radius:5px;border:1px solid var(--border-2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--bg)}
+.dm-skin .dm-attr .r[aria-selected="true"] .ck{background:var(--accent);border-color:var(--accent)}
+.dm-skin .dm-attr .r .tags{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.dm-skin .dm-attr .r .tg[data-site="0"]{background:var(--magic-tint);color:var(--magic)}
+.dm-skin .dm-attr .r .tg[data-site="1"]{background:var(--info-tint);color:var(--info)}
+.dm-skin .dm-attr .ft{gap:10px}

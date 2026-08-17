@@ -6,6 +6,7 @@ import {
   dayOfTask,
   firstPlannedTask,
   isLate,
+  isSetAside,
   normaliseQuotas,
   planTasks,
   quotaOf,
@@ -18,10 +19,19 @@ const iso = (d: string) => `${d}T09:00:00.000Z`;
 type T = {
   id: string;
   kind?: string;
+  status?: string;
   due_at: string | null;
   in_conversation?: boolean;
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
+
+/** Une tâche mise de côté : replanifiée à une date, pas fermée. */
+const deCote = (id: string, retour: string, kind = "whatsapp"): T => ({
+  id,
+  kind,
+  status: "snoozed",
+  due_at: iso(retour),
+});
 const t = (id: string, due: string | null, kind = "whatsapp", intent?: T["intent"]): T => ({
   id,
   kind,
@@ -369,6 +379,79 @@ describe("isLate — l'échéance dépassée reste dite, sur la ligne", () => {
 
   it("ne marque pas une tâche sans échéance", () => {
     expect(isLate(t("a", null), NOW, "UTC")).toBe(false);
+  });
+});
+
+/**
+ * LA MISE DE CÔTÉ — ni un oui, ni un non.
+ *
+ * Ce que ces tests protègent : un prospect qu'on range NE REVIENT PAS avant sa
+ * date. Le plan répartit à la cadence et ne lisait `due_at` que pour ordonner —
+ * une tâche repoussée à trois semaines retombait donc dans la file du jour dès
+ * qu'il restait une place au quota, et le geste ne mettait rien de côté.
+ */
+describe("isSetAside — reconnaître un prospect rangé", () => {
+  it("reconnaît une tâche replanifiée à une date à venir", () => {
+    expect(isSetAside(deCote("a", "2026-09-10"), NOW, "UTC")).toBe(true);
+  });
+
+  it("ne range que ce qui a été rangé EXPRÈS", () => {
+    // Une relance de séquence naît avec l'échéance du jour où elle est créée :
+    // c'est bien elle que la cadence doit étaler, pas une mise de côté.
+    expect(isSetAside(t("relance", iso("2026-08-20")), NOW, "UTC")).toBe(false);
+  });
+
+  it("cesse de la ranger le jour où elle revient", () => {
+    // La date est arrivée : le statut est encore `snoozed` en base, mais il n'y
+    // a plus rien à mettre de côté — c'est du travail du jour.
+    expect(isSetAside(deCote("a", "2026-08-13"), NOW, "UTC")).toBe(false);
+    expect(isSetAside(deCote("b", "2026-08-01"), NOW, "UTC")).toBe(false);
+  });
+
+  it("ne range pas une tâche sans échéance", () => {
+    expect(isSetAside({ id: "a", kind: "call", status: "snoozed", due_at: null }, NOW, "UTC")).toBe(
+      false,
+    );
+  });
+});
+
+describe("planTasks — un prospect mis de côté attend sa date", () => {
+  it("l'envoie au jour de son retour, pas dans la file du jour", () => {
+    const d = plan([deCote("range", "2026-08-20")]);
+    expect(ids(jour(d, 0))).toEqual([]);
+    expect(ids(jour(d, 7))).toEqual(["range"]);
+    expect(d.map((j) => j.date)).toEqual(["2026-08-13", "2026-08-20"]);
+  });
+
+  it("le rend à la file le jour dit", () => {
+    const d = plan([deCote("revient", "2026-08-13")]);
+    expect(ids(jour(d, 0))).toEqual(["revient"]);
+  });
+
+  it("ne lui fait pas consommer la cadence des journées qu'il traverse", () => {
+    // 20 WhatsApp échus (le quota du jour) plus un rangé à J+3 : le rangé ne
+    // doit prendre la place de personne, ni aujourd'hui ni le jour de retour.
+    const d = plan([...lot("whatsapp", DAILY_QUOTA.whatsapp), deCote("range", "2026-08-16")]);
+    expect(jour(d, 0)).toHaveLength(DAILY_QUOTA.whatsapp);
+    expect(ids(jour(d, 3))).toEqual(["range"]);
+  });
+
+  it("résiste à un signal chaud — la décision humaine passe devant la mesure", () => {
+    // Sans cette règle, une visite de la démo remonterait en tête de file
+    // quelqu'un qu'on vient de ranger, et il faudrait le ranger chaque matin.
+    const range: T = {
+      ...deCote("range", "2026-09-01", "call"),
+      intent: { callWhen: "maintenant", score: 90 },
+    };
+    const d = plan([range]);
+    expect(ids(jour(d, 0))).toEqual([]);
+    expect(jour(d, 19)).toHaveLength(1);
+  });
+
+  it("n'affecte jamais un rangé à deux journées", () => {
+    const tasks = [...lot("call", 25), deCote("r1", "2026-08-25"), deCote("r2", "2026-08-25")];
+    const d = plan(tasks);
+    expect(d.reduce((n, j) => n + j.tasks.length, 0)).toBe(tasks.length);
   });
 });
 

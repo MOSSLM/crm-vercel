@@ -556,6 +556,11 @@ export const adminAgentSettingsSchema = z.object({
   agent_id: z.string().uuid(),
   can_qualify: z.boolean(),
   can_use_marketing_pipeline: z.boolean(),
+  /**
+   * L'agent se sert lui-même dans le pool. Optionnel et faux par défaut : un
+   * appel écrit avant l'ajout de ce droit ne doit pas l'accorder au passage.
+   */
+  can_self_assign: z.boolean().optional().default(false),
   /** null = pas de plafond. En centimes. */
   enrichment_budget_cents: z.coerce.number().int().min(0).nullable().optional(),
   budget_period: z.enum(["month", "total"]).optional().default("month"),

@@ -89,6 +89,8 @@ function renderRail(
       sel={null}
       onPick={jest.fn()}
       onRechercher={jest.fn()}
+      poolDispo={null}
+      onAttribuer={jest.fn()}
     />,
   );
   const el = (sel: string) => container.querySelector<HTMLElement>(sel)!;

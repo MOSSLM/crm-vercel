@@ -2,7 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
+import { advanceEnrollmentAfterTask, sortirDeSequence } from "@/lib/automations/engine";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
 import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
@@ -54,8 +54,12 @@ type TaskGuardRow = {
   step_id: string | null;
   enrollment_id: string | null;
   assignee_id: string | null;
+  payload: Record<string, unknown> | null;
   entreprise: { owner_id: string | null } | { owner_id: string | null }[] | null;
 };
+
+/** Les seuls états qu'un geste d'agent peut poser sur une tâche. */
+const STATUTS_ACCEPTES = new Set(["done", "snoozed", "skipped"]);
 
 /** Une tâche bouclée aujourd'hui — juste de quoi la classer et la compter. */
 type DoneRow = {
@@ -512,6 +516,10 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   const id = body.id as string | undefined;
   const status = body.status as string | undefined;
   if (!id || !status) return jsonError("id et status requis", 400, {}, cors);
+  // Vocabulaire fermé : `status` arrive du navigateur et finit tel quel dans la
+  // colonne. Une valeur inventée sortirait la tâche de la file sans qu'aucun
+  // écran ne sache plus la retrouver.
+  if (!STATUTS_ACCEPTES.has(status)) return jsonError("statut_inconnu", 400, {}, cors);
 
   const sc = getServiceClient();
 
@@ -520,7 +528,7 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   const { data: taskRaw, error: taskErr } = await sc
     .from("prospection_tasks")
     .select(
-      "id, kind, contact_id, entreprise_id, opportunite_id, step_id, enrollment_id, assignee_id, " +
+      "id, kind, contact_id, entreprise_id, opportunite_id, step_id, enrollment_id, assignee_id, payload, " +
         "entreprise:entreprises(owner_id)",
     )
     .eq("id", id)
@@ -535,12 +543,32 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     return jsonError("introuvable", 404, {}, cors);
   }
 
+  // Lus AVANT l'écriture : la note voyage dans la mise de côté (c'est le motif
+  // qu'on relira au retour) et l'issue décide du sort de la séquence.
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const stepOutcomeId = typeof body.step_outcome === "string" ? body.step_outcome : undefined;
+  const outcomeDef = stepOutcomeId ? findStepOutcomeDef(stepOutcomeId) : null;
+
   const snoozeUntil = body.snooze_until as string | undefined;
   const patch: Record<string, unknown> = { status };
   if (status === "done") patch.done_at = new Date().toISOString();
-  // "Pas le bon moment" replanifie réellement la tâche — sans ça, `due_at`
-  // ne bouge pas et la tâche resterait affichée comme échue en boucle.
-  if (status === "snoozed" && snoozeUntil) patch.due_at = snoozeUntil;
+  // MISE DE CÔTÉ : la tâche est réellement replanifiée — sans ça, `due_at` ne
+  // bouge pas et la tâche resterait affichée comme échue en boucle.
+  //
+  // Le motif part dans le payload et pas seulement dans l'historique : quand la
+  // fiche ressort trois semaines plus tard, « il est en congés jusqu'au 8 » doit
+  // être sur la carte, pas à retrouver en déroulant les échanges.
+  if (status === "snoozed" && snoozeUntil) {
+    patch.due_at = snoozeUntil;
+    patch.payload = {
+      ...(task.payload ?? {}),
+      mise_de_cote: {
+        jusquau: snoozeUntil,
+        motif: note || null,
+        le: new Date().toISOString(),
+      },
+    };
+  }
   const { data, error } = await sc
     .from("prospection_tasks")
     .update(patch)
@@ -580,12 +608,28 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     }
   }
 
-  // A completed sequence step resumes the paused enrollment.
-  if (status === "done" && task.enrollment_id) {
+  // ── Ce que devient la séquence ─────────────────────────────────────────
+  //
+  // Deux sorties, et c'est toute la distinction qui compte :
+  //
+  //   · une issue qui ARRÊTE (`flow: 'stop'` — « pas intéressé », « bloqué »)
+  //     ferme l'inscription et annule ce qui était encore en vol. Cette
+  //     branche-là manquait : la tâche se fermait avec son issue, puis
+  //     `advanceEnrollmentAfterTask` planifiait tranquillement l'étape
+  //     suivante. Un prospect qui venait de dire non recevait donc la relance
+  //     J+3, puis la J+7 — alors même que l'issue affichait « plus rien ne
+  //     part » sous le bouton ;
+  //   · tout le reste enchaîne l'étape suivante, comme avant.
+  //
+  // Une tâche annulée (`skipped`) ne fait jamais avancer quoi que ce soit : le
+  // geste n'a pas eu lieu. Elle peut en revanche arrêter, et c'est exactement
+  // ce que fait « pas sur WhatsApp ».
+  if (task.enrollment_id && status !== "snoozed") {
     try {
-      await advanceEnrollmentAfterTask(task.enrollment_id as string);
+      if (outcomeDef?.flow === "stop") await sortirDeSequence(sc, task.enrollment_id as string);
+      else if (status === "done") await advanceEnrollmentAfterTask(task.enrollment_id as string);
     } catch {
-      // the sequence stays paused; the admin can re-complete from Démarchage
+      // la séquence reste en pause ; l'admin peut la reprendre depuis Démarchage
     }
   }
 
@@ -628,10 +672,7 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   // Une note d'issue (vocabulaire STEP_OUTCOMES du pipeline commercial) se
   // journalise dans `email_logs` comme `channel:'note'` — c'est exactement ce
   // que `AgentExchangeHistory` sait déjà afficher, sans rien y changer.
-  const note = typeof body.note === "string" ? body.note.trim() : "";
-  const stepOutcomeId = typeof body.step_outcome === "string" ? body.step_outcome : undefined;
   if (note) {
-    const outcomeDef = stepOutcomeId ? findStepOutcomeDef(stepOutcomeId) : null;
     try {
       await sc.from("email_logs").insert({
         channel: "note",

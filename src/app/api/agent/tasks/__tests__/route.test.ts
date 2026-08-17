@@ -43,8 +43,11 @@ jest.mock("@/lib/analytics-radar/site-intent", () => ({
 // Le moteur de séquences n'a rien à faire ici : la reprise d'une inscription
 // est testée chez lui, et la faire tourner pour de vrai ferait dépendre ce
 // fichier de la moitié du domaine.
+const mockAvancer = jest.fn(async () => undefined);
+const mockSortir = jest.fn(async () => ({ jobs: 0, tasks: 0 }));
 jest.mock("@/lib/automations/engine", () => ({
-  advanceEnrollmentAfterTask: jest.fn(async () => undefined),
+  advanceEnrollmentAfterTask: (...a: unknown[]) => mockAvancer(...(a as [])),
+  sortirDeSequence: (...a: unknown[]) => mockSortir(...(a as [])),
 }));
 
 import { GET, PATCH } from "../route";
@@ -360,6 +363,114 @@ describe("PATCH /api/agent/tasks — la première touche", () => {
     const ops = brancher({ garde: { ...GARDE, entreprise_id: null, assignee_id: AGENT, entreprise: null } });
     await patch({ id: "t1", status: "done" });
     expect(ops.entreprises).toBeUndefined();
+  });
+});
+
+/**
+ * CE QUE DEVIENT LA SÉQUENCE — la distinction qui manquait.
+ *
+ * Une issue qui ARRÊTE annonce « plus rien ne part » sous le bouton. Elle ne
+ * faisait pourtant rien de tel : la tâche se fermait avec son issue, puis
+ * l'inscription était avancée comme après n'importe quel geste. Un prospect qui
+ * venait de dire non recevait donc la relance J+3, puis la J+7.
+ */
+describe("PATCH /api/agent/tasks — l'issue décide du sort de la séquence", () => {
+  const EN_SEQUENCE = {
+    id: "t1",
+    kind: "whatsapp",
+    contact_id: null,
+    entreprise_id: 42,
+    opportunite_id: null,
+    step_id: "s1",
+    enrollment_id: "enr-1",
+    assignee_id: null,
+    payload: { message: "Bonjour" },
+    entreprise: { owner_id: AGENT },
+  };
+
+  const patch = (body: Record<string, unknown>) =>
+    PATCH(
+      new Request("http://localhost/api/agent/tasks", {
+        method: "PATCH",
+        headers: { authorization: "Bearer jeton", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAvancer.mockClear();
+    mockSortir.mockClear();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  it("sort de la séquence sur une issue qui arrête, au lieu d'enchaîner", async () => {
+    brancher({ garde: EN_SEQUENCE });
+    await patch({ id: "t1", status: "done", step_outcome: "not_interested", note: "pas le budget" });
+    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1");
+    expect(mockAvancer).not.toHaveBeenCalled();
+  });
+
+  it("enchaîne l'étape suivante sur une issue qui continue", async () => {
+    brancher({ garde: EN_SEQUENCE });
+    await patch({ id: "t1", status: "done", step_outcome: "no_answer" });
+    expect(mockAvancer).toHaveBeenCalledWith("enr-1");
+    expect(mockSortir).not.toHaveBeenCalled();
+  });
+
+  it("arrête aussi depuis une tâche ANNULÉE — c'est « pas sur ce canal »", async () => {
+    // Rien n'est parti : la tâche est `skipped`, donc elle ne fait avancer
+    // personne. Elle peut en revanche fermer la séquence, et c'est le seul
+    // moyen d'arrêter des relances sur un canal où le prospect n'est pas.
+    brancher({ garde: EN_SEQUENCE });
+    await patch({ id: "t1", status: "skipped", step_outcome: "blocked" });
+    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1");
+    expect(mockAvancer).not.toHaveBeenCalled();
+  });
+
+  it("ne touche jamais à la séquence pour une mise de côté", async () => {
+    // Ranger n'est ni un oui ni un non : la séquence reste où elle est, garée
+    // sur son étape, et repart quand la tâche revient.
+    brancher({ garde: EN_SEQUENCE });
+    await patch({
+      id: "t1",
+      status: "snoozed",
+      snooze_until: "2026-09-15T09:00:00.000Z",
+      step_outcome: "later",
+    });
+    expect(mockSortir).not.toHaveBeenCalled();
+    expect(mockAvancer).not.toHaveBeenCalled();
+  });
+
+  it("écrit la date de retour ET le motif sur la tâche mise de côté", async () => {
+    // Sans `due_at` déplacé, la tâche resterait dans la file du jour ; sans le
+    // motif dans le payload, on rouvrirait la fiche dans trois semaines sans
+    // savoir pourquoi on l'avait rangée.
+    const ops = brancher({ garde: EN_SEQUENCE });
+    await patch({
+      id: "t1",
+      status: "snoozed",
+      snooze_until: "2026-09-15T09:00:00.000Z",
+      note: "En congés jusqu'au 15",
+    });
+    const update = (ops.prospection_tasks ?? [])
+      .flat()
+      .find((o) => o.m === "update")?.args[0] as Record<string, unknown>;
+    expect(update.due_at).toBe("2026-09-15T09:00:00.000Z");
+    expect(update.payload).toMatchObject({
+      // Le message d'origine survit : on fusionne le payload, on ne l'écrase pas.
+      message: "Bonjour",
+      mise_de_cote: { jusquau: "2026-09-15T09:00:00.000Z", motif: "En congés jusqu'au 15" },
+    });
+  });
+
+  it("refuse un statut qui n'existe pas plutôt que de l'écrire", async () => {
+    // `status` finit tel quel dans la colonne : une valeur inventée sortirait la
+    // tâche de la file sans qu'aucun écran ne sache la retrouver.
+    brancher({ garde: EN_SEQUENCE });
+    const res = await patch({ id: "t1", status: "archive" });
+    expect(res.status).toBe(400);
   });
 });
 

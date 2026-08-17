@@ -24,6 +24,7 @@ type SettingsRow = {
   agent_id: string;
   can_qualify: boolean;
   can_use_marketing_pipeline: boolean;
+  can_self_assign: boolean;
   enrichment_budget_cents: number | null;
   budget_period: "month" | "total";
 };
@@ -48,6 +49,7 @@ export default function AgentPermissionsPanel({
   const [period, setPeriod] = useState<"month" | "total">("month");
   const [canQualify, setCanQualify] = useState(false);
   const [canPipeline, setCanPipeline] = useState(false);
+  const [canSelfAssign, setCanSelfAssign] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +84,7 @@ export default function AgentPermissionsPanel({
   useEffect(() => {
     setCanQualify(current?.can_qualify === true);
     setCanPipeline(current?.can_use_marketing_pipeline === true);
+    setCanSelfAssign(current?.can_self_assign === true);
     setPeriod(current?.budget_period === "total" ? "total" : "month");
     setBudgetEuros(
       current?.enrichment_budget_cents == null
@@ -102,6 +105,7 @@ export default function AgentPermissionsPanel({
           agent_id: agentId,
           can_qualify: canQualify,
           can_use_marketing_pipeline: canPipeline,
+          can_self_assign: canSelfAssign,
           enrichment_budget_cents:
             trimmed === "" ? null : Math.max(0, Math.round((Number(trimmed) || 0) * 100)),
           budget_period: period,
@@ -172,6 +176,25 @@ export default function AgentPermissionsPanel({
                 </p>
               </div>
               <Switch id="cap-pipeline" checked={canPipeline} onCheckedChange={setCanPipeline} />
+            </div>
+
+            <div className="flex items-start justify-between gap-4 border-t pt-4">
+              <div>
+                <Label htmlFor="cap-self-assign" className="text-sm font-medium">
+                  S&apos;attribuer des prospects tout seul
+                </Label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Depuis Démarchage, l&apos;agent pioche lui-même dans le pool des entreprises
+                  qualifiées non attribuées et se les affecte — sans passer par une demande à
+                  valider ici. Il ne peut prendre que ce qui n&apos;appartient à personne : une
+                  entreprise déjà attribuée reste hors de sa portée.
+                </p>
+              </div>
+              <Switch
+                id="cap-self-assign"
+                checked={canSelfAssign}
+                onCheckedChange={setCanSelfAssign}
+              />
             </div>
 
             <div className="space-y-2 border-t pt-4">

@@ -49,6 +49,12 @@ export type DemarchageTaskLike = {
   kind?: string;
   due_at: string | null;
   /**
+   * L'état de la tâche en base. Seul `snoozed` change quelque chose ici : c'est
+   * la MISE DE CÔTÉ, et elle seule fait respecter `due_at` comme une date de
+   * retour (cf. `isSetAside`).
+   */
+  status?: string;
+  /**
    * L'inscription de ce prospect a DÉJÀ enregistré une réponse : la discussion
    * est ouverte. Posé par `/api/agent/tasks` d'après `vars.replies`.
    */
@@ -286,6 +292,44 @@ export function isLate(
   return ms < new Date(dayStartIso(now, timeZone)).getTime();
 }
 
+/**
+ * Cette tâche est-elle MISE DE CÔTÉ — c'est-à-dire replanifiée à une date qui
+ * n'est pas encore arrivée ?
+ *
+ * Ni un oui ni un non : le prospect n'est pas joignable en ce moment (congés,
+ * chantier, saison creuse), on le range et il revient tout seul. C'est
+ * `status = 'snoozed'` avec un `due_at` déplacé — la tâche n'est pas fermée,
+ * elle dort.
+ *
+ * POURQUOI CETTE FONCTION EXISTE, ET POURQUOI ELLE REGARDE `status`
+ * `planTasks` répartit à la CADENCE : il lit `due_at` pour ORDONNER, jamais
+ * pour dater. Une tâche repoussée à trois semaines revenait donc dans la file
+ * du jour dès qu'il restait une place au quota — la mise de côté ne mettait
+ * rien de côté. Le correctif ne pouvait pas être « toute échéance future
+ * attend son jour » : les relances de séquence naissent avec l'échéance du
+ * jour où elles sont créées, et ce sont bien elles que la cadence doit étaler.
+ * Seule une mise de côté EXPLICITE tient sa date, d'où la lecture du statut.
+ */
+export function isSetAside(
+  task: DemarchageTaskLike,
+  now: Date = new Date(),
+  timeZone: string = AGENT_TIMEZONE,
+): boolean {
+  if (task.status !== "snoozed") return false;
+  return setAsideOffset(task, now, timeZone) > 0;
+}
+
+/**
+ * Dans combien de jours cette mise de côté revient — 0 quand elle est échue
+ * (donc quand elle est de nouveau à faire, aujourd'hui).
+ */
+function setAsideOffset(task: DemarchageTaskLike, now: Date, timeZone: string): number {
+  const ms = dueMs(task);
+  if (!Number.isFinite(ms)) return 0;
+  const debutAujourdhui = new Date(dayStartIso(now, timeZone)).getTime();
+  return Math.max(0, Math.floor((ms - debutAujourdhui) / DAY_MS));
+}
+
 export type DemarchagePlanOptions = {
   now?: Date;
   timeZone?: string;
@@ -349,6 +393,17 @@ export function planTasks<T extends DemarchageTaskLike>(
   const signaux: Record<DemarchageSignal, T[]> = { missed: [], conversation: [], hot: [] };
   const aPlanifier: T[] = [];
   for (const task of tasks) {
+    // LA MISE DE CÔTÉ PASSE AVANT TOUT LE RESTE — signaux compris.
+    //
+    // Elle va droit à sa journée de retour, sans consommer de cadence : c'est
+    // une décision humaine explicite (« il est en congés jusqu'au 8 »), et
+    // aucune mesure ne doit la défaire. Un signal GA4 chaud remonterait sinon
+    // en tête de file quelqu'un qu'on vient tout juste de ranger, ce qui rend
+    // le geste inutile — on le referait chaque matin.
+    if (isSetAside(task, now, timeZone)) {
+      pousser(setAsideOffset(task, now, timeZone), task);
+      continue;
+    }
     const signal = signalOf(task);
     if (signal) signaux[signal].push(task);
     else aPlanifier.push(task);
