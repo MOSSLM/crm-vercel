@@ -33,11 +33,35 @@ import { getCompanyDisplayName } from "../utils/displayHelpers";
 
 type Flag = "vivantes" | "sans_site" | "sans_google" | "sans_siret" | "qualite" | "fusionnee" | "archivee" | "masquee";
 
-const FLAGS: { valeur: Flag; label: string; titre: string }[] = [
-  { valeur: "sans_site", label: "Sans site", titre: "Aucun site connu (canonique ou déclaré)" },
+/**
+ * Les drapeaux, en DEUX familles qui ne se combinent pas pareil — et l'écran
+ * doit le montrer, sinon le compteur surprend.
+ *
+ * · ce qui MANQUE se cumule : « sans site » puis « sans fiche Google » veut
+ *   dire les deux à la fois. Chaque case supplémentaire restreint.
+ * · l'ÉTAT s'additionne : cocher « archivées » et « fusionnées », c'est vouloir
+ *   voir les deux. Chaque case supplémentaire élargit.
+ *
+ * Sans cette séparation, tout était en OU côté SQL : cocher « sans site »
+ * rendait 60 698 fiches au lieu de 34 699, et affichait des entreprises avec un
+ * vrai site sous un filtre qui promettait le contraire.
+ */
+const MANQUES: { valeur: Flag; label: string; titre: string }[] = [
+  {
+    valeur: "sans_site",
+    label: "Sans site",
+    // Une page Facebook n'est pas un site : c'est le signe qu'il n'y en a pas,
+    // et une page où lire des informations sur l'entreprise. 62 fiches Facebook,
+    // 29 Google Sites, 9 Instagram — toutes des cibles, pas des rebuts.
+    titre: "Aucune URL, ou une URL qui n'est pas un site à elle : page Facebook, Instagram, Google Sites, Wix…",
+  },
   { valeur: "sans_google", label: "Sans fiche Google", titre: "Aucun identifiant de fiche Google Maps" },
   { valeur: "sans_siret", label: "Sans SIRET", titre: "SIRET non renseigné" },
   { valeur: "qualite", label: "Qualité signalée", titre: "Au moins un motif de qualité douteuse" },
+];
+
+const ETATS: { valeur: Flag; label: string; titre: string }[] = [
+  { valeur: "vivantes", label: "Vivantes", titre: "Ni archivées, ni fusionnées" },
   { valeur: "archivee", label: "Archivées", titre: "Sorties du périmètre actif" },
   { valeur: "masquee", label: "Masquées", titre: "Écartées de la qualification" },
   { valeur: "fusionnee", label: "Fusionnées", titre: "Absorbées dans une autre fiche" },
@@ -248,8 +272,9 @@ export function EntreprisesExplorer() {
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {FLAGS.map((f) => (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground w-24 shrink-0">Ce qui manque :</span>
+            {MANQUES.map((f) => (
               <button
                 key={f.valeur}
                 type="button"
@@ -264,6 +289,27 @@ export function EntreprisesExplorer() {
                 {f.label}
               </button>
             ))}
+            <span className="text-xs text-muted-foreground">— chaque case restreint</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground w-24 shrink-0">État :</span>
+            {ETATS.map((f) => (
+              <button
+                key={f.valeur}
+                type="button"
+                title={f.titre}
+                onClick={() => toggleFlag(f.valeur)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  flags.has(f.valeur)
+                    ? "bg-secondary text-secondary-foreground border-secondary"
+                    : "bg-background border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <span className="text-xs text-muted-foreground">— chaque case élargit</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
