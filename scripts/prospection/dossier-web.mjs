@@ -133,6 +133,7 @@ function lireArgs(argv) {
     moteur: null,
     sansFenetre: false,
     attendreHumain: false,
+    toujoursChercher: false,
   };
   for (let i = 2; i < argv.length; i++) {
     const cle = argv[i];
@@ -191,6 +192,9 @@ function lireArgs(argv) {
       case "--attendre-humain":
         a.attendreHumain = true;
         break;
+      case "--toujours-chercher":
+        a.toujoursChercher = true;
+        break;
       case "--aide":
       case "-h":
         console.log(AIDE);
@@ -232,6 +236,9 @@ Usage : node scripts/prospection/dossier-web.mjs [options]
                           la fiche est simplement passée.
   --sans-google           ne pas appeler l'API Places (économise le quota)
   --sans-web              passe fiche Google seule, sans aucune recherche web
+  --toujours-chercher     chercher MÊME quand la fiche Google déclare un site.
+                          À utiliser quand ce site déclaré s'est révélé ne pas
+                          être le leur : sinon le bot le croit et ne cherche pas.
   --refaire               retraiter même si le dossier existe
   --recap                 juste recomposer _RECAP.md depuis _index.jsonl
 `;
@@ -1453,7 +1460,13 @@ async function main() {
      * seule la minorité restante a besoin d'un moteur.
      */
     const siteDeclare = fiche?.place?.websiteUri;
-    const declareUtilisable = siteDeclare && classer(siteDeclare, blacklist) === "candidat";
+    // `--toujours-chercher` lève l'économie ci-dessus. Elle se retourne contre
+    // nous sur 58 fiches de la cohorte B : la fiche Google déclarait une URL,
+    // le bot s'est donc abstenu de chercher, et la visite a montré ensuite que
+    // cette URL n'était pas la leur. On ne savait plus rien, faute d'avoir
+    // cherché — et on ne pouvait pas le savoir au moment de la collecte.
+    const declareUtilisable =
+      !a.toujoursChercher && siteDeclare && classer(siteDeclare, blacklist) === "candidat";
     const recherche =
       a.sansWeb || declareUtilisable
         ? { moteur: declareUtilisable ? "inutile" : "non consulté", requete, html: "", resultats: [], bloque: false }
