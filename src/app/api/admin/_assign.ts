@@ -102,7 +102,7 @@ export async function assignProspectToAgent(
   // l'ancien propriétaire de l'ENTREPRISE qui fait foi.
   const { data: ent, error: entErr } = await sc
     .from("entreprises")
-    .select("id, name, telephone, owner_id")
+    .select("id, name, telephone, owner_id, qualifie")
     .eq("id", entrepriseId)
     .maybeSingle();
   if (entErr) return { ok: false, error: entErr.message };
@@ -134,9 +134,34 @@ export async function assignProspectToAgent(
     );
   }
 
+  /**
+   * UNE AFFAIRE IMPLIQUE UNE ENTREPRISE QUALIFIÉE. C'est l'invariant posé par le
+   * propriétaire le 17/08 : « Une opportunité doit être créée que si entreprise
+   * qualifiée ; à la limite, si c'est pas bon plus tard, on a qu'à archiver et
+   * mettre le motif. »
+   *
+   * Il ne tenait pas. Cette fonction écrivait `owner_id` et créait l'affaire
+   * sans jamais toucher `qualifie` — c'était même documenté comme un choix. Les
+   * deux cohortes de la campagne d'août en portent la trace : 882 opportunités
+   * pour 361 entreprises qualifiées, dont 501 fiches attribuées, démarchées, et
+   * pourtant absentes de l'onglet « Qualifiés ». Le CRM affichait deux vérités
+   * incompatibles selon l'écran ouvert.
+   *
+   * On le rend donc vrai par construction, du côté qui ne bloque personne :
+   * attribuer QUALIFIE. C'est le sens de la seconde moitié de la consigne —
+   * l'erreur se répare par un archivage motivé, pas par un refus au moment de
+   * l'attribution qui obligerait l'admin à faire deux gestes pour un.
+   *
+   * `qualifie_at` et `qualifie_par` ne sont pas touchés ici : ils appartiennent
+   * au geste de qualification manuelle, et les écraser effacerait qui a qualifié
+   * quoi. La cohorte reste, elle, la marque de provenance du lot.
+   */
+  const majEntreprise: { owner_id: string; qualifie?: boolean } = { owner_id: agentId };
+  if (!ent.qualifie) majEntreprise.qualifie = true;
+
   const { error: ownErr } = await sc
     .from("entreprises")
-    .update({ owner_id: agentId })
+    .update(majEntreprise)
     .eq("id", entrepriseId);
   if (ownErr) return { ok: false, error: ownErr.message };
 

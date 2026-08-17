@@ -129,8 +129,8 @@ describe('unassignProspectFromAgent', () => {
 });
 
 /** L'entreprise telle que la lit `assignProspectToAgent`, avant réattribution. */
-const entreprise = (ownerId: string | null) => ({
-  data: { id: ENT, name: 'ACME', telephone: null, owner_id: ownerId },
+const entreprise = (ownerId: string | null, qualifie = false) => ({
+  data: { id: ENT, name: 'ACME', telephone: null, owner_id: ownerId, qualifie },
 });
 
 const insertsOn = (table: string) =>
@@ -160,6 +160,30 @@ describe('assignProspectToAgent', () => {
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-streak' });
     expect(insertsOn('opportunites')).toEqual([]);
+  });
+
+  // L'INVARIANT : une affaire implique une entreprise qualifiée.
+  // 501 fiches des deux cohortes d'août l'ont violé — attribuées, démarchées, et
+  // absentes de l'onglet « Qualifiés », parce que l'attribution n'écrivait que
+  // `owner_id`. Le CRM annonçait 882 opportunités pour 361 entreprises qualifiées.
+  it('qualifie l’entreprise en même temps qu’elle est attribuée', async () => {
+    results['entreprises.select'] = entreprise(null, false);
+    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: null, is_test: false }] };
+
+    await assignProspectToAgent(ENT, AGENT);
+
+    expect(updatesOn('entreprises')).toEqual([{ owner_id: AGENT, qualifie: true }]);
+  });
+
+  // Déjà qualifiée : on ne réécrit pas `qualifie`. L'update inutile toucherait
+  // `updated_at` et ferait passer la fiche pour modifiée alors que rien n'a bougé.
+  it('ne réécrit pas qualifie sur une entreprise déjà qualifiée', async () => {
+    results['entreprises.select'] = entreprise(null, true);
+    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: null, is_test: false }] };
+
+    await assignProspectToAgent(ENT, AGENT);
+
+    expect(updatesOn('entreprises')).toEqual([{ owner_id: AGENT }]);
   });
 
   // « L'affaire ne change pas de pipeline » : l'attribution n'écrit QUE
