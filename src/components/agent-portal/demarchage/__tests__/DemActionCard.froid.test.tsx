@@ -52,6 +52,7 @@ const renderCard = (task: DemarchageTask) =>
       onLogged={jest.fn()}
       onNext={jest.fn()}
       onReplied={jest.fn()}
+      onRetire={jest.fn()}
     />,
   );
 

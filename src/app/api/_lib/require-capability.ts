@@ -10,7 +10,7 @@ import { getServiceClient } from "./service-client";
  * quand la migration n'a pas encore été appliquée — n'a aucune capacité. Un
  * admin les a toutes, toujours.
  */
-export type AgentCapability = "qualify" | "marketing_pipeline";
+export type AgentCapability = "qualify" | "marketing_pipeline" | "self_assign";
 
 export type BudgetPeriod = "month" | "total";
 
@@ -19,6 +19,15 @@ export type AgentContext = {
   isAdmin: boolean;
   canQualify: boolean;
   canUseMarketingPipeline: boolean;
+  /**
+   * L'agent peut se servir lui-même dans le pool d'entreprises non attribuées.
+   *
+   * Le défaut reste la demande d'attribution (`/api/agent/claim`, validée par
+   * l'admin) : le pool est commun, et un agent qui s'en sert sans limite le
+   * vide pour les autres. Ouvrir ce droit, c'est dire « celui-là décide seul de
+   * qui il démarche » — une décision d'admin, agent par agent.
+   */
+  canSelfAssign: boolean;
   /** null = pas de plafond (toujours le cas pour un admin). */
   enrichmentBudgetCents: number | null;
   budgetPeriod: BudgetPeriod;
@@ -27,6 +36,7 @@ export type AgentContext = {
 const DENIED: Omit<AgentContext, "role" | "isAdmin"> = {
   canQualify: false,
   canUseMarketingPipeline: false,
+  canSelfAssign: false,
   enrichmentBudgetCents: null,
   budgetPeriod: "month",
 };
@@ -63,6 +73,7 @@ export const resolveAgentContext = async (userId: string): Promise<AgentContext>
       isAdmin: true,
       canQualify: true,
       canUseMarketingPipeline: true,
+      canSelfAssign: true,
       enrichmentBudgetCents: null,
       budgetPeriod: "total",
     };
@@ -74,7 +85,9 @@ export const resolveAgentContext = async (userId: string): Promise<AgentContext>
 
   const { data: settings, error } = await sc
     .from("agent_settings")
-    .select("can_qualify, can_use_marketing_pipeline, enrichment_budget_cents, budget_period")
+    .select(
+      "can_qualify, can_use_marketing_pipeline, can_self_assign, enrichment_budget_cents, budget_period",
+    )
     .eq("agent_id", userId)
     .maybeSingle();
 
@@ -92,14 +105,23 @@ export const resolveAgentContext = async (userId: string): Promise<AgentContext>
     isAdmin: false,
     canQualify: settings.can_qualify === true,
     canUseMarketingPipeline: settings.can_use_marketing_pipeline === true,
+    canSelfAssign: settings.can_self_assign === true,
     enrichmentBudgetCents:
       typeof settings.enrichment_budget_cents === "number" ? settings.enrichment_budget_cents : null,
     budgetPeriod: settings.budget_period === "total" ? "total" : "month",
   };
 };
 
-export const hasCapability = (ctx: AgentContext, capability: AgentCapability): boolean =>
-  capability === "qualify" ? ctx.canQualify : ctx.canUseMarketingPipeline;
+export const hasCapability = (ctx: AgentContext, capability: AgentCapability): boolean => {
+  switch (capability) {
+    case "qualify":
+      return ctx.canQualify;
+    case "marketing_pipeline":
+      return ctx.canUseMarketingPipeline;
+    case "self_assign":
+      return ctx.canSelfAssign;
+  }
+};
 
 export type CapabilityResult =
   | { ok: true; context: AgentContext }

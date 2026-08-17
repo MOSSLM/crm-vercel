@@ -598,11 +598,15 @@ export const STEP_OUTCOMES: readonly StepOutcome[] = [
     releasesWait: true,
   },
   {
+    // L'identifiant ne bouge pas : il est écrit dans `email_logs.outcome` sur
+    // toutes les notes déjà prises. Seul le LIBELLÉ change — « pas le bon
+    // moment » se lisait comme un refus poli, alors que c'est l'inverse : on
+    // range le prospect et il revient de lui-même à la date choisie.
     id: 'later',
-    label: 'Pas le bon moment',
+    label: 'Mettre de côté',
     flow: 'continue',
     tone: 'warn',
-    note: '→ Nurturing · relance datée',
+    note: '→ sort de la file et revient à la date choisie',
     reaction: 'later',
     needsDate: true,
   },

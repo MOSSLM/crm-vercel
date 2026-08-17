@@ -1569,6 +1569,43 @@ export async function cancelEnrollmentWork(
 }
 
 /**
+ * Sort une inscription de sa séquence, définitivement.
+ *
+ * Le pendant d'`advanceEnrollmentAfterTask` : là où celle-ci enchaîne l'étape
+ * suivante, celle-ci ferme la route. C'est ce qu'il faut derrière une issue qui
+ * ARRÊTE (« pas intéressé », « bloqué ») ou derrière un canal qui ne mène nulle
+ * part (« la personne n'est pas sur WhatsApp ») : dans les deux cas, continuer
+ * à dérouler la séquence enverrait un message à quelqu'un qui a déjà dit non,
+ * ou sur un canal où personne ne lira.
+ *
+ * `stopOutreach` fait la même chose côté pipeline commercial, mais à partir
+ * d'une AFFAIRE — il ferme toutes les inscriptions vivantes de l'opportunité.
+ * Ici on n'en connaît qu'une, celle de la tâche qu'on vient de traiter, et
+ * c'est la seule qu'on veut fermer.
+ *
+ * Idempotent : une inscription déjà terminée ou déjà sortie n'est pas
+ * retouchée, et son `finished_at` d'origine reste vrai.
+ */
+export async function sortirDeSequence(
+  sb: SupabaseClient,
+  enrollmentId: string,
+): Promise<{ jobs: number; tasks: number }> {
+  const annule = await cancelEnrollmentWork(sb, enrollmentId)
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      status: 'exited',
+      next_run_at: null,
+      send_at: null,
+      hold_reason: null,
+      finished_at: new Date().toISOString(),
+    })
+    .eq('id', enrollmentId)
+    .in('status', ['active', 'paused'])
+  return annule
+}
+
+/**
  * Fait avancer une inscription après l'étape `fromIdx`.
  *
  * L'ÉTAPE SUIVANTE N'EST PLUS `fromIdx + 1`

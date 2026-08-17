@@ -51,6 +51,7 @@ const renderCard = (payload: DemarchageTask["payload"]) =>
       onLogged={jest.fn()}
       onNext={jest.fn()}
       onReplied={jest.fn()}
+      onRetire={jest.fn()}
     />,
   );
 

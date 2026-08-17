@@ -13,6 +13,7 @@ type SettingsRow = {
   agent_id: string;
   can_qualify: boolean;
   can_use_marketing_pipeline: boolean;
+  can_self_assign: boolean;
   enrichment_budget_cents: number | null;
   budget_period: BudgetPeriod;
 };
@@ -20,6 +21,7 @@ type SettingsRow = {
 const DEFAULTS = {
   can_qualify: false,
   can_use_marketing_pipeline: false,
+  can_self_assign: false,
   enrichment_budget_cents: null,
   budget_period: "month" as BudgetPeriod,
 };
@@ -58,7 +60,9 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
 
   const { data: rows, error } = await sc
     .from("agent_settings")
-    .select("agent_id, can_qualify, can_use_marketing_pipeline, enrichment_budget_cents, budget_period")
+    .select(
+      "agent_id, can_qualify, can_use_marketing_pipeline, can_self_assign, enrichment_budget_cents, budget_period",
+    )
     .in("agent_id", agentIds);
 
   if (error && isMissingTable(error)) {
@@ -127,6 +131,7 @@ export const POST = withAuth<AdminAgentSettingsPayload>(
         agent_id: body.agent_id,
         can_qualify: body.can_qualify,
         can_use_marketing_pipeline: body.can_use_marketing_pipeline,
+        can_self_assign: body.can_self_assign,
         enrichment_budget_cents: body.enrichment_budget_cents ?? null,
         budget_period: body.budget_period,
         updated_at: new Date().toISOString(),

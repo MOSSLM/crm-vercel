@@ -12,6 +12,7 @@ import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
 import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
 import { DemSearch } from "@/components/agent-portal/demarchage/DemSearch";
 import { DemHorsFile } from "@/components/agent-portal/demarchage/DemHorsFile";
+import { DemAttribution } from "@/components/agent-portal/demarchage/DemAttribution";
 import {
   SIGNAL_ORDER,
   cadenceEffective,
@@ -83,6 +84,32 @@ export default function AgentDemarchagePage() {
   const [recherche, setRecherche] = useState(false);
   /** L'entreprise regardée hors file, quand elle n'a aucune tâche à traiter. */
   const [horsFile, setHorsFile] = useState<number | null>(null);
+
+  /**
+   * S'attribuer des entreprises : le panneau, et ce que le pool contient.
+   *
+   * `poolDispo` vaut `null` tant qu'on ne sait pas — l'agent n'a peut-être pas
+   * ce droit (cf. `agent_settings.can_self_assign`), et proposer un bouton qui
+   * répondra « interdit » vaut moins que ne rien proposer. La réponse est un
+   * aperçu : un compte, pas quarante fiches que personne n'a demandé à voir.
+   */
+  const [attribution, setAttribution] = useState(false);
+  const [poolDispo, setPoolDispo] = useState<number | null>(null);
+
+  const relirePool = useCallback(async () => {
+    try {
+      const res = await authedFetch("/api/agent/demarchage/pool?apercu=1");
+      if (!res.ok) return;
+      const body = (await res.json()) as { autorise?: boolean; total?: number };
+      setPoolDispo(body.autorise ? (body.total ?? 0) : null);
+    } catch {
+      // sans réponse, le bouton ne s'affiche pas : c'est le bon défaut
+    }
+  }, []);
+
+  useEffect(() => {
+    void relirePool();
+  }, [relirePool]);
 
   /**
    * Recharge la file et décide sur quoi on atterrit.
@@ -342,6 +369,18 @@ export default function AgentDemarchagePage() {
   const onLogged = useCallback(() => setHistoryKey((k) => k + 1), []);
 
   /**
+   * La tâche a quitté la file sans passer par le `PATCH` habituel — une sortie
+   * de canal (« pas sur WhatsApp »), qui annule la tâche et ferme sa séquence
+   * d'un seul geste côté serveur. On enchaîne comme après n'importe quel geste
+   * bouclé : la tâche suivante de la liste affichée.
+   */
+  const onRetire = useCallback(() => {
+    const suivante = shown.find((t) => t.id !== sel)?.id ?? null;
+    setHistoryKey((k) => k + 1);
+    void loadQueue(suivante);
+  }, [shown, sel, loadQueue]);
+
+  /**
    * Le prospect a répondu : l'attente est levée et le moteur a déjà posé
    * l'étape suivante. On atterrit dessus — c'est tout l'intérêt d'avoir déclaré
    * la réponse, et cette étape-là est justement celle qu'il faut faire dans la
@@ -386,6 +425,8 @@ export default function AgentDemarchagePage() {
             setSel(id);
           }}
           onRechercher={() => setRecherche(true)}
+          poolDispo={poolDispo}
+          onAttribuer={() => setAttribution(true)}
         />
 
         {enTete && (task || horsFile != null) ? (
@@ -444,6 +485,7 @@ export default function AgentDemarchagePage() {
                 onLogged={onLogged}
                 onNext={goNext}
                 onReplied={onReplied}
+                onRetire={onRetire}
               />
               {task.entreprise_id != null && (
                 <DemHisto
@@ -483,6 +525,18 @@ export default function AgentDemarchagePage() {
           onFermer={() => setRecherche(false)}
           onChoisir={ouvrirEntreprise}
           estEnFile={estEnFile}
+        />
+
+        <DemAttribution
+          ouvert={attribution}
+          onFermer={() => setAttribution(false)}
+          onAttribue={() => {
+            // L'attribution sème une tâche « Appel à froid » par entreprise :
+            // c'est elle qui les fait apparaître ici. Sans ce rechargement, le
+            // lot resterait invisible jusqu'au prochain passage sur la page.
+            void loadQueue();
+            void relirePool();
+          }}
         />
       </div>
     </div>

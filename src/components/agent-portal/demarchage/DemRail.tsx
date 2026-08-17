@@ -13,6 +13,7 @@ import {
   countByKind,
   countBySignal,
   isLate,
+  isSetAside,
   signalOf,
   type DemarchageDay,
   type DemarchageSignal,
@@ -77,7 +78,11 @@ function tabLabel(day: DemarchageDay<DemarchageTask>): string {
   const jour = dateFr(day.date, { day: "numeric" });
   if (day.offset === 0) return `Auj. ${jour}`;
   if (day.offset === 1) return `Dem. ${jour}`;
-  return dateFr(day.date, { weekday: "short", day: "numeric" });
+  // Au-delà de la semaine, le jour de semaine ne situe plus rien : « lun. 17 »
+  // peut être dans six jours comme dans trois mois, et les mises de côté
+  // ouvrent justement des onglets très lointains. Le mois tranche.
+  if (day.offset <= 6) return dateFr(day.date, { weekday: "short", day: "numeric" });
+  return dateFr(day.date, { day: "numeric", month: "short" });
 }
 
 /** Le sous-titre du bloc session : la date réelle du jour regardé, en toutes lettres. */
@@ -147,6 +152,8 @@ export function DemRail({
   sel,
   onPick,
   onRechercher,
+  poolDispo,
+  onAttribuer,
 }: {
   days: Array<DemarchageDay<DemarchageTask>>;
   /** Date civile (YYYY-MM-DD) du jour affiché. */
@@ -169,6 +176,15 @@ export function DemRail({
   onPick: (id: string) => void;
   /** Ouvre la recherche d'entreprise — le geste de « quelqu'un rappelle ». */
   onRechercher: () => void;
+  /**
+   * Combien d'entreprises attendent dans le pool, `null` quand l'agent n'a pas
+   * le droit de s'en servir (ou qu'on ne le sait pas encore). Sans droit, pas
+   * de bouton : proposer un geste qui répondra « interdit » vaut moins que ne
+   * rien proposer.
+   */
+  poolDispo: number | null;
+  /** Ouvre le panneau « m'attribuer des entreprises ». */
+  onAttribuer: () => void;
 }) {
   const courant = days.find((d) => d.date === day) ?? days[0];
   const duJour = useMemo(() => courant?.tasks ?? [], [courant]);
@@ -303,6 +319,18 @@ export function DemRail({
         <span className="l">Une entreprise rappelle…</span>
         <kbd>/</kbd>
       </button>
+
+      {/* Se constituer sa file à l'avance. Le bouton n'existe que pour les
+          agents à qui l'admin a ouvert le pool — et il dit ce qui reste dedans,
+          parce que « m'attribuer des entreprises » sans savoir s'il en reste
+          trois ou trois cents ne décide de rien. */}
+      {poolDispo != null && (
+        <button type="button" className="dm-rech-b attr" onClick={onAttribuer}>
+          <Icon name="building" className="ico-sm" />
+          <span className="l">M&apos;attribuer des entreprises</span>
+          <span className="n">{poolDispo}</span>
+        </button>
+      )}
 
       <div className="dm-sess">
         <div className="lb">Ma file · {dayTitle(courant)}</div>
@@ -462,6 +490,9 @@ export function DemRail({
           const signal = signalOf(t);
           const heat = signal === "missed" ? "missed" : signal === "hot" ? "hot" : undefined;
           const late = isLate(t);
+          // Rangée volontairement : la ligne doit le dire, sinon on la relit
+          // comme un oubli et on la rappelle — ce qui défait le geste.
+          const deCote = isSetAside(t);
           return (
             <div
               key={t.id}
@@ -515,6 +546,17 @@ export function DemRail({
                     </span>
                   )}
                   {signal === "conversation" && <span className="st conv">a répondu</span>}
+                  {deCote && (
+                    <span
+                      className="st cote"
+                      title={
+                        t.payload?.mise_de_cote?.motif ??
+                        "Mis de côté — il revient de lui-même à cette date."
+                      }
+                    >
+                      de côté
+                    </span>
+                  )}
                   {late && <span className="st late">échéance passée</span>}
                 </div>
                 {/* Ce que le prospect a fait de sa démo : l'information qui

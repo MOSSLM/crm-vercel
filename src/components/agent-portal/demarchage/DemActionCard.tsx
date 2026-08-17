@@ -35,10 +35,32 @@ const TONE: Record<string, string> = {
   muted: "",
 };
 
-const tomorrow = () => {
+/** La date civile dans `n` jours (YYYY-MM-DD), telle qu'un `<input type="date">` l'attend. */
+const dansNJours = (n: number) => {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Les délais de MISE DE CÔTÉ proposés d'un clic.
+ *
+ * Personne ne calcule « le 16 novembre » de tête : ce qu'on sait en
+ * raccrochant, c'est « il est en congés trois semaines » ou « il rappelle après
+ * la saison ». Les quatre repères couvrent l'essentiel ; la date exacte reste
+ * saisissable juste à côté pour le cas où le prospect en a donné une.
+ */
+const DELAIS_MISE_DE_COTE: readonly { lb: string; j: number }[] = [
+  { lb: "1 semaine", j: 7 },
+  { lb: "2 semaines", j: 14 },
+  { lb: "1 mois", j: 30 },
+  { lb: "3 mois", j: 90 },
+] as const;
+
+const dateLongue = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(d);
 };
 
 /** Remplace les `{{variables}}` d'un modèle et les met en évidence à l'écran. */
@@ -72,6 +94,7 @@ export function DemActionCard({
   onLogged,
   onNext,
   onReplied,
+  onRetire,
 }: {
   task: DemarchageTask;
   company: CompanyBundle | null;
@@ -83,6 +106,11 @@ export function DemActionCard({
   onNext: () => void;
   /** Le prospect a répondu : l'attente est levée, la file doit se recharger. */
   onReplied: () => void;
+  /**
+   * La tâche a quitté la file par un chemin qui n'est pas un `PATCH` — sortie
+   * de canal, aujourd'hui. La file se recharge et enchaîne.
+   */
+  onRetire: () => void;
 }) {
   const ch = demCh(task.kind);
   const seq = task.sequence;
@@ -123,7 +151,31 @@ export function DemActionCard({
   // ── état partagé ────────────────────────────────────────────────────────
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<StepOutcomeId | null>(null);
-  const [snoozeDate, setSnoozeDate] = useState(tomorrow());
+
+  // ── mise de côté ────────────────────────────────────────────────────────
+  /** Le panneau est-il ouvert ? Fermé, il ne coûte rien à l'œil. */
+  const [deCote, setDeCote] = useState(false);
+  const [dateRetour, setDateRetour] = useState(dansNJours(14));
+  const [motif, setMotif] = useState("");
+
+  /** Ce que la mise de côté d'origine avait retenu, quand la tâche en revient. */
+  const miseDeCote = task.payload?.mise_de_cote ?? null;
+
+  // ── sortie de canal ─────────────────────────────────────────────────────
+  const [horsCanal, setHorsCanal] = useState(false);
+  const [basculeAppel, setBasculeAppel] = useState(true);
+  const [sortie, setSortie] = useState(false);
+
+  // Changer de tâche referme tout : un panneau resté ouvert d'un prospect à
+  // l'autre ferait appliquer à l'un ce qu'on avait commencé à écrire pour
+  // l'autre.
+  useEffect(() => {
+    setDeCote(false);
+    setHorsCanal(false);
+    setDateRetour(dansNJours(14));
+    setMotif("");
+    setBasculeAppel(true);
+  }, [task.id]);
 
   // ── message ─────────────────────────────────────────────────────────────
   /**
@@ -331,7 +383,14 @@ export function DemActionCard({
    * est immédiate et c'est bien là qu'on la note.
    */
   const outcomes = useMemo(
-    () => (isMessageKind(task.kind) ? STEP_OUTCOMES.filter((o) => !o.releasesWait) : STEP_OUTCOMES),
+    () =>
+      STEP_OUTCOMES.filter(
+        (o) =>
+          // `later` a désormais son propre geste, juste au-dessus : la mettre
+          // aussi dans les pastilles ferait deux chemins pour le même acte, dont
+          // un qui oblige à taper une date à la main.
+          o.id !== "later" && (!isMessageKind(task.kind) || !o.releasesWait),
+      ),
     [task.kind],
   );
 
@@ -368,7 +427,7 @@ export function DemActionCard({
       note: note.trim() || undefined,
       snooze_until:
         status === "snoozed" && outcome === "later"
-          ? new Date(`${snoozeDate}T09:00:00`).toISOString()
+          ? new Date(`${dateRetour}T09:00:00`).toISOString()
           : undefined,
     });
   };
@@ -380,6 +439,72 @@ export function DemActionCard({
       outcome: "rdv",
       note: note.trim() || undefined,
     });
+
+  /**
+   * METTRE DE CÔTÉ — ni un oui, ni un non.
+   *
+   * Le prospect n'est pas joignable en ce moment (congés, chantier, saison
+   * creuse) : on ne l'a pas perdu, on ne l'a pas convaincu, on le range et il
+   * revient tout seul. La tâche est REPLANIFIÉE (`snoozed` + `due_at` déplacé)
+   * plutôt que fermée : elle ressort d'elle-même le jour dit, avec son motif
+   * sous les yeux.
+   *
+   * C'est l'issue `later` du vocabulaire commun — même identifiant, donc les
+   * notes déjà prises restent lisibles — mais avec un vrai geste : quatre
+   * délais d'un clic au lieu d'une date à composer.
+   */
+  const mettreDeCote = () => {
+    onPatch({
+      status: "snoozed",
+      opportunite_id: task.opportunite_id ?? undefined,
+      step_outcome: "later",
+      note: motif.trim() || undefined,
+      snooze_until: new Date(`${dateRetour}T09:00:00`).toISOString(),
+    });
+  };
+
+  /**
+   * PAS SUR CE CANAL — le numéro n'a pas de compte WhatsApp.
+   *
+   * Rien n'est parti, personne n'a rien dit : ce n'est ni un « fait » ni une
+   * issue d'échange. Le prospect sort de CETTE séquence — et de celle-là
+   * seulement : il reste bon, c'est le canal qui ne va pas, d'où le repli
+   * téléphone proposé juste en dessous.
+   */
+  const sortirDuCanal = async () => {
+    setSortie(true);
+    try {
+      const res = await authedFetch("/api/agent/demarchage/hors-canal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: task.id,
+          note: motif.trim() || undefined,
+          basculer_appel: basculeAppel,
+        }),
+      });
+      const corps = (await res.json().catch(() => ({}))) as {
+        appel_cree?: boolean;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(corps?.message || corps?.error || "Action impossible.");
+        return;
+      }
+      toast.success(
+        corps.appel_cree
+          ? `Sorti de la séquence ${ch.lb} — un appel l'attend dans la file.`
+          : `Sorti de la séquence ${ch.lb}.`,
+      );
+      setHorsCanal(false);
+      onRetire();
+    } catch {
+      toast.error("Action impossible.");
+    } finally {
+      setSortie(false);
+    }
+  };
 
   return (
     <section className="dm-card" style={{ ["--k" as string]: ch.c, ["--kt" as string]: ch.c + "1a" }}>
@@ -412,6 +537,20 @@ export function DemActionCard({
       </div>
 
       <div className="dm-card-b">
+        {/* Elle revient d'une mise de côté : ce qu'on avait noté ce jour-là est
+            exactement ce qu'il faut relire avant de recomposer le numéro. Le
+            temps du verbe compte — « rangé jusqu'au 15 » et « revenu, il avait
+            été rangé jusqu'au 15 » n'appellent pas le même geste. */}
+        {miseDeCote && (
+          <div className="dm-hint">
+            <Icon name="clock" className="ico-sm" />
+            {new Date(miseDeCote.jusquau).getTime() > Date.now()
+              ? `Mis de côté jusqu'au ${dateLongue(miseDeCote.jusquau)}`
+              : `Revenu de mise de côté (rangé jusqu'au ${dateLongue(miseDeCote.jusquau)})`}
+            {miseDeCote.motif ? ` — « ${miseDeCote.motif} »` : ""}.
+          </div>
+        )}
+
         {/* ── message ── */}
         {isMessageKind(task.kind) && (
           <>
@@ -689,6 +828,135 @@ export function DemActionCard({
           </>
         )}
 
+        {/* ── ni oui ni non : mettre de côté, ou sortir du canal ── */}
+        {task.kind !== "wait" && (
+          <div className="dm-side-acts">
+            <button
+              type="button"
+              className="dm-side-b"
+              aria-pressed={deCote}
+              disabled={busy}
+              onClick={() => {
+                setDeCote((v) => !v);
+                setHorsCanal(false);
+                // Le motif est propre à chaque geste : « il est en congés » n'a
+                // rien à faire dans la note d'une sortie de canal.
+                setMotif("");
+              }}
+            >
+              <Icon name="clock" className="ico-sm" />
+              Mettre de côté
+            </button>
+            {/* Une sortie de canal n'a de sens que là où le canal peut manquer :
+                un numéro sans compte WhatsApp, un contact sans LinkedIn. Un
+                téléphone, lui, sonne ou ne sonne pas. */}
+            {isMessageKind(task.kind) && (
+              <button
+                type="button"
+                className="dm-side-b danger"
+                aria-pressed={horsCanal}
+                disabled={busy || sortie}
+                onClick={() => {
+                  setHorsCanal((v) => !v);
+                  setDeCote(false);
+                  setMotif("");
+                }}
+              >
+                <Icon name="phoneOff" className="ico-sm" />
+                Pas sur {ch.lb}
+              </button>
+            )}
+          </div>
+        )}
+
+        {deCote && task.kind !== "wait" && (
+          <div className="dm-panel">
+            <div className="dm-lbl">
+              Il revient quand ?<span>ni un oui ni un non</span>
+            </div>
+            <div className="dm-outs">
+              {DELAIS_MISE_DE_COTE.map((d) => (
+                <button
+                  key={d.j}
+                  type="button"
+                  className="dm-out"
+                  aria-pressed={dateRetour === dansNJours(d.j)}
+                  onClick={() => setDateRetour(dansNJours(d.j))}
+                >
+                  {d.lb}
+                </button>
+              ))}
+              <input
+                type="date"
+                aria-label="Date de retour"
+                className="dm-note"
+                value={dateRetour}
+                min={dansNJours(1)}
+                onChange={(e) => setDateRetour(e.target.value)}
+                style={{ minHeight: 0, height: 32, width: 150 }}
+              />
+            </div>
+            <textarea
+              className="dm-note"
+              value={motif}
+              onChange={(e) => setMotif(e.target.value)}
+              placeholder="Pourquoi maintenant ce n'est pas possible — c'est ce qu'on relira en le rouvrant."
+            />
+            <div className="dm-hint">
+              <Icon name="info" className="ico-sm" />
+              Il quitte la file et revient le {dateLongue(dateRetour)}. Rien n&apos;est envoyé
+              d&apos;ici là, et l&apos;affaire n&apos;est ni gagnée ni perdue.
+            </div>
+            <button className="dm-cta" disabled={busy} onClick={mettreDeCote}>
+              <Icon name="clock" className="ico-sm" />
+              Mettre de côté jusqu&apos;au {dateLongue(dateRetour)}
+            </button>
+          </div>
+        )}
+
+        {horsCanal && isMessageKind(task.kind) && (
+          <div className="dm-panel">
+            <div className="dm-lbl">
+              Injoignable sur {ch.lb}
+              <span>le prospect reste bon</span>
+            </div>
+            <div className="dm-hint warn">
+              <Icon name="warning" className="ico-sm" />
+              {task.kind === "whatsapp"
+                ? "Le numéro n'a pas de compte WhatsApp : rien ne partira jamais par là."
+                : "Aucun profil LinkedIn atteignable pour ce contact."}{" "}
+              Il sort de cette séquence — les relances prévues sont annulées. L&apos;affaire, elle,
+              n&apos;est pas perdue.
+            </div>
+            <label className="dm-check">
+              <input
+                type="checkbox"
+                checked={basculeAppel}
+                onChange={(e) => setBasculeAppel(e.target.checked)}
+              />
+              <span>
+                Le mettre dans mes appels à la place
+                {phones[0] ? ` — ${phones[0]}` : " (aucun numéro connu)"}
+              </span>
+            </label>
+            <textarea
+              className="dm-note"
+              value={motif}
+              onChange={(e) => setMotif(e.target.value)}
+              placeholder="Précision éventuelle — sinon la raison est enregistrée telle quelle."
+            />
+            <button
+              className="dm-cta"
+              style={{ ["--k" as string]: "var(--danger)" }}
+              disabled={busy || sortie}
+              onClick={sortirDuCanal}
+            >
+              <Icon name="phoneOff" className="ico-sm" />
+              {sortie ? "En cours…" : `Le sortir de la séquence ${ch.lb}`}
+            </button>
+          </div>
+        )}
+
         {/* ── issue : commune à l'appel et au message ── */}
         {task.kind !== "wait" && (
           <>
@@ -714,8 +982,8 @@ export function DemActionCard({
               <input
                 type="date"
                 className="dm-note"
-                value={snoozeDate}
-                onChange={(e) => setSnoozeDate(e.target.value)}
+                value={dateRetour}
+                onChange={(e) => setDateRetour(e.target.value)}
                 style={{ minHeight: 0, height: 36 }}
               />
             )}
