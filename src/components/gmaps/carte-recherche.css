@@ -619,3 +619,393 @@
   border: 1px dashed var(--text-4) !important;
   background: none !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Où chercher ensuite : les villes à prospecter
+   ═══════════════════════════════════════════════════════════════════════════
+   Même grammaire que le suivi (bloc à 14 px de rayon, chiffres en mono,
+   pastilles sur fond de France) — c'est la même page et le même geste. La
+   différence est de temps : le suivi montre ce qui se passe, ceci montre ce
+   qu'il reste à faire.
+*/
+.rprosp {
+  /* Même pont de jetons que `.rlive` : hors `.studio-surface`, le `--accent`
+     global est un gris de surface (#F1F2F4), pas l'azur de la marque. Sans
+     cette ligne, la jauge de couverture et les pastilles de la carte sont
+     grises sur gris. */
+  --accent: #2f7ae0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.rprosp-tete {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rprosp-titre { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rprosp-titre h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.rprosp-recalc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.rprosp-recalc:hover:not(:disabled) { background: var(--bg-2); border-color: var(--border-2); }
+.rprosp-recalc:disabled { opacity: 0.5; cursor: default; }
+.rprosp-recalc svg { width: 13px; height: 13px; }
+
+/* ── Choix du métier ──
+   Une ville ratissée pour la climatisation reste vierge en plomberie : le
+   classement change entièrement d'un onglet à l'autre, ce n'est pas un filtre
+   d'affichage. */
+.rprosp-metiers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+.rprosp-metiers button {
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.rprosp-metiers button:hover { background: var(--bg-2); }
+.rprosp-metiers button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rprosp-explication {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.rprosp-explication strong { color: var(--text-2); font-weight: 600; }
+
+.rprosp-alerte {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rprosp-vide {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.rprosp-attente {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 26px 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.rprosp-attente svg {
+  width: 15px;
+  height: 15px;
+  color: var(--accent);
+  animation: rlive-rotation 1.1s linear infinite;
+}
+
+/* ── Corps : la France à gauche, les villes à droite ──
+   Empilé tant que la place manque. Le fond de carte passe EN PREMIER dans le
+   flux : c'est lui qui répond à « est-ce que ça couvre le pays ? », et la
+   réponse doit précéder la lecture des douze noms. */
+.rprosp-corps { display: flex; flex-direction: column; gap: 14px; }
+
+.rprosp-carte-fr { display: flex; flex-direction: column; gap: 6px; }
+.rprosp-carte-fr svg {
+  display: block;
+  /* Empilée, la carte se centre au lieu de s'étirer : à pleine largeur elle
+     dépasserait la hauteur utile et laisserait deux bandes vides sur les
+     côtés — mesuré, un tiers de la largeur perdu de chaque côté. */
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin: 0 auto;
+}
+.rprosp-fr {
+  fill: var(--bg-2);
+  stroke: var(--text-4);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.dark .rprosp-fr { fill: #0d1e36; stroke: #2c4a72; }
+
+.rprosp-pt {
+  fill: var(--accent);
+  fill-opacity: 0.72;
+  stroke: var(--surface);
+  stroke-width: 1.2;
+  cursor: pointer;
+  transition: fill-opacity 0.15s var(--easing-smooth);
+}
+.rprosp-pt[data-survole="true"] { fill-opacity: 1; stroke-width: 2; }
+.dark .rprosp-pt { stroke: #0a1b33; }
+
+.rprosp-nom {
+  font-family: var(--font-family-base);
+  font-size: 10.5px;
+  fill: var(--text-2);
+  /* Liseré de la couleur du fond : le nom reste lisible par-dessus une pastille
+     comme par-dessus une frontière, sans cartouche opaque. */
+  stroke: var(--surface);
+  stroke-width: 2.6;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+.rprosp-nom[data-survole="true"] { fill: var(--text); font-weight: 600; }
+.dark .rprosp-nom { fill: #cfe0f4; stroke: #071426; }
+.dark .rprosp-nom[data-survole="true"] { fill: #e8f0fa; }
+
+.rprosp-carte-legende {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+.rprosp-carte-legende svg { width: 11px; height: 11px; }
+
+/* ── La grille de villes ── */
+.rprosp-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rprosp-grille > li { display: flex; min-width: 0; }
+
+/* La liste GLISSE : lancer une ville la retire, celles d'après remontent d'un
+   cran et la treizième s'installe dans la case laissée vide. Seule la nouvelle
+   venue s'anime — les autres gardent leur clé React et ne remontent donc pas.
+   Une page tournée renouvelle les douze, et les douze s'annoncent. */
+.rprosp-grille > li { animation: rprosp-arrivee 320ms var(--easing-smooth) both; }
+@keyframes rprosp-arrivee {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+.rprosp-liste { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* ── Pagination ── */
+.rprosp-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.rprosp-pages button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.rprosp-pages button:hover:not(:disabled) { background: var(--bg-2); border-color: var(--border-2); }
+.rprosp-pages button:disabled { opacity: 0.35; cursor: default; }
+.rprosp-pages button svg { width: 14px; height: 14px; }
+.rprosp-pages > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rprosp-pages b { font-weight: 600; color: var(--text); }
+.rprosp-pages em { font-style: normal; font-size: 10px; color: var(--text-4); }
+
+.rprosp-carte {
+  display: flex;
+  position: relative;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s var(--easing-smooth),
+    background 0.15s var(--easing-smooth),
+    transform 0.15s var(--easing-smooth);
+}
+.rprosp-carte:hover:not(:disabled),
+.rprosp-carte[data-survole="true"]:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  transform: translateY(-1px);
+}
+.rprosp-carte:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rprosp-carte:disabled { opacity: 0.55; cursor: default; }
+
+.rprosp-carte-tete {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rprosp-carte-tete b {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rprosp-carte-tete em {
+  flex-shrink: 0;
+  font-family: var(--font-family-mono);
+  font-style: normal;
+  font-size: 10px;
+  /* `--text-4` est un gris de séparateur : à 10 px, le numéro de département
+     y devenait illisible sur fond blanc. */
+  color: var(--text-3);
+}
+
+.rprosp-hab {
+  font-family: var(--font-family-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* La jauge dit ce que « 0 fiche » tout seul ne dit pas : 0 sur combien. */
+.rprosp-jauge {
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 99px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.rprosp-jauge i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.rprosp-compte {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-family: var(--font-family-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rprosp-compte strong { font-size: 12px; font-weight: 600; color: var(--text); }
+
+.rprosp-action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.rprosp-action svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--accent); }
+
+/* Déjà survolée : ce qui manque, ce sont les zones que la passe rapide a
+   sautées — d'où une passe complète, et non un second survol. */
+.rprosp-badge {
+  position: absolute;
+  top: -7px;
+  right: 9px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--magic-tint);
+  color: var(--magic);
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.rprosp-carte[data-passage="rapide"] { border-style: dashed; }
+
+@media (min-width: 1100px) {
+  .rprosp-corps {
+    display: grid;
+    grid-template-columns: minmax(0, 272px) minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+  }
+  .rprosp-carte-fr svg { max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rprosp-carte { transition: none; }
+  .rprosp-carte:hover:not(:disabled) { transform: none; }
+  .rprosp-attente svg { animation: none; }
+  .rprosp-grille > li { animation: none; }
+}
