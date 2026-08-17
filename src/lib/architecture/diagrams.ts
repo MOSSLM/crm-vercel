@@ -134,6 +134,54 @@ export const ARCHITECTURE_DIAGRAMS: ArchitectureDiagram[] = [
     N --> B["Création d'un lot de prospection fiable"]`,
   },
   {
+    id: "usine-a-donnees",
+    title: "L'usine à données : qui fait quoi",
+    summary:
+      "Le même parcours que les deux schémas précédents, mais avec le nom du bot sur chaque étape. C'est la carte à ouvrir avant d'en fabriquer un nouveau — le détail de chacun est dans Pilotage → Les bots.",
+    orientation: "vertical",
+    source: `flowchart TB
+    A["Entreprise encore inconnue"]
+
+    A --> C["1 · Collecte brute"]
+    C --> C1["Scraper Google Maps<br/>service ECS, hors dépôt"]
+    C --> C2["API Recherche d'entreprises<br/>identité légale"]
+    C --> C3["ADEME<br/>SIRET et qualifications RGE"]
+
+    C1 --> P["2 · A-t-elle un site ?"]
+    C2 --> P
+    C3 --> P
+
+    P --> P1["dossier-web.mjs<br/>cherche et range, N'ÉCRIT RIEN"]
+    P1 --> P2["verifier-sites.mjs<br/>débusque annuaires et faux positifs"]
+    P2 --> P3["Relecture humaine"]
+    P3 --> P4["appliquer-dossiers.mjs<br/>la seule moitié qui ÉCRIT"]
+
+    P4 --> S["3 · Que vaut ce site ?"]
+    S --> S1["audit-site<br/>collecte, faits comptés, note"]
+    S --> S2["techno.ts<br/>CMS, thème, constructeur — zéro réseau"]
+    S --> S3["Wayback<br/>en ligne depuis, dernière modif"]
+    S --> S4["PageSpeed<br/>à la demande, JAMAIS en masse"]
+
+    P4 --> L["4 · Identité et finances"]
+    L --> L1["cron données publiques<br/>40 fiches par heure"]
+
+    S1 --> E["5 · Enrichissement"]
+    S2 --> E
+    S3 --> E
+    L1 --> E
+    E --> E1["enrich-lead-magnet<br/>edge function, 1 appel LLM"]
+    E1 --> E2["reenrich<br/>orchestrateur de masse, curseur de reprise"]
+
+    E2 --> F["6 · Support de vente"]
+    F --> F1["Site démo"]
+    F --> F2["Audit PDF"]
+    F --> F3["Plaquette et carte de partage"]
+
+    F1 --> V["Prospection"]
+    F2 --> V
+    F3 --> V`,
+  },
+  {
     id: "pyramide-qualification",
     title: "La pyramide de qualification",
     summary:

@@ -41,6 +41,7 @@ import {
   Network,
   Settings,
   SlidersHorizontal,
+  Bot,
 } from "lucide-react";
 
 /**
@@ -181,6 +182,7 @@ export const SPACES: Space[] = [
       { title: "Objectifs", href: "/objectifs", icon: Target },
       { title: "Calendrier", href: "/calendar", icon: CalendarDays },
       { title: "Architecture", href: "/docs/architecture", icon: Network },
+      { title: "Les bots", href: "/docs/bots", icon: Bot },
       { title: "Paramètres", href: "/settings", icon: Settings },
     ],
   },
