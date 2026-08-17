@@ -140,6 +140,13 @@ interface AppDataContextType {
    */
   compteurs: CompteursEntreprises;
   totalCompanies: number;
+  /**
+   * Combien de contacts EXISTENT, indépendamment de ceux qui sont chargés.
+   * `contacts` est un cache rempli entreprise par entreprise au fil de la
+   * navigation : sa longueur annonçait 32 pour 374 contacts en base, et montait
+   * à mesure qu'on cliquait. `null` quand le compte n'a pas pu être lu.
+   */
+  totalContacts: number | null;
   totalQualifiedCompanies: number;
   keywordStats: Record<string, number>;
   locationStats: Record<string, number>;
@@ -418,6 +425,8 @@ const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 const [companies, setCompanies] = useState<Company[]>([]);
 /** Chiffres de stock calculés en SQL (RPC `entreprises_compteurs`). */
 const [compteurs, setCompteurs] = useState<CompteursEntreprises>(COMPTEURS_VIDES);
+/** Compte réel de la table `contacts`, servi par /api/entreprises/perimetre. */
+const [totalContacts, setTotalContacts] = useState<number | null>(null);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
 const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -524,6 +533,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       const perimetreData = getSettledValue(perimetreResult, {
         entreprises: [] as Company[],
         compteurs: COMPTEURS_VIDES,
+        contacts_total: null as number | null,
       });
       const opportunitiesData = getSettledValue(opportunitiesResult, [] as Opportunity[]);
       const pipelinesData = getSettledValue(pipelinesResult, [] as Pipeline[]);
@@ -557,6 +567,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setSearchResults(mappedSearchResults);
       setCompanies(normalizedCompanies);
       setCompteurs(perimetreData.compteurs);
+      setTotalContacts(
+        typeof perimetreData.contacts_total === "number" ? perimetreData.contacts_total : null,
+      );
       setOpportunities(safeOpportunities);
       setPipelines(pipelinesData);
       setOffers(offersData);
@@ -1555,6 +1568,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     offers,
     compteurs,
     totalCompanies,
+    totalContacts,
     totalQualifiedCompanies,
     keywordStats,
     locationStats,
