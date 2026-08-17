@@ -47,12 +47,18 @@ export const GET = withAuth({}, async ({ user, cors }) => {
 
   const sc = getServiceClient();
 
-  const [perimetre, compteurs] = await Promise.all([
+  const [perimetre, compteurs, contacts] = await Promise.all([
     sc
       .from("v_entreprises_perimetre_actif")
       .select(COMPANY_SELECT)
       .order("created_at", { ascending: false }),
     sc.rpc("entreprises_compteurs"),
+    // COMBIEN DE CONTACTS EXISTENT, et pas combien sont chargés.
+    // Les écrans affichaient `contacts.length` — la longueur du cache, rempli
+    // entreprise par entreprise au fil de la navigation. Il annonçait 32 pour
+    // 374 contacts en base, et le chiffre montait à mesure qu'on cliquait.
+    // `head: true` : on ne rapatrie aucune ligne, seulement le compte.
+    sc.from("contacts").select("id", { count: "exact", head: true }),
   ]);
 
   if (perimetre.error) return jsonError(perimetre.error.message, 500, {}, cors);
@@ -88,6 +94,9 @@ export const GET = withAuth({}, async ({ user, cors }) => {
     {
       entreprises,
       compteurs: (ligne as CompteursEntreprises | null) ?? COMPTEURS_VIDES,
+      // `null` quand le compte n'a pas pu être lu : l'écran affiche alors ce
+      // qu'il a chargé, plutôt qu'un zéro qui ferait croire à une base vide.
+      contacts_total: contacts.error ? null : (contacts.count ?? null),
     },
     { headers: cors },
   );

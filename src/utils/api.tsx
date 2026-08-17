@@ -673,6 +673,8 @@ export const companiesApi = {
   getPerimetreActif: async (): Promise<{
     entreprises: Company[];
     compteurs: CompteursEntreprises;
+    /** Compte réel de la table `contacts`. `null` si la route n'a pas pu le lire. */
+    contacts_total: number | null;
   }> => {
     try {
       const response = await authedFetch('/api/entreprises/perimetre');
@@ -682,11 +684,13 @@ export const companiesApi = {
       const payload = (await response.json()) as {
         entreprises?: unknown;
         compteurs?: CompteursEntreprises;
+        contacts_total?: number | null;
       };
       const rows = Array.isArray(payload.entreprises) ? payload.entreprises : [];
       return {
         entreprises: rows.filter(isCompanyRow),
         compteurs: payload.compteurs ?? COMPTEURS_VIDES,
+        contacts_total: typeof payload.contacts_total === 'number' ? payload.contacts_total : null,
       };
     } catch (error) {
       logger.error('Error fetching active company scope:', error);

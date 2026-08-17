@@ -60,7 +60,25 @@ export function StudioHub() {
     contacts,
     activeCompanies: companies,
     activeOpportunities: opportunities,
+    totalCompanies,
+    totalContacts,
   } = useAppData();
+
+  /**
+   * LES COMPTEURS DISENT CE QUI EXISTE, PAS CE QUI EST CHARGÉ.
+   *
+   * `companies` ne porte que le périmètre actif et `contacts` est un cache
+   * rempli entreprise par entreprise au fil de la navigation. L'accueil
+   * annonçait donc « 850 entreprises » pour 60 447 et « 32 contacts » pour 374,
+   * et les chiffres montaient à mesure qu'on cliquait dans l'application. Un
+   * compteur qui bouge sans que rien ne bouge en base n'est pas un compteur.
+   *
+   * `totalCompanies` vient de la RPC `entreprises_compteurs`, `totalContacts`
+   * d'un `count` exact sur la table. Repli sur ce qui est chargé si la route
+   * n'a pas pu les lire — un chiffre partiel vaut mieux qu'un zéro faux.
+   */
+  const nbEntreprises = totalCompanies || companies.length;
+  const nbContacts = totalContacts ?? contacts.length;
   const { user } = useAuth();
 
   const today = React.useMemo(() => new Date(), []);
@@ -100,8 +118,8 @@ export function StudioHub() {
       title: "Relation",
       subtitle: "votre base de connaissance client",
       tools: [
-        { title: "Contacts", href: "/contacts", icon: User, meta: compactNumber(contacts.length) },
-        { title: "Entreprises", href: "/companies", icon: Building2, meta: compactNumber(companies.length) },
+        { title: "Contacts", href: "/contacts", icon: User, meta: compactNumber(nbContacts) },
+        { title: "Entreprises", href: "/companies", icon: Building2, meta: compactNumber(nbEntreprises) },
         { title: "Pipeline", href: "/pipeline", icon: GitBranch, meta: compactNumber(opportunities.length) },
         { title: "Clients", href: "/clients", icon: Users },
       ],
@@ -138,8 +156,8 @@ export function StudioHub() {
       unit: "k€",
     },
     { icon: GitBranch, label: "opportunités", value: compactNumber(opportunities.length), unit: "" },
-    { icon: User, label: "contacts", value: compactNumber(contacts.length), unit: "" },
-    { icon: Building2, label: "entreprises", value: compactNumber(companies.length), unit: "" },
+    { icon: User, label: "contacts", value: compactNumber(nbContacts), unit: "" },
+    { icon: Building2, label: "entreprises", value: compactNumber(nbEntreprises), unit: "" },
   ];
 
   return (
@@ -153,7 +171,7 @@ export function StudioHub() {
           <span className="text-primary">bienvenue dans Studio.</span>
         </h1>
         <p className="mt-2 text-sm text-[var(--text-2)]">
-          {compactNumber(contacts.length)} contacts · {compactNumber(companies.length)} entreprises ·{" "}
+          {compactNumber(nbContacts)} contacts · {compactNumber(nbEntreprises)} entreprises ·{" "}
           {compactNumber(opportunities.length)} opportunités en cours.
         </p>
       </div>
