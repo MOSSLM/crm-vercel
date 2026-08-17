@@ -3,11 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { requireStaff } from "@/app/api/_lib/require-staff";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import {
-  COMPANY_SELECT,
-  COMPTEURS_VIDES,
-  type CompteursEntreprises,
-} from "@/lib/entreprises/colonnes";
+import { COMPTEURS_VIDES, type CompteursEntreprises } from "@/lib/entreprises/colonnes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,11 +43,15 @@ export const GET = withAuth({}, async ({ user, cors }) => {
 
   const sc = getServiceClient();
 
+  // `entreprises_perimetre()` renvoie UNE valeur jsonb, pas des lignes.
+  //
+  // PostgREST plafonne le nombre de lignes d'une réponse (réglage « Max rows »,
+  // 1000 par défaut chez Supabase). Le périmètre en compte 1 095 : servi en
+  // lignes, il en perdait 95 sans lever la moindre erreur — les écrans
+  // affichaient juste une liste incomplète. Un tableau jsonb sur une seule ligne
+  // n'est pas concerné, quelle que soit la valeur du réglage.
   const [perimetre, compteurs, contacts] = await Promise.all([
-    sc
-      .from("v_entreprises_perimetre_actif")
-      .select(COMPANY_SELECT)
-      .order("created_at", { ascending: false }),
+    sc.rpc("entreprises_perimetre"),
     sc.rpc("entreprises_compteurs"),
     // COMBIEN DE CONTACTS EXISTENT, et pas combien sont chargés.
     // Les écrans affichaient `contacts.length` — la longueur du cache, rempli
@@ -68,27 +68,10 @@ export const GET = withAuth({}, async ({ user, cors }) => {
   // d'erreur. La RPC renvoie une table à une ligne.
   const ligne = Array.isArray(compteurs.data) ? compteurs.data[0] : compteurs.data;
 
-  /**
-   * Les logos stockés en `data:` URI ne partent pas dans cette réponse.
-   *
-   * Seize fiches portent leur logo en base64 dans `logo_url` au lieu d'une URL
-   * — la plus grosse fait 668 ko à elle seule. Ces seize lignes pesaient 2,3 Mo
-   * des 3,7 Mo de la réponse, rechargés à chaque ouverture d'un écran du CRM,
-   * et rapprochaient dangereusement de la limite de 4,5 Mo qu'une fonction
-   * serverless Vercel peut renvoyer.
-   *
-   * La fiche détaillée, elle, recharge la ligne complète par
-   * `companiesApi.getById` : le logo reste consultable là où il sert vraiment.
-   * `/api/media/rehost-logos` existe justement pour convertir ces base64 en
-   * fichiers hébergés ; ce filtre est le garde-fou en attendant qu'il soit
-   * passé sur tout le parc.
-   */
-  const entreprises = (perimetre.data ?? []).map((e) => {
-    const fiche = e as { logo_url?: string | null };
-    return typeof fiche.logo_url === "string" && fiche.logo_url.startsWith("data:")
-      ? { ...fiche, logo_url: null }
-      : fiche;
-  });
+  // Le filtrage des logos en `data:` URI est fait dans la fonction SQL : seize
+  // fiches stockent leur logo en base64 au lieu d'une URL, la plus grosse
+  // faisant 668 ko, et elles pesaient 2,3 Mo des 3,7 Mo de cette réponse.
+  const entreprises = Array.isArray(perimetre.data) ? perimetre.data : [];
 
   return json(
     {

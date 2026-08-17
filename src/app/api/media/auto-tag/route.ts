@@ -32,11 +32,11 @@ interface MediaRow {
  *  minus tags disabled in the allowlist (same source as the site-builder). */
 async function loadAllowedTags(sb: ReturnType<typeof getServiceClient>): Promise<string[]> {
   // Lisait les 60 944 lignes de `entreprises` pour n'en tirer qu'une liste de
-  // ~280 libellés distincts. `service_tag_usage()` fait ce regroupement en base
-  // — même agrégat que `loadServiceTagUniverse`, même repli de `service_tags`
-  // vers `premiers_tags`.
+  // ~280 libellés distincts — et se faisait donc tronquer à 1000 par le plafond
+  // « Max rows » de PostgREST, silencieusement. `service_tag_usage_json()` fait
+  // ce regroupement en base et renvoie UNE valeur, hors de portée du plafond.
   const [{ data: rows }, { data: settings }] = await Promise.all([
-    sb.rpc("service_tag_usage"),
+    sb.rpc("service_tag_usage_json"),
     sb.from("enrichment_tag_settings").select("tag, allowed"),
   ]);
   const disallowed = new Set(

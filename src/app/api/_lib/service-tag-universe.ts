@@ -58,6 +58,11 @@ type LigneUsage = {
  * distincts : c'est cet ordre de grandeur qui transite désormais, l'agrégation
  * étant faite par la RPC `service_tag_usage()`.
  *
+ * La RPC renvoie UN tableau jsonb, pas des lignes : PostgREST plafonne le
+ * nombre de lignes d'une réponse (« Max rows », 1000 par défaut chez Supabase),
+ * et un dépassement serait silencieux sur un écran qui pilote des fusions
+ * destructives.
+ *
  * La normalisation reste ici, et nulle part ailleurs : la base renvoie des
  * libellés BRUTS, `serviceTagKey` les regroupe, `normalizeServiceTags` applique
  * la taxonomie et les exclusions. Dupliquer ces règles en SQL aurait créé une
@@ -67,7 +72,7 @@ export async function loadServiceTagUniverse(
   supabase: SupabaseClient,
 ): Promise<ServiceTagUniverse> {
   const [usageRes, settingsRes] = await Promise.all([
-    supabase.rpc("service_tag_usage"),
+    supabase.rpc("service_tag_usage_json"),
     supabase.from("enrichment_tag_settings").select("tag, allowed"),
   ]);
 
@@ -83,7 +88,8 @@ export async function loadServiceTagUniverse(
         ? usage.leadMagnets
         : usage.media;
 
-  for (const ligne of (usageRes.data ?? []) as LigneUsage[]) {
+  const lignes: LigneUsage[] = Array.isArray(usageRes.data) ? usageRes.data : [];
+  for (const ligne of lignes) {
     // `all` est le marqueur d'image universelle (cf. `media_library`), pas un
     // service : il ne doit jamais apparaître dans un décompte de fusion.
     if (ligne.source === "media" && ligne.tag === "all") continue;
