@@ -1,6 +1,13 @@
 import type { AuditContent, AuditPage5 } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
-import { LIBELLE_DEMO, detailNote, mesuresVides, sousTitreNote } from '@/lib/audit/mesures';
+import {
+  LIBELLE_DEMO,
+  LIBELLE_NIVEAU,
+  detailNote,
+  mesuresVides,
+  niveauDeNote,
+  sousTitreNote,
+} from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
 import { C } from './palette';
 
@@ -43,6 +50,41 @@ const rgbDe = (hex: string): string => {
 
 /** Le nombre de lignes détaillées de l'avant/après. Au-delà, la demi-page déborde. */
 export const MAX_LIGNES_AVANT_APRES = 3;
+
+/**
+ * La longueur au-delà de laquelle la colonne « avant » passe en petit corps.
+ *
+ * `avant` est le seul champ du tableau écrit par le rédacteur, et le contrat lui
+ * accorde soixante caractères. Rendu en Cormorant 25 px dans une demi-colonne,
+ * il tient sur une ligne jusqu'à vingt-six caractères environ ; au-delà il en
+ * prend deux, la ligne passe de 85 à 97 px et la demi-page déborde de 24 px.
+ * Mesuré sur TOPMACLIM, dont la meilleure valeur est le titre de sa page —
+ * « Accueil - www.topmaclim.com », trente et un caractères.
+ *
+ * ON RESSERRE TOUTE LA COLONNE, PAS LA SEULE LIGNE FAUTIVE : trois valeurs de
+ * corps différents dans un même tableau se lisent comme une erreur de rendu. Et
+ * on resserre plutôt qu'on ne tronque, pour la raison qui vaut déjà pour le nom
+ * du prospect en couverture — c'est le chiffre que le prospect va vérifier, il
+ * doit être lisible en entier.
+ */
+export const AVANT_LONG = 26;
+
+/**
+ * Les options tarifaires affichées. Au-delà, la demi-page déborde.
+ *
+ * Mesuré : la préparation de Doussot a retenu deux offres, `construirePage5` en
+ * a déduit sa grille d'options, et la page tarifs a dépassé sa boîte de
+ * quatre-vingt-dix-sept pixels — que `overflow:hidden` aurait coupés en silence.
+ * Le générateur peut proposer ce qu'il veut ; la page, elle, a une taille.
+ *
+ * DEUX, et non quatre : mesuré, la grille à deux colonnes met quatre options sur
+ * deux rangées de cent trente pixels, soit deux cent soixante-trois pour le seul
+ * bloc d'options — la demi-page en a quatre cent quatre-vingt-seize en tout, et
+ * le tarif principal en prend déjà deux cent vingt-sept. Deux options tiennent
+ * sur une rangée. C'est aussi ce qu'un artisan lit avant de décrocher ; le reste
+ * se dit à l'appel, comme les constats du bandeau « +N ».
+ */
+export const MAX_OPTIONS_TARIFS = 2;
 
 type Zone = { field?: string };
 
@@ -143,7 +185,14 @@ function sheetFoot(f: Feuillets, n: string): string {
 
 function cCouverture(c: AuditContent, m: MesuresAudit): string {
   const p = c.page1;
-  const capture = m.captureUrl;
+  /*
+   * LA CAPTURE DE LA COUVERTURE EST CELLE DU SITE DÉMO, jamais celle de l'actuel.
+   * On promet ici « découvrez votre nouveau site » ; y montrer l'ancien vide la
+   * promesse de son sens, et prive le prospect de la seule chose qu'il cherche
+   * du regard — son logo, en haut, dans la barre de navigation.
+   */
+  const capture = m.captureDemoUrl;
+  const demoUrl = p.demo_url?.trim() || m.demoUrl || '';
 
   return `<div class="half half-cover" id="audit-h1" data-screen-label="A4-1 couverture">
 <div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
@@ -156,7 +205,7 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
   </div>
   <div class="cover-foot">
     ${z('div', 'cover-client', { field: 'page1.client' })}<div class="cover-client-label">Préparé pour</div><div class="cover-client-name">${texte(p.client_name, 'Entreprise cliente')}</div><div class="cover-client-meta">${texte(p.client_meta, 'Secteur · Ville')}</div></div>
-    ${p.demo_url ? blocDemo(p.demo_url, capture) : ''}
+    ${demoUrl || capture ? blocDemo(demoUrl, capture) : ''}
   </div>
 </div></div>`;
 }
@@ -169,16 +218,26 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
  * qu'un rectangle mort, et le document ne trahit pas ce qui lui manque.
  */
 function blocDemo(url: string, capture: string | null): string {
-  return `<a class="demo-cta" href="${esc(url)}" target="_blank" rel="noopener">
-  <div class="demo-cta-label">Votre site démo est en ligne</div>
-  <div class="mockup"><div class="mockup-chrome"><div class="mockup-dots"><i></i><i></i><i></i></div><div class="mockup-url">${esc(domainOf(url))}</div></div>
+  /*
+   * LA CAPTURE ET LE LIEN SONT DEUX CHOSES, et les lier faisait disparaître la
+   * première. Le bloc entier était conditionné à l'adresse du démo ; or un site
+   * préparé mais non publié n'a pas de sous-domaine — il a pourtant sa capture,
+   * et c'est elle qui porte l'essentiel : le prospect y cherche SON logo, en
+   * haut, dans la barre de navigation. Sans adresse, on montre donc l'aperçu
+   * sans promettre un clic qui n'irait nulle part.
+   */
+  const interieur = `<div class="demo-cta-label">${url ? 'Votre site démo est en ligne' : 'Votre site démo est prêt'}</div>
+  <div class="mockup"><div class="mockup-chrome"><div class="mockup-dots"><i></i><i></i><i></i></div><div class="mockup-url">${esc(url ? domainOf(url) : '')}</div></div>
     <div class="mockup-screen">
       <div class="mockup-skeleton"><div class="sk-hero"></div><div class="sk-line" style="width:88%"></div><div class="sk-line" style="width:62%"></div><div class="sk-btn"></div></div>
       ${capture ? `<img src="${esc(capture)}" alt="Aperçu du site préparé">` : ''}
     </div>
   </div>
-  <div class="demo-cta-link"><span>Découvrez-le maintenant</span><b>→</b></div>
-</a>`;
+  ${url ? '<div class="demo-cta-link"><span>Découvrez-le maintenant</span><b>→</b></div>' : '<div class="demo-cta-link"><span>On vous le montre pendant l’appel</span></div>'}`;
+
+  return url
+    ? `<a class="demo-cta" href="${esc(url)}" target="_blank" rel="noopener">${interieur}</a>`
+    : `<div class="demo-cta">${interieur}</div>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,34 +292,66 @@ function reglette(m: MesuresAudit): string {
  * porte une raison que le prospect vérifie sur son téléphone. Une moyenne
  * pondérée ne se raconte pas ; un malus caché serait encore plus opaque qu'elle.
  */
+/** Au-delà, la soustraction déborde de sa boîte. Mesuré sur un dossier réel. */
+const MAX_LIGNES_MALUS = 3;
+
 function soustraction(m: MesuresAudit): string {
   const d = detailNote(m);
   if (!d) return '';
-  return `<div class="score-calc"><b>${d.base}</b> mesuré par Google, moins <b>${d.retire}</b><span>${d.lignes
+  /*
+   * LA SOUSTRACTION SE BORNE, comme le tableau avant/après avant elle.
+   * Sur Deligeard, sept raisons de retrait tenaient sur quatre lignes et
+   * poussaient la demi-page trente pixels au-delà de sa boîte — que
+   * `overflow:hidden` aurait coupées en silence. On en montre trois et on
+   * COMPTE le reste : le détail complet appartient à l'appel, pas au papier.
+   */
+  const montrees = d.lignes.slice(0, MAX_LIGNES_MALUS);
+  const reste = d.lignes.length - montrees.length;
+  const suite = reste > 0 ? ` · et ${reste} autre${reste > 1 ? 's' : ''}` : '';
+  return `<div class="score-calc"><b>${d.base}</b> mesuré par Google, moins <b>${d.retire}</b><span>${montrees
     .map(esc)
-    .join(' · ')}</span></div>`;
+    .join(' · ')}${esc(suite)}</span></div>`;
 }
 
 /**
  * Une carte par axe mesuré. Quatre à six selon que Google a mesuré.
  *
- * La mention « mesuré par Google » est la seule chose qui distingue un relevé
- * opposable d'une opinion d'agence, et elle passe donc en pastille sous le nom
- * de l'axe. Elle sortait jusqu'ici en `<u>` collé au nom — « RAPIDITÉMESURÉ PAR
- * GOOGLE », souligné, sur deux lignes, la carte déformée.
+ * UN SEUL NOMBRE SUR LA PAGE, ET C'EST LA NOTE GLOBALE. Les axes portaient
+ * chacun leur note sur 100 : six chiffres autour d'un septième, qui invitaient
+ * à une addition ne retombant jamais sur le grand nombre. Le prospect fait cette
+ * addition — c'est même la première chose qu'il fait — et à ce moment-là il
+ * cesse de croire le relevé entier.
+ *
+ * Les axes disent donc désormais OÙ ça coince, pas de combien : un niveau coloré
+ * et la mesure qui le décide. Et la règle est structurelle — soit tous les axes
+ * portent un chiffre, soit aucun. Le retirer des seuls axes flatteurs ferait du
+ * document un argumentaire, ce qui se voit à la première question posée.
+ *
+ * La barre de dix segments disparaît avec : elle ne faisait que redessiner le
+ * chiffre qu'on vient d'enlever, et elle coûtait seize pixels par carte sur une
+ * demi-page qui débordait déjà de quatre-vingt-six.
+ *
+ * La mention « mesuré par Google » reste : c'est la seule chose qui distingue un
+ * relevé opposable d'une opinion d'agence.
  */
 function cartesAxes(m: MesuresAudit): string {
   const cartes = m.axes
     .map((a) => {
-      const remplies = Math.round(a.note / 10);
-      const barres = Array.from({ length: 10 }, (_, i) => `<i class="${i < remplies ? 'on' : ''}"></i>`).join('');
+      const niveau = niveauDeNote(a.note);
       return `<div class="ax-card">
-<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<span class="ax-src">mesuré par Google</span>' : ''}</div><div class="ax-note">${a.note}<s>/100</s></div></div>
-<div class="ax-bar">${barres}</div>
+<div class="ax-top"><div class="ax-nm">${esc(a.nom)}${a.mesureGoogle ? '<span class="ax-src">mesuré par Google</span>' : ''}</div><span class="ax-niv niv-${niveau}">${esc(LIBELLE_NIVEAU[niveau])}</span></div>
 ${a.valeur ? `<div class="ax-v">${esc(a.valeur)}</div>` : ''}</div>`;
     })
     .join('');
-  return `<div class="ax-grid${m.axes.length === 4 ? ' ax-n4' : ''}">${cartes}</div>`;
+  /*
+   * LE NOMBRE DE COLONNES SUIT LE NOMBRE D'AXES, parce que la demi-page ne
+   * s'étire pas. Quatre axes dans une grille de trois laissent un orphelin sur
+   * une ligne vide ; sept en réclament une troisième, soit soixante pixels que
+   * la boîte n'a pas — mesuré sur le dossier Doussot, sept axes une fois
+   * PageSpeed passé. Quatre colonnes les rangent en deux lignes.
+   */
+  const colonnes = m.axes.length === 4 ? ' ax-n4' : m.axes.length >= 7 ? ' ax-n7' : '';
+  return `<div class="ax-grid${colonnes}">${cartes}</div>`;
 }
 
 function cReleve(c: AuditContent, m: MesuresAudit): string {
@@ -345,6 +436,9 @@ function cConstats(c: AuditContent, m: MesuresAudit): string {
     )
     .join('');
 
+  // Une seule valeur trop longue resserre la colonne entière — voir AVANT_LONG.
+  const serre = detaillees.some((l) => (l.avant ?? '').length > AVANT_LONG);
+
   const bandeau =
     reste.length > 0
       ? `<div class="plus-strip"><div class="plus-n">+${reste.length}</div>
@@ -363,7 +457,7 @@ ${panelHead(p.section_label, p.section_title, p.section_title_em, p.section_intr
   })}
 <div class="panel-body" style="gap:11px">
   <div class="ba-heads"><div class="ba-h ba-h-b">Avant · votre site aujourd’hui</div><div class="ba-h ba-h-a">Après · ${esc(LIBELLE_DEMO)}</div></div>
-  <div class="ba-stack">${lignes}</div>
+  <div class="ba-stack${serre ? ' ba-serre' : ''}">${lignes}</div>
   ${bandeau}
 </div></div>`;
 }
@@ -406,7 +500,9 @@ function cInvestissement(c: AuditContent): string {
   const p = c.page5;
   const services = getServices(p).filter((s) => s.enabled);
   const { total, hasMrr } = calcTotal(getServices(p));
-  const additions = p.additional_services ?? [];
+  const toutesAdditions = p.additional_services ?? [];
+  const additions = toutesAdditions.slice(0, MAX_OPTIONS_TARIFS);
+  const additionsRestantes = toutesAdditions.length - additions.length;
   const sc = p.secondary_card;
 
   /*
@@ -446,6 +542,7 @@ function cInvestissement(c: AuditContent): string {
   ${
     additions.length > 0
       ? `<div class="opt-wrap"><div class="opt-label">${esc(p.addl_section_title || 'Pour aller plus loin')}</div>
+  ${additionsRestantes > 0 ? `<div class="opt-note" style="margin-bottom:8px">et ${additionsRestantes} autre${additionsRestantes > 1 ? 's' : ''} option${additionsRestantes > 1 ? 's' : ''}, détaillée${additionsRestantes > 1 ? 's' : ''} pendant l’appel</div>` : ''}
   <div class="opt-grid">${additions
     .map(
       (o, i) =>

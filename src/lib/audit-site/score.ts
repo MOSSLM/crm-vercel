@@ -40,6 +40,16 @@ export const POIDS_AXES: Record<AxeId, number> = {
   vitesse: 30,
   seo: 30,
   mobile: 20,
+  /**
+   * Le contenu compte AUSSI dans la note de tri, et pas seulement dans celle du
+   * document. Un site vide qui charge vite remontait en tête de la file d'appel
+   * exactement comme il remontait en haut du document : le défaut était le même
+   * des deux côtés, il n'y a pas de raison de ne le corriger que d'un.
+   *
+   * Le parc doit être repassé au `scripts/audit/rescorer.ts` pour que les notes
+   * stockées reflètent ce poids.
+   */
+  contenu: 20,
   conversion: 20,
   /**
    * ZÉRO, et c'est délibéré.
@@ -92,6 +102,18 @@ export const SEUILS = {
    * coquille, une redirection ou une page d'attente.
    */
   htmlCoquilleOctets: 5_000,
+  /**
+   * Sous huit pages, un installateur ne peut pas avoir décrit ses métiers.
+   *
+   * Chauffage, climatisation, plomberie, dépannage, une page à propos, un
+   * contact : on y est déjà. Le seuil est donc bas exprès — il ne constate pas
+   * un site perfectible, il constate un site qui n'existe pas encore.
+   */
+  pagesMin: 8,
+  /** ~250 mots : de quoi expliquer un métier. En dessous, il n'y a rien à lire. */
+  texteAccueilMin: 1_500,
+  /** Cinq photos, c'est un chantier montré. Zéro, c'est un catalogue. */
+  photosMin: 5,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -439,6 +461,69 @@ function axeMobile(s: SignauxSite): NoteAxe {
   return agreger(preuves, !s.joignable);
 }
 
+/**
+ * Le contenu : ce qu'il y a À LIRE, et que la vitesse ne dit jamais.
+ *
+ * L'AXE QUI RÉPOND AU SITE VIDE QUI CHARGE VITE. PageSpeed récompense
+ * mécaniquement le vide — moins de pages, moins d'images, moins de scripts, donc
+ * meilleur affichage. Un site de trois pages bâclé battait un vrai site de
+ * quarante, et nos axes maison ne rattrapaient rien : ce sont des contrôles de
+ * présence — une balise, un formulaire, un numéro — qu'un site squelettique
+ * passe haut la main.
+ *
+ * Ici on ne juge rien, ON COMPTE. Combien de pages le site déclare lui-même,
+ * combien de texte porte l'accueil, combien de photos, et si les avis déjà
+ * reçus apparaissent quelque part. Quatre faits que le prospect recompte sur
+ * son propre site en moins de dix secondes — le test d'entrée de tout ce qui
+ * s'affiche dans ce document.
+ *
+ * C'EST AUSSI L'AXE QUI ARME LE PLAFOND : sous 50, la note globale ne dépasse
+ * plus 50, quelle que soit la vitesse. Voir `PLAFOND_SANS_CONTENU` dans `malus`.
+ */
+function axeContenu(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
+  const aDesAvisGoogle = (ctx.nombreAvis ?? 0) > 0;
+
+  const preuves: Preuve[] = [
+    // Le plan du site est déclaratif, donc généreux : un site qui n'annonce que
+    // huit pages en a rarement davantage. `null` sans plan lisible — une absence
+    // de plan n'est pas une absence de pages.
+    pSeuil("pages_site", "Pages publiées sur votre site", s.nbPagesSitemap, SEUILS.pagesMin, 35, compte, {
+      inverse: true,
+    }),
+    // 1 500 caractères, soit environ 250 mots : une page d'accueil qui explique
+    // un métier. En dessous, il n'y a de quoi se faire une idée ni pour un
+    // visiteur ni pour Google.
+    pSeuil(
+      "texte_accueil",
+      "Texte sur votre page d'accueil",
+      s.joignable && !s.coquille ? s.longueurTexteVisible : null,
+      SEUILS.texteAccueilMin,
+      25,
+      caracteres,
+      { inverse: true },
+    ),
+    pSeuil("photos", "Photos sur votre site", s.joignable ? s.nbImages : null, SEUILS.photosMin, 20, compte, {
+      inverse: true,
+    }),
+    {
+      cle: "avis_page",
+      libelle: "Vos avis clients sur le site",
+      // Sans avis Google connus, la question ne se pose pas — même règle que
+      // dans l'axe conversion : on ne reproche pas de ne pas montrer ce qu'on
+      // n'a pas.
+      valeur:
+        !s.joignable || !aDesAvisGoogle ? null : s.avisDansLaPage || s.widgetAvis ? "affichés" : "absents",
+      seuil: null,
+      poids: 20,
+      verdict:
+        !s.joignable || !aDesAvisGoogle ? "inconnu" : s.avisDansLaPage || s.widgetAvis ? "ok" : "probleme",
+    },
+  ];
+
+  // Le contenu se lit dans la page : une coquille ne permet pas d'en juger.
+  return agreger(preuves, !s.joignable || s.coquille);
+}
+
 function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
   const aDesAvisGoogle = (ctx.nombreAvis ?? 0) > 0;
   const preuves: Preuve[] = [
@@ -637,6 +722,7 @@ function calculerAxes(s: SignauxSite, ctx: ContexteEntreprise): Record<AxeId, No
     vitesse: axeVitesse(s),
     seo: axeSeo(s),
     mobile: axeMobile(s),
+    contenu: axeContenu(s, ctx),
     conversion: axeConversion(s, ctx),
     popularite: axePopularite(s, ctx),
   };
@@ -731,4 +817,17 @@ function compte(n: number): string {
 /** Une note Google se lit sur 5, avec une décimale. */
 function etoiles(n: number): string {
   return `${n.toFixed(1).replace(".", ",")} / 5`;
+}
+
+/**
+ * Un volume de texte se raconte en mots, pas en caractères.
+ *
+ * « 1 500 caractères » ne dit rien à personne ; « environ 250 mots » se compare
+ * à une page qu'on a déjà lue. La division par six est la moyenne du français,
+ * espace comprise — approximative et assumée, puisque c'est un ordre de
+ * grandeur qu'on donne, pas un décompte à défendre.
+ */
+function caracteres(n: number): string {
+  const mots = Math.round(n / 6);
+  return `environ ${mots.toLocaleString("fr-FR")} mot${mots > 1 ? "s" : ""}`;
 }

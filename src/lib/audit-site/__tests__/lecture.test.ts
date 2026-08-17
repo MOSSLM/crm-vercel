@@ -73,9 +73,11 @@ describe("lireAudit — règle de publication", () => {
     // ce sont nos deux heuristiques les plus fragiles. Il ne reste ici que des
     // axes en confiance faible, donc rien.
     expect(res.audit.axes.map((a) => a.id).sort()).toEqual([]);
-    // `popularite` est masqué faute de preuves dans cette ligne de test : sans
-    // détail, sa note ne se recalcule pas, et un axe sans note ne se publie pas.
+    // `popularite` et `contenu` sont masqués faute de preuves dans cette ligne
+    // de test : aucun des deux n'a de colonne dédiée, leur note se recalcule
+    // depuis `detail`, et un axe sans note ne se publie pas.
     expect(res.audit.axes_masques.sort()).toEqual([
+      "contenu",
       "conversion",
       "mobile",
       "popularite",

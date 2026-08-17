@@ -68,6 +68,7 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     nbFeuillesLues: 0,
     robotsTxt: null,
     sitemapXml: null,
+    nbPagesSitemap: null,
   };
 
   let url: URL;
@@ -145,9 +146,9 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
   // Les trois sondes partent ENSEMBLE : elles sont indépendantes, et les
   // enchaîner additionnerait leurs délais sur chacun des 2 000 sites de la file.
   const origine = origineDe(urlFinale);
-  const [robotsTxt, sitemapXml, feuilles, pesee] = await Promise.all([
+  const [robotsTxt, plan, feuilles, pesee] = await Promise.all([
     origine ? sonder(`${origine}/robots.txt`) : Promise.resolve(null),
-    origine ? sonder(`${origine}/sitemap.xml`) : Promise.resolve(null),
+    origine ? lirePlanDuSite(`${origine}/sitemap.xml`) : Promise.resolve(PLAN_VIDE),
     html ? lireFeuillesExternes(html, urlFinale) : Promise.resolve(FEUILLES_VIDES),
     html ? peserRessources(html, urlFinale, poidsOctets) : Promise.resolve(PESEE_VIDE),
   ]);
@@ -174,8 +175,73 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     nbFeuillesDeclarees: feuilles.declarees,
     nbFeuillesLues: feuilles.lues,
     robotsTxt,
-    sitemapXml,
+    sitemapXml: plan.present,
+    nbPagesSitemap: plan.nbPages,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Plan du site
+// ---------------------------------------------------------------------------
+
+const PLAN_VIDE: PlanDuSite = { present: null, nbPages: null };
+
+interface PlanDuSite {
+  present: boolean | null;
+  nbPages: number | null;
+}
+
+/** Au-delà, on arrête de compter : la question posée est « peu ou beaucoup ». */
+const PLAN_MAX_URLS = 500;
+/** Un index renvoie vers d'autres plans. On en suit quelques-uns, pas cent. */
+const PLAN_MAX_SOUS_PLANS = 5;
+
+/**
+ * Le plan du site, et surtout COMBIEN DE PAGES il déclare.
+ *
+ * On téléchargeait déjà ce fichier pour n'en garder qu'un booléen. En compter
+ * les `<loc>` distingue un site de quatre pages d'un site de quarante — le seul
+ * signal de contenu qui ne coûte ni appel supplémentaire ni jugement.
+ *
+ * DEUX PIÈGES QUE CETTE FONCTION FERME.
+ *
+ * Un `sitemap.xml` est très souvent un INDEX : il ne contient aucune page, rien
+ * que des liens vers d'autres plans. Le compter au premier degré rendrait « 3 »
+ * pour un site de trois cents pages — l'erreur exacte qu'on veut éviter, dans le
+ * sens qui accuse à tort.
+ *
+ * Et beaucoup d'hébergeurs répondent 200 avec une page HTML d'erreur au lieu
+ * d'un 404. On exige donc de voir une balise de plan avant de conclure quoi que
+ * ce soit : sans `<urlset>` ni `<sitemapindex>`, il n'y a pas de plan, et
+ * `present` vaut `false` plutôt que `true`.
+ */
+async function lirePlanDuSite(url: string, profondeur = 0): Promise<PlanDuSite> {
+  try {
+    const res = await reachPage(new URL(url), { timeoutMs: SONDE_TIMEOUT_MS });
+    if (!res.ok) {
+      await res.arrayBuffer().catch(() => undefined);
+      return { present: false, nbPages: null };
+    }
+    const xml = await res.text();
+    if (!/<(urlset|sitemapindex)\b/i.test(xml)) return { present: false, nbPages: null };
+
+    // Un index : les `<loc>` désignent d'autres plans, pas des pages.
+    if (/<sitemapindex\b/i.test(xml)) {
+      if (profondeur > 0) return { present: true, nbPages: null };
+      const sousPlans = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)]
+        .map((m) => m[1])
+        .slice(0, PLAN_MAX_SOUS_PLANS);
+      const parts = await Promise.all(sousPlans.map((u) => lirePlanDuSite(u, profondeur + 1)));
+      const total = parts.reduce((somme, p) => somme + (p.nbPages ?? 0), 0);
+      return { present: true, nbPages: total > 0 ? Math.min(total, PLAN_MAX_URLS) : null };
+    }
+
+    const nb = [...xml.matchAll(/<loc>\s*[^<\s]+\s*<\/loc>/gi)].length;
+    return { present: true, nbPages: nb > 0 ? Math.min(nb, PLAN_MAX_URLS) : null };
+  } catch {
+    // Injoignable ou illisible : on ne sait pas, on ne conclut pas.
+    return { present: null, nbPages: null };
+  }
 }
 
 // ---------------------------------------------------------------------------

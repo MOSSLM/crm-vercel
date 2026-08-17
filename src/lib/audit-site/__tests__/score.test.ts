@@ -467,11 +467,31 @@ describe("intégrité catalogue ↔ preuves", () => {
     }
   });
 
-  it("le seul constat sans déclencheur est celui qu'on décide en amont", () => {
-    // `no_site_or_unreachable` ne se déduit pas d'une preuve : il se décide avant
-    // toute mesure, quand rien ne répond ou que la page se déclare en travaux.
-    const sansDeclencheur = AUDIT_ISSUE_CATALOG.filter((c) => !c.declencheurs).map((c) => c.key);
-    expect(sansDeclencheur).toEqual(["no_site_or_unreachable"]);
+  /**
+   * UN CONSTAT SANS DÉCLENCHEUR DOIT DIRE QUI LE RELÈVE.
+   *
+   * L'invariant d'origine n'en tolérait qu'un — `no_site_or_unreachable`, qui se
+   * décide avant toute mesure, quand rien ne répond. Sept constats relevés à la
+   * main l'ont rejoint : une entrée de menu qui tombe dans le vide, un « Titre
+   * de la diapositive » resté dans un bouton, une année vieille de sept ans.
+   * L'analyseur ne voit rien de tout ça.
+   *
+   * Ce que le test protège n'est donc plus « il n'y en a qu'un » mais « aucun
+   * n'y est par oubli » : sans déclencheur ET sans `releve`, un constat ne
+   * pourrait jamais être émis, et personne ne s'en apercevrait.
+   */
+  it("tout constat sans déclencheur déclare qui le relève", () => {
+    const orphelins = AUDIT_ISSUE_CATALOG.filter(
+      (c) => !c.declencheurs && !c.releve && c.key !== "no_site_or_unreachable",
+    ).map((c) => c.key);
+    expect(orphelins).toEqual([]);
+  });
+
+  it("un constat relevé à la main n'a pas de déclencheur automatique", () => {
+    // L'inverse compte autant : un constat qui porte les deux se déclencherait
+    // tout seul ET se relèverait à la main, donc apparaîtrait deux fois.
+    const doubles = AUDIT_ISSUE_CATALOG.filter((c) => c.releve && c.declencheurs).map((c) => c.key);
+    expect(doubles).toEqual([]);
   });
 });
 
@@ -482,5 +502,68 @@ describe("libelleDeNote", () => {
     expect(libelleDeNote(55)).toBe("Perfectible");
     expect(libelleDeNote(35)).toBe("Faible");
     expect(libelleDeNote(10)).toBe("Critique");
+  });
+});
+
+/**
+ * L'axe contenu — celui qui répond au site vide qui charge vite.
+ *
+ * LE DÉFAUT QU'IL CORRIGE, mesuré sur le parc : PageSpeed récompense
+ * mécaniquement le vide. Moins de pages, moins d'images, moins de scripts, donc
+ * meilleur affichage. Un site de trois pages bâclé battait un vrai site de
+ * quarante, et nos axes maison ne rattrapaient rien — ce sont des contrôles de
+ * présence qu'un site squelettique passe haut la main.
+ */
+describe("l'axe contenu", () => {
+  const site = (over: Partial<SignauxSite> = {}): SignauxSite =>
+    ({
+      joignable: true,
+      coquille: false,
+      nbPagesSitemap: 24,
+      longueurTexteVisible: 4200,
+      nbImages: 14,
+      avisDansLaPage: true,
+      widgetAvis: null,
+      ...over,
+    }) as unknown as SignauxSite;
+
+  const contenu = (s: SignauxSite, ctx = { nombreAvis: 62 }) =>
+    scorer(s, ctx).axes.contenu;
+
+  it("note haut un site fourni", () => {
+    expect(contenu(site()).note).toBeGreaterThanOrEqual(85);
+  });
+
+  it("effondre la note d'un site vide, même impeccable par ailleurs", () => {
+    const vide = site({ nbPagesSitemap: 3, longueurTexteVisible: 400, nbImages: 1, avisDansLaPage: false });
+    expect(contenu(vide).note).toBeLessThan(30);
+  });
+
+  it("ne reproche pas des avis absents à qui n'en a pas reçu", () => {
+    // Même règle que l'axe conversion : on ne reproche pas de ne pas montrer ce
+    // qu'on n'a pas. Sans avis Google connus, la preuve sort du dénominateur.
+    const sansAvisNulle = site({ avisDansLaPage: false });
+    const avec = contenu(sansAvisNulle, { nombreAvis: 0 });
+    const sans = contenu(sansAvisNulle, { nombreAvis: 62 });
+    expect(avec.note).toBeGreaterThan(sans.note);
+  });
+
+  it("ne conclut pas sans plan du site : une absence de plan n'est pas une absence de pages", () => {
+    const sansPlan = contenu(site({ nbPagesSitemap: null }));
+    expect(sansPlan.preuves.find((p) => p.cle === "pages_site")?.verdict).toBe("inconnu");
+  });
+
+  it("passe en confiance faible sur une coquille", () => {
+    // Une page rendue côté JavaScript n'a presque pas de texte servi : compter
+    // ce qu'on n'a pas reçu donnerait 10/100 à des sites très corrects.
+    expect(contenu(site({ coquille: true })).confiance).toBe("faible");
+  });
+
+  it("dit le texte en mots, pas en caractères", () => {
+    // « 1 500 caractères » ne dit rien à personne ; « environ 250 mots » se
+    // compare à une page qu'on a déjà lue.
+    const p = contenu(site({ longueurTexteVisible: 600 })).preuves.find((x) => x.cle === "texte_accueil");
+    expect(p?.valeur).toMatch(/mots?$/);
+    expect(p?.seuil).toMatch(/mots?$/);
   });
 });

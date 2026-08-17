@@ -70,6 +70,21 @@ export interface DeclencheurConstat {
 export interface AuditIssueDef {
   key: string;
   pilier: AuditPilier;
+  /**
+   * Qui constate — et pourquoi une absence ne doit pas le dire à notre place.
+   *
+   * `'agent'` : ce constat ne se déduit d'aucune preuve mesurée. Il se relève en
+   * ouvrant le site : une entrée de menu qui tombe sur une page absente, un
+   * « Titre de la diapositive » resté dans un bouton, une année vieille de sept
+   * ans en pied de page. L'analyseur ne voit rien de tout ça ; Claude Code, qui
+   * ouvre le site de toute façon pour qualifier, le voit sans effort.
+   *
+   * Le champ existe pour que l'intention soit ÉCRITE. Sans lui, on la lisait
+   * dans l'absence de `declencheurs` — et une absence, ça se produit aussi par
+   * oubli. Un test vérifie désormais que tout constat sans déclencheur déclare
+   * qui le relève.
+   */
+  releve?: 'agent';
   /** Libellé court pour la checklist de l'éditeur */
   label: string;
   problem: { title: string; desc: string };
@@ -154,6 +169,154 @@ export const APRES_PAR_AXE: Record<string, { valeur: string; comment: string }> 
 };
 
 export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
+  /**
+   * ── Constats relevés sur 24 sites d'installateurs, août 2026 ──────────────
+   *
+   * LA RÈGLE QUI A DÉCIDÉ DE CETTE LISTE, et qui en a écarté la moitié : un
+   * constat n'entre ici que si NOTRE DÉMO LE CORRIGE VRAIMENT. La colonne
+   * « après » est la seule du document qui promette quelque chose ; y écrire ce
+   * qu'on ne livre pas est un mensonge qu'on tiendra devant le prospect.
+   *
+   * Écartés pour cette seule raison, alors qu'ils étaient fréquents et
+   * mesurables : l'absence de prix (18 sites sur 24), l'équipe jamais nommée
+   * (14 sur 24), les photos de chantier sans commune ni date, le numéro RGE
+   * jamais donné, l'assurance décennale absente, et les logos de fabricants
+   * préférés aux photos de chantiers — le hero du démo est lui-même une image
+   * de banque. Ils reviendront le jour où le démo les portera.
+   */
+  {
+    key: 'no_response_time',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Aucun délai de réponse annoncé',
+    problem: {
+      title: 'Votre site ne dit jamais sous combien de temps vous rappelez',
+      desc: "« Dès que possible », « dans les plus brefs délais » : le visiteur qui hésite entre vous et un concurrent n'a aucune idée de ce qui l'attend, et il demande souvent aux deux.",
+    },
+    solution: {
+      name: 'Un délai écrit, et tenu',
+      desc: "Un engagement chiffré affiché à côté du formulaire et du numéro, répété après l'envoi du message.",
+      tag: 'Conversion',
+    },
+    apres: {
+      valeur: 'Devis sous 48 h',
+      comment: "Le délai est écrit dès le premier écran, à côté de votre note Google et de votre qualification.",
+    },
+  },
+  {
+    key: 'dead_menu_entries',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Entrées de menu mortes',
+    problem: {
+      title: 'Des entrées de votre menu ne mènent nulle part',
+      desc: "Un visiteur qui clique et tombe sur une page absente ou vide ne réessaie pas ailleurs : il repart. Et vous ne le saurez jamais, parce que ce sont les pages que vous n'ouvrez plus.",
+    },
+    solution: {
+      name: 'Un menu où tout existe',
+      desc: "Chaque lien du menu et du pied de page est ouvert avant la mise en ligne, et une page sans contenu n'est pas publiée.",
+      tag: 'Fiabilité',
+    },
+    apres: {
+      valeur: 'Aucune page morte',
+      comment: "Tous les liens du menu ouvrent une page réellement remplie.",
+    },
+  },
+  {
+    key: 'no_page_per_trade',
+    releve: 'agent',
+    pilier: 'technique',
+    label: 'Un seul bloc pour tous les métiers',
+    problem: {
+      title: 'Vos métiers sont regroupés au lieu d\'avoir chacun sa page',
+      desc: "Quelqu'un qui cherche « pompe à chaleur » et quelqu'un qui cherche « dépannage plomberie » ne cherchent pas la même chose. Une page qui parle de tout ne répond précisément à aucun des deux.",
+    },
+    solution: {
+      name: 'Une page par prestation',
+      desc: "Chaque métier a sa page, avec ses mots, ses photos et son propre bouton de contact.",
+      tag: 'Visibilité',
+    },
+    apres: {
+      valeur: 'Une page par métier',
+      comment: "Neuf pages métier, chacune écrite pour ce qu'on y cherche vraiment.",
+    },
+  },
+  {
+    key: 'no_aid_scheme_named',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Aides à la rénovation jamais nommées',
+    problem: {
+      title: "Ni MaPrimeRénov', ni les CEE, ni la TVA à 5,5 % ne sont nommés",
+      desc: "« Des aides de l'État » ne rassure personne. Le client qui compare deux devis veut savoir ce qui restera à sa charge, et il ira le demander à celui qui le lui dit.",
+    },
+    solution: {
+      name: 'Les dispositifs nommés',
+      desc: "Les aides citées par leur nom sur la page concernée, avec l'ordre de grandeur du reste à payer.",
+      tag: 'Contenu',
+    },
+    apres: {
+      valeur: 'Les 3 dispositifs nommés',
+      comment: "MaPrimeRénov', CEE et TVA 5,5 % cités sur la page où le client se décide.",
+    },
+  },
+  {
+    key: 'obsolete_year',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Année obsolète affichée',
+    problem: {
+      title: 'Une année dépassée est affichée sur vos pages',
+      desc: "Un visiteur qui lit une année vieille de plusieurs années se demande d'abord si l'entreprise existe encore. C'est le doute le moins cher à lever et le plus coûteux à laisser.",
+    },
+    solution: {
+      name: 'Un site qui reste à jour tout seul',
+      desc: "L'année se met à jour d'elle-même, et vos tarifs vivent sur une page qu'on modifie en une minute au lieu d'un fichier daté.",
+      tag: 'Fiabilité',
+    },
+    apres: {
+      valeur: "L'année en cours",
+      comment: "Plus rien sur le site ne laisse croire que l'activité s'est arrêtée.",
+    },
+  },
+  {
+    key: 'template_words_left',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Textes de gabarit restés visibles',
+    problem: {
+      title: 'Des mots du modèle sont restés affichés',
+      desc: "« Titre de la diapositive », « Button », « Écrivez votre légende ici » : le visiteur comprend que le site n'a jamais été fini, et il en déduit ce qu'il veut sur le reste.",
+    },
+    solution: {
+      name: 'Aucun texte de remplissage',
+      desc: "Chaque bouton porte le libellé que vous avez choisi, chaque image sa vraie légende.",
+      tag: 'Finition',
+    },
+    apres: {
+      valeur: 'Aucun texte de modèle',
+      comment: "Tout ce qui s'affiche a été écrit pour votre entreprise.",
+    },
+  },
+  {
+    key: 'visible_typos',
+    releve: 'agent',
+    pilier: 'contenu',
+    label: 'Fautes visibles dès les premières lignes',
+    problem: {
+      title: 'Des fautes dans les premières lignes de votre accueil',
+      desc: "Le visiteur ne vous connaît pas encore : les premières lignes sont tout ce dont il dispose pour juger du soin que vous mettez au travail.",
+    },
+    solution: {
+      name: 'Des textes relus',
+      desc: "Les textes sont relus, et chaque coordonnée est testée avant la mise en ligne.",
+      tag: 'Finition',
+    },
+    apres: {
+      valeur: 'Textes relus',
+      comment: "Et l'adresse e-mail du pied de page a été testée : le message arrive.",
+    },
+  },
   {
     key: 'no_reviews_on_site',
     pilier: 'popularite',

@@ -1139,19 +1139,70 @@ describe('le lien du rapport d’audit', () => {
     );
   });
 
-  it('laisse partir le message quand l’entreprise a des mesures', async () => {
+  /**
+   * TROIS CONDITIONS, ET LES MESURES NE SUFFISENT PLUS.
+   *
+   * Le garde-fou se contentait d'une ligne dans `entreprises_audit_site` — vraie
+   * de tout site analysé, préparé ou non. Le 12/08, 67 audits au contenu par
+   * défaut ont été validés et 37 liens publics créés : tous auraient franchi ce
+   * test, et le prospect aurait reçu le catalogue générique sous son propre nom.
+   */
+  const auditRedige = () => ({
+    opportunites: tableChain({ data: [{ id: 'opp-1' }], error: null }),
+    audits: tableChain({ data: [{ avant_apres: [{ cle: 'slow_site', avant: '3,4 s' }] }], error: null }),
+  });
+
+  it('laisse partir le message quand l’audit est rédigé et le lien actif', async () => {
     wireAudit({
       entreprises_audit_site: tableChain({ data: null, error: null, count: 3 } as any),
       entreprises_rapport_public: tableChain({
         data: { entreprise_id: 42, token: 'a1b2c3d4e5f6a7b8', actif: true, vues: 0, vu_le: null },
         error: null,
       }),
+      ...auditRedige(),
     });
     mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
 
     await processSequenceEnrollment(enrollment);
 
     expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('gèle l’étape quand l’audit existe mais n’a aucun constat rédigé', async () => {
+    wireAudit({
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 3 } as any),
+      entreprises_rapport_public: tableChain({
+        data: { entreprise_id: 42, token: 'a1b2c3d4e5f6a7b8', actif: true, vues: 0, vu_le: null },
+        error: null,
+      }),
+      opportunites: tableChain({ data: [{ id: 'opp-1' }], error: null }),
+      // Le contenu par défaut n'a pas la clé du tout.
+      audits: tableChain({ data: [{ avant_apres: null }], error: null }),
+    });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Un jeton révoqué mène à une page qui répond « revoqué ». Envoyer ce lien,
+   * c'est inviter un prospect à cliquer sur une porte fermée — pire que de ne
+   * rien envoyer, parce qu'il a fait l'effort.
+   */
+  it('gèle l’étape quand le lien public a été révoqué', async () => {
+    wireAudit({
+      entreprises_audit_site: tableChain({ data: null, error: null, count: 3 } as any),
+      entreprises_rapport_public: tableChain({
+        data: { entreprise_id: 42, token: 'a1b2c3d4e5f6a7b8', actif: false, vues: 0, vu_le: null },
+        error: null,
+      }),
+      ...auditRedige(),
+    });
+
+    await processSequenceEnrollment(enrollment);
+
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   it('crée le jeton à l’envoi quand l’entreprise n’en a pas encore', async () => {
@@ -1167,6 +1218,9 @@ describe('le lien du rapport d’audit', () => {
     wireAudit({
       entreprises_audit_site: tableChain({ data: null, error: null, count: 1 } as any),
       entreprises_rapport_public: rapport,
+      // Pas de jeton en base ⇒ il sera créé, donc actif par défaut : c'est un
+      // jeton EXISTANT et révoqué qui retient l'envoi, pas une absence.
+      ...auditRedige(),
     });
     mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
 

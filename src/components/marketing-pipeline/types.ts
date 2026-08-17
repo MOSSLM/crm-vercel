@@ -51,7 +51,13 @@ export interface BoardItem {
     template_id?: string | null;
     template_name?: string | null;
   } | null;
-  audit: { id: string; statut: string; pdf_url: string | null } | null;
+  /**
+   * `prepare` : une rédaction a eu lieu (`content.page3.avant_apres` non vide).
+   *
+   * C'est ce qui autorise la validation. Sans lui, « validé » ne dit que
+   * « quelqu'un a cliqué » — voir `auditPrepare` dans l'API du tableau.
+   */
+  audit: { id: string; statut: string; pdf_url: string | null; prepare: boolean } | null;
   /**
    * Note du site actuel, mesurée par l'analyseur.
    *

@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AxeId, Confiance, ConstatGoogle, Preuve, SignauxSite } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
-import { noteDocument } from "./malus";
+import { baseDocument, noteDocument } from "./malus";
 import { psiEstFraiche } from "./pagespeed";
+import { netlinkingEstFrais } from "./netlinking";
 
 /**
  * Lire une analyse, et savoir dire « pas disponible » sans faire croire à une
@@ -30,7 +31,23 @@ export const UNDEFINED_TABLE = "42P01";
  * ne sait pas juger l'accessibilité réelle ni les bonnes pratiques — il lit du
  * HTML, il n'exécute rien.
  */
-export type AxePublieId = AxeId | "accessibilite" | "bonnes_pratiques";
+export type AxePublieId =
+  | AxeId
+  | "accessibilite"
+  | "bonnes_pratiques"
+  /**
+   * Ce que ni notre analyseur ni Lighthouse ne savent juger.
+   *
+   * `contenu` : combien de pages, quels métiers décrits, des avis affichés, des
+   * photos de chantier, une date récente. C'est l'axe qui répond au site vide
+   * qui charge vite — PageSpeed récompense le vide, ce comptage le sanctionne.
+   *
+   * `netlinking` : combien de sites pointent vers celui-ci. Il ne se répare pas
+   * en achetant une vitrine, et c'est assumé : il fonde une offre SEO
+   * optionnelle, pas une promesse de la colonne « Après ».
+   */
+  | "contenu"
+  | "netlinking";
 
 export interface AxePublie {
   id: AxePublieId;
@@ -151,10 +168,21 @@ export async function lireAudits(
   return out;
 }
 
-function versAuditLu(row: Record<string, unknown>): AuditLu {
+/**
+ * Une ligne brute → l'audit tel que tout le produit le lit.
+ *
+ * Exportée pour que `lireMedianeParc` puisse s'en servir : la médiane doit
+ * porter sur le MÊME instrument que le repère du prospect, et la seule façon
+ * d'en être certain est de passer par la même fonction plutôt que d'en
+ * réimplémenter la formule ailleurs.
+ */
+export function versAuditLu(row: Record<string, unknown>): AuditLu {
   const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
     google?: ConstatGoogle[];
     observations?: unknown[];
+    /** Preuves d'Open PageRank, et la date à laquelle elles ont été relevées. */
+    netlinking?: Preuve[];
+    netlinking_le?: string;
   };
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
 
@@ -219,9 +247,22 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
       // le JavaScript a réellement été exécuté.
       : { id, note, confiance: "haute", preuves, mesureGoogle: true, constats: constatsDe(categorie) };
 
+  /**
+   * Les axes SANS COLONNE DÉDIÉE se recalculent depuis leurs preuves stockées.
+   *
+   * `popularite` avait déjà ce traitement ; `contenu` l'hérite pour la même
+   * raison, et elle est concrète : un `upsert` qui nomme une colonne absente
+   * échoue ENTIÈREMENT, et les migrations s'appliquent ici à la main. Faire
+   * dépendre l'écriture de toute une ligne d'une migration non passée, c'est la
+   * panne déjà vécue avec `paywall_enabled`. Recalculées à la lecture, ces notes
+   * apparaissent dès que leurs preuves sont là, migration ou pas.
+   */
+  const SANS_COLONNE = new Set<AxeId>(["popularite", "contenu"]);
+
   const axeMaison = (id: AxeId): AxePublie | null => {
-    const note =
-      id === "popularite" ? noteDepuisPreuves(detail.popularite ?? []) : num(row[`note_${id}`]);
+    const note = SANS_COLONNE.has(id)
+      ? noteDepuisPreuves(detail[id] ?? [])
+      : num(row[`note_${id}`]);
     const conf = confiance[id] ?? "faible";
     // La règle, à un seul endroit : sous le seuil de confiance, l'axe n'est pas
     // publié. Le griser reviendrait à publier le chiffre en le décorant.
@@ -302,7 +343,99 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   // Ce que Google ne mesure pas et ne mesurera jamais : est-ce qu'on peut vous
   // joindre, et est-ce qu'on parle de vous. Ces deux axes-là restent les nôtres
   // dans tous les cas — ce sont aussi les deux qui se vendent le mieux.
-  for (const id of ["conversion", "popularite"] as const) publier(axeMaison(id), id);
+  /**
+   * Le contenu et la prise de contact restent NOTRES dans tous les cas.
+   *
+   * Google ne mesure ni l'un ni l'autre, et ne les mesurera pas : ce sont des
+   * comptages — combien de pages, combien de texte, combien de photos, un
+   * formulaire, un numéro cliquable — pas des performances. Ce sont aussi les
+   * deux axes que l'offre répare vraiment, donc les deux qui se vendent.
+   */
+  for (const id of ["contenu", "conversion", "popularite"] as const) publier(axeMaison(id), id);
+
+  /**
+   * Le netlinking, s'il a été mesuré et qu'il n'a pas péri.
+   *
+   * Il ne vit ni dans une colonne ni dans `SignauxSite` : il ne se lit pas dans
+   * la page, il se demande à Open PageRank. Ses preuves sont donc écrites telles
+   * quelles dans `detail.netlinking`, avec leur date à côté, et la note se
+   * recalcule ici — sans migration, comme `contenu` et `popularite`.
+   *
+   * Périmé, il DISPARAÎT au lieu de vieillir : Common Crawl se rafraîchit tous
+   * les mois, et un rang de trois mois affirmerait quelque chose que plus rien
+   * ne soutient.
+   */
+  const preuvesNet = Array.isArray(detail.netlinking) ? detail.netlinking : [];
+  if (preuvesNet.length > 0 && netlinkingEstFrais(detail.netlinking_le)) {
+    const note = noteDepuisPreuves(preuvesNet);
+    if (note != null) {
+      axes.push({ id: "netlinking", note, confiance: "haute", preuves: preuvesNet });
+    }
+  }
+
+  /**
+   * CE QUE L'AGENT A RELEVÉ PÈSE DANS SON AXE — mais jamais dans celui de Google.
+   *
+   * L'angle mort que ça ferme : toutes les preuves de l'analyseur sont des
+   * contrôles de présence. Un numéro existe, un formulaire existe. Sur Doussot,
+   * ça donnait 79/100 à un site qui affiche quatre lignes de téléphone pour
+   * trois numéros différents et dont les pages services sont des pavés. La
+   * machine ne voit ni la répétition ni la structure d'un texte ; l'agent qui
+   * ouvre le site, si — et son relevé doit donc compter, pas seulement décorer.
+   *
+   * DEUX GARDE-FOUS, ET LE SECOND EST LE PLUS IMPORTANT.
+   *
+   * Le poids vient du CATALOGUE, jamais de l'agent : il fournit un comptage, le
+   * barème décide de ce que ça coûte. C'est ce qui sépare « j'ai relevé un
+   * fait » de « j'ai décidé d'une note ».
+   *
+   * Et une observation ne touche JAMAIS un axe mesuré par Google. La carte porte
+   * la mention « mesuré par Google », qui vaut caution auprès du prospect ; y
+   * mêler notre relevé ferait mentir la seule ligne du document qu'on ne peut
+   * pas se permettre de rendre discutable. Sur un axe de Google, l'observation
+   * reste un constat, sans peser.
+   */
+  const observations = Array.isArray(detail.observations) ? detail.observations : [];
+  for (const brut of observations) {
+    const o = brut as {
+      cle?: string;
+      axe?: string;
+      libelle?: string;
+      valeur?: string;
+      seuil?: string | null;
+      verdict?: Preuve["verdict"];
+      poids?: number | null;
+    };
+    if (!o?.cle || !o.axe || !o.poids || !o.verdict) continue;
+    /**
+     * SEULE UNE OBSERVATION EN ÉCHEC PÈSE. Un relevé qui passe s'affiche comme
+     * bonne nouvelle et ne touche pas au chiffre.
+     *
+     * Sans cette ligne, soumettre des observations favorables REMONTE la note :
+     * sur Doussot, « aucune page service sans sous-titre » faisait passer le
+     * contenu de 80 à 84. L'agent pourrait donc gonfler le document en relevant
+     * ce qui va bien — l'exact inverse de ce que ce mécanisme existe pour
+     * permettre. Il peut faire descendre une note en constatant un défaut ; il
+     * ne peut pas la faire monter.
+     */
+    if (o.verdict !== "probleme") continue;
+    const axe = axes.find((a) => a.id === o.axe);
+    if (!axe || axe.mesureGoogle) continue;
+
+    axe.preuves = [
+      ...axe.preuves,
+      {
+        cle: `obs:${o.cle}`,
+        libelle: o.libelle ?? o.cle,
+        valeur: o.valeur ?? null,
+        seuil: o.seuil ?? null,
+        poids: o.poids,
+        verdict: o.verdict,
+      },
+    ];
+    const recalculee = noteDepuisPreuves(axe.preuves);
+    if (recalculee != null) axe.note = recalculee;
+  }
 
   const noteGlobale = num(row.note_globale);
 
@@ -316,15 +449,41 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    * toujours. À la lecture, tout est là.
    */
   const signaux = row.signaux as SignauxSite | null | undefined;
+  /**
+   * LA BASE EST LA MOYENNE DES AXES AFFICHÉS, plus la seule performance.
+   *
+   * Le document montrait 35 au-dessus d'une carte à 100 : la note valait la
+   * catégorie performance de Google moins des malus, et les quatre autres
+   * cartes ne pesaient rien. Personne ne pouvait retomber sur le grand nombre
+   * en regardant les petits, ce qui est précisément ce qu'un prospect fait.
+   *
+   * La base se prend donc sur `axes` — les axes RÉELLEMENT publiés, ceux qu'il
+   * a sous les yeux — et non sur une liste théorique. Ce qui n'est pas affiché
+   * ne pèse pas ; ce qui est affiché pèse exactement ce que la page annonce.
+   */
+  const base = baseDocument(axes);
+  const noteContenu = axes.find((a) => a.id === "contenu")?.note ?? null;
   const doc =
-    signaux && psiFraiche
-      ? noteDocument(psiPerf, signaux, {
-          // La ville n'est pas dans cette table ; le seul malus qui en dépend
-          // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
-          // et l'ajouter demanderait une jointure sur chaque lecture de liste.
-          ville: null,
-        })
-      : { note: null, base: null, lignes: [], plancherAtteint: false };
+    signaux && base != null
+      ? noteDocument(
+          base,
+          signaux,
+          {
+            // La ville n'est pas dans cette table ; le seul malus qui en dépend
+            // ne se déclenche donc pas ici. C'est assumé — il vaut deux points,
+            // et l'ajouter demanderait une jointure sur chaque lecture de liste.
+            ville: null,
+          },
+          noteContenu,
+          // Les constats de Google, tels qu'ils seront affichés : le décompte
+          // qui pèse est exactement celui que le prospect peut recompter.
+          psiFraiche && Array.isArray(detail.google) ? detail.google : [],
+          // Nos signaux ne valent que si la page s'est laissé lire. Refoulés par
+          // une protection anti-robot, ils sont tous à faux par défaut : les
+          // compter reviendrait à reprocher au site ce qu'on n'a pas su voir.
+          signaux.joignable === true,
+        )
+      : { note: null, base: null, lignes: [], plafondAtteint: false };
 
   return {
     entreprise_id: Number(row.entreprise_id),
@@ -345,7 +504,7 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     // Pas de péremption ici, contrairement aux constats Google : une observation
     // est datée par l'audit qui l'a produite, et c'est ce document-là qu'on
     // renvoie. La périmer indépendamment viderait un audit déjà envoyé.
-    observations: Array.isArray(detail.observations) ? detail.observations : [],
+    observations,
     alertes: Array.isArray(row.alertes) ? (row.alertes as string[]) : [],
     ttfb_ms: num(row.ttfb_ms),
     chargement_ms: num(row.chargement_ms),
