@@ -1,6 +1,7 @@
 import { parse, type HTMLElement } from "node-html-parser";
 import type { CollecteSite, ContexteEntreprise, SignauxSite } from "./types";
 import { SEUILS } from "./score";
+import { detecterTechno } from "./techno";
 
 /**
  * HTML → signaux bruts. Aucun jugement ici : que des faits comptés.
@@ -128,6 +129,14 @@ export function analyser(c: CollecteSite, contexte: ContexteEntreprise = {}): Si
     nbCta: 0,
     villeDansTitre: null,
     mentionneRge: null,
+    cms: null,
+    cmsVersion: null,
+    theme: null,
+    constructeur: null,
+    generateurBrut: null,
+    derniereModifDetecteeLe: null,
+    sourceDerniereModif: null,
+    waybackPremiereCaptureLe: c.waybackPremiereCaptureLe,
   };
 
   if (!joignable || !c.html) return vide;
@@ -238,6 +247,25 @@ export function analyser(c: CollecteSite, contexte: ContexteEntreprise = {}): Si
       MARQUES_RGE.some((m) => texteNorm.includes(m))
     : null;
 
+  // ── Technologie ───────────────────────────────────────────────────────────
+  const techno = detecterTechno(c.html);
+  // La plus récente des trois dates connues gagne, sa source voyage avec elle :
+  // n'importe laquelle des trois peut être celle qui a vu passer le dernier
+  // vrai changement, et c'est la fraîcheur qui compte, pas d'où elle vient.
+  const candidatsModif: Array<[string | null, SignauxSite["sourceDerniereModif"]]> = [
+    [c.derniereModifHtml, "en_tete_html"],
+    [c.derniereModifRessource, "en_tete_ressource"],
+    [c.waybackDerniereModifLe, "wayback"],
+  ];
+  let derniereModifDetecteeLe: string | null = null;
+  let sourceDerniereModif: SignauxSite["sourceDerniereModif"] = null;
+  for (const [date, source] of candidatsModif) {
+    if (date && (!derniereModifDetecteeLe || date > derniereModifDetecteeLe)) {
+      derniereModifDetecteeLe = date;
+      sourceDerniereModif = source;
+    }
+  }
+
   return {
     ...vide,
     longueurTexteVisible: texte.length,
@@ -278,6 +306,14 @@ export function analyser(c: CollecteSite, contexte: ContexteEntreprise = {}): Si
     nbCta,
     villeDansTitre,
     mentionneRge,
+    cms: techno.cms,
+    cmsVersion: techno.cmsVersion,
+    theme: techno.theme,
+    constructeur: techno.constructeur,
+    generateurBrut: techno.generateurBrut,
+    derniereModifDetecteeLe,
+    sourceDerniereModif,
+    waybackPremiereCaptureLe: c.waybackPremiereCaptureLe,
   };
 }
 

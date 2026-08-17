@@ -34,6 +34,10 @@ function collecte(html: string, feuilles?: Partial<CollecteSite>): CollecteSite 
     nbFeuillesLues: 0,
     robotsTxt: true,
     sitemapXml: true,
+    derniereModifHtml: null,
+    derniereModifRessource: null,
+    waybackPremiereCaptureLe: null,
+    waybackDerniereModifLe: null,
     ...feuilles,
   };
 }

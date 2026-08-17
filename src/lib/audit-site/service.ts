@@ -184,6 +184,14 @@ function signauxSansSite(): SignauxSite {
     nbCta: 0,
     villeDansTitre: null,
     mentionneRge: null,
+    cms: null,
+    cmsVersion: null,
+    theme: null,
+    constructeur: null,
+    generateurBrut: null,
+    derniereModifDetecteeLe: null,
+    sourceDerniereModif: null,
+    waybackPremiereCaptureLe: null,
   };
 }
 
