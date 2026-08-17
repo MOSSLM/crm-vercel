@@ -1,0 +1,29 @@
+{
+  "_pourquoi": "Relecture humaine des URL proposées par dossier-web.mjs sur la cohorte B, le 17/08. Le script ne devine pas ces cas : la fiche Google déclare bien ces adresses, et elle a raison — ce ne sont simplement pas les sites des artisans. Se passe en --relu à appliquer-dossiers.mjs.",
+
+  "_regle": "Tout ce qui sort en confiance moyenne ou faible est REFUSÉ en bloc : sur 22 propositions, 22 étaient des annuaires. Le classement fait donc son travail ; ce fichier ne traite que les pièges du seau « certaine ».",
+
+  "refuses": {
+    "1598": "qualit-enr.org — organisme de certification RGE, pas son site",
+    "5432": "lcpaysages-69.fr — la fiche Google appariée est « LC PAYSAGE », une autre entreprise",
+    "5757": "ae2i-ingenierie.com — fiche appariée « AE2I », pas AECO",
+    "5820": "royan.ouvertures.com — sous-domaine du réseau Ouvertures, pas son site",
+    "5859": "eurl-dasilva-manuel.fr — fiche appariée « Da Silva Manuel », pas VALENTE DANIEL",
+    "5882": "groupepalissot.fr — page filiale sur le site du groupe : chaîne",
+    "5960": "extra.fr — enseigne de réseau",
+    "6094": "aoc-ouvertures.fr — fiche appariée « A.O.C. Ouvertures », pas ACE-L",
+    "6224": "les-entreprises-locales.com — annuaire",
+    "6261": "electriciencertifie.legrand.fr — annuaire d'installateurs agréés Legrand",
+    "6318": "grasse.axenergie.eu — franchise AxEnergie",
+    "6530": "chezchristopher.fr — fiche appariée « Chez Christopher », pas THUILLIER STEPHANE",
+    "6606": "innovatis-groupe.fr — site de groupe",
+    "6630": "platrerie-sodama.fr — fiche appariée « Sodama », pas DAVIS MARACHE",
+    "6754": "g-leclere.fr/gepelec — une page à l'intérieur du site d'une autre entreprise"
+  },
+
+  "_acceptes_avec_reserve": {
+    "6533": "fauglas-et-fils.chauffagiste-viessmann.fr — site-gabarit fourni par Viessmann. C'est bien leur présence web, à leur nom : retenu. Et c'est un excellent prospect, justement parce que ce n'est qu'un gabarit de fabricant.",
+    "6703": "ruffet-chastanet.chauffagiste-viessmann.fr — même cas",
+    "5922": "steco-niort.fr/courant-fort/ — page interne et non l'accueil ; le domaine porte le nom et l'enrichissement recalcule la racine lui-même"
+  }
+}

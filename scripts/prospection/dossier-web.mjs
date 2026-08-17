@@ -263,6 +263,63 @@ const ANNUAIRES = [
   "horairesdouverture24.fr", "horaire-ouverture.fr", "adresse-horaire.fr",
   "toutendroit.com", "trouver-ouvert.fr", "shopping-horaires.fr", "infobel.com",
   "opendi.fr", "wikiwand.com", "solvabilite-entreprise.fr", "pagespro.com",
+  // Trouvés en relisant les 93 propositions de la cohorte B, le 17/08. Tous
+  // étaient sortis en « moyenne » ou « faible » — et le seau entier était à
+  // jeter, ce qui valide le classement autant que ça corrige la liste.
+  "villepratique.fr", "aunisatlantique.fr", "eldo.com", "lexpace.com",
+  "meilleur-artisan.com", "argile.ai", "fattuto.com", "guide-artisan.fr",
+  "france-artisan.fr", "les-energies-renouvelables.eu", "maison-architecture.com",
+  "bilik.fr", "prodestravaux.com", "les-entreprises-locales.com", "hoodspot.fr",
+  "clubtravaux.com", "hellowatt.fr", "econrjpourtous.fr", "artisanat.fr",
+];
+
+/**
+ * Les annuaires que personne ne prend pour des annuaires.
+ *
+ * Un organisme de certification, un fabricant qui liste ses installateurs
+ * agréés : la fiche Google de l'artisan y renvoie parfois faute de mieux, et
+ * c'est le piège le plus coûteux du lot — le résultat sort en « certaine »,
+ * puisque c'est bien l'entreprise elle-même qui l'a déclaré. Elle a raison, et
+ * ce n'est pourtant pas son site.
+ */
+const CERTIFICATEURS_ET_FABRICANTS = [
+  "qualit-enr.org", "qualibat.com", "rge.hellio.com", "hellio.com",
+  "legrand.fr", "electriciencertifie.legrand.fr", "mitsubishielectric.fr",
+  "confort.mitsubishielectric.fr", "daikin.fr", "atlantic.fr", "saunierduval.fr",
+  "effy.fr", "izi-by-edf.fr", "engie.fr",
+];
+
+/**
+ * Les réseaux et franchises rencontrés sur la cohorte B.
+ *
+ * Ce sont des CHAÎNES au sens de la règle du 17/08 — « même URL ou base d'URL et
+ * adresses différentes ». Elles ne se démarchent pas comme un artisan seul, et
+ * leur écrire l'URL du réseau fabriquerait exactement les doublons de site
+ * qu'on cherche à éviter.
+ */
+const RESEAUX = [
+  "axenergie.eu", "ouvertures.com", "groupepalissot.fr", "innovatis-groupe.fr",
+  "extra.fr", "cclhome.fr", "mestre.fr", "hip-services.fr",
+];
+
+/**
+ * Les plateformes qui hébergent un site AU NOM de l'artisan.
+ *
+ * `gressard-philippe.artizo.fr`, `fauglas-et-fils.chauffagiste-viessmann.fr` :
+ * neuf fiches de la cohorte B sont dans ce cas. Ce n'est ni un annuaire (la page
+ * est à eux, pas une entrée dans une liste) ni un vrai site (le domaine, le
+ * gabarit et les données appartiennent à la plateforme).
+ *
+ * On les garde comme SITE PRÉSENT, et c'est délibéré : les ranger en « aucun
+ * site » perdrait l'URL, donc la preuve, donc la possibilité de leur montrer ce
+ * qu'ils ont. Ce sont d'ailleurs les meilleurs prospects du lot — leur vitrine
+ * est un gabarit de fabricant, l'argument se tient tout seul. La confiance est
+ * plafonnée et le motif le dit, pour que personne ne les confonde avec un site
+ * en propre.
+ */
+const PLATEFORMES_ARTISANS = [
+  "artizo.fr", "chauffagiste-viessmann.fr", "simplebo.fr", "artisan-du-batiment.com",
+  "monsiteartisan.fr", "kiwiik.com", "solocal.com",
 ];
 
 /**
@@ -848,6 +905,9 @@ function classer(url, blacklist, titre = "", porteLeNom = false) {
   if (couvre(hote, blacklist)) return "blacklist";
   if (couvre(hote, SOCIAUX)) return "social";
   if (couvre(hote, ANNUAIRES)) return "annuaire";
+  if (couvre(hote, CERTIFICATEURS_ET_FABRICANTS)) return "annuaire";
+  if (couvre(hote, RESEAUX)) return "reseau";
+  if (couvre(hote, PLATEFORMES_ARTISANS)) return "plateforme";
   if (couvre(hote, APPORTEURS)) return "apporteur";
   if (couvre(hote, HEBERGEURS_GRATUITS)) return "hebergeur_gratuit";
   if (!porteLeNom && TITRES_ANNUAIRE.test(titre)) return "annuaire";
@@ -888,6 +948,14 @@ function recommander(entreprise, fiche, examines, blacklist = []) {
         motif: "déclaré par l'entreprise elle-même sur sa fiche Google Business",
       };
     }
+    if (nature === "plateforme") {
+      return {
+        url: siteFiche,
+        confiance: "haute",
+        motif: `déclaré sur sa fiche Google, mais hébergé sur ${hoteDe(siteFiche).split(".").slice(-2).join(".")} — une vitrine de plateforme, pas un site en propre`,
+        plateforme: true,
+      };
+    }
     // Une fiche qui pointe vers Facebook ou vers le site de son enseigne n'est
     // pas une bonne nouvelle : c'est le profil type de la cible. On le dit au
     // lieu de le retenir comme un site.
@@ -899,13 +967,22 @@ function recommander(entreprise, fiche, examines, blacklist = []) {
           ? "une page sociale, donc toujours pas de site à soi"
           : nature === "hebergeur_gratuit"
             ? "un hébergeur gratuit, donc un site qui ne lui appartient pas"
-            : `un ${nature}, pas son site`
+            : nature === "reseau"
+              ? "le site du réseau auquel elle appartient, pas le sien : à traiter en chaîne"
+              : nature === "annuaire"
+                ? "un annuaire ou un fabricant qui la référence, pas son site"
+                : `un ${nature}, pas son site`
       }`,
       siteDeclare: siteFiche,
     };
   }
 
-  const candidats = examines.filter((r) => r.categorie === "candidat");
+  // Une plateforme concourt, mais après les vrais domaines : entre
+  // `dupont-plomberie.fr` et `dupont.artizo.fr`, c'est le premier qui est à eux.
+  const candidats = [
+    ...examines.filter((r) => r.categorie === "candidat"),
+    ...examines.filter((r) => r.categorie === "plateforme"),
+  ];
   const note = (r) => {
     let n = 0;
     if (r.nomDansDomaine?.oui) n += 40;
@@ -939,10 +1016,16 @@ function recommander(entreprise, fiche, examines, blacklist = []) {
   if (r.sonde?.villeTrouvee) preuves.push("la ville aussi");
 
   const confiance = meilleur.n >= 75 ? "haute" : meilleur.n >= 45 ? "moyenne" : "faible";
+  const surPlateforme = r.categorie === "plateforme";
   return {
     url: r.sonde?.urlFinale ?? r.url,
     confiance,
-    motif: preuves.length ? preuves.join(" · ") : `1ᵉʳ résultat non-annuaire, sans autre preuve`,
+    motif:
+      (preuves.length ? preuves.join(" · ") : "1ᵉʳ résultat non-annuaire, sans autre preuve") +
+      (surPlateforme
+        ? ` — mais hébergé sur ${hoteDe(r.url).split(".").slice(-2).join(".")}, une vitrine de plateforme et non un site en propre`
+        : ""),
+    plateforme: surPlateforme,
     score: meilleur.n,
   };
 }
@@ -1199,8 +1282,23 @@ async function main() {
     for (const ligne of (await readFile(indexPrecedent, "utf8")).split("\n").filter(Boolean)) {
       try {
         const o = JSON.parse(ligne);
-        // On ne garde que les passages qui ont VRAIMENT interrogé un moteur.
-        if (o.url && o.moteur && o.moteur !== "non consulté") precedents.set(o.id, o);
+        /*
+         * UNE RECHERCHE INFRUCTUEUSE EST UNE INFORMATION, PAS UN VIDE.
+         *
+         * La première version ne reprenait que les passages ayant TROUVÉ une
+         * URL. Conséquence, découverte en comptant : une repasse `--sans-web`
+         * a effacé le fait qu'on avait fouillé le web pour 47 fiches sans rien
+         * trouver — et les 4 absences confirmées sont redevenues des
+         * « inconnu ». On avait perdu la seule chose qui distinguait « cherché,
+         * rien » de « jamais regardé », c'est-à-dire tout l'objet du constat.
+         *
+         * On reprend donc le RÉSULTAT DE LA RECHERCHE, qu'il soit fructueux ou
+         * non — c'est lui qui date et qui prouve.
+         */
+        const web = o.web ?? (o.moteur && o.moteur !== "non consulté" && o.moteur !== "inutile"
+          ? { moteur: o.moteur, resultats: o.resultats ?? 0, url: o.url ?? null, confiance: o.confiance, motif: o.motif }
+          : null);
+        if (web) precedents.set(o.id, { ...o, web });
       } catch {
         /* ligne tronquée par un Ctrl-C : sans importance */
       }
@@ -1324,12 +1422,22 @@ async function main() {
     }
 
     let reco = recommander(e, fiche, examines, blacklist);
+
+    // Ce qu'on sait de la recherche web : celle de ce passage, ou celle du
+    // précédent quand ce passage n'a interrogé personne.
     const repris = precedents.get(e.id);
-    if (!reco.url && repris && recherche.moteur === "non consulté") {
+    const web =
+      recherche.moteur === "non consulté"
+        ? (repris?.web ?? null)
+        : recherche.moteur === "inutile"
+          ? null
+          : { moteur: recherche.moteur, resultats: examines.length, url: reco.url, confiance: reco.confiance, motif: reco.motif };
+
+    if (!reco.url && web?.url) {
       reco = {
-        url: repris.url,
-        confiance: repris.confiance,
-        motif: `${repris.motif} — repris du passage web du ${repris.moteur}, non refait ici`,
+        url: web.url,
+        confiance: web.confiance,
+        motif: `${web.motif} — repris du passage ${web.moteur}, non refait ici`,
       };
     }
     const fichier = `${e.id}-${slug(e.name)}.md`;
@@ -1359,6 +1467,10 @@ async function main() {
         placeId: fiche?.place?.id ?? null,
         moteur: recherche.moteur,
         resultats: examines.length,
+        // Le fait de la recherche, séparé du passage qui l'a faite : c'est lui
+        // qui fonde un constat d'absence, et il survit aux repasses.
+        web,
+        plateforme: reco.plateforme ?? false,
         fichier,
       }) + "\n",
       "utf8",
