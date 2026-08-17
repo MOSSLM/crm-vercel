@@ -133,6 +133,7 @@ function lireArgs(argv) {
     moteur: null,
     sansFenetre: false,
     attendreHumain: false,
+    toujoursChercher: false,
   };
   for (let i = 2; i < argv.length; i++) {
     const cle = argv[i];
@@ -191,6 +192,9 @@ function lireArgs(argv) {
       case "--attendre-humain":
         a.attendreHumain = true;
         break;
+      case "--toujours-chercher":
+        a.toujoursChercher = true;
+        break;
       case "--aide":
       case "-h":
         console.log(AIDE);
@@ -232,6 +236,9 @@ Usage : node scripts/prospection/dossier-web.mjs [options]
                           la fiche est simplement passée.
   --sans-google           ne pas appeler l'API Places (économise le quota)
   --sans-web              passe fiche Google seule, sans aucune recherche web
+  --toujours-chercher     chercher MÊME quand la fiche Google déclare un site.
+                          À utiliser quand ce site déclaré s'est révélé ne pas
+                          être le leur : sinon le bot le croit et ne cherche pas.
   --refaire               retraiter même si le dossier existe
   --recap                 juste recomposer _RECAP.md depuis _index.jsonl
 `;
@@ -449,6 +456,92 @@ async function selectionner(a) {
   const debut = a.depuis || 0;
   const fin = a.limite ? debut + a.limite : undefined;
   return lignes.slice(debut, fin);
+}
+
+/**
+ * Les domaines classés, lus en base — la connaissance, et non le code.
+ *
+ * « On pourrait lister les annuaires dans Supabase chaque fois que t'en détectes
+ * un, ça éviterait d'avoir un agent, ça pourrait juste être algorithmique. »
+ * C'est ce que fait `domaines_classes` : le bot la lit au démarrage, s'en sert
+ * pour classer, et y ajoute ce qu'il découvre à la fin du lot. Un annuaire de
+ * plus ne demande plus ni commit ni déploiement.
+ *
+ * Les listes de `domaines.mjs` ne sont plus que la semence : elles servent au
+ * premier remplissage et de repli si la base est injoignable.
+ *
+ * ATTENTION à ne pas confondre avec `url_blacklist` : activer une entrée
+ * LÀ-BAS supprime les entreprises concernées, sèchement, par trigger.
+ */
+async function domainesClasses() {
+  try {
+    const lignes = await rest("domaines_classes?select=domaine,categorie&limit=5000");
+    const par = {};
+    for (const l of lignes) {
+      const c = l.categorie ?? "autre";
+      (par[c] ??= []).push(String(l.domaine).toLowerCase());
+    }
+    return par;
+  } catch (e) {
+    console.warn(`  (domaines_classes illisible : ${e.message} — on retombe sur les listes du dépôt)`);
+    return null;
+  }
+}
+
+/**
+ * Le domaine vu sur plusieurs entreprises n'est le site de personne.
+ *
+ * Un vrai site d'artisan n'apparaît que sur une fiche. Deux fiches ou plus
+ * partageant un domaine, c'est un annuaire, une chaîne, ou un fabricant — la
+ * règle posée le 17/08 : « même URL ou base d'URL et adresses différentes ».
+ * Aucun modèle n'est nécessaire pour le voir : il suffit de compter.
+ *
+ * Le résultat est PROPOSÉ (`a_confirmer = true`), jamais appliqué : un réseau de
+ * franchise et un annuaire se comptent pareil, et seule une lecture les sépare.
+ */
+async function proposerDomaines(observations) {
+  const parHote = new Map();
+  for (const o of observations) {
+    if (!o.url) continue;
+    const h = hoteDe(o.url);
+    if (!h) continue;
+    if (!parHote.has(h)) parHote.set(h, new Set());
+    parHote.get(h).add(o.id);
+  }
+
+  const connus = new Set((await rest("domaines_classes?select=domaine&limit=5000")).map((l) => l.domaine));
+  const propositions = [...parHote.entries()]
+    .filter(([h, ids]) => ids.size >= 2 && !connus.has(h))
+    .map(([h, ids]) => ({
+      domaine: h,
+      categorie: "reseau",
+      motif: `vu sur ${ids.size} entreprises distinctes (${[...ids].slice(0, 6).join(", ")}) — annuaire ou chaîne, à trancher`,
+      vu_sur_entreprises: ids.size,
+      a_confirmer: true,
+      cree_par: "dossier-web.mjs",
+    }));
+
+  if (!propositions.length) return 0;
+  const res = await fetch(
+    `${ENV.SUPABASE_URL || ENV.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/domaines_classes?on_conflict=domaine`,
+    {
+      method: "POST",
+      headers: {
+        apikey: ENV.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${ENV.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=ignore-duplicates,return=minimal",
+      },
+      body: JSON.stringify(propositions),
+    },
+  );
+  if (!res.ok) {
+    console.warn(`  (propositions de domaines non enregistrées : ${res.status})`);
+    return 0;
+  }
+  console.log(`\n${propositions.length} domaines proposés à la classification (a_confirmer) :`);
+  for (const p of propositions.slice(0, 10)) console.log(`  ${p.domaine} — ${p.vu_sur_entreprises} entreprises`);
+  return propositions.length;
 }
 
 async function blacklistActive() {
@@ -898,18 +991,26 @@ async function sonder(url, entreprise, telFicheGoogle = null) {
 // Classement et recommandation
 // ═════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Les listes effectivement utilisées : celles de la base si elle répond, celles
+ * du dépôt sinon. Posé une fois au démarrage du lot.
+ */
+let LISTES = null;
+const liste = (nom, defaut) => LISTES?.[nom] ?? defaut;
+
 function classer(url, blacklist, titre = "", porteLeNom = false) {
   const hote = hoteDe(url);
   if (!hote) return "illisible";
-  if (couvre(hote, MOTEURS)) return "moteur";
+  if (couvre(hote, liste("moteur", MOTEURS))) return "moteur";
   if (couvre(hote, blacklist)) return "blacklist";
-  if (couvre(hote, SOCIAUX)) return "social";
-  if (couvre(hote, ANNUAIRES)) return "annuaire";
-  if (couvre(hote, CERTIFICATEURS_ET_FABRICANTS)) return "annuaire";
-  if (couvre(hote, RESEAUX)) return "reseau";
-  if (couvre(hote, PLATEFORMES_ARTISANS)) return "plateforme";
-  if (couvre(hote, APPORTEURS)) return "apporteur";
-  if (couvre(hote, HEBERGEURS_GRATUITS)) return "hebergeur_gratuit";
+  if (couvre(hote, liste("social", SOCIAUX))) return "social";
+  if (couvre(hote, liste("annuaire", ANNUAIRES))) return "annuaire";
+  if (couvre(hote, liste("certificateur", CERTIFICATEURS_ET_FABRICANTS))) return "annuaire";
+  if (couvre(hote, liste("fabricant", []))) return "annuaire";
+  if (couvre(hote, liste("reseau", RESEAUX))) return "reseau";
+  if (couvre(hote, liste("plateforme", PLATEFORMES_ARTISANS))) return "plateforme";
+  if (couvre(hote, liste("apporteur", APPORTEURS))) return "apporteur";
+  if (couvre(hote, liste("hebergeur", HEBERGEURS_GRATUITS))) return "hebergeur_gratuit";
   if (!porteLeNom && TITRES_ANNUAIRE.test(titre)) return "annuaire";
   return "candidat";
 }
@@ -1262,6 +1363,13 @@ async function main() {
 
   const entreprises = await selectionner(a);
   const blacklist = await blacklistActive();
+  LISTES = await domainesClasses();
+  if (LISTES) {
+    console.log(
+      `Domaines classés lus en base : ${Object.values(LISTES).flat().length} ` +
+        `(${Object.entries(LISTES).map(([c, d]) => `${c} ${d.length}`).join(", ")})`,
+    );
+  }
 
   /*
    * CE QUI A DÉJÀ ÉTÉ TROUVÉ NE SE PERD PAS EN REPASSANT.
@@ -1352,7 +1460,13 @@ async function main() {
      * seule la minorité restante a besoin d'un moteur.
      */
     const siteDeclare = fiche?.place?.websiteUri;
-    const declareUtilisable = siteDeclare && classer(siteDeclare, blacklist) === "candidat";
+    // `--toujours-chercher` lève l'économie ci-dessus. Elle se retourne contre
+    // nous sur 58 fiches de la cohorte B : la fiche Google déclarait une URL,
+    // le bot s'est donc abstenu de chercher, et la visite a montré ensuite que
+    // cette URL n'était pas la leur. On ne savait plus rien, faute d'avoir
+    // cherché — et on ne pouvait pas le savoir au moment de la collecte.
+    const declareUtilisable =
+      !a.toujoursChercher && siteDeclare && classer(siteDeclare, blacklist) === "candidat";
     const recherche =
       a.sansWeb || declareUtilisable
         ? { moteur: declareUtilisable ? "inutile" : "non consulté", requete, html: "", resultats: [], bloque: false }
@@ -1501,7 +1615,23 @@ async function main() {
     await moteur?.fermer();
   }
 
+  // Ce que le lot a appris sur les domaines, reversé en base pour le prochain.
   await ecrireRecap(a.sortie);
+  const chemin = path.join(a.sortie, "_index.jsonl");
+  if (existsSync(chemin)) {
+    const vus = new Map();
+    for (const l of (await readFile(chemin, "utf8")).split("\n").filter(Boolean)) {
+      try {
+        const o = JSON.parse(l);
+        vus.set(o.id, o);
+      } catch {
+        /* ligne tronquée */
+      }
+    }
+    await proposerDomaines([...vus.values()]).catch((e) =>
+      console.warn(`  (classification des domaines non enregistrée : ${e.message})`),
+    );
+  }
 }
 
 main().catch((e) => {
