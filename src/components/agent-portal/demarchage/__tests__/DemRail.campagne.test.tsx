@@ -100,9 +100,7 @@ function renderRail(
     container,
     setCohorte,
     onRechercher,
-    /** La tête de file et la liste : les deux endroits où une ligne s'affiche. */
     frise: el(".dm-fr"),
-    tete: () => container.querySelector<HTMLElement>(".dm-now"),
     /** La barre de cohortes — `null` tant que la campagne n'est pas dans la file. */
     barreCohorte: () => container.querySelector<HTMLElement>(".dm-filt.coh"),
     /** Les pastilles de canal : l'AUTRE barre. */
@@ -118,11 +116,7 @@ function renderRail(
 
 describe("DemRail — la cohorte se lit sur la ligne", () => {
   it("écrit la cohorte de chaque ligne, en deux mots", () => {
-    const { frise } = renderRail([
-      froide("tete", null),
-      froide("a", "A_site_faible"),
-      froide("b", "B_sans_site"),
-    ]);
+    const { frise } = renderRail([froide("a", "A_site_faible"), froide("b", "B_sans_site")]);
     expect(within(frise).getByText("site faible")).toBeInTheDocument();
     expect(within(frise).getByText("sans site")).toBeInTheDocument();
   });
@@ -133,11 +127,7 @@ describe("DemRail — la cohorte se lit sur la ligne", () => {
   });
 
   it("teinte les deux cohortes différemment — l'œil décide avant de lire", () => {
-    const { frise } = renderRail([
-      froide("tete", null),
-      froide("a", "A_site_faible"),
-      froide("b", "B_sans_site"),
-    ]);
+    const { frise } = renderRail([froide("a", "A_site_faible"), froide("b", "B_sans_site")]);
     expect(frise.querySelector('.st.coh[data-coh="A_site_faible"]')).not.toBeNull();
     expect(frise.querySelector('.st.coh[data-coh="B_sans_site"]')).not.toBeNull();
   });
@@ -204,23 +194,21 @@ describe("DemRail — la cohorte est une dimension à part", () => {
 
 describe("DemRail — les appels à froid", () => {
   it("marque la ligne « à froid » là où une séquence mettrait son étape", () => {
-    const { frise } = renderRail([froide("tete", null), froide("a", "B_sans_site")]);
+    const { frise } = renderRail([froide("a", "B_sans_site")]);
     expect(within(frise).getByText("à froid")).toBeInTheDocument();
     expect(within(frise).queryByText(/^étape /)).toBeNull();
   });
 
   it("dit « jamais contactée » plutôt que rien quand la ligne n'a pas de titre", () => {
-    const { frise } = renderRail([
-      froide("tete", null),
-      task({ id: "f", hors_sequence: true, title: null }),
-    ]);
+    const { frise } = renderRail([task({ id: "f", hors_sequence: true, title: null })]);
     expect(within(frise).getByText("Jamais contactée")).toBeInTheDocument();
   });
 
-  it("met le premier appel du jour en gros, prêt à être traité", () => {
-    const { tete } = renderRail([froide("a", "B_sans_site"), froide("b", "B_sans_site")]);
-    expect(within(tete()!).getByText("Prospect a")).toBeInTheDocument();
-    expect(within(tete()!).getByText("premier contact")).toBeInTheDocument();
+  it("laisse la bascule en appel à portée de clic sur chaque ligne", () => {
+    const { frise } = renderRail([froide("a", "B_sans_site"), froide("b", "B_sans_site")]);
+    // Un appel à froid EST déjà un appel : rien à basculer. Le bouton
+    // n'apparaît que là où il change quelque chose.
+    expect(within(frise).queryAllByTitle("Transformer en appel")).toHaveLength(0);
   });
 });
 
@@ -259,8 +247,7 @@ describe("DemRail — l'objectif vient des réglages de l'agent", () => {
     const { container, objectif } = renderRail(cent, { doneToday: { call: 24 } });
     expect(within(objectif("Appels")).getByText("100 en file")).toBeInTheDocument();
     expect(objectif("Appels").dataset.full).toBe("1");
-    // 99 dans la liste + 1 en tête de file.
-    expect(container.querySelectorAll(".dm-tk")).toHaveLength(99);
+    expect(container.querySelectorAll(".dm-tk")).toHaveLength(100);
   });
 });
 

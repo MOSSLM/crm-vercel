@@ -20,9 +20,9 @@ import type { DemarchageQueueMeta, DemarchageTask } from "../types";
  * 2. DES FILTRES INDÉPENDANTS. Canal et signal partageaient une variable, donc
  *    un choix à la fois : cocher « Chauds » faisait perdre le canal. Or un lead
  *    peut être chaud ET en attente ET sur une tâche WhatsApp.
- * 3. LA TÊTE DE FILE EN GROS, avec de quoi agir dessus sans traverser l'écran —
- *    dont « appeler plutôt », parce que la décision de décrocher se prend en
- *    lisant la ligne.
+ * 3. LA BASCULE EN APPEL SUR LA LIGNE, parce que la décision de décrocher se
+ *    prend en lisant la ligne — et sans qu'aucun bloc ne vienne redire, en
+ *    grand, ce que le centre de l'écran affiche déjà.
  * 4. L'OBJECTIF N'EST PLUS UN PLAFOND. Rien n'est renvoyé au lendemain : cent
  *    premiers contacts restent cent.
  */
@@ -155,9 +155,7 @@ function renderRail(
     setDay,
     onPick,
     onBasculerEnAppel,
-    /** Le grand bloc de tête. */
-    now: () => container.querySelector<HTMLElement>(".dm-now"),
-    /** La liste « à suivre ». */
+    /** La liste — tout ce que le rail affiche. */
     frise: el(".dm-fr"),
     lignes: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-tk")),
     onglets: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-file")),
@@ -187,8 +185,8 @@ describe("DemRail — deux files, pas une", () => {
   });
 
   it("ne montre que la file ouverte", () => {
-    const { lignes, now } = renderRail(melange, { onglet: "premiers" });
-    const noms = [...lignes().map((l) => l.textContent), now()?.textContent].join(" ");
+    const { lignes } = renderRail(melange, { onglet: "premiers" });
+    const noms = lignes().map((l) => l.textContent).join(" ");
     expect(noms).toContain("Prospect neuf1");
     expect(noms).not.toContain("Prospect suivi1");
   });
@@ -222,13 +220,13 @@ describe("DemRail — l'objectif du jour, plus un plafond", () => {
   it("laisse dépasser l'objectif au lieu de cacher le surplus", () => {
     // C'est LE point de la refonte. L'ancien plan gardait vingt lignes et
     // poussait le reste à demain : la file cachait le travail décidé.
-    const { objectifs, lignes, now } = renderRail(
+    const { objectifs, lignes } = renderRail(
       Array.from({ length: 25 }, (_, i) => task({ id: `w${i}` })),
       { doneToday: { whatsapp: 26 } },
     );
     expect(objectifs()[0].dataset.full).toBe("1");
     expect(within(objectifs()[0]).getByText("26")).toBeInTheDocument();
-    expect(lignes().length + (now() ? 1 : 0)).toBe(25);
+    expect(lignes()).toHaveLength(25);
   });
 
   it("ne montre l'objectif que des canaux réellement en file", () => {
@@ -256,23 +254,40 @@ describe("DemRail — le calendrier des relances", () => {
     relance({ id: "loin", due_at: iso("2026-09-15") }),
   ];
 
-  it("ouvre une case par jour porteur, jamais pour un jour vide", () => {
+  it("affiche la semaine qui vient, même les jours vides", () => {
+    // Un calendrier qui ne montrerait que les jours occupés n'est plus un
+    // calendrier : on ne verrait pas qu'il n'y a rien lundi, et une case unique
+    // « auj. » donne l'impression que la barre est cassée.
     const { calendrier } = renderRail(dansLeTemps, { onglet: "relances" });
-    expect(calendrier()).toHaveLength(4);
+    // Sept jours d'horizon, plus la case lointaine du 15 septembre.
+    expect(calendrier()).toHaveLength(8);
     // Dans la semaine, le jour de semaine suffit. Au-delà, c'est le mois qui
     // situe : « mar 15 » peut être dans six jours comme dans trois mois, et une
     // mise de côté ouvre justement des cases très lointaines.
     expect(calendrier().map((c) => c.querySelector(".j")?.textContent)).toEqual([
       "auj.",
       "dem.",
+      "sam",
+      "dim",
+      "lun",
       "mar",
+      "mer",
       "sept",
     ]);
   });
 
-  it("porte le nombre de relances de chaque jour", () => {
+  it("porte le nombre de relances de chaque jour, et un tiret pour les vides", () => {
     const { calendrier } = renderRail(dansLeTemps, { onglet: "relances" });
-    expect(calendrier().map((c) => c.querySelector(".n")?.textContent)).toEqual(["1", "1", "1", "1"]);
+    expect(calendrier().map((c) => c.querySelector(".n")?.textContent)).toEqual([
+      "1",
+      "1",
+      "—",
+      "—",
+      "—",
+      "1",
+      "—",
+      "1",
+    ]);
   });
 
   it("change de jour au clic", () => {
@@ -335,7 +350,7 @@ describe("DemRail — canal et signal sont deux dimensions", () => {
   });
 
   it("écrit TOUS les signaux sur la ligne", () => {
-    const { container } = renderRail(melange, { onglet: "relances", sel: "tiede" });
+    const { container } = renderRail(melange, { onglet: "relances" });
     const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.sig")).map(
       (s) => s.dataset.sig,
     );
@@ -349,50 +364,43 @@ describe("DemRail — canal et signal sont deux dimensions", () => {
   });
 });
 
-describe("DemRail — la tête de file, en gros", () => {
+describe("DemRail — la liste, et rien qu'elle", () => {
   const file = [task({ id: "premier" }), task({ id: "second" }), task({ id: "troisieme" })];
 
-  it("met la première tâche en avant, avec son canal", () => {
-    const { now } = renderRail(file);
-    const bloc = now()!;
-    expect(within(bloc).getByText("Prospect premier")).toBeInTheDocument();
-    expect(bloc.dataset.k).toBe("whatsapp");
-    expect(within(bloc).getByText("premier contact")).toBeInTheDocument();
+  it("affiche TOUTES les lignes — aucune n'est absorbée par un bloc de tête", () => {
+    // Une carte de tête a existé ici, qui reprenait le prospect en cours en
+    // grand. Elle redisait ce que le centre de l'écran affiche déjà, à trois
+    // centimètres de distance, et mangeait la place de la liste.
+    const { lignes, container } = renderRail(file);
+    expect(container.querySelector(".dm-now")).toBeNull();
+    expect(lignes().map((l) => l.querySelector(".nm .t")?.textContent)).toEqual([
+      "Prospect premier",
+      "Prospect second",
+      "Prospect troisieme",
+    ]);
   });
 
-  it("promeut la ligne choisie — le grand bloc dit ce que l'écran affiche", () => {
-    const { now } = renderRail(file, { sel: "second" });
-    expect(within(now()!).getByText("Prospect second")).toBeInTheDocument();
+  it("surligne la ligne ouverte", () => {
+    const { lignes } = renderRail(file, { sel: "second" });
+    expect(lignes().map((l) => l.dataset.s)).toEqual(["next", "now", "next"]);
   });
 
-  it("ne répète pas la tête de file dans la liste du dessous", () => {
-    const { lignes } = renderRail(file);
-    const noms = lignes().map((l) => l.querySelector(".nm .t")?.textContent);
-    expect(noms).toEqual(["Prospect second", "Prospect troisieme"]);
-  });
-
-  it("bascule la tâche courante en appel d'un seul clic", () => {
+  it("bascule une tâche en appel d'un seul clic, sans l'ouvrir", () => {
     // Le geste qui manquait : décider d'appeler ne doit pas coûter un faux
     // « Fait » ni laisser la tâche traîner.
-    const { now, onBasculerEnAppel } = renderRail(file);
-    fireEvent.click(within(now()!).getByRole("button", { name: /Appeler plutôt/ }));
-    expect(onBasculerEnAppel).toHaveBeenCalledWith("premier");
-  });
-
-  it("ne propose pas de basculer un appel en appel", () => {
-    const { now } = renderRail([task({ id: "a", kind: "call" })]);
-    expect(within(now()!).queryByRole("button", { name: /Appeler plutôt/ })).toBeNull();
-  });
-
-  it("bascule aussi depuis une ligne de la liste, sans l'ouvrir", () => {
     const { lignes, onBasculerEnAppel } = renderRail(file);
-    fireEvent.click(within(lignes()[0]).getByTitle("Transformer en appel"));
+    fireEvent.click(within(lignes()[1]).getByTitle("Transformer en appel"));
     expect(onBasculerEnAppel).toHaveBeenCalledWith("second");
   });
 
-  it("enchaîne sur la suivante", () => {
-    const { now, onPick } = renderRail(file);
-    fireEvent.click(within(now()!).getByRole("button", { name: /Suivante/ }));
+  it("ne propose pas de basculer un appel en appel", () => {
+    const { lignes } = renderRail([task({ id: "a", kind: "call" })]);
+    expect(within(lignes()[0]).queryByTitle("Transformer en appel")).toBeNull();
+  });
+
+  it("ouvre la ligne au clic", () => {
+    const { lignes, onPick } = renderRail(file);
+    fireEvent.click(lignes()[1]);
     expect(onPick).toHaveBeenCalledWith("second");
   });
 });
@@ -400,14 +408,13 @@ describe("DemRail — la tête de file, en gros", () => {
 describe("DemRail — ce que la ligne dit", () => {
   it("numérote l'ordre de passage plutôt que d'inventer une heure", () => {
     const { lignes } = renderRail([task({ id: "a" }), task({ id: "b" }), task({ id: "c" })]);
-    expect(lignes().map((l) => l.querySelector(".tm")?.textContent)).toEqual(["1", "2"]);
+    expect(lignes().map((l) => l.querySelector(".tm")?.textContent)).toEqual(["1", "2", "3"]);
   });
 
   it("signale l'échéance dépassée", () => {
-    const { frise } = renderRail([
-      relance({ id: "a" }),
-      relance({ id: "vieux", due_at: iso("2026-08-05") }),
-    ], { onglet: "relances", sel: "a" });
+    const { frise } = renderRail([relance({ id: "vieux", due_at: iso("2026-08-05") })], {
+      onglet: "relances",
+    });
     expect(within(frise).getByText("échéance passée")).toBeInTheDocument();
   });
 
@@ -424,8 +431,10 @@ describe("DemRail — ce que la ligne dit", () => {
       ],
       { onglet: "relances" },
     );
-    // Elle vit dans SA case de calendrier, pas dans celle du jour.
-    expect(calendrier()).toHaveLength(2);
+    // Elle vit dans SA case de calendrier, pas dans celle du jour : la liste du
+    // jour ne porte donc qu'une ligne, et aucune mention « de côté ».
+    expect(calendrier().find((c) => c.querySelector(".d")?.textContent === "25")).toBeDefined();
+    expect(container.querySelectorAll(".dm-tk")).toHaveLength(1);
     expect(container.querySelector(".dm-tk .st.cote")).toBeNull();
   });
 
@@ -439,7 +448,7 @@ describe("DemRail — ce que la ligne dit", () => {
     });
     const { barre, setStep, frise } = renderRail(
       [relance({ id: "a", sequence: seq(1) }), relance({ id: "b", sequence: seq(3) })],
-      { onglet: "relances", sel: "a" },
+      { onglet: "relances" },
     );
     expect(within(frise).getByText("étape 3/5")).toBeInTheDocument();
     fireEvent.click(within(barre("Étape")!).getByText("3"));
@@ -447,7 +456,7 @@ describe("DemRail — ce que la ligne dit", () => {
   });
 
   it("sort l'emoji d'intention du nom, dans sa propre case", () => {
-    const { lignes } = renderRail([task({ id: "a" }), chaud({ id: "b" })], { sel: "a" });
+    const { lignes } = renderRail([chaud({ id: "b" })]);
     const ligne = lignes()[0];
     expect(ligne.querySelector(".nm .t")?.textContent).toBe("Prospect b");
     expect(ligne.querySelector(".nm .fl")?.textContent).toBe("🔥");

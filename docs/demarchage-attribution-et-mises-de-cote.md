@@ -121,9 +121,12 @@ liés :
   (« 12 / 20 »), il ne cache rien : **on peut le dépasser**, la barre passe au
   vert et les cent lignes restent cent.
 - **Relances & discussions** — des gens déjà touchés. C'est un *calendrier* :
-  une case par jour porteur, chaque ligne à la date où elle est réellement due,
-  l'échu replié sur aujourd'hui. **Aucun plafond** : répondre à quelqu'un qui a
-  réagi ne se rationne pas.
+  **la semaine qui vient est toujours affichée**, jours vides compris (sinon ce
+  n'est plus un calendrier mais une liste, et on ne voit pas qu'il n'y a rien
+  jeudi), plus les journées lointaines qui portent quelque chose — une mise de
+  côté à trois mois garde sa case. Chaque ligne à la date où elle est réellement
+  due, l'échu replié sur aujourd'hui. **Aucun plafond** : répondre à quelqu'un
+  qui a réagi ne se rationne pas.
 
 La frontière n'est pas une heuristique : `entreprises.premiere_touche_le`, posé
 une seule fois par la première tâche bouclée — la même colonne qui sert à
@@ -136,16 +139,21 @@ Canal, signal, cohorte et étape sont quatre dimensions, chacune avec sa barre.
 Cocher « Chauds » ne fait plus perdre le canal. Et la ligne porte **tous** ses
 signaux : un prospect peut afficher « a répondu » *et* « chaud ».
 
-### La tête de file en gros, et « appeler plutôt »
+### « Appeler plutôt »
 
-La tâche en cours s'affiche en grand — nom, ville, canal, étape — avec deux
-boutons : passer à la suivante, ou **la basculer en appel**. La bascule change le
-canal de la tâche et rien d'autre : même prospect, même étape, même séquence,
-même identifiant. Le texte préparé par le moteur reste — l'accroche WhatsApp
-écrite pour ce prospect est très exactement ce qu'on a à lui dire de vive voix.
-Sans numéro connu, la bascule refuse plutôt que d'envoyer la fiche dans une file
-d'appels où elle serait injoignable. Le même geste existe sur chaque ligne de la
-liste (icône téléphone au survol) et sur la carte d'action au centre.
+Sur chaque ligne (icône téléphone au survol) et sur la carte d'action au centre :
+un clic et la tâche devient un appel. La bascule change le canal et rien d'autre
+— même prospect, même étape, même séquence, même identifiant. Le texte préparé
+par le moteur reste : l'accroche WhatsApp écrite pour ce prospect est très
+exactement ce qu'on a à lui dire de vive voix. Sans numéro connu, la bascule
+refuse plutôt que d'envoyer la fiche dans une file d'appels où elle serait
+injoignable.
+
+Une carte de tête a existé dans le rail, qui reprenait le prospect en cours en
+grand. Elle a été retirée : le centre de l'écran affiche déjà ce prospect-là, en
+plus complet, à trois centimètres de distance — elle ne disait rien de neuf et
+mangeait la place de la liste, la seule chose que le rail sache faire mieux que
+le reste de l'écran.
 
 ## Migration
 

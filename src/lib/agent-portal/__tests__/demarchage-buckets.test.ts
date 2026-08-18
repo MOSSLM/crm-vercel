@@ -134,8 +134,19 @@ describe("separerFile — deux files, jamais un mélange", () => {
  * plan qu'il remplace.
  */
 describe("joursReels — la date est la date", () => {
-  it("garde aujourd'hui, même vide", () => {
-    expect(cal([]).map((j) => j.date)).toEqual(["2026-08-13"]);
+  it("affiche la semaine qui vient, même sans rien à y faire", () => {
+    // Un calendrier qui n'affiche que les jours occupés n'est plus un
+    // calendrier : la semaine ne se lit plus, et une case unique « auj. »
+    // donne l'impression que la barre est cassée.
+    expect(cal([]).map((j) => j.date)).toEqual([
+      "2026-08-13",
+      "2026-08-14",
+      "2026-08-15",
+      "2026-08-16",
+      "2026-08-17",
+      "2026-08-18",
+      "2026-08-19",
+    ]);
   });
 
   it("place chaque relance à son jour", () => {
@@ -152,12 +163,16 @@ describe("joursReels — la date est la date", () => {
   it("replie l'échu sur aujourd'hui — une relance en retard est du travail du jour", () => {
     const d = cal([relance("vieux", iso("2026-08-01")), relance("hier", iso("2026-08-12"))]);
     expect(ids(jour(d, 0))).toEqual(["vieux", "hier"]);
-    expect(d).toHaveLength(1);
+    // Rien avant aujourd'hui : personne n'irait regarder un onglet dans le passé.
+    expect(d.every((j) => j.offset >= 0)).toBe(true);
   });
 
-  it("n'invente aucune journée vide entre deux journées pleines", () => {
-    const d = cal([relance("auj", iso("2026-08-13")), relance("loin", iso("2026-08-20"))]);
-    expect(d.map((j) => j.offset)).toEqual([0, 7]);
+  it("garde sa case à ce qui tombe APRÈS l'horizon", () => {
+    // Une mise de côté à trois mois ne doit pas disparaître au bout de la
+    // semaine affichée : sa journée s'ajoute au calendrier.
+    const d = cal([relance("loin", iso("2026-11-12"))]);
+    expect(d[d.length - 1].date).toBe("2026-11-12");
+    expect(ids(d[d.length - 1].tasks)).toEqual(["loin"]);
   });
 
   it("ne déplace RIEN pour tenir un quota", () => {
@@ -165,13 +180,19 @@ describe("joursReels — la date est la date", () => {
     // sans plafond, on répond à qui a réagi.
     const d = cal(Array.from({ length: 40 }, (_, i) => relance(`r${i}`, iso("2026-08-13"))));
     expect(jour(d, 0)).toHaveLength(40);
-    expect(d).toHaveLength(1);
+    expect(d.filter((j) => j.tasks.length > 0)).toHaveLength(1);
   });
 
   it("range une mise de côté au jour de son retour", () => {
     const d = cal([deCote("range", "2026-08-20")]);
     expect(ids(jour(d, 0))).toEqual([]);
     expect(ids(jour(d, 7))).toEqual(["range"]);
+  });
+
+  it("respecte l'horizon demandé", () => {
+    expect(joursReels([], { now: NOW, timeZone: "UTC", horizon: 3 })).toHaveLength(3);
+    // Un horizon absurde ne fait pas disparaître aujourd'hui.
+    expect(joursReels([], { now: NOW, timeZone: "UTC", horizon: 0 })).toHaveLength(1);
   });
 
   it("ouvre la journée par les signaux, dans l'ordre de priorité", () => {
