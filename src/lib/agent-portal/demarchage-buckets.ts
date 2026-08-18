@@ -1,41 +1,33 @@
 /**
- * Le PLAN de démarchage — pur, sans base ni React.
+ * LA FILE DE DÉMARCHAGE — pur, sans base ni React.
  *
- * POURQUOI UN PLAN ET PLUS UN CALENDRIER
- * Une tâche manuelle portait une heure (`due_at`), et la file l'affichait telle
- * quelle : « 09:00 · WhatsApp », « 09:00 · Appel », cinquante fois de suite.
- * Personne ne passe cinquante WhatsApp à 9 h. L'heure était une fiction du
- * moteur de séquences — utile pour SAVOIR qu'une relance est due, jamais pour
- * dire QUAND la faire.
+ * DEUX FILES, ET ELLES NE SE TRAVAILLENT PAS PAREIL
+ * Tout vivait dans une seule liste, répartie sur les jours à venir à
+ * concurrence d'un quota par canal. Ça mélangeait deux métiers :
  *
- * Ce qui est réaliste, c'est une CADENCE : tant d'appels par jour, tant de
- * WhatsApp par jour. On répartit donc les tâches en attente sur les jours à
- * venir, canal par canal, à concurrence du quota quotidien — la plus ancienne
- * échéance d'abord. Ce qui dépasse le quota du jour tombe demain, et ainsi de
- * suite. Deux conséquences voulues :
+ *   · les PREMIERS CONTACTS — des entreprises jamais touchées. C'est un STOCK :
+ *     rien ne les date, elles attendent qu'on s'y mette. Vingt WhatsApp par
+ *     jour est un objectif de rythme, pas une limite : dépasser est une bonne
+ *     journée, et l'ancien plan faisait exactement l'inverse — il DÉPLAÇAIT au
+ *     lendemain tout ce qui dépassait, donc il cachait le travail qu'on venait
+ *     de décider de faire ;
+ *   · les RELANCES ET DISCUSSIONS — des gens qu'on a déjà touchés. C'est un
+ *     CALENDRIER : une relance est due un jour précis, une mise de côté revient
+ *     à une date, une réponse se traite le jour où elle arrive. Aucun plafond :
+ *     répondre à quelqu'un qui écrit ne se rationne pas.
  *
- *   · le nombre affiché pour un jour est le nombre RÉEL de tâches à y faire —
- *     jamais le quota lui-même. Aucun appel en attente ⇒ « 0 appel », pas
- *     « 20 appels » ;
- *   · ce qui a déjà été bouclé aujourd'hui consomme le quota du jour, sinon la
- *     journée se rechargerait à chaque tâche traitée et ne finirait jamais.
+ * La frontière est celle de la base et non d'une heuristique :
+ * `entreprises.premiere_touche_le`, posé une seule fois par la première tâche
+ * bouclée (cf. `PATCH /api/agent/tasks`). Une entreprise sans cette date n'a
+ * jamais été abordée par personne ; avec, tout ce qui suit est un suivi.
  *
- * Passé `DAY_CUTOFF_HOUR` (heure de l'agent), la journée est close : le reste
- * bascule sur demain plutôt que de rester affiché comme faisable ce soir.
- *
- * DES JOURS, RIEN QUE DES JOURS
- * Le plan ne rend QUE des journées datées. Les trois signaux — chaud non
- * rappelé, discussion ouverte, prospect chaud — ne sont plus des onglets à côté
- * des jours : ils vivaient là par accident d'implémentation, et la barre
- * d'onglets se retrouvait avec sept entrées de six pixels où on ne lisait plus
- * que la première lettre. Ce sont désormais des ATTRIBUTS (`signalOf`) posés sur
- * la tâche, qui la font remonter en tête d'AUJOURD'HUI et qui alimentent les
- * filtres. Un signal chaud est une chose à faire aujourd'hui : sa place est dans
- * la journée, pas dans un onglet parallèle.
- *
- * Ces trois signaux échappent en revanche au quota : ce sont des occasions
- * mesurées, pas de la cadence. Un prospect qui vient de rouvrir sa démo se
- * rappelle aujourd'hui même si les vingt appels du jour sont déjà passés.
+ * LES SIGNAUX SE CUMULENT
+ * Un prospect peut être chaud ET en discussion ET en retard de rappel. L'ancien
+ * `signalOf` n'en rendait qu'un — le premier de la liste de priorité — et la
+ * pastille « Chauds » ne comptait donc PAS les prospects chauds déjà en
+ * discussion : le filtre affichait trois leads quand la journée en portait
+ * huit. `signalsOf` rend l'ensemble ; `signalOf` ne sert plus qu'à la teinte et
+ * à l'ordre, où il faut bien trancher.
  *
  * Réutilise `dayStartIso` (`@/lib/agent-progress`) pour la frontière du jour
  * dans le fuseau de l'agent : c'est la même horloge que le compteur "X sur Y
@@ -45,7 +37,7 @@
 import { AGENT_TIMEZONE, dayStartIso } from "@/lib/agent-progress";
 
 export type DemarchageTaskLike = {
-  /** Canal de la tâche — c'est lui qui porte le quota. */
+  /** Canal de la tâche — c'est lui qui porte l'objectif quotidien. */
   kind?: string;
   due_at: string | null;
   /**
@@ -59,13 +51,21 @@ export type DemarchageTaskLike = {
    * est ouverte. Posé par `/api/agent/tasks` d'après `vars.replies`.
    */
   in_conversation?: boolean;
+  /**
+   * L'entreprise a-t-elle déjà été touchée, et quand ? `null` = jamais, par
+   * personne — c'est ce qui définit un premier contact. Vient de
+   * `entreprises.premiere_touche_le`, et pas d'un calcul côté écran : cette
+   * date est aussi le socle de la comparaison des cohortes, les deux lectures
+   * ne peuvent donc pas diverger.
+   */
+  premiere_touche_le?: string | null;
   /** Signal d'intention mesuré (GA4). Absent = aucun site démo ou aucune visite. */
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
 };
 
 /**
- * Ce qui sort une tâche de la cadence et la remonte en tête de journée.
- * `null` = tâche ordinaire, planifiée au quota.
+ * Ce qui sort une tâche du rythme ordinaire. Une tâche peut en porter
+ * plusieurs — c'est tout l'objet de `signalsOf`.
  */
 export type DemarchageSignal = "missed" | "conversation" | "hot";
 
@@ -78,24 +78,23 @@ export const SIGNAL_LABEL: Record<DemarchageSignal, string> = {
   hot: "Chauds",
 };
 
+/** Le libellé court, celui qui tient sur une ligne de file. */
+export const SIGNAL_TAG: Record<DemarchageSignal, string> = {
+  missed: "jamais rappelé",
+  conversation: "a répondu",
+  hot: "chaud",
+};
+
 /**
- * Combien de tâches manuelles de chaque canal une journée peut absorber, À
- * DÉFAUT de réglage propre à l'agent.
+ * L'OBJECTIF quotidien par canal, à défaut de réglage propre à l'agent.
  *
- * Ce sont des cadences de travail, pas des limites techniques : elles disent
- * « voilà une journée tenable », et c'est ce qui permet d'annoncer un nombre
- * honnête pour aujourd'hui au lieu de déverser toute la file.
+ * Ce n'est plus un plafond et ça ne l'a jamais vraiment été : c'est un rythme
+ * tenable, affiché pour qu'on sache où on en est de sa journée. Rien n'est
+ * caché quand il est dépassé — soixante WhatsApp envoyés un jour de forme sont
+ * soixante WhatsApp, pas « vingt plus quarante reportés ».
  *
- * CE N'EST PLUS UN PLAFOND EN DUR. Ces trois chiffres additionnés font
- * 60 entreprises par jour ; une campagne peut en viser davantage (100 par jour
- * du 17 au 26 août 2026), et un plafond en dur ne fait alors pas « travailler
- * moins » : il fait disparaître de la file le travail décidé. L'agent porte
- * donc son propre réglage (`agent_settings.quotas_demarchage`), et ces
- * valeurs-ci restent le repli — cf. `normaliseQuotas`.
- *
- * Un canal absent de cette table n'a pas de plafond — c'est le cas de
- * l'attente de réponse, qui ne coûte aucun effort : déclarer qu'un prospect a
- * répondu prend deux secondes, il n'y a rien à étaler.
+ * L'agent porte son propre réglage (`agent_settings.quotas_demarchage`) ; ces
+ * valeurs restent le repli — cf. `normaliseQuotas`.
  */
 export const DAILY_QUOTA: Readonly<Record<string, number>> = {
   call: 20,
@@ -103,34 +102,31 @@ export const DAILY_QUOTA: Readonly<Record<string, number>> = {
   linkedin: 20,
 };
 
-/** Les canaux plafonnés, dans l'ordre où la file les présente. */
+/** Les canaux qui portent un objectif, dans l'ordre où la file les présente. */
 export const QUOTA_KINDS: readonly string[] = ["call", "whatsapp", "linkedin"] as const;
 
-/** Une cadence quotidienne, canal par canal. */
+/** Un objectif quotidien, canal par canal. */
 export type QuotasDemarchage = Readonly<Record<string, number>>;
 
 /**
- * Au-delà, ce n'est plus une cadence : c'est une saisie fautive (un zéro de
- * trop) ou une unité qui n'est pas la bonne. La file du serveur ne remonte de
- * toute façon pas plus de tâches que ça.
+ * Au-delà, ce n'est plus un rythme : c'est une saisie fautive (un zéro de trop)
+ * ou une unité qui n'est pas la bonne.
  */
 const QUOTA_MAX = 1000;
 
 /**
  * Le réglage lu en base (`agent_settings.quotas_demarchage`, jsonb libre),
- * ramené à une cadence utilisable — ou `null` s'il n'y a rien d'exploitable.
+ * ramené à un objectif utilisable — ou `null` s'il n'y a rien d'exploitable.
  *
  * POURQUOI VALIDER PLUTÔT QUE FAIRE CONFIANCE
  * Ce jsonb n'a pas de forme garantie : personne n'empêche `{"call": 0}`,
- * `{"call": "vingt"}` ou un tableau d'y atterrir. Or un quota nul ou négatif ne
- * fait pas « moins d'appels », il fait DISPARAÎTRE la journée : `planTasks`
- * repousserait chaque tâche au lendemain, indéfiniment. Une valeur aberrante
- * doit donc coûter le retour au défaut, jamais une file vide un matin de
- * campagne.
+ * `{"call": "vingt"}` ou un tableau d'y atterrir. Un objectif nul ou négatif
+ * n'affiche plus un rythme, il affiche une barre de progression absurde. Une
+ * valeur aberrante coûte donc le retour au défaut.
  *
  * Deux conséquences voulues :
  *   · le réglage est fusionné SUR le défaut — un canal absent du jsonb garde
- *     son plafond habituel, on ne déplafonne pas un canal par omission ;
+ *     son objectif habituel ;
  *   · une valeur textuelle mais numérique (`"40"`, ce que donne un jsonb saisi
  *     à la main) est acceptée : la refuser punirait la bonne intention.
  */
@@ -153,102 +149,155 @@ export function normaliseQuotas(brut: unknown): QuotasDemarchage | null {
 }
 
 /**
- * La cadence à appliquer, quoi qu'on ait reçu — `meta.quotas` de
+ * L'objectif à afficher, quoi qu'on ait reçu — `meta.quotas` de
  * `/api/agent/tasks`, ou n'importe quel jsonb.
- *
- * Deux lecteurs s'en servent : le plan (`planTasks`) et le rail qui affiche
- * « 3 / 20 ». Ils DOIVENT lire le même chiffre, sinon l'écran annonce une
- * cadence que la file ne suit pas — et c'est invisible, parce que les deux
- * nombres sont plausibles. D'où cette fonction plutôt qu'un repli recopié de
- * chaque côté : le repli est une règle, pas un détail d'affichage.
  */
 export const cadenceEffective = (brut: unknown): QuotasDemarchage =>
   normaliseQuotas(brut) ?? DAILY_QUOTA;
 
 /**
- * Les canaux dont une discussion ouverte échappe au quota.
- *
- * LE QUOTA PORTE SUR LES PREMIERS CONTACTS, PAS SUR LES ÉCHANGES
- * Vingt WhatsApp par jour, c'est vingt entreprises qu'on démarche. Ce n'est pas
- * vingt messages : chacune de ces vingt-là peut répondre, et il faut pouvoir
- * lui répondre dans la foulée — comme à celles d'hier et d'avant-hier. Sans
- * cette exception, l'étape « envoie-lui le site démo », déclenchée par la
- * réponse du prospect, se retrouvait planifiée AU LENDEMAIN parce que les vingt
- * places du jour étaient prises. On laisse refroidir la seule chose qui était
- * chaude.
- *
- * Répondre à un message coûte une minute, d'où l'absence de plafond. L'APPEL
- * reste plafonné même en discussion : vingt appels par jour, c'est une
- * contrainte d'horloge, pas de volume sortant.
- */
-const CONVERSATION_KINDS: readonly string[] = ["whatsapp", "linkedin"] as const;
-
-/**
- * Le plafond d'un canal, ou `null` quand il n'en a pas.
- *
- * `quotas` est la cadence effective de l'agent (cf. `normaliseQuotas`). Un
- * canal qu'elle ne cite pas retombe sur le défaut plutôt que sur « aucun
- * plafond » : un réglage partiel règle ce qu'il nomme, rien d'autre.
+ * L'objectif d'un canal, ou `null` quand il n'en a pas (l'attente de réponse :
+ * déclarer qu'un prospect a répondu prend deux secondes, il n'y a pas de rythme
+ * à tenir).
  */
 export const quotaOf = (kind: string, quotas: QuotasDemarchage = DAILY_QUOTA): number | null =>
   quotas[kind] ?? DAILY_QUOTA[kind] ?? null;
 
+/* ── Les signaux ─────────────────────────────────────────────────────────── */
+
 /**
- * Cette tâche fait-elle partie d'une discussion en cours ?
- *
- * Le prospect a écrit : il attend une réponse, et cette réponse ne se planifie
- * pas — elle se donne. Ces tâches sortent donc du plan et se traitent le jour
- * même, sans plafond.
+ * Les canaux dont une discussion ouverte est un échange, pas un envoi de plus.
+ * L'appel n'en fait pas partie : rappeler quelqu'un qui a répondu coûte le même
+ * quart d'heure qu'un appel à froid.
+ */
+const CONVERSATION_KINDS: readonly string[] = ["whatsapp", "linkedin"] as const;
+
+/**
+ * Cette tâche fait-elle partie d'une discussion en cours ? Le prospect a écrit :
+ * il attend une réponse, et cette réponse se donne le jour même.
  */
 export const isConversation = (t: DemarchageTaskLike): boolean =>
   t.in_conversation === true && CONVERSATION_KINDS.includes(t.kind ?? "");
 
 /**
- * Un prospect dont les signaux mesurés réclament un appel aujourd'hui remonte
- * en tête de journée, QUELLE QUE SOIT l'échéance prévue par sa séquence.
- *
- * C'est le cœur de l'idée : la séquence planifie le rythme normal, mais une
- * démo rouverte ce matin est une information plus fraîche que n'importe quel
- * délai décidé la semaine dernière. La tâche n'est pas dupliquée ni sortie de
- * sa séquence — elle est seulement remontée. Si l'appel ne donne rien, la
- * séquence reprend son cours là où elle en était.
+ * Les signaux mesurés réclament un appel aujourd'hui, quelle que soit
+ * l'échéance prévue par la séquence : une démo rouverte ce matin est une
+ * information plus fraîche que n'importe quel délai décidé la semaine dernière.
  */
 const isHot = (t: DemarchageTaskLike) =>
   t.intent?.callWhen === "maintenant" || t.intent?.callWhen === "aujourdhui";
 
-/** Le signal porté par la tâche, ou `null` si elle suit simplement la cadence. */
-export function signalOf(task: DemarchageTaskLike): DemarchageSignal | null {
-  // Un signal chaud non rappelé passe AVANT tout : c'est une opportunité déjà
-  // en train de refroidir, pas une opportunité fraîche.
-  if (task.intent?.missed) return "missed";
-  // Puis ce qui vient d'arriver : quelqu'un a écrit et attend. Devant les
-  // signaux de visite, qui ne sont qu'un intérêt observé, jamais une demande.
-  if (isConversation(task)) return "conversation";
-  if (isHot(task)) return "hot";
-  return null;
+/**
+ * TOUS les signaux portés par la tâche, dans l'ordre de priorité.
+ *
+ * Cumulables, et c'est le correctif : un prospect chaud qui a répondu est chaud
+ * ET en discussion. L'ancienne lecture n'en gardait qu'un, si bien qu'il
+ * disparaissait de la pastille « Chauds » au moment précis où il devenait
+ * intéressant.
+ */
+export function signalsOf(task: DemarchageTaskLike): DemarchageSignal[] {
+  const out: DemarchageSignal[] = [];
+  if (task.intent?.missed) out.push("missed");
+  if (isConversation(task)) out.push("conversation");
+  if (isHot(task)) out.push("hot");
+  return out;
+}
+
+/** Ce prospect porte-t-il ce signal ? La question que pose un filtre. */
+export const hasSignal = (task: DemarchageTaskLike, signal: DemarchageSignal): boolean =>
+  signalsOf(task).includes(signal);
+
+/**
+ * Le signal DOMINANT — celui qui décide de la teinte de la ligne et de sa place
+ * dans l'ordre de passage. `null` quand la tâche n'en porte aucun.
+ *
+ * Un signal chaud non rappelé passe devant : c'est une occasion déjà en train
+ * de refroidir. Puis la discussion — quelqu'un a écrit et attend, ce qui
+ * l'emporte sur un intérêt seulement observé.
+ */
+export const signalOf = (task: DemarchageTaskLike): DemarchageSignal | null =>
+  signalsOf(task)[0] ?? null;
+
+/** Combien de tâches portent chaque signal — ce que les pastilles annoncent. */
+export function countBySignal(tasks: readonly DemarchageTaskLike[]): Record<DemarchageSignal, number> {
+  const par: Record<DemarchageSignal, number> = { missed: 0, conversation: 0, hot: 0 };
+  for (const t of tasks) {
+    // Chaque signal porté est compté : la somme des pastilles peut donc dépasser
+    // le nombre de lignes, et c'est exact — huit chauds dont trois en discussion
+    // font bien huit chauds.
+    for (const s of signalsOf(t)) par[s] += 1;
+  }
+  return par;
+}
+
+/** Combien de tâches par canal dans une liste. */
+export function countByKind(tasks: readonly DemarchageTaskLike[]): Record<string, number> {
+  const par: Record<string, number> = {};
+  for (const t of tasks) {
+    const k = t.kind ?? "";
+    par[k] = (par[k] ?? 0) + 1;
+  }
+  return par;
+}
+
+/* ── Les deux files ──────────────────────────────────────────────────────── */
+
+/**
+ * Cette ligne est-elle un PREMIER CONTACT — une entreprise que personne n'a
+ * jamais abordée ?
+ *
+ * Lu sur `premiere_touche_le`, jamais deviné. Une attente de réponse en est
+ * exclue par construction : on n'attend une réponse qu'après avoir écrit.
+ *
+ * Le champ peut manquer (vieille réponse d'API en cache, tâche construite à la
+ * main dans un test) : on retombe alors sur ce que la tâche sait d'elle-même —
+ * hors séquence et sans discussion, c'est un premier contact.
+ */
+export function estPremierContact(task: DemarchageTaskLike): boolean {
+  if (task.kind === "wait") return false;
+  if (isConversation(task)) return false;
+  return !task.premiere_touche_le;
 }
 
 /**
- * Heure locale (fuseau de l'agent) à partir de laquelle la journée est close :
- * ce qui n'a pas été fait passe à demain. Personne n'appelle un artisan à
- * 22 h 30, et laisser vingt WhatsApp affichés « pour aujourd'hui » à cette
- * heure-là ne fait que fabriquer un retard qui n'en est pas un.
+ * Les deux files, séparées une fois pour toutes.
+ *
+ * `premiers` garde l'ordre de passage (signaux d'abord, puis échéance) ;
+ * `relances` sort tel quel, à charge de `joursReels` de le dater.
  */
-export const DAY_CUTOFF_HOUR = 22;
+export function separerFile<T extends DemarchageTaskLike>(
+  tasks: readonly T[],
+): { premiers: T[]; relances: T[] } {
+  const premiers: T[] = [];
+  const relances: T[] = [];
+  for (const t of tasks) (estPremierContact(t) ? premiers : relances).push(t);
+  return { premiers: ordreDePassage(premiers), relances };
+}
 
 const DAY_MS = 86_400_000;
 
 const dueMs = (t: DemarchageTaskLike): number => {
   const ms = t.due_at ? new Date(t.due_at).getTime() : NaN;
-  // Sans échéance, la tâche passe en queue de plan plutôt que d'être perdue.
+  // Sans échéance, la tâche passe en fin de file plutôt que d'être perdue.
   return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
 };
 
-/** Heures écoulées depuis minuit, dans le fuseau de l'agent. */
-function localHour(now: Date, timeZone: string): number {
-  const start = new Date(dayStartIso(now, timeZone)).getTime();
-  return (now.getTime() - start) / 3_600_000;
+/**
+ * L'ordre dans lequel on traite une file : les signaux d'abord, dans leur ordre
+ * de priorité, puis l'échéance la plus ancienne.
+ *
+ * Ne retire rien et ne regroupe rien — c'est un tri, pas un plan. La liste
+ * rendue contient exactement ce qu'on lui a donné.
+ */
+export function ordreDePassage<T extends DemarchageTaskLike>(tasks: readonly T[]): T[] {
+  const rang = (t: T) => {
+    const s = signalOf(t);
+    return s ? SIGNAL_ORDER.indexOf(s) : SIGNAL_ORDER.length;
+  };
+  return [...tasks].sort((a, b) => rang(a) - rang(b) || dueMs(a) - dueMs(b));
 }
+
+/* ── Le calendrier ───────────────────────────────────────────────────────── */
 
 /**
  * La date civile (YYYY-MM-DD, fuseau de l'agent) du jour `offset`.
@@ -273,13 +322,66 @@ export function dayDate(
   }).format(midi);
 }
 
+/** Une journée du calendrier — c'est exactement un onglet de la file. */
+export type DemarchageDay<T> = {
+  /** 0 = aujourd'hui, 1 = demain, … Négatif : jamais, l'échu est replié. */
+  offset: number;
+  /** Date civile (YYYY-MM-DD) dans le fuseau de l'agent — la clé de l'onglet. */
+  date: string;
+  tasks: T[];
+};
+
+/** Le décalage en jours entre aujourd'hui et l'échéance — 0 si elle est passée. */
+function offsetDe(task: DemarchageTaskLike, now: Date, timeZone: string): number {
+  const ms = dueMs(task);
+  if (!Number.isFinite(ms)) return 0;
+  const debut = new Date(dayStartIso(now, timeZone)).getTime();
+  return Math.max(0, Math.floor((ms - debut) / DAY_MS));
+}
+
 /**
- * L'échéance prévue par la séquence est-elle déjà passée ?
+ * Le CALENDRIER des relances : chaque tâche à la date où elle est réellement
+ * due.
  *
- * Ce n'est plus un panier — le plan replace de toute façon la tâche en tête de
- * file —, mais ça reste une information : une relance due depuis six jours dit
- * que la cadence ne suit pas. L'attente de réponse est exclue, son `due_at`
- * n'est qu'une date de mise en pause.
+ * Ce que ça change par rapport au plan qu'il remplace : rien n'est déplacé.
+ * Une relance due jeudi est jeudi, une mise de côté revient le jour choisi, et
+ * ce qui est échu est replié sur aujourd'hui — parce qu'une relance en retard
+ * est du travail du jour, pas un onglet dans le passé où personne n'irait
+ * regarder.
+ *
+ * Le tableau rendu contient TOUJOURS aujourd'hui (même vide : c'est l'onglet
+ * par défaut, il ne doit pas disparaître sous les doigts), puis uniquement les
+ * journées qui portent au moins une tâche.
+ */
+export function joursReels<T extends DemarchageTaskLike>(
+  tasks: readonly T[],
+  { now = new Date(), timeZone = AGENT_TIMEZONE }: { now?: Date; timeZone?: string } = {},
+): Array<DemarchageDay<T>> {
+  const parJour = new Map<number, T[]>();
+  for (const t of tasks) {
+    const offset = offsetDe(t, now, timeZone);
+    const liste = parJour.get(offset);
+    if (liste) liste.push(t);
+    else parJour.set(offset, [t]);
+  }
+  if (!parJour.has(0)) parJour.set(0, []);
+
+  return [...parJour.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([offset, liste]) => ({
+      offset,
+      date: dayDate(offset, now, timeZone),
+      tasks: ordreDePassage(liste),
+    }));
+}
+
+/**
+ * L'échéance prévue est-elle déjà passée ?
+ *
+ * Le calendrier replie de toute façon l'échu sur aujourd'hui, mais ça reste une
+ * information : une relance due depuis six jours dit que le rythme ne suit pas.
+ * L'attente de réponse est exclue, son `due_at` n'est qu'une date de mise en
+ * pause.
  */
 export function isLate(
   task: DemarchageTaskLike,
@@ -293,22 +395,16 @@ export function isLate(
 }
 
 /**
- * Cette tâche est-elle MISE DE CÔTÉ — c'est-à-dire replanifiée à une date qui
- * n'est pas encore arrivée ?
+ * Cette tâche est-elle MISE DE CÔTÉ — replanifiée à une date qui n'est pas
+ * encore arrivée ?
  *
  * Ni un oui ni un non : le prospect n'est pas joignable en ce moment (congés,
  * chantier, saison creuse), on le range et il revient tout seul. C'est
  * `status = 'snoozed'` avec un `due_at` déplacé — la tâche n'est pas fermée,
  * elle dort.
  *
- * POURQUOI CETTE FONCTION EXISTE, ET POURQUOI ELLE REGARDE `status`
- * `planTasks` répartit à la CADENCE : il lit `due_at` pour ORDONNER, jamais
- * pour dater. Une tâche repoussée à trois semaines revenait donc dans la file
- * du jour dès qu'il restait une place au quota — la mise de côté ne mettait
- * rien de côté. Le correctif ne pouvait pas être « toute échéance future
- * attend son jour » : les relances de séquence naissent avec l'échéance du
- * jour où elles sont créées, et ce sont bien elles que la cadence doit étaler.
- * Seule une mise de côté EXPLICITE tient sa date, d'où la lecture du statut.
+ * La lecture du STATUT est ce qui distingue le geste d'une simple échéance
+ * future : sans elle, toute relance planifiée passerait pour une mise de côté.
  */
 export function isSetAside(
   task: DemarchageTaskLike,
@@ -316,182 +412,7 @@ export function isSetAside(
   timeZone: string = AGENT_TIMEZONE,
 ): boolean {
   if (task.status !== "snoozed") return false;
-  return setAsideOffset(task, now, timeZone) > 0;
-}
-
-/**
- * Dans combien de jours cette mise de côté revient — 0 quand elle est échue
- * (donc quand elle est de nouveau à faire, aujourd'hui).
- */
-function setAsideOffset(task: DemarchageTaskLike, now: Date, timeZone: string): number {
-  const ms = dueMs(task);
-  if (!Number.isFinite(ms)) return 0;
-  const debutAujourdhui = new Date(dayStartIso(now, timeZone)).getTime();
-  return Math.max(0, Math.floor((ms - debutAujourdhui) / DAY_MS));
-}
-
-export type DemarchagePlanOptions = {
-  now?: Date;
-  timeZone?: string;
-  /**
-   * Tâches DÉJÀ bouclées aujourd'hui, par canal. Elles ont consommé le quota du
-   * jour : sans elles, chaque tâche traitée libérerait une place que la
-   * suivante viendrait remplir, et « aujourd'hui » afficherait éternellement 20.
-   */
-  doneToday?: Readonly<Record<string, number>>;
-  /**
-   * La cadence de CET agent, telle que `/api/agent/tasks` la renvoie dans
-   * `meta.quotas`. Absente, on retombe sur `DAILY_QUOTA` : le plan d'un écran
-   * qui n'a pas encore reçu la réponse reste celui d'hier, jamais une file
-   * vide.
-   */
-  quotas?: QuotasDemarchage;
-};
-
-/** Une journée du plan — c'est exactement un onglet de la file. */
-export type DemarchageDay<T> = {
-  /** 0 = aujourd'hui, 1 = demain, … */
-  offset: number;
-  /** Date civile (YYYY-MM-DD) dans le fuseau de l'agent — la clé de l'onglet. */
-  date: string;
-  tasks: T[];
-};
-
-/**
- * Range chaque tâche dans sa journée.
- *
- * Aujourd'hui vient d'abord les trois signaux (chaud non rappelé, discussion,
- * chaud), dans cet ordre, puis la part de cadence du jour. Les jours suivants
- * n'ont que de la cadence.
- *
- * L'ordre de passage à l'intérieur d'un groupe est celui de l'échéance
- * croissante — la plus ancienne d'abord, sans date en dernier —, quel que soit
- * l'ordre dans lequel l'appelant fournit les tâches.
- *
- * Le tableau rendu contient TOUJOURS aujourd'hui (même vide : c'est l'onglet
- * par défaut, il ne doit pas disparaître sous les doigts), puis uniquement les
- * journées qui portent au moins une tâche — pas de colonne « 0 act. » pour un
- * jeudi où il n'y a rien.
- */
-export function planTasks<T extends DemarchageTaskLike>(
-  tasks: T[],
-  {
-    now = new Date(),
-    timeZone = AGENT_TIMEZONE,
-    doneToday = {},
-    quotas = DAILY_QUOTA,
-  }: DemarchagePlanOptions = {},
-): Array<DemarchageDay<T>> {
-  /** Les tâches de chaque décalage de jour, avant mise en forme. */
-  const parJour = new Map<number, T[]>();
-  const pousser = (offset: number, task: T) => {
-    const arr = parJour.get(offset);
-    if (arr) arr.push(task);
-    else parJour.set(offset, [task]);
-  };
-
-  const signaux: Record<DemarchageSignal, T[]> = { missed: [], conversation: [], hot: [] };
-  const aPlanifier: T[] = [];
-  for (const task of tasks) {
-    // LA MISE DE CÔTÉ PASSE AVANT TOUT LE RESTE — signaux compris.
-    //
-    // Elle va droit à sa journée de retour, sans consommer de cadence : c'est
-    // une décision humaine explicite (« il est en congés jusqu'au 8 »), et
-    // aucune mesure ne doit la défaire. Un signal GA4 chaud remonterait sinon
-    // en tête de file quelqu'un qu'on vient tout juste de ranger, ce qui rend
-    // le geste inutile — on le referait chaque matin.
-    if (isSetAside(task, now, timeZone)) {
-      pousser(setAsideOffset(task, now, timeZone), task);
-      continue;
-    }
-    const signal = signalOf(task);
-    if (signal) signaux[signal].push(task);
-    else aPlanifier.push(task);
-  }
-
-  for (const cle of SIGNAL_ORDER) {
-    signaux[cle].sort((a, b) => dueMs(a) - dueMs(b));
-    // Les signaux sont du travail du jour : ils ouvrent la journée, dans
-    // l'ordre de priorité, avant la cadence.
-    signaux[cle].forEach((t) => pousser(0, t));
-  }
-
-  aPlanifier.sort((a, b) => dueMs(a) - dueMs(b));
-
-  const journeeClose = localHour(now, timeZone) >= DAY_CUTOFF_HOUR;
-
-  /** Où en est le remplissage de chaque canal : jour courant et places libres. */
-  const etats = new Map<string, { jour: number; libre: number }>();
-
-  for (const task of aPlanifier) {
-    const kind = task.kind ?? "";
-    const quota = quotaOf(kind, quotas);
-
-    // Canal sans plafond (l'attente de réponse) : rien à étaler, et rien à
-    // reporter non plus — déclarer une réponse prend deux secondes, la clôture
-    // du soir ne la concerne pas.
-    if (quota == null || quota <= 0) {
-      pousser(0, task);
-      continue;
-    }
-
-    let etat = etats.get(kind);
-    if (!etat) {
-      etat = journeeClose
-        ? { jour: 1, libre: quota }
-        : { jour: 0, libre: Math.max(0, quota - (doneToday[kind] ?? 0)) };
-      etats.set(kind, etat);
-    }
-    while (etat.libre <= 0) {
-      etat.jour += 1;
-      etat.libre = quota;
-    }
-    etat.libre -= 1;
-    pousser(etat.jour, task);
-  }
-
-  // Aujourd'hui existe toujours, même vide.
-  if (!parJour.has(0)) parJour.set(0, []);
-
-  return [...parJour.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([offset, liste]) => ({ offset, date: dayDate(offset, now, timeZone), tasks: liste }));
-}
-
-/** Combien de tâches par canal dans une liste — ce que la file annonce pour un jour. */
-export function countByKind(tasks: readonly DemarchageTaskLike[]): Record<string, number> {
-  const par: Record<string, number> = {};
-  for (const t of tasks) {
-    const k = t.kind ?? "";
-    par[k] = (par[k] ?? 0) + 1;
-  }
-  return par;
-}
-
-/** Combien de tâches portent chaque signal — ce que les filtres annoncent. */
-export function countBySignal(tasks: readonly DemarchageTaskLike[]): Record<DemarchageSignal, number> {
-  const par: Record<DemarchageSignal, number> = { missed: 0, conversation: 0, hot: 0 };
-  for (const t of tasks) {
-    const s = signalOf(t);
-    if (s) par[s] += 1;
-  }
-  return par;
-}
-
-/**
- * La première tâche du plan — celle sur laquelle on atterrit à l'ouverture.
- *
- * L'ordre du plan porte déjà la priorité : le premier jour d'abord, et à
- * l'intérieur de ce jour les signaux avant la cadence. Il n'y a donc rien à
- * arbitrer ici.
- */
-export function firstPlannedTask<T extends DemarchageTaskLike>(
-  days: ReadonlyArray<DemarchageDay<T>>,
-): T | null {
-  for (const day of days) {
-    if (day.tasks[0]) return day.tasks[0];
-  }
-  return null;
+  return offsetDe(task, now, timeZone) > 0;
 }
 
 /** La journée qui contient cette tâche — pour faire suivre l'onglet à la sélection. */
@@ -501,6 +422,16 @@ export function dayOfTask<T extends DemarchageTaskLike & { id: string }>(
 ): string | null {
   for (const day of days) {
     if (day.tasks.some((t) => t.id === id)) return day.date;
+  }
+  return null;
+}
+
+/** La première tâche du calendrier — celle sur laquelle on atterrit. */
+export function firstPlannedTask<T extends DemarchageTaskLike>(
+  days: ReadonlyArray<DemarchageDay<T>>,
+): T | null {
+  for (const day of days) {
+    if (day.tasks[0]) return day.tasks[0];
   }
   return null;
 }

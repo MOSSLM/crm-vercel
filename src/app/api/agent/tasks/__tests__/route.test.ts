@@ -151,6 +151,7 @@ type LigneFile = {
   cohorte: string | null;
   hors_sequence: boolean;
   in_conversation: boolean;
+  premiere_touche_le: string | null;
   sequence: unknown;
 };
 type Reponse = {
@@ -176,6 +177,21 @@ const froide = (id: string, cohorte: string | null = "B_sans_site") => ({
   step_id: null,
   contact: null,
   entreprise: { id: 1, name: "Artisan", ville: "Lyon", telephone: null, owner_id: AGENT, cohorte_demarchage: cohorte },
+});
+
+/**
+ * Une tâche bouclée aujourd'hui. `touche` est la date de PREMIÈRE touche de son
+ * entreprise : c'est elle qui décide si le geste compte dans l'objectif du jour
+ * — abordée aujourd'hui, oui ; relancée après l'avoir été la semaine dernière,
+ * non.
+ */
+const faite = (kind: string, touche = new Date().toISOString()) => ({
+  kind,
+  step_id: null,
+  automation_id: null,
+  enrollment_id: null,
+  status: "done",
+  entreprise: { owner_id: AGENT, premiere_touche_le: touche },
 });
 
 /** Une tâche de relance, inscrite sur une séquence. */
@@ -223,25 +239,50 @@ describe("GET /api/agent/tasks — l'appel à froid entre dans la file", () => {
     expect(tasks.map((t) => t.id)).toEqual(["t2"]);
   });
 
+  it("porte la date de PREMIÈRE TOUCHE de l'entreprise, ou son absence", async () => {
+    // C'est elle qui sépare les deux files du poste de travail : sans date, la
+    // ligne est un premier contact ; avec, c'est un suivi. La déduire côté
+    // écran donnerait une seconde vérité à côté de celle des cohortes.
+    brancher({
+      taches: [
+        froide("t1"),
+        {
+          ...froide("t2"),
+          entreprise: { ...froide("t2").entreprise, premiere_touche_le: "2026-08-14T10:00:00.000Z" },
+        },
+      ],
+    });
+    const { tasks } = await lire(await appel());
+    expect(Object.fromEntries(tasks.map((t) => [t.id, t.premiere_touche_le]))).toEqual({
+      t1: null,
+      t2: "2026-08-14T10:00:00.000Z",
+    });
+  });
+
   it("compte un appel à froid bouclé aujourd'hui dans la cadence du jour", async () => {
     // Vingt appels à froid passés ce matin occupent vingt places de la
     // journée : les ignorer rouvrirait une journée déjà pleine.
     brancher({
       taches: [froide("t1")],
-      faites: [
-        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
-      ],
+      faites: [faite("call")],
     });
     const { meta } = await lire(await appel());
     expect(meta.done_today_by_kind).toEqual({ call: 1 });
   });
 
+  it("ne compte PAS une relance dans l'objectif de premiers contacts", async () => {
+    // Le compteur dit « combien d'entreprises j'ai abordées aujourd'hui ».
+    // Trois relances J+3 bouclées le matin affichaient « 3 » sans qu'aucune
+    // entreprise nouvelle n'ait été abordée.
+    brancher({ taches: [], faites: [faite("whatsapp", "2026-08-01T09:00:00.000Z")] });
+    const { meta } = await lire(await appel());
+    expect(meta.done_today_by_kind).toEqual({});
+  });
+
   it("laisse les tâches bouclées à froid dehors quand `?froid=0`", async () => {
     brancher({
       taches: [],
-      faites: [
-        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
-      ],
+      faites: [faite("call")],
     });
     const { meta } = await lire(await appel("?froid=0"));
     expect(meta.done_today_by_kind).toEqual({});
@@ -292,9 +333,7 @@ describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
     // passé à une entreprise de B occupe la même place qu'un appel à A.
     brancher({
       taches: [enSequence("t2", "A_site_faible")],
-      faites: [
-        { kind: "call", step_id: null, automation_id: null, enrollment_id: null, status: "done", entreprise: { owner_id: AGENT } },
-      ],
+      faites: [faite("call")],
     });
     const { meta } = await lire(await appel("?cohorte=A_site_faible"));
     expect(meta.done_today_by_kind).toEqual({ call: 1 });
@@ -494,8 +533,8 @@ describe("GET /api/agent/tasks — les quotas de l'agent", () => {
   });
 
   it("retombe sur le défaut devant un réglage aberrant", async () => {
-    // Un quota nul viderait la file : `planTasks` repousserait chaque tâche au
-    // lendemain, indéfiniment. Le matin d'une campagne, c'est un écran vide.
+    // Un objectif nul n'afficherait plus un rythme mais une barre de progression
+    // absurde, et `quotaOf` rendrait « /0 » en tête de file.
     brancher({ reglages: { quotas_demarchage: { call: 0, whatsapp: -3 } } });
     const { meta } = await lire(await appel());
     expect(meta.quotas).toEqual(DAILY_QUOTA);

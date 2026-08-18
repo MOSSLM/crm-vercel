@@ -67,6 +67,8 @@ type DoneRow = {
   step_id: string | null;
   automation_id: string | null;
   enrollment_id: string | null;
+  /** L'entreprise jointe, pour savoir si c'est ELLE qu'on a abordée aujourd'hui. */
+  entreprise: unknown;
 };
 
 /** Ligne d'inscription garée sur une attente-réponse. */
@@ -107,6 +109,25 @@ const COHORTES: readonly string[] = ["A_site_faible", "B_sans_site"] as const;
  * la façon dont la relation est inférée : les deux formes se lisent ici, comme
  * ailleurs dans la route pour `owner_id`.
  */
+/**
+ * La date de PREMIÈRE TOUCHE de l'entreprise, ou `null` si personne ne l'a
+ * jamais abordée.
+ *
+ * C'est la frontière entre les deux files du poste de travail : sans cette date,
+ * la ligne est un premier contact ; avec, c'est un suivi (cf.
+ * `estPremierContact`). Elle est déjà écrite par le `PATCH` de cette route pour
+ * la comparaison des cohortes — l'écran lit la même colonne, il n'en déduit pas
+ * une seconde vérité.
+ */
+const premiereToucheDe = (entreprise: unknown): string | null => {
+  const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
+    | { premiere_touche_le?: unknown }
+    | null
+    | undefined;
+  const valeur = e?.premiere_touche_le;
+  return typeof valeur === "string" && valeur ? valeur : null;
+};
+
 const cohorteDe = (entreprise: unknown): string | null => {
   const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
     | { cohorte_demarchage?: unknown }
@@ -161,7 +182,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       "id, kind, status, title, due_at, contact_id, entreprise_id, opportunite_id, payload, " +
         "enrollment_id, automation_id, step_id, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le)",
     )
     .eq("entreprise.owner_id", user.id)
     // `snoozed` reste dans la file : c'est une tâche « pas le bon moment »
@@ -194,7 +215,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     .select(
       "id, automation_id, current_step, contact_id, entreprise_id, opportunite_id, updated_at, entered_at, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le)",
     )
     .eq("entreprise.owner_id", user.id)
     .eq("status", "active")
@@ -217,7 +238,10 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
   const todayStart = dayStartIso();
   let doneQuery = sc
     .from("prospection_tasks")
-    .select("kind, step_id, automation_id, enrollment_id, entreprise:entreprises!inner(owner_id)")
+    .select(
+      "kind, step_id, automation_id, enrollment_id, " +
+        "entreprise:entreprises!inner(owner_id, premiere_touche_le)",
+    )
     .eq("entreprise.owner_id", user.id)
     .eq("status", "done")
     .gte("done_at", todayStart);
@@ -350,6 +374,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       // qui doit dire « premier contact » plutôt que d'inventer une étape.
       hors_sequence: t.enrollment_id == null,
       cohorte: cohorteDe(t.entreprise),
+      premiere_touche_le: premiereToucheDe(t.entreprise),
       sequence: auto
         ? {
             name: auto.name,
@@ -415,6 +440,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       // une séquence.
       hors_sequence: false,
       cohorte: cohorteDe(e.entreprise),
+      premiere_touche_le: premiereToucheDe(e.entreprise),
       sequence: auto
         ? {
             name: auto.name,
@@ -464,12 +490,25 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     return ta - tb;
   });
 
-  // Le décompte de la journée, séparé en deux — c'est toute la nuance.
+  // ── Le décompte de la journée ──────────────────────────────────────────
   //
-  // `done_today_by_kind` ne compte QUE les premiers contacts : c'est lui qui
-  // consomme la cadence, et qui fait avancer le compteur « 3/20 ». Un message
-  // de discussion bouclé aujourd'hui n'y entre pas, sinon répondre à trois
-  // prospects amputerait de trois le démarchage du jour.
+  // `done_today_by_kind` est l'AVANCEMENT DE L'OBJECTIF : combien d'entreprises
+  // ont été abordées pour la première fois aujourd'hui, canal par canal. C'est
+  // le « 12 / 20 » de la file des premiers contacts, et c'est la seule lecture
+  // qui corresponde à ce que cette file contient.
+  //
+  // Il comptait auparavant tout ce qui n'était pas une discussion — donc les
+  // relances silencieuses avec. Le chiffre était juste pour l'ancienne cadence
+  // (qui plafonnait le volume sortant, relances comprises) et faux pour
+  // l'objectif d'aujourd'hui : trois relances J+3 bouclées le matin
+  // affichaient « 3 premiers contacts » sans qu'aucune entreprise nouvelle
+  // n'ait été abordée.
+  //
+  // La distinction se lit sur `premiere_touche_le`, posé par le PATCH au tout
+  // premier geste : une entreprise dont la première touche date d'aujourd'hui
+  // est une entreprise abordée aujourd'hui. Une relance sur une fiche touchée
+  // la semaine dernière ne compte donc dans aucun objectif — et c'est voulu :
+  // les relances n'en ont pas.
   const doneByKind: Record<string, number> = {};
   let doneConversation = 0;
   for (const row of done) {
@@ -477,6 +516,8 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       doneConversation += 1;
       continue;
     }
+    const touche = premiereToucheDe(row.entreprise);
+    if (!touche || touche < todayStart) continue;
     const k = row.kind ?? "";
     doneByKind[k] = (doneByKind[k] ?? 0) + 1;
   }

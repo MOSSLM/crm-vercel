@@ -95,6 +95,7 @@ export function DemActionCard({
   onNext,
   onReplied,
   onRetire,
+  onBasculerEnAppel,
 }: {
   task: DemarchageTask;
   company: CompanyBundle | null;
@@ -111,6 +112,12 @@ export function DemActionCard({
    * de canal, aujourd'hui. La file se recharge et enchaîne.
    */
   onRetire: () => void;
+  /**
+   * « Je préfère l'appeler » : la tâche courante devient un appel, même
+   * prospect et même étape. Le geste vit aussi dans le rail — c'est en lisant
+   * la ligne qu'on décide de décrocher plutôt que d'écrire.
+   */
+  onBasculerEnAppel: () => void;
 }) {
   const ch = demCh(task.kind);
   const seq = task.sequence;
@@ -847,6 +854,22 @@ export function DemActionCard({
               <Icon name="clock" className="ico-sm" />
               Mettre de côté
             </button>
+            {/* Décider d'appeler plutôt que d'écrire ne devrait pas coûter un
+                faux « Fait » : la tâche change de canal, elle ne se ferme pas.
+                Absent sur un appel (il l'est déjà) et sur une attente (il n'y a
+                rien à envoyer). */}
+            {isMessageKind(task.kind) && (
+              <button
+                type="button"
+                className="dm-side-b"
+                disabled={busy}
+                title="Transformer cette tâche en appel — même prospect, même étape de séquence."
+                onClick={onBasculerEnAppel}
+              >
+                <Icon name="phone" className="ico-sm" />
+                Appeler plutôt
+              </button>
+            )}
             {/* Une sortie de canal n'a de sens que là où le canal peut manquer :
                 un numéro sans compte WhatsApp, un contact sans LinkedIn. Un
                 téléphone, lui, sonne ou ne sonne pas. */}
