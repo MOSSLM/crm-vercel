@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { CheckSquare, ChevronDown, ChevronUp, FileText, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -64,6 +65,7 @@ export function TaskCenter() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const [newTask, setNewTask] = useState({
     titre: "",
@@ -135,6 +137,7 @@ export function TaskCenter() {
         priority: "moyenne",
         status: "a_faire",
       });
+      setCreateDialogOpen(false);
     } finally {
       setSaving(false);
     }
@@ -192,64 +195,74 @@ export function TaskCenter() {
 
         <ScrollArea className="flex-1">
           <div className="space-y-5 px-4 py-4">
-            <section className="rounded-xl border bg-card p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                <Plus className="h-4 w-4" />
-                Nouvelle tâche volante
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input
-                  placeholder="Titre de la tâche"
-                  value={newTask.titre}
-                  onChange={(event) => setNewTask((prev) => ({ ...prev, titre: event.target.value }))}
-                />
-                <Input
-                  type="date"
-                  value={newTask.due_date}
-                  onChange={(event) => setNewTask((prev) => ({ ...prev, due_date: event.target.value }))}
-                />
-              </div>
-              <Input
-                className="mt-3"
-                placeholder="Description rapide (optionnel)"
-                value={newTask.description}
-                onChange={(event) => setNewTask((prev) => ({ ...prev, description: event.target.value }))}
-              />
-              <Textarea
-                className="mt-3"
-                rows={4}
-                placeholder="Notes markdown (optionnel)"
-                value={newTask.note_markdown}
-                onChange={(event) => setNewTask((prev) => ({ ...prev, note_markdown: event.target.value }))}
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(["a_faire", "en_cours", "termine"] as ItemStatus[]).map((status) => (
-                  <Button
-                    key={status}
-                    size="sm"
-                    variant={newTask.status === status ? "default" : "outline"}
-                    onClick={() => setNewTask((prev) => ({ ...prev, status }))}
-                  >
-                    {statusLabel[status]}
+            <div className="flex justify-end">
+              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="icon" aria-label="Ajouter une tâche volante">
+                    <Plus className="h-4 w-4" />
                   </Button>
-                ))}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(["basse", "moyenne", "haute"] as Priority[]).map((priority) => (
-                  <Button
-                    key={priority}
-                    size="sm"
-                    variant={newTask.priority === priority ? "default" : "outline"}
-                    onClick={() => setNewTask((prev) => ({ ...prev, priority }))}
-                  >
-                    {priorityLabel[priority]}
-                  </Button>
-                ))}
-              </div>
-              <Button className="mt-3" onClick={() => void createTask()} disabled={saving || !newTask.titre.trim()}>
-                {saving ? "Création..." : "Créer la tâche"}
-              </Button>
-            </section>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-xl">
+                  <DialogHeader>
+                    <DialogTitle>Nouvelle tâche volante</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Input
+                        placeholder="Titre de la tâche"
+                        value={newTask.titre}
+                        onChange={(event) => setNewTask((prev) => ({ ...prev, titre: event.target.value }))}
+                      />
+                      <Input
+                        type="date"
+                        value={newTask.due_date}
+                        onChange={(event) => setNewTask((prev) => ({ ...prev, due_date: event.target.value }))}
+                      />
+                    </div>
+                    <Input
+                      placeholder="Description rapide (optionnel)"
+                      value={newTask.description}
+                      onChange={(event) => setNewTask((prev) => ({ ...prev, description: event.target.value }))}
+                    />
+                    <Textarea
+                      rows={5}
+                      placeholder="Notes markdown (optionnel)"
+                      value={newTask.note_markdown}
+                      onChange={(event) => setNewTask((prev) => ({ ...prev, note_markdown: event.target.value }))}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {(["a_faire", "en_cours", "termine"] as ItemStatus[]).map((status) => (
+                        <Button
+                          key={status}
+                          size="sm"
+                          variant={newTask.status === status ? "default" : "outline"}
+                          onClick={() => setNewTask((prev) => ({ ...prev, status }))}
+                        >
+                          {statusLabel[status]}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(["basse", "moyenne", "haute"] as Priority[]).map((priority) => (
+                        <Button
+                          key={priority}
+                          size="sm"
+                          variant={newTask.priority === priority ? "default" : "outline"}
+                          onClick={() => setNewTask((prev) => ({ ...prev, priority }))}
+                        >
+                          {priorityLabel[priority]}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button onClick={() => void createTask()} disabled={saving || !newTask.titre.trim()}>
+                        {saving ? "Création..." : "Créer la tâche"}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
 
             <section className="space-y-3">
               {loading ? <p className="py-8 text-center text-sm text-muted-foreground">Chargement…</p> : null}
