@@ -102,6 +102,12 @@ export type DemarchageTask = {
    * moitié de ce qu'il affiche de `sequence`.
    */
   hors_sequence?: boolean;
+  /**
+   * Quand l'entreprise a été touchée pour la PREMIÈRE fois, `null` si jamais.
+   * C'est ce qui sépare les deux files du poste de travail : sans date, la ligne
+   * est un premier contact ; avec, c'est un suivi (cf. `estPremierContact`).
+   */
+  premiere_touche_le?: string | null;
 };
 
 /**
@@ -112,9 +118,13 @@ export type DemarchageTask = {
 export type DemarchageQueueMeta = {
   done_today: number;
   /**
-   * PREMIERS CONTACTS bouclés aujourd'hui, par canal — pas les messages de
-   * discussion. C'est ce compte-là qui consomme la cadence : répondre à trois
-   * prospects ne doit pas amputer de trois le démarchage du jour.
+   * L'AVANCEMENT DE L'OBJECTIF : combien d'entreprises ont été abordées pour la
+   * PREMIÈRE fois aujourd'hui, canal par canal. C'est le « 12 / 20 » de la file
+   * des premiers contacts.
+   *
+   * Ni les discussions ni les relances n'y entrent — aucune des deux n'a
+   * d'objectif à tenir. La frontière est `entreprises.premiere_touche_le`, la
+   * même que celle qui sépare les deux files de l'écran.
    */
   done_today_by_kind: Record<string, number>;
   /** Messages de discussion bouclés aujourd'hui — hors cadence, pour mémoire. */

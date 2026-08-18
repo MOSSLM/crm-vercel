@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { authedFetch } from "@/utils/authedFetch";
 import { useAuth } from "@/components/AuthContext";
-import { DemRail, type DemFilter } from "@/components/agent-portal/demarchage/DemRail";
+import { DemRail, type DemOnglet } from "@/components/agent-portal/demarchage/DemRail";
 import { DemHead } from "@/components/agent-portal/demarchage/DemHead";
 import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
@@ -14,12 +14,12 @@ import { DemSearch } from "@/components/agent-portal/demarchage/DemSearch";
 import { DemHorsFile } from "@/components/agent-portal/demarchage/DemHorsFile";
 import { DemAttribution } from "@/components/agent-portal/demarchage/DemAttribution";
 import {
-  SIGNAL_ORDER,
-  cadenceEffective,
   dayOfTask,
-  firstPlannedTask,
-  planTasks,
-  signalOf,
+  estPremierContact,
+  hasSignal,
+  joursReels,
+  separerFile,
+  type DemarchageSignal,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
 import type {
@@ -39,12 +39,19 @@ const EMPTY_META: DemarchageQueueMeta = {
 };
 
 /**
- * Démarchage — l'écran de la maquette SAMA, branché sur les vraies données.
+ * Démarchage — le poste de travail.
  *
- * Trois zones : la file du jour à gauche (jour par jour, relances comprises),
- * l'entreprise en cours au centre (son dossier en en-tête, sa frise de
- * séquence, la carte d'action de l'étape, puis tout son historique), et à
- * droite ce dont on se sert pendant l'échange (démo, audit, RDV, registre).
+ * Trois zones : la file à gauche, l'entreprise en cours au centre (son dossier
+ * en en-tête, sa frise de séquence, la carte d'action de l'étape, puis tout son
+ * historique), et à droite ce dont on se sert pendant l'échange (démo, audit,
+ * RDV, registre).
+ *
+ * LA FILE EST DOUBLE, et c'est la décision qui structure tout l'écran :
+ *   · PREMIERS CONTACTS — des entreprises que personne n'a jamais abordées. Un
+ *     stock, rien ne les date. L'objectif du jour s'affiche, il ne cache rien ;
+ *   · RELANCES & DISCUSSIONS — des gens déjà touchés. Un calendrier : chaque
+ *     ligne à la date où elle est due, l'échu replié sur aujourd'hui.
+ * (cf. `separerFile` / `joursReels`).
  *
  * L'écran est piloté par une TÂCHE — sauf sur un point, et c'est volontaire :
  * une entreprise qui rappelle n'a par définition rien de prévu aujourd'hui.
@@ -58,11 +65,26 @@ export default function AgentDemarchagePage() {
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
 
-  // Le jour affiché, par sa date civile (YYYY-MM-DD). Vide au premier rendu :
-  // l'onglet se cale sur la journée de la tâche choisie dès que la file arrive,
-  // et à défaut sur la première du plan (aujourd'hui).
+  /** Laquelle des deux files on travaille. */
+  const [onglet, setOnglet] = useState<DemOnglet>("premiers");
+
+  /**
+   * Le jour affiché dans les relances, par sa date civile (YYYY-MM-DD). Les
+   * premiers contacts n'en ont pas : rien ne les date.
+   */
   const [day, setDay] = useState<string>("");
-  const [filt, setFilt] = useState<DemFilter>("all");
+
+  /**
+   * Les filtres, désormais INDÉPENDANTS l'un de l'autre.
+   *
+   * Ils partageaient une seule variable, donc un seul choix à la fois : voir les
+   * prospects chauds voulait dire renoncer à voir le canal, et inversement. Or
+   * un lead peut être chaud ET en attente de réponse ET sur une tâche WhatsApp —
+   * ce sont trois dimensions différentes du même prospect, pas trois valeurs
+   * concurrentes.
+   */
+  const [canal, setCanal] = useState<string | null>(null);
+  const [signal, setSignal] = useState<DemarchageSignal | null>(null);
   /** Étape de séquence filtrée — `null` = toutes. */
   const [step, setStep] = useState<number | null>(null);
   /**
@@ -90,8 +112,7 @@ export default function AgentDemarchagePage() {
    *
    * `poolDispo` vaut `null` tant qu'on ne sait pas — l'agent n'a peut-être pas
    * ce droit (cf. `agent_settings.can_self_assign`), et proposer un bouton qui
-   * répondra « interdit » vaut moins que ne rien proposer. La réponse est un
-   * aperçu : un compte, pas quarante fiches que personne n'a demandé à voir.
+   * répondra « interdit » vaut moins que ne rien proposer.
    */
   const [attribution, setAttribution] = useState(false);
   const [poolDispo, setPoolDispo] = useState<number | null>(null);
@@ -124,28 +145,25 @@ export default function AgentDemarchagePage() {
     async (pick?: string | null | ((rows: DemarchageTask[]) => string | null)) => {
       setLoadingQueue(true);
       try {
-        // La cohorte est le seul filtre qui voyage jusqu'à la route : les deux
-        // autres trient ce qui est déjà chargé.
+        // La cohorte est le seul filtre qui voyage jusqu'à la route : les autres
+        // trient ce qui est déjà chargé.
         const res = await authedFetch(
           cohorte ? `/api/agent/tasks?cohorte=${encodeURIComponent(cohorte)}` : "/api/agent/tasks",
         );
         if (!res.ok) return;
         const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
         const next = body.tasks ?? [];
-        const nextMeta = body.meta ?? EMPTY_META;
         setTasks(next);
-        setMeta(nextMeta);
+        setMeta(body.meta ?? EMPTY_META);
         setSel((current) => {
           const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
           if (wanted && next.some((t) => t.id === wanted)) return wanted;
-          return (
-            firstPlannedTask(
-              planTasks(next, {
-                doneToday: nextMeta.done_today_by_kind,
-                quotas: cadenceEffective(nextMeta.quotas),
-              }),
-            )?.id ?? null
-          );
+          // À défaut, la tête de la file la plus urgente : les relances si elles
+          // portent du travail (un prospect qui a répondu passe avant un
+          // inconnu), sinon les premiers contacts.
+          const { premiers, relances } = separerFile(next);
+          const jours = joursReels(relances);
+          return jours[0]?.tasks[0]?.id ?? premiers[0]?.id ?? null;
         });
       } catch {
         toast.error("Impossible de charger la file de démarchage.");
@@ -162,56 +180,45 @@ export default function AgentDemarchagePage() {
     void loadQueue();
   }, [loadQueue]);
 
-  // Le plan : les journées à venir, chacune remplie à la cadence quotidienne de
-  // chaque canal. `done_today_by_kind` est indispensable — sans lui, la journée
-  // se rechargerait à chaque tâche bouclée.
-  //
-  // `meta.quotas` L'EST TOUT AUTANT, et pour une raison qui ne se voit pas :
-  // sans lui, `planTasks` retombe sur `DAILY_QUOTA` (60 par jour) pendant que le
-  // rail affiche « /100 » lu du serveur. Les deux chiffres seraient vrais
-  // séparément, et faux ensemble — quarante entreprises de la journée
-  // basculeraient au lendemain, tous les jours, sans que rien ne le signale.
-  const days = useMemo(
-    () => planTasks(tasks, { doneToday: meta.done_today_by_kind, quotas: cadenceEffective(meta.quotas) }),
-    [tasks, meta.done_today_by_kind, meta.quotas],
-  );
+  /** Les deux files, et le calendrier des relances. */
+  const { premiers, relances } = useMemo(() => separerFile(tasks), [tasks]);
+  const jours = useMemo(() => joursReels(relances), [relances]);
 
-  // Le jour affiché suit la tâche sélectionnée : cliquer une relance de demain
-  // dans la file ne doit pas laisser l'onglet sur « aujourd'hui ».
   const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
+
+  // L'onglet et le jour SUIVENT la tâche choisie : atterrir sur une relance de
+  // jeudi en laissant l'écran sur « premiers contacts / aujourd'hui » ferait
+  // dire deux choses différentes au même écran.
   useEffect(() => {
-    const k = task ? dayOfTask(days, task.id) : null;
-    // À défaut de sélection (ou si la tâche a quitté la file), on retombe sur
-    // la première journée du plan plutôt que de garder une date qui n'existe
-    // plus — un onglet sans journée n'afficherait rien du tout.
-    setDay((current) => k ?? (days.some((d) => d.date === current) ? current : days[0]?.date ?? ""));
-  }, [task, days]);
+    if (!task) return;
+    setOnglet(estPremierContact(task) ? "premiers" : "relances");
+  }, [task]);
 
-  const duJour = useMemo(() => days.find((d) => d.date === day)?.tasks ?? [], [days, day]);
+  useEffect(() => {
+    const k = task && !estPremierContact(task) ? dayOfTask(jours, task.id) : null;
+    setDay((current) => k ?? (jours.some((d) => d.date === current) ? current : jours[0]?.date ?? ""));
+  }, [task, jours]);
 
-  /** Une tâche répond-elle à ce filtre ? Un filtre est SOIT un signal
-   *  (« en discussion », « chauds »…) SOIT un canal — les deux vocabulaires ne
-   *  se mélangent pas dans une même barre. La cohorte, elle, est une TROISIÈME
-   *  dimension : elle se combine avec celle-ci au lieu de la remplacer. */
-  const correspond = useCallback(
-    (t: DemarchageTask, f: DemFilter) =>
-      f === "all" || (SIGNAL_ORDER.includes(f as never) ? signalOf(t) === f : t.kind === f),
-    [],
+  /** La liste de l'onglet courant, avant filtres. */
+  const duJour = useMemo(
+    () => (onglet === "premiers" ? premiers : (jours.find((d) => d.date === day)?.tasks ?? [])),
+    [onglet, premiers, jours, day],
   );
 
-  // Les pastilles ne montrent que ce que la journée contient : un filtre resté
+  // Les pastilles ne montrent que ce que la liste contient : un filtre resté
   // coché sur un canal absent afficherait une file vide SANS afficher le filtre
   // responsable — impossible à défaire autrement qu'en rechargeant. On le
   // relâche donc dès qu'il n'a plus de pastille.
   useEffect(() => {
-    setFilt((f) => (duJour.some((t) => correspond(t, f)) ? f : "all"));
+    setCanal((c) => (c == null || duJour.some((t) => t.kind === c) ? c : null));
+    setSignal((s) => (s == null || duJour.some((t) => hasSignal(t, s)) ? s : null));
     setStep((s) => (s == null || duJour.some((t) => t.sequence?.stepIndex === s) ? s : null));
-  }, [duJour, correspond]);
+  }, [duJour]);
 
-  // Le même filet, pour la cohorte. Il regarde la file ENTIÈRE et non la
-  // journée : le filtre étant servi par la route, une cohorte sans aucune ligne
-  // ne rend pas une journée vide mais une file vide — et rien à l'écran ne
-  // dirait pourquoi. On le relâche, ce qui recharge les deux cohortes.
+  // Le même filet, pour la cohorte. Il regarde la file ENTIÈRE et non l'onglet :
+  // le filtre étant servi par la route, une cohorte sans aucune ligne ne rend
+  // pas une liste vide mais une file vide — et rien à l'écran ne dirait
+  // pourquoi. On le relâche, ce qui recharge les deux cohortes.
   useEffect(() => {
     if (cohorte && !loadingQueue && tasks.length === 0) setCohorte(null);
   }, [cohorte, loadingQueue, tasks.length]);
@@ -219,9 +226,12 @@ export default function AgentDemarchagePage() {
   const shown = useMemo(
     () =>
       duJour.filter(
-        (t) => (step == null || t.sequence?.stepIndex === step) && correspond(t, filt),
+        (t) =>
+          (canal == null || t.kind === canal) &&
+          (signal == null || hasSignal(t, signal)) &&
+          (step == null || t.sequence?.stepIndex === step),
       ),
-    [duJour, filt, step, correspond],
+    [duJour, canal, signal, step],
   );
 
   // Fiche entreprise + audit à chaque changement de prospect. La fiche ouverte
@@ -315,7 +325,8 @@ export default function AgentDemarchagePage() {
       const enFile = tasks.find((t) => t.entreprise_id === e.id);
       if (enFile) {
         setHorsFile(null);
-        setFilt("all");
+        setCanal(null);
+        setSignal(null);
         setStep(null);
         setSel(enFile.id);
         return;
@@ -381,6 +392,40 @@ export default function AgentDemarchagePage() {
   }, [shown, sel, loadQueue]);
 
   /**
+   * « Je préfère l'appeler » — un clic, la tâche courante devient un appel.
+   *
+   * Le geste manquait, et rien ne le remplaçait : décider d'appeler un prospect
+   * dont la séquence prévoyait un WhatsApp obligeait à boucler la tâche comme
+   * faite (ce qui est faux, rien n'a été envoyé) ou à la laisser traîner. La
+   * tâche est modifiée SUR PLACE — même prospect, même étape, même séquence :
+   * seul le canal change, donc l'identifiant ne bouge pas et on reste dessus.
+   */
+  const basculerEnAppel = useCallback(
+    async (id: string) => {
+      setBusy(true);
+      try {
+        const res = await authedFetch("/api/agent/demarchage/basculer-en-appel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_id: id }),
+        });
+        const corps = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (!res.ok) {
+          toast.error(corps?.message || corps?.error || "Bascule impossible.");
+          return;
+        }
+        toast.success("À appeler — la tâche est passée en appel.");
+        await loadQueue(id);
+      } catch {
+        toast.error("Bascule impossible.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadQueue],
+  );
+
+  /**
    * Le prospect a répondu : l'attente est levée et le moteur a déjà posé
    * l'étape suivante. On atterrit dessus — c'est tout l'intérêt d'avoir déclaré
    * la réponse, et cette étape-là est justement celle qu'il faut faire dans la
@@ -404,11 +449,16 @@ export default function AgentDemarchagePage() {
     <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
       <div className="dm">
         <DemRail
-          days={days}
+          onglet={onglet}
+          setOnglet={setOnglet}
+          premiers={premiers}
+          jours={jours}
           day={day}
           setDay={setDay}
-          filt={filt}
-          setFilt={setFilt}
+          canal={canal}
+          setCanal={setCanal}
+          signal={signal}
+          setSignal={setSignal}
           step={step}
           setStep={setStep}
           cohorte={cohorte}
@@ -417,6 +467,7 @@ export default function AgentDemarchagePage() {
           meta={meta}
           agentName={user?.name ?? null}
           loading={loadingQueue}
+          busy={busy}
           // Rien de surligné dans la file quand on regarde une fiche hors
           // file : ce n'est pas elle qui est à l'écran.
           sel={horsFile != null ? null : (task?.id ?? null)}
@@ -425,6 +476,7 @@ export default function AgentDemarchagePage() {
             setSel(id);
           }}
           onRechercher={() => setRecherche(true)}
+          onBasculerEnAppel={basculerEnAppel}
           poolDispo={poolDispo}
           onAttribuer={() => setAttribution(true)}
         />
@@ -486,6 +538,7 @@ export default function AgentDemarchagePage() {
                 onNext={goNext}
                 onReplied={onReplied}
                 onRetire={onRetire}
+                onBasculerEnAppel={() => basculerEnAppel(task.id)}
               />
               {task.entreprise_id != null && (
                 <DemHisto

@@ -158,33 +158,7 @@
 .dm-skin .dm-main>*{flex:0 0 auto}
 .dm-skin .dm-side{grid-column:3;grid-row:2;background:var(--surface);border-left:1px solid var(--border);min-height:0;overflow:auto}
 
-/* ───── rail : session + jours ───── */
-.dm-skin .dm-sess{padding:12px 13px 11px;border-bottom:1px solid var(--border);background:var(--surface-2)}
-.dm-skin .dm-sess .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3)}
-.dm-skin .dm-sess .vl{font-family:var(--font-serif);font-size:30px;line-height:1;letter-spacing:-.02em;margin-top:5px}
-.dm-skin .dm-sess .vl span{font-family:var(--font-mono);font-size:14px;color:var(--text-3);letter-spacing:0}
-.dm-skin .dm-sess .sub{font-size:11.5px;color:var(--text-2);margin-top:3px}
-.dm-skin .dm-prog{height:4px;border-radius:3px;background:var(--bg-3);margin-top:9px;overflow:hidden}
-.dm-skin .dm-prog i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .3s ease}
-.dm-skin .dm-sess .mini{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
-.dm-skin .dm-sess .mini>div{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px}
-.dm-skin .dm-sess .mini .k{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-3)}
-.dm-skin .dm-sess .mini .n{font-family:var(--font-mono);font-size:14px;font-weight:500;margin-top:1px}
-/* Des DATES, et de la place pour les lire. Les onglets ne se partagent plus la
-   largeur à parts égales (`flex:1`) : à sept entrées dans 286 px, chacune
-   tombait à ~38 px et n'affichait plus que la première lettre. Ils prennent
-   maintenant la largeur de leur texte, et la barre défile si la file s'étale
-   sur plus de quatre journées. */
-.dm-skin .dm-days{display:flex;gap:3px;padding:8px 9px;border-bottom:1px solid var(--border);
-  overflow-x:auto;scrollbar-width:thin}
-.dm-skin .dm-days::-webkit-scrollbar{height:5px}
-.dm-skin .dm-days::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px}
-.dm-skin .dm-day{appearance:none;border:1px solid transparent;background:transparent;border-radius:7px;padding:5px 8px;cursor:pointer;text-align:left;flex:1 0 auto;min-width:0;color:var(--text-2)}
-.dm-skin .dm-day:hover{background:var(--hover)}
-.dm-skin .dm-day .l{font-size:11.5px;font-weight:600;letter-spacing:-.005em;display:block;white-space:nowrap}
-.dm-skin .dm-day .n{font-family:var(--font-mono);font-size:10px;color:var(--text-3);white-space:nowrap}
-.dm-skin .dm-day[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
-.dm-skin .dm-day[aria-selected="true"] .n{color:rgba(255,255,255,.6)}
+/* ───── rail : en-tête, files, objectif ou calendrier ───── */
 .dm-skin .dm-filt{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .dm-skin .dm-filt.steps{padding:6px 10px}
 .dm-skin .dm-filt.steps .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-right:1px}
@@ -462,11 +436,6 @@
    Le chiffre affiché est TOUJOURS le nombre de tâches réellement présentes ;
    le quota n'apparaît qu'à côté, en petit, comme repère. Un canal vide reste
    affiché à 0, en grisé : « aucun appel aujourd'hui » est une information. */
-.dm-skin .dm-sess .mini{grid-template-columns:repeat(auto-fit,minmax(72px,1fr))}
-.dm-skin .dm-sess .mini>div[data-empty="1"]{opacity:.55}
-.dm-skin .dm-sess .mini .n .q{font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-left:1px}
-.dm-skin .dm-sess .mini .r{font-family:var(--font-mono);font-size:9px;color:var(--warn);margin-top:1px}
-.dm-skin .dm-sess .cad{display:flex;align-items:flex-start;gap:5px;margin-top:8px;font-size:10.5px;line-height:1.4;color:var(--text-3)}
 
 /* Le rang dans la journée remplace l'heure : une tâche manuelle se fait « en
    troisième », jamais « à 9 h 04 ». */
@@ -730,3 +699,119 @@
 .dm-skin .dm-attr .r .tg[data-site="0"]{background:var(--magic-tint);color:var(--magic)}
 .dm-skin .dm-attr .r .tg[data-site="1"]{background:var(--info-tint);color:var(--info)}
 .dm-skin .dm-attr .ft{gap:10px}
+
+/* ══ LE RAIL, REFONDU ═══════════════════════════════════════════════════════
+   Ce qui a disparu : le bloc de session (compteur géant, cinq tuiles, deux
+   paragraphes de cadence) et la barre d'onglets de jours. À eux deux ils
+   prenaient la moitié de la hauteur du rail, et la liste — la seule chose qui
+   serve à travailler — commençait sous la ligne de flottaison.
+
+   Ce qui le remplace : une ligne d'en-tête, DEUX FILES en onglets, puis selon
+   l'onglet un objectif compact (une ligne par canal) ou un vrai calendrier. */
+
+.dm-skin .dm-rail-top{display:flex;flex-direction:column;gap:8px;padding:10px;
+  border-bottom:1px solid var(--border);background:var(--surface-2)}
+.dm-skin .dm-rail-hd{display:flex;align-items:baseline;gap:8px}
+.dm-skin .dm-rail-hd .who{font-size:12px;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-rail-hd .fait{margin-left:auto;flex-shrink:0;font-family:var(--font-mono);
+  font-size:10px;color:var(--text-4)}
+
+/* ── Les deux files ───────────────────────────────────────────────────────
+   Un premier contact et une relance ne se travaillent pas pareil : l'un est du
+   volume qu'on abat, l'autre un rendez-vous avec quelqu'un qui a déjà réagi.
+   Les mélanger obligeait à trier à l'œil dans la seule liste disponible. */
+.dm-skin .dm-files{display:grid;grid-template-columns:1fr 1fr;gap:4px;
+  padding:3px;border-radius:10px;background:var(--bg-2)}
+.dm-skin .dm-file{appearance:none;border:0;background:transparent;border-radius:8px;
+  padding:7px 8px;cursor:pointer;display:flex;flex-direction:column;gap:2px;text-align:left;
+  color:var(--text-3);min-width:0}
+.dm-skin .dm-file .l{font-size:10.5px;font-weight:600;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis}
+.dm-skin .dm-file .n{font-family:var(--font-mono);font-size:15px;font-weight:700;line-height:1}
+.dm-skin .dm-file:hover{color:var(--text)}
+.dm-skin .dm-file[aria-selected="true"]{background:var(--surface);color:var(--text);
+  box-shadow:0 1px 2px rgba(18,40,68,.08)}
+.dark .dm-skin .dm-file[aria-selected="true"]{box-shadow:0 1px 2px rgba(0,0,0,.4)}
+
+/* ── L'objectif du jour, une ligne par canal ──────────────────────────────
+   Un OBJECTIF, plus un plafond : le dépassement se voit (la barre et le chiffre
+   passent au vert) et rien ne part au lendemain. L'ancien plan déplaçait au
+   jour suivant tout ce qui dépassait — il cachait le travail qu'on venait de
+   décider de faire. */
+.dm-skin .dm-obj{display:flex;flex-direction:column;gap:5px}
+.dm-skin .dm-obj-l{display:grid;grid-template-columns:auto auto 1fr;
+  gap:2px 7px;align-items:center;padding:6px 9px;border-radius:9px;
+  border:1px solid var(--border);background:var(--surface)}
+.dm-skin .dm-obj-l .k{display:inline-flex;align-items:center;gap:4px;font-size:11px;
+  font-weight:600;color:var(--text-2)}
+.dm-skin .dm-obj-l .v{font-family:var(--font-mono);font-size:11px;color:var(--text-3)}
+.dm-skin .dm-obj-l .v b{font-size:13px;color:var(--text)}
+.dm-skin .dm-obj-l .r{text-align:right;font-family:var(--font-mono);font-size:10px;color:var(--text-4)}
+.dm-skin .dm-obj-l .bar{grid-column:1/-1;height:3px;border-radius:2px;background:var(--bg-2);overflow:hidden}
+.dm-skin .dm-obj-l .bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.dm-skin .dm-obj-l[data-full="1"] .bar i{background:var(--ok)}
+.dm-skin .dm-obj-l[data-full="1"] .v b{color:var(--ok)}
+.dm-skin .dm-obj .vide{font-size:11.5px;line-height:1.5;color:var(--text-3)}
+
+/* ── Le calendrier des relances ───────────────────────────────────────────
+   Chaque ligne à la date où elle est réellement due, l'échu replié sur
+   aujourd'hui. Rien n'est déplacé pour tenir dans un quota — c'est toute la
+   différence entre un calendrier et le plan qu'il remplace. */
+.dm-skin .dm-cal{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.dm-skin .dm-cal::-webkit-scrollbar{display:none}
+.dm-skin .dm-cd{appearance:none;flex:0 0 auto;width:44px;border:1px solid var(--border);
+  background:var(--surface);border-radius:9px;padding:5px 0 4px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--text-3)}
+.dm-skin .dm-cd .j{font-size:9px;text-transform:uppercase;letter-spacing:.05em}
+.dm-skin .dm-cd .d{font-size:15px;font-weight:700;line-height:1.05;color:var(--text-2)}
+.dm-skin .dm-cd .n{font-family:var(--font-mono);font-size:9.5px;color:var(--text-4)}
+.dm-skin .dm-cd:hover{border-color:var(--text-3)}
+.dm-skin .dm-cd[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
+.dm-skin .dm-cd[aria-selected="true"] .d,.dm-skin .dm-cd[aria-selected="true"] .n{color:var(--bg)}
+.dm-skin .dm-cal-ft{display:flex;align-items:flex-start;gap:5px;font-size:10.5px;
+  line-height:1.35;color:var(--text-4)}
+
+/* ── La tête de file, en gros ─────────────────────────────────────────────
+   Ce qu'on cherche en arrivant : qui, par quel canal, et de quoi agir sans
+   traverser l'écran. Le bouton d'appel est ICI parce que la décision « je
+   préfère décrocher » se prend en lisant la ligne, pas après l'avoir ouverte. */
+.dm-skin .dm-now{margin:9px 10px 0;border:1px solid var(--border-2);
+  border-left:3px solid var(--k,var(--accent));border-radius:0 11px 11px 0;
+  background:var(--surface);padding:9px 11px;display:flex;flex-direction:column;gap:5px}
+.dm-skin .dm-now[data-k="call"]{--k:#C8881F}
+.dm-skin .dm-now[data-k="whatsapp"]{--k:#1F8A5B}
+.dm-skin .dm-now[data-k="linkedin"]{--k:#0A66C2}
+.dm-skin .dm-now[data-k="wait"]{--k:#A24E86}
+.dm-skin .dm-now .hd{display:flex;align-items:center;gap:6px}
+.dm-skin .dm-now .tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  padding:2px 7px;border-radius:20px;background:var(--k);color:#fff}
+.dm-skin .dm-now .lb{margin-left:auto;font-family:var(--font-mono);font-size:9.5px;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--text-4)}
+.dm-skin .dm-now .nm{appearance:none;border:0;background:transparent;padding:0;text-align:left;
+  font-size:16px;font-weight:700;letter-spacing:-.015em;line-height:1.15;color:var(--text);cursor:pointer}
+.dm-skin .dm-now .nm:hover{text-decoration:underline}
+.dm-skin .dm-now .mt{font-size:11px;color:var(--text-3);line-height:1.35}
+.dm-skin .dm-now .acts{display:flex;gap:5px;margin-top:2px}
+.dm-skin .dm-now .acts>*{flex:1;justify-content:center}
+
+/* Basculer en appel depuis la ligne, sans l'ouvrir. */
+.dm-skin .dm-tk-tel{appearance:none;flex-shrink:0;align-self:center;width:26px;height:26px;
+  border-radius:7px;border:1px solid var(--border-2);background:var(--surface);
+  color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .12s}
+.dm-skin .dm-tk:hover .dm-tk-tel,.dm-skin .dm-tk-tel:focus-visible{opacity:1}
+.dm-skin .dm-tk-tel:hover{border-color:#C8881F;color:#C8881F}
+.dm-skin .dm-tk-tel:disabled{opacity:.4;cursor:not-allowed}
+
+/* TOUS les signaux sur la ligne, pas seulement le dominant : un prospect chaud
+   qui a répondu est les deux, et l'ancienne ligne n'en montrait qu'un — celui
+   qui gagnait la priorité, donc jamais « chaud » dès qu'il répondait. */
+.dm-skin .dm-tk .st.sig[data-sig="hot"]{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
+.dark .dm-skin .dm-tk .st.sig[data-sig="hot"]{color:#E3A94A}
+.dm-skin .dm-tk .st.sig[data-sig="conversation"]{background:var(--ok-tint);color:var(--ok);font-weight:600}
+.dm-skin .dm-tk .st.sig[data-sig="missed"]{background:var(--danger-tint);color:var(--danger);font-weight:600}
+
+/* Les barres de filtres perdent leur bordure basse quand elles s'enchaînent :
+   quatre traits pleins d'affilée hachaient le rail en tranches. */
+.dm-skin .dm-filt+.dm-filt{border-top:0;padding-top:0}
