@@ -182,6 +182,7 @@
 .dm-skin .dm-fr{flex:1;min-height:0;overflow:auto;padding:6px 0 18px}
 .dm-skin .dm-fr-h{display:flex;align-items:center;gap:6px;padding:9px 12px 5px;font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3)}
 .dm-skin .dm-fr-h .ln{flex:1;height:1px;background:var(--border)}
+.dm-skin .dm-fr-h .n{font-size:9.5px;letter-spacing:0;color:var(--text-4)}
 /* La gouttière ne porte plus une heure mais le RANG dans la journée : une
    tâche manuelle se fait « en troisième », jamais « à 9 h 04 ». Deux chiffres
    suffisent, d'où une colonne bien plus étroite qu'un « 09:04 ». */
@@ -758,42 +759,23 @@
    Chaque ligne à la date où elle est réellement due, l'échu replié sur
    aujourd'hui. Rien n'est déplacé pour tenir dans un quota — c'est toute la
    différence entre un calendrier et le plan qu'il remplace. */
-.dm-skin .dm-cal{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.dm-skin .dm-cal{display:flex;gap:3px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .dm-skin .dm-cal::-webkit-scrollbar{display:none}
-.dm-skin .dm-cd{appearance:none;flex:0 0 auto;width:44px;border:1px solid var(--border);
+/* La semaine tient dans la largeur du rail ; ce qui va au-delà (une mise de
+   côté à trois mois) la fait défiler plutôt que d'écraser les sept jours. */
+.dm-skin .dm-cd{appearance:none;flex:1 0 32px;min-width:0;border:1px solid var(--border);
   background:var(--surface);border-radius:9px;padding:5px 0 4px;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--text-3)}
-.dm-skin .dm-cd .j{font-size:9px;text-transform:uppercase;letter-spacing:.05em}
-.dm-skin .dm-cd .d{font-size:15px;font-weight:700;line-height:1.05;color:var(--text-2)}
-.dm-skin .dm-cd .n{font-family:var(--font-mono);font-size:9.5px;color:var(--text-4)}
+.dm-skin .dm-cd .j{font-size:8.5px;text-transform:uppercase;letter-spacing:.03em}
+.dm-skin .dm-cd .d{font-size:14px;font-weight:700;line-height:1.05;color:var(--text-2)}
+.dm-skin .dm-cd .n{font-family:var(--font-mono);font-size:9px;color:var(--text-4)}
+/* Un jour vide se lit comme vide : le tiret ne doit pas peser autant qu'un compte. */
+.dm-skin .dm-cd[aria-selected="false"] .n{opacity:.85}
 .dm-skin .dm-cd:hover{border-color:var(--text-3)}
 .dm-skin .dm-cd[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
 .dm-skin .dm-cd[aria-selected="true"] .d,.dm-skin .dm-cd[aria-selected="true"] .n{color:var(--bg)}
 .dm-skin .dm-cal-ft{display:flex;align-items:flex-start;gap:5px;font-size:10.5px;
   line-height:1.35;color:var(--text-4)}
-
-/* ── La tête de file, en gros ─────────────────────────────────────────────
-   Ce qu'on cherche en arrivant : qui, par quel canal, et de quoi agir sans
-   traverser l'écran. Le bouton d'appel est ICI parce que la décision « je
-   préfère décrocher » se prend en lisant la ligne, pas après l'avoir ouverte. */
-.dm-skin .dm-now{margin:9px 10px 0;border:1px solid var(--border-2);
-  border-left:3px solid var(--k,var(--accent));border-radius:0 11px 11px 0;
-  background:var(--surface);padding:9px 11px;display:flex;flex-direction:column;gap:5px}
-.dm-skin .dm-now[data-k="call"]{--k:#C8881F}
-.dm-skin .dm-now[data-k="whatsapp"]{--k:#1F8A5B}
-.dm-skin .dm-now[data-k="linkedin"]{--k:#0A66C2}
-.dm-skin .dm-now[data-k="wait"]{--k:#A24E86}
-.dm-skin .dm-now .hd{display:flex;align-items:center;gap:6px}
-.dm-skin .dm-now .tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
-  padding:2px 7px;border-radius:20px;background:var(--k);color:#fff}
-.dm-skin .dm-now .lb{margin-left:auto;font-family:var(--font-mono);font-size:9.5px;
-  text-transform:uppercase;letter-spacing:.06em;color:var(--text-4)}
-.dm-skin .dm-now .nm{appearance:none;border:0;background:transparent;padding:0;text-align:left;
-  font-size:16px;font-weight:700;letter-spacing:-.015em;line-height:1.15;color:var(--text);cursor:pointer}
-.dm-skin .dm-now .nm:hover{text-decoration:underline}
-.dm-skin .dm-now .mt{font-size:11px;color:var(--text-3);line-height:1.35}
-.dm-skin .dm-now .acts{display:flex;gap:5px;margin-top:2px}
-.dm-skin .dm-now .acts>*{flex:1;justify-content:center}
 
 /* Basculer en appel depuis la ligne, sans l'ouvrir. */
 .dm-skin .dm-tk-tel{appearance:none;flex-shrink:0;align-self:center;width:26px;height:26px;

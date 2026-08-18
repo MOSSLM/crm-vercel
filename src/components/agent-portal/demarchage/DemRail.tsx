@@ -44,16 +44,18 @@ export type DemOnglet = "premiers" | "relances";
  *    lecture n'en gardait qu'un et faisait disparaître un chaud dès qu'il
  *    répondait.
  *
- * 3. LA TÊTE DE FILE EST EN GROS. Ce qu'on cherche en arrivant, c'est la
- *    prochaine entreprise, son canal, et de quoi la traiter tout de suite : son
- *    nom en grand, et deux boutons — l'ouvrir, ou la basculer en appel si on
- *    préfère décrocher. Le reste défile en dessous, compact.
- *
- * 4. LE BLOC DE TÊTE A MAIGRI. Cinq tuiles et deux paragraphes de cadence
+ * 3. LE BLOC DE TÊTE A MAIGRI. Cinq tuiles et deux paragraphes de cadence
  *    prenaient la moitié de la hauteur du rail ; la liste — la seule chose qui
  *    serve à travailler — commençait sous la ligne de flottaison. L'objectif du
  *    jour tient maintenant en une ligne par canal, et il n'est plus qu'un
  *    objectif : rien n'est caché quand on le dépasse.
+ *
+ *    Une carte de tête a existé ici, qui reprenait en grand le prospect en
+ *    cours. Elle a été retirée : le centre de l'écran affiche DÉJÀ ce
+ *    prospect-là, en plus complet, à trois centimètres de distance. Elle ne
+ *    disait donc rien de neuf et mangeait la place de la liste — la seule chose
+ *    que le rail sache faire mieux que le reste de l'écran. Ce qu'elle
+ *    apportait de vraiment utile, la bascule en appel, vit sur chaque ligne.
  */
 
 /** Les canaux, dans l'ordre où on veut les proposer, avec leur libellé au pluriel. */
@@ -203,7 +205,7 @@ export function DemRail({
   meta: DemarchageQueueMeta;
   agentName: string | null;
   loading: boolean;
-  /** Une action est en cours : les boutons de la tête de file se verrouillent. */
+  /** Une action est en cours : la bascule en appel des lignes se verrouille. */
   busy: boolean;
   sel: string | null;
   onPick: (id: string) => void;
@@ -276,22 +278,6 @@ export function DemRail({
       n: par[c] > 0 || c === cohorte ? par[c] : null,
     }));
   }, [duJour, cohorte]);
-
-  /**
-   * La tâche mise en avant : celle qu'on regarde, ou la tête de file à défaut.
-   *
-   * En arrivant, les deux sont la même — c'est « la première tâche en gros ».
-   * Choisir une autre ligne la promeut ici : le grand bloc dit toujours ce que
-   * le centre de l'écran est en train d'afficher, jamais autre chose.
-   */
-  const courante = useMemo(
-    () => tasks.find((t) => t.id === sel) ?? tasks[0] ?? null,
-    [tasks, sel],
-  );
-  const suite = useMemo(
-    () => tasks.filter((t) => t.id !== courante?.id),
-    [tasks, courante],
-  );
 
   return (
     <aside className="dm-rail">
@@ -494,60 +480,11 @@ export function DemRail({
         </div>
       )}
 
-      {/* ── LA TÊTE DE FILE, EN GROS ──
-          Ce qu'on cherche en arrivant : qui, par quel canal, et de quoi agir
-          sans traverser l'écran. Le bouton d'appel est là parce que la décision
-          « je préfère décrocher » se prend en lisant la ligne, pas après. */}
-      {courante && (
-        <div className="dm-now" data-k={courante.kind}>
-          <div className="hd">
-            <span className="tag">
-              <Icon name={demCh(courante.kind).ic} className="ico-xs" />
-              {demCh(courante.kind).lb}
-            </span>
-            <span className="lb">
-              {onglet === "premiers" ? "premier contact" : "à traiter"}
-            </span>
-          </div>
-          <button type="button" className="nm" onClick={() => onPick(courante.id)}>
-            {nomDe(courante)}
-          </button>
-          <div className="mt">
-            {one(courante.entreprise)?.ville || "ville inconnue"}
-            {courante.sequence?.stepLabel ? ` · ${courante.sequence.stepLabel}` : ""}
-          </div>
-          <div className="acts">
-            {courante.kind !== "call" && courante.kind !== "wait" && (
-              <button
-                type="button"
-                className="btn outline sm"
-                disabled={busy}
-                title="Transformer cette tâche en appel — même prospect, même étape."
-                onClick={() => onBasculerEnAppel(courante.id)}
-              >
-                <Icon name="phone" className="ico-sm" />
-                Appeler plutôt
-              </button>
-            )}
-            {suite.length > 0 && (
-              <button
-                type="button"
-                className="btn ghost sm"
-                onClick={() => onPick(suite[0].id)}
-                title="Passer à la suivante"
-              >
-                <Icon name="arrowRight" className="ico-sm" />
-                Suivante
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="dm-fr">
         <div className="dm-fr-h">
           <Icon name="layers" className="ico-xs" />
-          {suite.length > 0 ? `à suivre · ${suite.length}` : "ordre de passage"}
+          ordre de passage
+          {tasks.length > 0 && <span className="n">{tasks.length}</span>}
           <span className="ln" />
         </div>
 
@@ -564,7 +501,7 @@ export function DemRail({
           </div>
         )}
 
-        {suite.map((t, i) => {
+        {tasks.map((t, i) => {
           const ch = demCh(t.kind);
           const dominant = signalOf(t);
           const heat = dominant === "missed" ? "missed" : dominant === "hot" ? "hot" : undefined;
@@ -576,9 +513,10 @@ export function DemRail({
             <div
               key={t.id}
               className="dm-tk"
-              data-s="next"
+              data-s={t.id === sel ? "now" : "next"}
               data-heat={heat}
               data-conv={dominant === "conversation" ? "1" : undefined}
+              aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
             >
               {/* Le rang dans la file, pas une heure : une tâche manuelle se

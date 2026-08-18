@@ -340,6 +340,17 @@ function offsetDe(task: DemarchageTaskLike, now: Date, timeZone: string): number
 }
 
 /**
+ * L'HORIZON du calendrier : combien de journées à venir sont montrées même
+ * quand elles ne portent rien.
+ *
+ * Un calendrier qui n'affiche que les jours occupés n'est plus un calendrier,
+ * c'est une liste : la semaine ne se lit plus, on ne voit pas qu'il n'y a rien
+ * jeudi, et une case unique « auj. » donne l'impression que la barre est
+ * cassée. Une semaine complète tient dans le rail (elle défile au-delà).
+ */
+export const HORIZON_JOURS = 7;
+
+/**
  * Le CALENDRIER des relances : chaque tâche à la date où elle est réellement
  * due.
  *
@@ -349,22 +360,30 @@ function offsetDe(task: DemarchageTaskLike, now: Date, timeZone: string): number
  * est du travail du jour, pas un onglet dans le passé où personne n'irait
  * regarder.
  *
- * Le tableau rendu contient TOUJOURS aujourd'hui (même vide : c'est l'onglet
- * par défaut, il ne doit pas disparaître sous les doigts), puis uniquement les
- * journées qui portent au moins une tâche.
+ * Le tableau rendu contient TOUJOURS la semaine qui vient, vide ou non
+ * (`horizon`), plus toutes les journées plus lointaines qui portent une tâche —
+ * une mise de côté à trois mois garde sa case, elle ne disparaît pas au bout de
+ * l'horizon.
  */
 export function joursReels<T extends DemarchageTaskLike>(
   tasks: readonly T[],
-  { now = new Date(), timeZone = AGENT_TIMEZONE }: { now?: Date; timeZone?: string } = {},
+  {
+    now = new Date(),
+    timeZone = AGENT_TIMEZONE,
+    horizon = HORIZON_JOURS,
+  }: { now?: Date; timeZone?: string; horizon?: number } = {},
 ): Array<DemarchageDay<T>> {
   const parJour = new Map<number, T[]>();
+  // La semaine qui vient existe d'abord, vide : c'est le calendrier lui-même,
+  // pas le résultat de ce qu'il contient.
+  for (let i = 0; i < Math.max(1, horizon); i += 1) parJour.set(i, []);
+
   for (const t of tasks) {
     const offset = offsetDe(t, now, timeZone);
     const liste = parJour.get(offset);
     if (liste) liste.push(t);
     else parJour.set(offset, [t]);
   }
-  if (!parJour.has(0)) parJour.set(0, []);
 
   return [...parJour.entries()]
     .sort(([a], [b]) => a - b)
