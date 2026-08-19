@@ -58,3 +58,7 @@ data/
 # Dossiers web montés en local par scripts/prospection/dossier-web.mjs.
 # Des centaines de fichiers de travail, régénérables : ils ne rentrent pas dans l'historique.
 .prospection/
+
+# Photos des archives d’inspiration : retéléchargeables depuis les URL
+# notées dans le README de chaque archive. Inutile de les versionner.
+archives/**/assets/images/
