@@ -8,35 +8,57 @@ import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
 import type { DemCohorte, DemarchageQueueMeta, DemarchageTask } from "./types";
 import {
   cadenceEffective,
-  SIGNAL_LABEL,
-  SIGNAL_ORDER,
   countByKind,
   countBySignal,
   isLate,
   isSetAside,
+  quotaOf,
   signalOf,
+  signalsOf,
+  SIGNAL_LABEL,
+  SIGNAL_ORDER,
+  SIGNAL_TAG,
   type DemarchageDay,
   type DemarchageSignal,
 } from "@/lib/agent-portal/demarchage-buckets";
 
+/** Laquelle des deux files on travaille. */
+export type DemOnglet = "premiers" | "relances";
+
 /**
- * Le filtre courant de la file : « tout », un canal, ou un signal.
+ * LE RAIL — les deux files, et rien d'autre.
  *
- * Les trois signaux étaient des ONGLETS à côté des jours ; ils sont passés ici
- * parce que ce sont des manières de trier la journée, pas des journées. La
- * barre du haut ne dit plus que des dates.
+ * CE QUI A CHANGÉ, ET POURQUOI
+ *
+ * 1. DEUX ONGLETS au lieu d'une file unique. Les premiers contacts sont un
+ *    stock (rien ne les date, on s'y met et on avance) ; les relances et les
+ *    discussions sont un calendrier (chaque ligne est due un jour précis). Les
+ *    mélanger obligeait à trier à l'œil, sur la seule liste qu'on ait, ce qui
+ *    est le contraire de « je sais quoi faire maintenant ».
+ *
+ * 2. LES FILTRES SONT INDÉPENDANTS. Canal et signal partageaient une variable,
+ *    donc un choix à la fois : cocher « Chauds » faisait perdre le canal, et
+ *    inversement. Or un prospect peut être chaud ET en attente de réponse ET
+ *    sur une tâche WhatsApp. Deux barres, deux dimensions, cumulables — et les
+ *    signaux se cumulent aussi SUR LA LIGNE (cf. `signalsOf`), là où l'ancienne
+ *    lecture n'en gardait qu'un et faisait disparaître un chaud dès qu'il
+ *    répondait.
+ *
+ * 3. LE BLOC DE TÊTE A MAIGRI. Cinq tuiles et deux paragraphes de cadence
+ *    prenaient la moitié de la hauteur du rail ; la liste — la seule chose qui
+ *    serve à travailler — commençait sous la ligne de flottaison. L'objectif du
+ *    jour tient maintenant en une ligne par canal, et il n'est plus qu'un
+ *    objectif : rien n'est caché quand on le dépasse.
+ *
+ *    Une carte de tête a existé ici, qui reprenait en grand le prospect en
+ *    cours. Elle a été retirée : le centre de l'écran affiche DÉJÀ ce
+ *    prospect-là, en plus complet, à trois centimètres de distance. Elle ne
+ *    disait donc rien de neuf et mangeait la place de la liste — la seule chose
+ *    que le rail sache faire mieux que le reste de l'écran. Ce qu'elle
+ *    apportait de vraiment utile, la bascule en appel, vit sur chaque ligne.
  */
-export type DemFilter = "all" | DemarchageSignal | string;
 
-/** Ce qui rend un canal ou un signal cliquable dans la barre de filtres. */
-type Chip = { id: DemFilter; lb: string; n: number; tone?: "conv" | "hot" | "missed" };
-
-/**
- * Les canaux, dans l'ordre où on veut les proposer, avec leur libellé au
- * pluriel. Un canal absent de cette table reste filtrable : il prend le libellé
- * de `demCh`. C'est ce qui fait que le jour où une étape e-mail apparaît dans
- * une séquence, sa pastille arrive toute seule dans la barre.
- */
+/** Les canaux, dans l'ordre où on veut les proposer, avec leur libellé au pluriel. */
 const KIND_ORDER: readonly string[] = ["call", "whatsapp", "email", "linkedin", "sms", "wait"] as const;
 const KIND_LABEL: Record<string, string> = {
   call: "Appels",
@@ -47,7 +69,7 @@ const KIND_LABEL: Record<string, string> = {
   wait: "Attentes",
 };
 
-const toneOf = (s: DemarchageSignal): Chip["tone"] =>
+const toneOf = (s: DemarchageSignal) =>
   s === "conversation" ? "conv" : s === "hot" ? "hot" : "missed";
 
 /** Durée d'engagement, lisible d'un coup d'œil. */
@@ -68,79 +90,79 @@ const dateFr = (iso: string, opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", ...opts }).format(new Date(`${iso}T12:00:00Z`));
 
 /**
- * L'étiquette d'un onglet de jour : une DATE, et rien d'autre.
- *
- * « Auj. 15 » plutôt que « Aujourd'hui » : la barre tient jusqu'à quatre jours
- * dans les 286 px du rail sans tronquer, et au-delà elle défile. Le titre
- * complet reste en infobulle.
+ * Une case du calendrier : le jour de semaine au-dessus, le numéro en dessous —
+ * la forme d'un calendrier, pas d'un onglet. Au-delà de la semaine le mois
+ * remplace le jour de semaine : « lun. 17 » peut être dans six jours comme dans
+ * trois mois, et les mises de côté ouvrent justement des cases très lointaines.
  */
-function tabLabel(day: DemarchageDay<DemarchageTask>): string {
-  const jour = dateFr(day.date, { day: "numeric" });
-  if (day.offset === 0) return `Auj. ${jour}`;
-  if (day.offset === 1) return `Dem. ${jour}`;
-  // Au-delà de la semaine, le jour de semaine ne situe plus rien : « lun. 17 »
-  // peut être dans six jours comme dans trois mois, et les mises de côté
-  // ouvrent justement des onglets très lointains. Le mois tranche.
-  if (day.offset <= 6) return dateFr(day.date, { weekday: "short", day: "numeric" });
-  return dateFr(day.date, { day: "numeric", month: "short" });
+function caseCalendrier(day: DemarchageDay<DemarchageTask>): { haut: string; bas: string; titre: string } {
+  const complet = dateFr(day.date, { weekday: "long", day: "numeric", month: "long" });
+  const num = dateFr(day.date, { day: "numeric" });
+  if (day.offset === 0) return { haut: "auj.", bas: num, titre: `aujourd'hui, ${complet}` };
+  if (day.offset === 1) return { haut: "dem.", bas: num, titre: `demain, ${complet}` };
+  if (day.offset <= 6) {
+    return { haut: dateFr(day.date, { weekday: "short" }).replace(".", ""), bas: num, titre: complet };
+  }
+  return { haut: dateFr(day.date, { month: "short" }).replace(".", ""), bas: num, titre: complet };
 }
 
-/** Le sous-titre du bloc session : la date réelle du jour regardé, en toutes lettres. */
-function dayTitle(day: DemarchageDay<DemarchageTask> | undefined): string {
-  if (!day) return "—";
-  const complet = dateFr(day.date, { weekday: "long", day: "numeric", month: "long" });
-  if (day.offset === 0) return `aujourd'hui, ${complet}`;
-  if (day.offset === 1) return `demain, ${complet}`;
-  return complet;
-}
+const nomDe = (t: DemarchageTask): string => {
+  const ent = one(t.entreprise);
+  const contact = one(t.contact);
+  return (
+    ent?.name || `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim() || "Prospect"
+  );
+};
 
 /**
- * Une tuile de la tête de rail.
- *
- * SUR « AUJOURD'HUI », C'EST UN COMPTEUR D'AVANCEMENT : `fait / cadence`. Il
- * démarre à 0 le matin et monte au fil de la journée. Il affichait auparavant
- * le nombre de tâches PLANIFIÉES, donc « 20/20 » dès la première seconde —
- * lecture exactement inverse de ce qu'on cherche en ouvrant l'écran.
- *
- * Sur les autres jours, il n'y a rien de « fait » à montrer : la tuile
- * annonce ce que le jour contient. Et jamais le quota à la place d'un vide :
- * aucun appel en séquence, la tuile affiche 0.
+ * L'objectif d'un canal sur la journée : ce qui est fait, ce qui reste, et le
+ * repère à tenir. Dépasser est possible et se voit — la barre se remplit et le
+ * chiffre passe devant le repère, rien ne disparaît.
  */
-function Tile({
+function LigneObjectif({
   ic,
   lb,
-  n,
-  quota,
-  sub,
+  fait,
+  reste,
+  objectif,
 }: {
   ic: string;
   lb: string;
-  n: number;
-  /** Cadence quotidienne du canal, `null` quand il n'a pas de plafond. */
-  quota: number | null;
-  sub?: string | null;
+  fait: number;
+  reste: number;
+  objectif: number | null;
 }) {
+  const pct = objectif && objectif > 0 ? Math.min(100, (fait / objectif) * 100) : 0;
+  const depasse = objectif != null && fait > objectif;
   return (
-    <div data-empty={n === 0 ? "1" : undefined}>
+    <div className="dm-obj-l" data-full={depasse ? "1" : undefined}>
       <span className="k">
         <Icon name={ic} className="ico-xs" />
         {lb}
       </span>
-      <div className="n">
-        {n}
-        {quota != null && <span className="q">/{quota}</span>}
-      </div>
-      {sub && <div className="r">{sub}</div>}
+      <span className="v">
+        <b>{fait}</b>
+        {objectif != null && <span className="q">/{objectif}</span>}
+      </span>
+      <span className="bar">
+        <i style={{ width: `${pct}%` }} />
+      </span>
+      <span className="r">{reste > 0 ? `${reste} en file` : "file vide"}</span>
     </div>
   );
 }
 
 export function DemRail({
-  days,
+  onglet,
+  setOnglet,
+  premiers,
+  jours,
   day,
   setDay,
-  filt,
-  setFilt,
+  canal,
+  setCanal,
+  signal,
+  setSignal,
   step,
   setStep,
   cohorte,
@@ -149,109 +171,87 @@ export function DemRail({
   meta,
   agentName,
   loading,
+  busy,
   sel,
   onPick,
   onRechercher,
+  onBasculerEnAppel,
   poolDispo,
   onAttribuer,
 }: {
-  days: Array<DemarchageDay<DemarchageTask>>;
-  /** Date civile (YYYY-MM-DD) du jour affiché. */
+  onglet: DemOnglet;
+  setOnglet: (o: DemOnglet) => void;
+  /** La file des premiers contacts, entière et dans l'ordre de passage. */
+  premiers: DemarchageTask[];
+  /** Le calendrier des relances et discussions. */
+  jours: Array<DemarchageDay<DemarchageTask>>;
+  /** Date civile (YYYY-MM-DD) de la case de calendrier ouverte. */
   day: string;
   setDay: (d: string) => void;
-  filt: DemFilter;
-  setFilt: (f: DemFilter) => void;
+  /** Canal filtré, `null` = tous. Cumulable avec le signal. */
+  canal: string | null;
+  setCanal: (k: string | null) => void;
+  /** Signal filtré, `null` = tous. Cumulable avec le canal. */
+  signal: DemarchageSignal | null;
+  setSignal: (s: DemarchageSignal | null) => void;
   /** Étape de séquence filtrée, `null` = toutes. */
   step: number | null;
   setStep: (s: number | null) => void;
   /** Cohorte filtrée, `null` = les deux. Se propage à la route en `?cohorte=…`. */
   cohorte: DemCohorte | null;
   setCohorte: (c: DemCohorte | null) => void;
-  /** La liste RÉELLEMENT affichée : le jour choisi, passé aux filtres. */
+  /** La liste RÉELLEMENT affichée : l'onglet courant, passé aux filtres. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
   agentName: string | null;
   loading: boolean;
+  /** Une action est en cours : la bascule en appel des lignes se verrouille. */
+  busy: boolean;
   sel: string | null;
   onPick: (id: string) => void;
   /** Ouvre la recherche d'entreprise — le geste de « quelqu'un rappelle ». */
   onRechercher: () => void;
+  /** « Je préfère l'appeler » : la tâche courante devient un appel. */
+  onBasculerEnAppel: (id: string) => void;
   /**
    * Combien d'entreprises attendent dans le pool, `null` quand l'agent n'a pas
-   * le droit de s'en servir (ou qu'on ne le sait pas encore). Sans droit, pas
-   * de bouton : proposer un geste qui répondra « interdit » vaut moins que ne
-   * rien proposer.
+   * le droit de s'en servir (ou qu'on ne le sait pas encore).
    */
   poolDispo: number | null;
   /** Ouvre le panneau « m'attribuer des entreprises ». */
   onAttribuer: () => void;
 }) {
-  const courant = days.find((d) => d.date === day) ?? days[0];
-  const duJour = useMemo(() => courant?.tasks ?? [], [courant]);
+  /** Tout ce que porte l'onglet courant, filtres non appliqués. */
+  const duJour = useMemo(
+    () => (onglet === "premiers" ? premiers : (jours.find((d) => d.date === day)?.tasks ?? [])),
+    [onglet, premiers, jours, day],
+  );
 
-  /**
-   * Les cadences à afficher — exactement celles avec lesquelles `planTasks` a
-   * réparti les journées.
-   *
-   * Le rail avait sa propre fusion sur `DAILY_QUOTA`, et elle divergeait déjà
-   * de celle du plan : elle acceptait un quota à 0, que `normaliseQuotas`
-   * refuse. Un « /0 » s'affichait donc en tête de rail pendant que le plan
-   * répartissait à 20 — le genre d'écart qu'on ne voit jamais, parce que les
-   * deux chiffres sont plausibles. Une seule fonction, une seule cadence.
-   */
+  const nbRelances = useMemo(() => jours.reduce((n, d) => n + d.tasks.length, 0), [jours]);
+
   const quotas = useMemo(() => cadenceEffective(meta.quotas), [meta.quotas]);
 
-  // Les compteurs regardent la journée ENTIÈRE, pas la liste filtrée : cliquer
-  // « Appels » ne doit pas faire tomber le compteur Messages à zéro.
-  //
-  // Les TUILES, elles, ne comptent que les premiers contacts : c'est ce que la
-  // cadence plafonne, et la tuile « Discussion en cours » compte le reste. Sans
-  // cette séparation, répondre à trois prospects gonflait le compteur de
-  // démarchage de trois et faisait afficher « 23/20 ».
-  const { parCanal, parSignal, cadenceParCanal } = useMemo(
-    () => ({
-      parCanal: countByKind(duJour),
-      parSignal: countBySignal(duJour),
-      cadenceParCanal: countByKind(duJour.filter((t) => signalOf(t) !== "conversation")),
-    }),
-    [duJour],
-  );
-  /** Le jour en cours : c'est le seul où « fait » veut dire quelque chose. */
-  const cejour = courant?.offset === 0;
+  // Les compteurs regardent l'onglet ENTIER, pas la liste filtrée : cliquer
+  // « Appels » ne doit pas faire tomber le compteur des chauds à zéro.
+  const parCanal = useMemo(() => countByKind(duJour), [duJour]);
+  const parSignal = useMemo(() => countBySignal(duJour), [duJour]);
 
-  // Ce qui, du même canal, a été renvoyé aux jours suivants faute de place —
-  // la moitié de l'explication du chiffre affiché.
-  const apres = days.filter((d) => d.offset > (courant?.offset ?? 0));
-  const reporte = countByKind(apres.flatMap((d) => d.tasks));
-
-  /**
-   * Les pastilles de filtre, déduites des tâches RÉELLEMENT présentes ce
-   * jour-là. Une file sans LinkedIn n'affiche pas de pastille LinkedIn : un
-   * filtre qui ne peut rien retirer est du bruit, et c'est exactement ce que
-   * demandait la barre figée « Tout · Appels · Messages · Attentes ».
-   */
-  const chips = useMemo<Chip[]>(() => {
-    const out: Chip[] = [{ id: "all", lb: "Tout", n: duJour.length }];
+  /** Les canaux réellement présents, dans l'ordre de présentation. */
+  const canaux = useMemo(() => {
     const kinds = Object.keys(parCanal).filter((k) => k && parCanal[k] > 0);
     kinds.sort((a, b) => {
       const ia = KIND_ORDER.indexOf(a);
       const ib = KIND_ORDER.indexOf(b);
       return (ia < 0 ? KIND_ORDER.length : ia) - (ib < 0 ? KIND_ORDER.length : ib);
     });
-    for (const k of kinds) out.push({ id: k, lb: KIND_LABEL[k] ?? demCh(k).lb, n: parCanal[k] });
-    for (const s of SIGNAL_ORDER) {
-      if (parSignal[s] > 0) out.push({ id: s, lb: SIGNAL_LABEL[s], n: parSignal[s], tone: toneOf(s) });
-    }
-    return out;
-  }, [duJour, parCanal, parSignal]);
+    return kinds;
+  }, [parCanal]);
 
   /**
-   * Les étapes de séquence présentes ce jour-là.
-   *
-   * Sans elles, une file de quinze WhatsApp se lit comme quinze fois la même
-   * chose : rien ne distingue un premier contact d'une quatrième relance, alors
-   * que ce n'est ni le même message ni le même prospect. On ne propose le tri
-   * qu'à partir de deux étapes distinctes — sinon il ne trie rien.
+   * Les étapes de séquence présentes. Sans elles, une file de quinze WhatsApp
+   * se lit comme quinze fois la même chose : rien ne distingue un premier
+   * contact d'une quatrième relance. On ne propose le tri qu'à partir de deux
+   * étapes distinctes — sinon il ne trie rien.
    */
   const etapes = useMemo(() => {
     const set = new Set<number>();
@@ -268,9 +268,8 @@ export function DemRail({
    * Le filtre de cohorte part au SERVEUR : filtrée sur A, la file ne contient
    * plus une seule ligne B, et compter B dans ce qui est chargé donnerait
    * « 0 » — un chiffre faux, pas une file vide. On affiche donc les deux
-   * pastilles dès qu'un filtre est actif (sans quoi on ne pourrait plus passer
-   * de A à B sans repasser par « toutes »), mais SANS compte pour celle qu'on
-   * n'a pas chargée. Un compte affiché est un compte vrai.
+   * pastilles dès qu'un filtre est actif, mais SANS compte pour celle qu'on n'a
+   * pas chargée. Un compte affiché est un compte vrai.
    */
   const cohortes = useMemo(() => {
     const par = countByCohorte(duJour);
@@ -280,39 +279,10 @@ export function DemRail({
     }));
   }, [duJour, cohorte]);
 
-  const nb = meta.done_today;
-  // La journée, c'est ce qui a été fait plus ce qui reste à faire aujourd'hui.
-  const aujourdhui = days.find((d) => d.offset === 0)?.tasks.length ?? 0;
-  const tot = nb + aujourdhui;
-
-  // Les discussions vivent toutes dans la journée du jour — c'est là qu'on les
-  // compte, et non dans la journée regardée : « trois prospects attendent une
-  // réponse » ne doit pas disparaître parce qu'on jette un œil à demain.
-  const nbDiscussion = countBySignal(days.find((d) => d.offset === 0)?.tasks ?? []).conversation;
-
-  /**
-   * La tuile d'un canal plafonné.
-   *
-   * Sur aujourd'hui : `fait / cadence`, avec le reste à faire en dessous.
-   * Ailleurs : ce que le jour contient, et ce qui a débordé au-delà.
-   */
-  const tuileCadence = (ic: string, lb: string, kind: string) => {
-    const prevu = cadenceParCanal[kind] ?? 0;
-    const fait = meta.done_today_by_kind[kind] ?? 0;
-    const quota = quotas[kind] ?? null;
-    const debord = reporte[kind] ?? 0;
-    return cejour ? (
-      <Tile ic={ic} lb={lb} n={fait} quota={quota} sub={prevu > 0 ? `${prevu} à faire` : null} />
-    ) : (
-      <Tile ic={ic} lb={lb} n={prevu} quota={quota} sub={debord > 0 ? `+${debord} reportés` : null} />
-    );
-  };
-
   return (
     <aside className="dm-rail">
-      {/* PREMIER élément du rail, avant même le compteur du jour : quand le
-          téléphone sonne, retrouver la fiche passe avant tout le reste, et on
-          n'a pas le temps de la chercher. Le raccourci est écrit dessus — un
+      {/* PREMIER élément du rail : quand le téléphone sonne, retrouver la fiche
+          passe avant tout le reste. Le raccourci est écrit dessus — un
           raccourci qu'on ne voit pas est un raccourci que personne n'utilise. */}
       <button type="button" className="dm-rech-b" onClick={onRechercher}>
         <Icon name="phone" className="ico-sm" />
@@ -332,94 +302,142 @@ export function DemRail({
         </button>
       )}
 
-      <div className="dm-sess">
-        <div className="lb">Ma file · {dayTitle(courant)}</div>
-        <div className="vl">
-          {nb}
-          <span>/{tot}</span>
+      <div className="dm-rail-top">
+        <div className="dm-rail-hd">
+          <span className="who">{agentName ? `Ma file · ${agentName}` : "Ma file"}</span>
+          <span className="fait">{meta.done_today} traitées aujourd&apos;hui</span>
         </div>
-        <div className="sub">
-          actions traitées{agentName ? ` — attribuées à ${agentName}` : ""}
+
+        {/* LES DEUX FILES. Un premier contact et une relance ne se travaillent pas
+            pareil : l'un est du volume qu'on abat, l'autre un rendez-vous avec
+            quelqu'un qui a déjà réagi. */}
+        <div className="dm-files" role="tablist" aria-label="File de travail">
+          <button
+            type="button"
+            role="tab"
+            className="dm-file"
+            aria-selected={onglet === "premiers"}
+            onClick={() => setOnglet("premiers")}
+          >
+            <span className="l">Premiers contacts</span>
+            <span className="n">{premiers.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="dm-file"
+            aria-selected={onglet === "relances"}
+            onClick={() => setOnglet("relances")}
+          >
+            <span className="l">Relances &amp; discussions</span>
+            <span className="n">{nbRelances}</span>
+          </button>
         </div>
-        <div className="dm-prog">
-          <i style={{ width: `${tot ? Math.min(100, (nb / tot) * 100) : 0}%` }} />
-        </div>
-        <div className="mini">
-          {tuileCadence("phone", "Appels", "call")}
-          {/* « 1er contact » n'est pas cosmétique : c'est ce que la cadence
-              plafonne, et la tuile d'à côté dit le reste. */}
-          {tuileCadence("whatsapp", "WhatsApp 1er contact", "whatsapp")}
-          {/* La discussion ne dépend d'aucun jour : elle est là ou elle n'est
-              pas, et elle n'a pas de plafond. Toujours visible, pour qu'on ne
-              confonde jamais les deux compteurs. */}
-          <Tile
-            ic="message"
-            lb="Discussion en cours"
-            n={nbDiscussion}
-            quota={null}
-            sub={meta.done_today_conversation > 0 ? `${meta.done_today_conversation} traitées` : null}
-          />
-          {/* LinkedIn et les attentes n'apparaissent que s'il y en a : une
-              tuile vide sur un canal qu'on n'utilise pas est du bruit. */}
-          {(cadenceParCanal.linkedin ?? 0) > 0 && tuileCadence("linkedin", "LinkedIn", "linkedin")}
-          {(cadenceParCanal.wait ?? 0) > 0 && (
-            <Tile ic="clock" lb="Attentes" n={cadenceParCanal.wait ?? 0} quota={null} />
-          )}
-        </div>
-        <div className="cad">
-          <Icon name="info" className="ico-xs" />
-          cadence : {quotas.call} appels et {quotas.whatsapp} premiers contacts WhatsApp par jour — le
-          surplus part au lendemain. Les discussions en cours ne comptent pas.
-        </div>
-        {nbDiscussion > 0 && (
-          <div className="cad">
-            <Icon name="message" className="ico-xs" />
-            {nbDiscussion} ont répondu : on répond à ce qui vient, sans plafond ni report.
+
+        {onglet === "premiers" ? (
+          <div className="dm-obj">
+            {/* Un objectif, pas un plafond : le dépassement se voit et rien ne
+                part au lendemain. C'est le sens du « on peut dépasser les 20
+                WhatsApp » — une bonne journée doit pouvoir se lire comme telle. */}
+            {canaux
+              .filter((k) => k !== "wait")
+              .map((k) => (
+                <LigneObjectif
+                  key={k}
+                  ic={demCh(k).ic}
+                  lb={KIND_LABEL[k] ?? demCh(k).lb}
+                  fait={meta.done_today_by_kind[k] ?? 0}
+                  reste={parCanal[k] ?? 0}
+                  objectif={quotaOf(k, quotas)}
+                />
+              ))}
+            {premiers.length === 0 && (
+              <div className="vide">
+                Aucun premier contact en attente.
+                {poolDispo != null && poolDispo > 0
+                  ? " Le pool en contient encore — sers-toi juste au-dessus."
+                  : ""}
+              </div>
+            )}
           </div>
+        ) : (
+          <>
+            {/* UN CALENDRIER, pas un plan : chaque ligne à la date où elle est
+                réellement due, et l'échu replié sur aujourd'hui. Rien n'est
+                déplacé pour tenir dans un quota. */}
+            <div className="dm-cal" role="tablist" aria-label="Jour des relances">
+              {jours.map((d) => {
+                const c = caseCalendrier(d);
+                return (
+                  <button
+                    key={d.date}
+                    type="button"
+                    role="tab"
+                    className="dm-cd"
+                    aria-selected={day === d.date}
+                    title={c.titre}
+                    onClick={() => setDay(d.date)}
+                  >
+                    <span className="j">{c.haut}</span>
+                    <span className="d">{c.bas}</span>
+                    <span className="n">{d.tasks.length > 0 ? d.tasks.length : "—"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="dm-cal-ft">
+              <Icon name="info" className="ico-xs" />
+              Sans plafond : répondre à quelqu&apos;un qui a réagi ne se rationne pas.
+            </div>
+          </>
         )}
       </div>
 
-      {/* Des DATES, rien que des dates. Les signaux qui squattaient cette barre
-          sont passés en pastilles juste en dessous : à sept onglets dans 286 px
-          on ne lisait plus que la première lettre de chacun. */}
-      <div className="dm-days" role="tablist" aria-label="Jour de la file">
-        {days.map((d) => (
-          <button
-            key={d.date}
-            type="button"
-            role="tab"
-            className="dm-day"
-            aria-selected={day === d.date}
-            title={dayTitle(d)}
-            onClick={() => setDay(d.date)}
-          >
-            <span className="l">{tabLabel(d)}</span>
-            {/* Rien à faire ce jour-là : on l'écrit « — », pas « 0 act. ». */}
-            <span className="n">{d.tasks.length > 0 ? `${d.tasks.length} act.` : "—"}</span>
+      {/* ── Les filtres, en dimensions SÉPARÉES ── */}
+      {canaux.length > 1 && (
+        <div className="dm-filt">
+          <span className="lb">Canal</span>
+          <button className="dm-chip" aria-pressed={canal === null} onClick={() => setCanal(null)}>
+            tous
           </button>
-        ))}
-      </div>
+          {canaux.map((k) => (
+            <button
+              key={k}
+              className="dm-chip"
+              aria-pressed={canal === k}
+              onClick={() => setCanal(canal === k ? null : k)}
+            >
+              {KIND_LABEL[k] ?? demCh(k).lb}
+              <span className="n">{parCanal[k]}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="dm-filt">
-        {chips.map((c) => (
-          <button
-            key={c.id}
-            className="dm-chip"
-            data-tone={c.tone}
-            aria-pressed={filt === c.id}
-            onClick={() => setFilt(c.id)}
-          >
-            {c.lb}
-            <span className="n">{c.n}</span>
+      {SIGNAL_ORDER.some((s) => parSignal[s] > 0) && (
+        <div className="dm-filt">
+          <span className="lb">Signal</span>
+          <button className="dm-chip" aria-pressed={signal === null} onClick={() => setSignal(null)}>
+            tous
           </button>
-        ))}
-      </div>
+          {SIGNAL_ORDER.filter((s) => parSignal[s] > 0).map((s) => (
+            <button
+              key={s}
+              className="dm-chip"
+              data-tone={toneOf(s)}
+              aria-pressed={signal === s}
+              onClick={() => setSignal(signal === s ? null : s)}
+            >
+              {SIGNAL_LABEL[s]}
+              <span className="n">{parSignal[s]}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* La cohorte a sa PROPRE barre : c'est une troisième dimension, pas un
-          signal de plus. Filtrer « site faible » et « appels » en même temps
-          est une demande légitime — deux vocabulaires dans la même barre ne le
-          permettraient pas. La barre disparaît hors campagne, quand aucune
-          ligne ne porte de cohorte : un filtre qui ne trie rien est du bruit. */}
+      {/* La cohorte a sa PROPRE barre : c'est une dimension de plus, pas un
+          signal. La barre disparaît hors campagne, quand aucune ligne n'en
+          porte : un filtre qui ne trie rien est du bruit. */}
       {cohortes.length > 0 && (
         <div className="dm-filt coh">
           <span className="lb">Cohorte</span>
@@ -466,6 +484,7 @@ export function DemRail({
         <div className="dm-fr-h">
           <Icon name="layers" className="ico-xs" />
           ordre de passage
+          {tasks.length > 0 && <span className="n">{tasks.length}</span>}
           <span className="ln" />
         </div>
 
@@ -474,21 +493,18 @@ export function DemRail({
         )}
         {!loading && tasks.length === 0 && (
           <div style={{ padding: "18px 14px", fontSize: 12, color: "var(--text-3)" }}>
-            Rien dans ce filtre.
+            {duJour.length === 0
+              ? onglet === "premiers"
+                ? "Rien à démarcher pour l'instant."
+                : "Rien à relancer ce jour-là."
+              : "Rien dans ces filtres."}
           </div>
         )}
 
         {tasks.map((t, i) => {
-          const ent = one(t.entreprise);
-          const contact = one(t.contact);
           const ch = demCh(t.kind);
-          const name =
-            ent?.name ||
-            `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim() ||
-            "Prospect";
-          const state = t.id === sel ? "now" : "next";
-          const signal = signalOf(t);
-          const heat = signal === "missed" ? "missed" : signal === "hot" ? "hot" : undefined;
+          const dominant = signalOf(t);
+          const heat = dominant === "missed" ? "missed" : dominant === "hot" ? "hot" : undefined;
           const late = isLate(t);
           // Rangée volontairement : la ligne doit le dire, sinon on la relit
           // comme un oubli et on la rappelle — ce qui défait le geste.
@@ -497,21 +513,18 @@ export function DemRail({
             <div
               key={t.id}
               className="dm-tk"
-              data-s={state}
+              data-s={t.id === sel ? "now" : "next"}
               data-heat={heat}
-              data-conv={signal === "conversation" ? "1" : undefined}
+              data-conv={dominant === "conversation" ? "1" : undefined}
               aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
             >
-              {/* Le rang dans la journée, pas une heure : une tâche manuelle se
+              {/* Le rang dans la file, pas une heure : une tâche manuelle se
                   fait « en troisième », jamais « à 9 h 04 ». */}
               <span className="tm">{i + 1}</span>
               <div className="bd">
                 <div className="nm">
-                  <span className="t">{name}</span>
-                  {/* Le signal a sa propre case, à l'écart du nom : collé au
-                      texte, il se lisait comme une partie de la raison sociale
-                      et ne sautait plus aux yeux. */}
+                  <span className="t">{nomDe(t)}</span>
                   {t.intent?.flame ? (
                     <span className="fl" data-heat={heat} title={t.intent.reasons.join(" · ")}>
                       {t.intent.flame}
@@ -526,26 +539,26 @@ export function DemRail({
                     <Icon name={ch.ic} className="ico-xs" />
                     {ch.lb}
                   </span>
-                  {/* L'ÉTAPE, en évidence. « WhatsApp » tout seul ne dit pas si
-                      c'est un premier contact ou une quatrième relance — deux
-                      lignes identiques à l'œil pour deux situations opposées. */}
                   {t.sequence?.stepIndex != null && (
                     <span className="st stp">
                       étape {t.sequence.stepIndex}
                       {t.sequence.totalSteps > 0 ? `/${t.sequence.totalSteps}` : ""}
                     </span>
                   )}
-                  {/* À froid : ni étape, ni script, ni historique. Le dire sur
-                      la ligne évite de chercher une frise qui n'existe pas. */}
                   {t.hors_sequence && <span className="st froid">à froid</span>}
-                  {/* La cohorte décide de l'accroche ET du document : elle se
-                      lit AVANT de composer le numéro, donc sur la ligne. */}
                   {t.cohorte && (
                     <span className="st coh" data-coh={t.cohorte} title={COHORTE_INFO[t.cohorte].long}>
                       {COHORTE_INFO[t.cohorte].court}
                     </span>
                   )}
-                  {signal === "conversation" && <span className="st conv">a répondu</span>}
+                  {/* TOUS les signaux, pas seulement le dominant : un prospect
+                      chaud qui a répondu est les deux, et l'ancienne ligne n'en
+                      montrait qu'un — celui qui gagnait la priorité. */}
+                  {signalsOf(t).map((s) => (
+                    <span key={s} className="st sig" data-sig={s}>
+                      {SIGNAL_TAG[s]}
+                    </span>
+                  ))}
                   {deCote && (
                     <span
                       className="st cote"
@@ -561,11 +574,11 @@ export function DemRail({
                 </div>
                 {/* Ce que le prospect a fait de sa démo : l'information qui
                     décide s'il faut décrocher maintenant ou laisser la
-                    séquence suivre son cours. Lisible sans ouvrir la fiche. */}
+                    séquence suivre son cours. */}
                 {t.intent && t.intent.sessions > 0 && (
                   <div className="vu" data-heat={heat}>
                     <Icon name="eye" className="ico-xs" />
-                    {signal === "missed" && t.intent.daysSinceVisit != null
+                    {dominant === "missed" && t.intent.daysSinceVisit != null
                       ? `Chaud depuis ${t.intent.daysSinceVisit} j, jamais rappelé`
                       : `Démo vue ${t.intent.sessions}×${
                           t.intent.engagementSec > 0 ? ` · ${dureeCourte(t.intent.engagementSec)}` : ""
@@ -573,15 +586,25 @@ export function DemRail({
                   </div>
                 )}
               </div>
+              {/* Basculer en appel sans ouvrir la fiche : la décision se prend
+                  en lisant la ligne. */}
+              {t.kind !== "call" && t.kind !== "wait" && (
+                <button
+                  type="button"
+                  className="dm-tk-tel"
+                  disabled={busy}
+                  title="Transformer en appel"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBasculerEnAppel(t.id);
+                  }}
+                >
+                  <Icon name="phone" className="ico-xs" />
+                </button>
+              )}
             </div>
           );
         })}
-      </div>
-
-      <div className="dm-rail-ft">
-        <Icon name="info" className="ico-xs" />
-        Chaque relance de séquence crée sa propre ligne — appels compris. Un appel à froid n&apos;en a
-        qu&apos;une : la première.
       </div>
     </aside>
   );

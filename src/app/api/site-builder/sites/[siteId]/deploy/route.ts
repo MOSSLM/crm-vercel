@@ -6,6 +6,7 @@ import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
+import { normalizePublishedSubdomainInput } from "@/lib/site-builder/publish-subdomain";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ type Params = { siteId: string };
  * the kanban "Déployer" action / moving a card to "Prêt". Re-publishing keeps
  * the existing subdomain.
  */
-export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
+export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const supabase = getServiceClient();
   const siteId = params.siteId;
 
@@ -31,7 +32,20 @@ export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
     .single();
   if (error || !site) return jsonError("Site introuvable", 404);
 
-  let label = (site as { published_subdomain?: string | null }).published_subdomain ?? null;
+  const body = (await req.json().catch(() => ({}))) as { subdomain?: string | null };
+  const requested = typeof body.subdomain === "string" ? normalizePublishedSubdomainInput(body.subdomain) : null;
+  if (body.subdomain && !requested) return jsonError("Sous-domaine invalide", 400);
+  let label = requested ?? (site as { published_subdomain?: string | null }).published_subdomain ?? null;
+
+  if (requested) {
+    const { data: existing } = await supabase
+      .from("sites")
+      .select("id")
+      .eq("published_subdomain", requested)
+      .neq("id", siteId)
+      .maybeSingle();
+    if (existing) return jsonError("Ce sous-domaine est déjà utilisé par un autre site", 409);
+  }
 
   if (!label) {
     const enterpriseId = (site as { enterprise_id?: number | null }).enterprise_id ?? null;

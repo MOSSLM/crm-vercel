@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DemRail } from "../DemRail";
-import { DAILY_QUOTA, planTasks } from "@/lib/agent-portal/demarchage-buckets";
+import { DAILY_QUOTA, joursReels, separerFile } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemCohorte, DemarchageQueueMeta, DemarchageTask } from "../types";
 
 /**
@@ -46,40 +46,51 @@ function renderRail(
   {
     cohorte = null as DemCohorte | null,
     quotas,
+    doneToday = {} as Record<string, number>,
     setCohorte = jest.fn(),
     onRechercher = jest.fn(),
   }: {
     cohorte?: DemCohorte | null;
     quotas?: DemarchageQueueMeta["quotas"];
+    doneToday?: Record<string, number>;
     setCohorte?: (c: DemCohorte | null) => void;
     onRechercher?: () => void;
   } = {},
 ) {
-  const days = planTasks(tasks, { now: NOW, timeZone: "UTC" });
-  const journee = days[0];
+  // La campagne ne produit que des appels à froid : tout tombe dans les
+  // premiers contacts, et c'est cette file-là qu'on regarde ici.
+  const { premiers, relances } = separerFile(tasks);
+  const jours = joursReels(relances, { now: NOW, timeZone: "UTC" });
   const { container } = render(
     <DemRail
-      days={days}
-      day={journee.date}
+      onglet="premiers"
+      setOnglet={jest.fn()}
+      premiers={premiers}
+      jours={jours}
+      day={jours[0].date}
       setDay={jest.fn()}
-      filt="all"
-      setFilt={jest.fn()}
+      canal={null}
+      setCanal={jest.fn()}
+      signal={null}
+      setSignal={jest.fn()}
       step={null}
       setStep={jest.fn()}
       cohorte={cohorte}
       setCohorte={setCohorte}
-      tasks={journee.tasks}
+      tasks={premiers}
       meta={{
         done_today: 0,
-        done_today_by_kind: {},
+        done_today_by_kind: doneToday,
         done_today_conversation: 0,
         ...(quotas !== undefined ? { quotas } : {}),
       }}
       agentName="Bilal"
       loading={false}
+      busy={false}
       sel={null}
       onPick={jest.fn()}
       onRechercher={onRechercher}
+      onBasculerEnAppel={jest.fn()}
       poolDispo={null}
       onAttribuer={jest.fn()}
     />,
@@ -92,19 +103,20 @@ function renderRail(
     frise: el(".dm-fr"),
     /** La barre de cohortes — `null` tant que la campagne n'est pas dans la file. */
     barreCohorte: () => container.querySelector<HTMLElement>(".dm-filt.coh"),
-    /** Les pastilles de canaux et de signaux : l'AUTRE barre. */
+    /** Les pastilles de canal : l'AUTRE barre. */
     pastillesCanal: () =>
       Array.from(container.querySelectorAll<HTMLElement>(".dm-filt:not(.coh):not(.steps) .dm-chip")),
-    tuile: (lb: string) => within(el(".dm-sess .mini")).getByText(lb).closest<HTMLElement>("div")!,
+    /** La ligne d'objectif d'un canal, en tête de file. */
+    objectif: (lb: string) =>
+      Array.from(container.querySelectorAll<HTMLElement>(".dm-obj-l")).find((l) =>
+        l.querySelector(".k")?.textContent?.includes(lb),
+      )!,
   };
 }
 
 describe("DemRail — la cohorte se lit sur la ligne", () => {
   it("écrit la cohorte de chaque ligne, en deux mots", () => {
-    const { frise } = renderRail([
-      froide("a", "A_site_faible"),
-      froide("b", "B_sans_site"),
-    ]);
+    const { frise } = renderRail([froide("a", "A_site_faible"), froide("b", "B_sans_site")]);
     expect(within(frise).getByText("site faible")).toBeInTheDocument();
     expect(within(frise).getByText("sans site")).toBeInTheDocument();
   });
@@ -139,9 +151,9 @@ describe("DemRail — la cohorte est une dimension à part", () => {
     ]);
   });
 
-  it("ne mélange pas la cohorte aux canaux et aux signaux", () => {
-    // Le filtre de canal et celui de signal partagent une barre parce qu'ils
-    // s'excluent. La cohorte se combine avec eux : elle ne peut pas y entrer.
+  it("ne mélange pas la cohorte aux canaux", () => {
+    // Canal, signal et cohorte sont trois dimensions cumulables : chacune a sa
+    // barre, aucune n'écrase les autres.
     const { pastillesCanal } = renderRail(deuxCohortes);
     const libelles = pastillesCanal().map((c) => c.textContent);
     expect(libelles.some((l) => l?.includes("site faible"))).toBe(false);
@@ -192,38 +204,50 @@ describe("DemRail — les appels à froid", () => {
     expect(within(frise).getByText("Jamais contactée")).toBeInTheDocument();
   });
 
-  it("ne parle plus de séquence en pied de file", () => {
-    renderRail([froide("a", null)]);
-    expect(screen.getByText(/Un appel à froid n'en a qu'une/)).toBeInTheDocument();
+  it("laisse la bascule en appel à portée de clic sur chaque ligne", () => {
+    const { frise } = renderRail([froide("a", "B_sans_site"), froide("b", "B_sans_site")]);
+    // Un appel à froid EST déjà un appel : rien à basculer. Le bouton
+    // n'apparaît que là où il change quelque chose.
+    expect(within(frise).queryAllByTitle("Transformer en appel")).toHaveLength(0);
   });
 });
 
-describe("DemRail — la cadence vient des réglages de l'agent", () => {
-  it("affiche le quota de l'agent quand il en a un", () => {
-    const { tuile } = renderRail([task({ id: "c1" })], { quotas: { call: 60 } });
-    expect(within(tuile("Appels")).getByText("/60")).toBeInTheDocument();
-    expect(screen.getByText(/cadence : 60 appels/)).toBeInTheDocument();
+describe("DemRail — l'objectif vient des réglages de l'agent", () => {
+  it("affiche l'objectif de l'agent quand il en a un", () => {
+    const { objectif } = renderRail([task({ id: "c1" })], { quotas: { call: 60 } });
+    expect(within(objectif("Appels")).getByText("/60")).toBeInTheDocument();
   });
 
-  it("retombe canal par canal sur la cadence par défaut", () => {
-    // Régler ses appels ne doit pas effacer l'affichage de sa cadence WhatsApp.
-    const { tuile } = renderRail([task({ id: "c1" }), task({ id: "w1", kind: "whatsapp" })], {
+  it("retombe canal par canal sur l'objectif par défaut", () => {
+    // Régler ses appels ne doit pas effacer l'affichage de son objectif WhatsApp.
+    const { objectif } = renderRail([task({ id: "c1" }), task({ id: "w1", kind: "whatsapp" })], {
       quotas: { call: 60 },
     });
-    expect(within(tuile("WhatsApp 1er contact")).getByText(`/${DAILY_QUOTA.whatsapp}`)).toBeInTheDocument();
+    expect(within(objectif("WhatsApp")).getByText(`/${DAILY_QUOTA.whatsapp}`)).toBeInTheDocument();
   });
 
-  it("garde la cadence par défaut quand l'agent n'a rien réglé", () => {
-    const { tuile } = renderRail([task({ id: "c1" })], { quotas: null });
-    expect(within(tuile("Appels")).getByText(`/${DAILY_QUOTA.call}`)).toBeInTheDocument();
+  it("garde l'objectif par défaut quand l'agent n'a rien réglé", () => {
+    const { objectif } = renderRail([task({ id: "c1" })], { quotas: null });
+    expect(within(objectif("Appels")).getByText(`/${DAILY_QUOTA.call}`)).toBeInTheDocument();
   });
 
   it("ignore une valeur inexploitable plutôt que d'afficher « /null »", () => {
     // La valeur vient d'un `jsonb` : elle se relit, elle ne se croit pas.
-    const { tuile } = renderRail([task({ id: "c1" })], {
+    const { objectif } = renderRail([task({ id: "c1" })], {
       quotas: { call: "beaucoup" as unknown as number },
     });
-    expect(within(tuile("Appels")).getByText(`/${DAILY_QUOTA.call}`)).toBeInTheDocument();
+    expect(within(objectif("Appels")).getByText(`/${DAILY_QUOTA.call}`)).toBeInTheDocument();
+  });
+
+  it("ne renvoie AUCUN appel au lendemain quand la journée dépasse l'objectif", () => {
+    // Cent appels par jour ne rentrent pas dans un objectif de vingt, et ce qui
+    // ne rentrait pas ne s'affichait pas : le plan poussait quatre-vingts
+    // lignes au lendemain, tous les jours, sans que rien ne le signale.
+    const cent = Array.from({ length: 100 }, (_, i) => task({ id: `c${i}` }));
+    const { container, objectif } = renderRail(cent, { doneToday: { call: 24 } });
+    expect(within(objectif("Appels")).getByText("100 en file")).toBeInTheDocument();
+    expect(objectif("Appels").dataset.full).toBe("1");
+    expect(container.querySelectorAll(".dm-tk")).toHaveLength(100);
   });
 });
 

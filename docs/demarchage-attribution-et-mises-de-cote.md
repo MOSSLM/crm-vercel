@@ -1,6 +1,6 @@
-# Démarchage : se constituer sa file, et les deux sorties qui ne sont ni oui ni non
+# Démarchage : la file de gauche, refondue
 
-Trois manques du poste de travail Démarchage, et ce qui les remplace.
+Ce que le poste de travail ne savait pas faire, et ce qui le remplace.
 
 ## 1. S'attribuer des entreprises soi-même
 
@@ -52,18 +52,13 @@ dérouler l'historique.
 Rien ne part entre-temps : une inscription garée sur une étape manuelle attend
 sa tâche, elle ne déroule pas la suite.
 
-**Le correctif qui rend le geste vrai.** `planTasks` répartissait les tâches à la
-cadence quotidienne et ne lisait `due_at` que pour les **ordonner**. Une tâche
-repoussée à trois semaines revenait donc dans la file du jour dès qu'il restait
-une place au quota — la mise de côté ne mettait rien de côté. Désormais, une
-tâche `snoozed` dont la date n'est pas arrivée va droit à sa journée de retour,
-sans consommer de cadence, et **même un signal GA4 chaud ne l'en sort pas** :
-une décision humaine explicite passe devant une mesure, sinon il faudrait ranger
-le même prospect chaque matin.
-
-La règle ne vaut que pour les mises de côté explicites : les relances de séquence
-naissent avec l'échéance du jour où elles sont créées, et ce sont bien elles que
-la cadence doit continuer d'étaler.
+**Le correctif qui rend le geste vrai.** Le plan de file répartissait les tâches
+à la cadence quotidienne et ne lisait `due_at` que pour les **ordonner**. Une
+tâche repoussée à trois semaines revenait donc dans la file du jour dès qu'il
+restait une place au quota — la mise de côté ne mettait rien de côté. La ligne
+va désormais droit à sa case de calendrier (§ 4), et **même un signal GA4 chaud
+ne l'en sort pas** : une décision humaine explicite passe devant une mesure,
+sinon il faudrait ranger le même prospect chaque matin.
 
 ## 3. « Cette personne n'est pas sur WhatsApp »
 
@@ -95,6 +90,70 @@ démarchage : la tâche se fermait avec son issue, puis l'inscription était
 avancée comme après n'importe quel geste. Un prospect qui venait de dire non
 recevait donc la relance suivante. Une issue `flow: 'stop'` ferme désormais
 l'inscription au lieu de l'enchaîner.
+
+## 4. La barre de gauche : deux files, des filtres cumulables, un objectif
+
+**Le manque.** La file de gauche mélangeait tout dans une seule liste, répartie
+sur les jours à venir à concurrence d'un quota par canal. Quatre défauts, tous
+liés :
+
+- **un lead ne pouvait porter qu'un seul état.** La pastille « Chauds » ne
+  comptait pas les prospects chauds *déjà en discussion* : le code ne gardait
+  que le signal le plus prioritaire, si bien qu'un prospect disparaissait de
+  « Chauds » au moment précis où il devenait intéressant — quand il répondait.
+  Et il fallait *choisir* entre « chaud », « WhatsApp » et « attente », alors
+  qu'un même prospect est souvent les trois ;
+- **le quota cachait le travail.** Vingt WhatsApp par jour n'était pas un
+  objectif mais un mur : ce qui dépassait était déplacé au lendemain, donc
+  invisible. Cent premiers contacts s'affichaient comme vingt ;
+- **aujourd'hui prenait toute la place.** Un compteur géant, cinq tuiles et deux
+  paragraphes de cadence occupaient la moitié de la hauteur du rail ; la liste
+  commençait sous la ligne de flottaison ;
+- **rien ne permettait de dire « je préfère l'appeler »**, sinon boucler la
+  tâche comme faite (ce qui est faux) ou la laisser traîner.
+
+**Ce qui le remplace.**
+
+### Deux files, en onglets
+
+- **Premiers contacts** — des entreprises que personne n'a jamais abordées.
+  C'est un *stock* : rien ne les date. L'objectif du jour s'affiche par canal
+  (« 12 / 20 »), il ne cache rien : **on peut le dépasser**, la barre passe au
+  vert et les cent lignes restent cent.
+- **Relances & discussions** — des gens déjà touchés. C'est un *calendrier* :
+  **la semaine qui vient est toujours affichée**, jours vides compris (sinon ce
+  n'est plus un calendrier mais une liste, et on ne voit pas qu'il n'y a rien
+  jeudi), plus les journées lointaines qui portent quelque chose — une mise de
+  côté à trois mois garde sa case. Chaque ligne à la date où elle est réellement
+  due, l'échu replié sur aujourd'hui. **Aucun plafond** : répondre à quelqu'un
+  qui a réagi ne se rationne pas.
+
+La frontière n'est pas une heuristique : `entreprises.premiere_touche_le`, posé
+une seule fois par la première tâche bouclée — la même colonne qui sert à
+comparer les cohortes. Le compteur d'objectif lit la même chose : il compte les
+entreprises *abordées aujourd'hui*, jamais les relances.
+
+### Des filtres qui se cumulent
+
+Canal, signal, cohorte et étape sont quatre dimensions, chacune avec sa barre.
+Cocher « Chauds » ne fait plus perdre le canal. Et la ligne porte **tous** ses
+signaux : un prospect peut afficher « a répondu » *et* « chaud ».
+
+### « Appeler plutôt »
+
+Sur chaque ligne (icône téléphone au survol) et sur la carte d'action au centre :
+un clic et la tâche devient un appel. La bascule change le canal et rien d'autre
+— même prospect, même étape, même séquence, même identifiant. Le texte préparé
+par le moteur reste : l'accroche WhatsApp écrite pour ce prospect est très
+exactement ce qu'on a à lui dire de vive voix. Sans numéro connu, la bascule
+refuse plutôt que d'envoyer la fiche dans une file d'appels où elle serait
+injoignable.
+
+Une carte de tête a existé dans le rail, qui reprenait le prospect en cours en
+grand. Elle a été retirée : le centre de l'écran affiche déjà ce prospect-là, en
+plus complet, à trois centimètres de distance — elle ne disait rien de neuf et
+mangeait la place de la liste, la seule chose que le rail sache faire mieux que
+le reste de l'écran.
 
 ## Migration
 
