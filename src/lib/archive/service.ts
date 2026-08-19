@@ -182,7 +182,7 @@ export async function archiveTargets(
   //    après l'archivage — exactement le bug que `stopOutreach` évite ailleurs.
   for (const id of touchedOpportunites) {
     try {
-      await stopOutreach(sb, id, 'exited')
+      await stopOutreach(sb, id, 'exited', 'archive')
     } catch (e) {
       console.warn('stopOutreach a échoué pour', id, e)
     }

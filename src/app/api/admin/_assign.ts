@@ -285,7 +285,9 @@ export async function unassignProspectFromAgent(
 
   const { error: enrollErr } = await sc
     .from("sequence_enrollments")
-    .update({ status: "exited", next_run_at: null })
+    // « reattribution » : on retire la fiche à son agent, on ne renonce pas au
+    // prospect. Le tableau la rend au stock à démarcher.
+    .update({ status: "exited", next_run_at: null, exit_reason: "reattribution" })
     .eq("entreprise_id", entrepriseId)
     .in("status", ["active", "paused"]);
   if (enrollErr) return { ok: false, error: enrollErr.message };

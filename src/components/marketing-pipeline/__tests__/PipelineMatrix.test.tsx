@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { PipelineMatrix } from "../PipelineMatrix";
-import type { BoardItem, BulkHandlers, MatrixHandlers } from "../types";
+import type { BoardItem, BulkHandlers, MatrixHandlers, SequenceRef } from "../types";
 
 jest.mock("next/link", () => ({
   __esModule: true,
@@ -98,7 +98,11 @@ const TRIAGE_ROWS: BoardItem[] = [
   }),
 ];
 
-function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) {
+function renderRows(
+  rows: BoardItem[],
+  handlers: MatrixHandlers = noopHandlers,
+  sequences: SequenceRef[] = [],
+) {
   const bulkHandlers: BulkHandlers = {
     onEnrich: jest.fn(),
     onComplete: jest.fn(),
@@ -126,6 +130,7 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
       onRefresh={jest.fn()}
       handlers={handlers}
       bulk={bulkHandlers}
+      sequences={sequences}
     />,
   );
   return bulkHandlers;
@@ -655,5 +660,93 @@ describe("PipelineMatrix — archivage en masse", () => {
     const [items, kind] = (bulk.onArchive as jest.Mock).mock.calls[0];
     expect(items.map((i: BoardItem) => i.id)).toEqual(["a", "b"]);
     expect(kind).toBe("entreprise");
+  });
+});
+
+describe("PipelineMatrix — trois états de séquence", () => {
+  /**
+   * LA RÉGRESSION QU'ON TIENT ICI.
+   *
+   * Passer un prospect en rendez-vous termine son inscription. Tant que le
+   * tableau ne lisait que les inscriptions vivantes, cette ligne retombait dans
+   * « pas encore en séquence » — le segment qu'on attribue à un agent — et
+   * repartait en démarchage le lendemain de sa dernière relance. « Jamais
+   * inscrite » et « a fini sa séquence » doivent se filtrer séparément.
+   */
+  const SEQS: SequenceRef[] = [{ id: "s1", name: "Artisans", status: "on", requireCanaux: [], excludeCanaux: [] }];
+
+  const inscription = (status: string, exitReason: string | null = null) => ({
+    enrollmentId: "e1",
+    automationId: "s1",
+    name: "Artisans",
+    status,
+    holdReason: null,
+    exitReason,
+  });
+
+  const ROWS_SEQ: BoardItem[] = [
+    item({ id: "n1", name: "Jamais", sequence: null }),
+    item({ id: "n2", name: "EnCours", sequence: inscription("active") }),
+    item({ id: "n3", name: "Finie", sequence: inscription("finished") }),
+    // Le numéro n'a pas de compte WhatsApp : sortie sans qu'un message parte.
+    item({ id: "n4", name: "HorsCanal", sequence: inscription("exited", "hors_canal") }),
+    // Le prospect a dit non.
+    item({ id: "n5", name: "Stoppee", sequence: inscription("exited", "stop") }),
+  ];
+
+  const seqFilter = () => screen.getByTitle(/Séquence dans laquelle/);
+
+  it("« À démarcher » réunit le stock vierge et les sorties qui n'ont rien envoyé", () => {
+    renderRows(ROWS_SEQ, noopHandlers, SEQS);
+    fireEvent.change(seqFilter(), { target: { value: "none" } });
+    expect(rowNames()).toEqual(["Sélectionner Jamais", "Sélectionner HorsCanal"]);
+  });
+
+  it("« En séquence » ne rend que ce qui travaille encore", () => {
+    renderRows(ROWS_SEQ, noopHandlers, SEQS);
+    fireEvent.change(seqFilter(), { target: { value: "any" } });
+    expect(rowNames()).toEqual(["Sélectionner EnCours"]);
+  });
+
+  it("« Déjà démarchée » garde ceux à qui quelque chose est parvenu", () => {
+    renderRows(ROWS_SEQ, noopHandlers, SEQS);
+    fireEvent.change(seqFilter(), { target: { value: "done" } });
+    expect(rowNames()).toEqual(["Sélectionner Finie", "Sélectionner Stoppee"]);
+  });
+
+  it("filtrer sur une séquence nommée retient tout ce qui y est passé", () => {
+    renderRows(ROWS_SEQ, noopHandlers, SEQS);
+    fireEvent.change(seqFilter(), { target: { value: "s1" } });
+    expect(rowNames()).toEqual([
+      "Sélectionner EnCours",
+      "Sélectionner Finie",
+      "Sélectionner HorsCanal",
+      "Sélectionner Stoppee",
+    ]);
+  });
+
+  it("la carte nomme la fin au lieu de rappeler à l'inscription", () => {
+    renderRows([ROWS_SEQ[2]], noopHandlers, SEQS);
+    expect(screen.getByText("Terminée")).toBeInTheDocument();
+    expect(screen.getByText("séquence terminée")).toBeInTheDocument();
+    expect(screen.queryByText("À inscrire")).not.toBeInTheDocument();
+    // Mais la reprise reste à portée de clic — sinon réinscrire un prospect
+    // démarché il y a trois mois obligeait à sortir du board.
+    expect(screen.getByLabelText("Réinscrire dans une séquence")).toBeInTheDocument();
+  });
+
+  it("une sortie pour canal mort revient à inscrire, mais dit pourquoi", () => {
+    renderRows([ROWS_SEQ[3]], noopHandlers, SEQS);
+    expect(screen.getByText("À inscrire")).toBeInTheDocument();
+    expect(screen.getByText(/pas joignable sur ce canal/)).toBeInTheDocument();
+  });
+
+  it("et elle ne repropose pas d'un clic la séquence qui vient d'échouer", () => {
+    const handlers = { ...noopHandlers, onEnroll: jest.fn() };
+    renderRows([ROWS_SEQ[3]], handlers, SEQS);
+    // Le bouton de suggestion porterait le nom de la séquence ; il ne doit pas
+    // être là. Le déroulant, lui, reste — c'est un choix qu'on peut refaire.
+    expect(screen.queryByRole("button", { name: /Séquence conseillée/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Inscrire dans une séquence")).toBeInTheDocument();
   });
 });

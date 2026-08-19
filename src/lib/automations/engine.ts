@@ -8,6 +8,7 @@ import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
 import { etapeSuivante } from '@/lib/automations/branches'
+import type { MotifSortie } from '@/lib/automations/sortie-sequence'
 import {
   readReplies,
   readSkippedSteps,
@@ -1585,10 +1586,17 @@ export async function cancelEnrollmentWork(
  *
  * Idempotent : une inscription déjà terminée ou déjà sortie n'est pas
  * retouchée, et son `finished_at` d'origine reste vrai.
+ *
+ * LE MOTIF EST OBLIGATOIRE, et c'est voulu : c'est ici, et nulle part ailleurs,
+ * qu'on sait si le prospect a dit non ou si le canal était simplement mort.
+ * Sans lui, le tableau ne peut plus faire la différence entre un prospect à
+ * rendre au stock et un qu'il faut laisser tranquille (cf.
+ * `src/lib/automations/sortie-sequence.ts`).
  */
 export async function sortirDeSequence(
   sb: SupabaseClient,
   enrollmentId: string,
+  motif: MotifSortie,
 ): Promise<{ jobs: number; tasks: number }> {
   const annule = await cancelEnrollmentWork(sb, enrollmentId)
   await sb
@@ -1598,6 +1606,7 @@ export async function sortirDeSequence(
       next_run_at: null,
       send_at: null,
       hold_reason: null,
+      exit_reason: motif,
       finished_at: new Date().toISOString(),
     })
     .eq('id', enrollmentId)

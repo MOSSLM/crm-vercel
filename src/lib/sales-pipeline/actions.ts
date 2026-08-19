@@ -14,6 +14,7 @@ import { verifyEmail, type VerifyResult } from '@/lib/email/verify/service'
 import type { VerificationStatus } from '@/lib/email/verify/score'
 import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
 import { declarerReponse } from '@/lib/automations/reply'
+import type { MotifSortie } from '@/lib/automations/sortie-sequence'
 import {
   isLostStage,
   isRoleColumn,
@@ -145,11 +146,18 @@ async function liveEnrollments(
  * jobs planifiés et tâches manuelles en attente.
  *
  * `mode = 'exited'` est définitif ; `'paused'` reste reprenable.
+ *
+ * `motif` dit POURQUOI on ferme — il n'a de sens qu'avec `'exited'`, et le
+ * tableau s'en sert pour savoir si le prospect retourne au stock. Par défaut
+ * `'stop'` : tout ce qui passe par ici vient d'une réaction du prospect ou
+ * d'une décision commerciale, jamais d'un canal mort (cf.
+ * `src/lib/automations/sortie-sequence.ts`).
  */
 export async function stopOutreach(
   sb: SupabaseClient,
   opportuniteId: string,
   mode: 'exited' | 'paused',
+  motif: MotifSortie = 'stop',
 ): Promise<{ enrollments: number; jobs: number; tasks: number }> {
   const ids = await liveEnrollments(sb, opportuniteId)
   let jobs = 0
@@ -167,7 +175,7 @@ export async function stopOutreach(
         next_run_at: null,
         send_at: null,
         hold_reason: null,
-        ...(mode === 'exited' ? { finished_at: new Date().toISOString() } : {}),
+        ...(mode === 'exited' ? { exit_reason: motif, finished_at: new Date().toISOString() } : {}),
       })
       .in('id', ids)
   }

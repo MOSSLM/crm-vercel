@@ -13,6 +13,24 @@ describe("detecterTechno — WordPress", () => {
     expect(s.generateurBrut).toBe("WordPress 6.4.3");
   });
 
+  // Régression du 18/08/2026 : un site en WordPress 6 + Divi était rapporté en
+  // « WordPress 3.7.1 », qui est en réalité la version de jQuery. Le HTML
+  // ci-dessous est celui, réel, de polaris-solutions-thermiques.fr.
+  it("ne confond pas la version de jQuery avec celle du cœur WordPress", () => {
+    const html = page(
+      "",
+      `<link rel="stylesheet" href="/wp-content/themes/Divi/style.css">
+       <script src="/wp-includes/js/jquery/jquery.min.js?ver=3.7.1"></script>
+       <script src="/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1"></script>
+       <script src="/wp-includes/js/mediaelement/mediaelement-and-player.min.js?ver=4.2.17"></script>`,
+    );
+    const s = detecterTechno(html);
+    expect(s.cms).toBe("wordpress");
+    expect(s.constructeur).toBe("divi");
+    // Aucune version plutôt qu'une fausse : « WordPress » tout court reste vrai.
+    expect(s.cmsVersion).toBeNull();
+  });
+
   it("reconnaît WordPress aux chemins d'assets quand Yoast a retiré la balise generator", () => {
     const html = page(
       "",

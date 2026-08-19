@@ -6,7 +6,7 @@ import { lireAudits } from "@/lib/audit-site/lecture";
 import { urlPlaquette } from "@/lib/audit/plaquette-lien";
 import { collecterCanaux, type Canal } from "@/lib/prospects/canal";
 import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
-import type { BoardItem } from "@/components/marketing-pipeline/types";
+import { inscriptionVivante, type BoardItem } from "@/components/marketing-pipeline/types";
 import type { SequenceSettings } from "@/components/automations/types";
 import { noteSummaries } from "./_notes";
 
@@ -320,6 +320,8 @@ type EnrollmentCanalRow = {
   current_step: number;
   status: string;
   hold_reason: string | null;
+  /** Pourquoi la sortie, quand il y en a une. Cf. `sortie-sequence.ts`. */
+  exit_reason: string | null;
 };
 
 /**
@@ -640,11 +642,26 @@ export async function buildBoard(
       .select("id, name, status, settings")
       .eq("kind", "sequence")
       .neq("status", "error"),
-    oppIds.length > 0
+    // TOUTES les inscriptions, pas seulement les vivantes.
+    //
+    // Ne lire que `active`/`paused` faisait disparaître l'inscription le jour
+    // où la séquence se terminait, et la ligne retombait dans « pas encore en
+    // séquence » — le stock qu'on attribue à un agent. Un prospect passé en
+    // rendez-vous revenait donc se faire démarcher le lendemain de sa dernière
+    // relance. « Jamais inscrite » et « a fini sa séquence » ne s'écrivent pas
+    // du même NULL.
+    //
+    // Borné aux entreprises du tableau, contrairement à avant : les
+    // inscriptions terminées, elles, s'accumulent sans fin, et PostgREST
+    // plafonne à 1000 lignes. Trié du plus récent au plus ancien — c'est ce
+    // qui laisse `enrollByOpp` garder la bonne quand une ligne en porte
+    // plusieurs.
+    entIds.length > 0
       ? supabase
           .from("sequence_enrollments")
-          .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason")
-          .in("status", ["active", "paused"])
+          .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason, exit_reason")
+          .in("entreprise_id", entIds)
+          .order("updated_at", { ascending: false })
       : Promise.resolve({ data: [] as EnrollmentCanalRow[], error: null }),
     // Les plaquettes. `entreprises_rapport_public` porte aussi les jetons de
     // rapport d'audit ; on ne lit que les quatre colonnes de la plaquette, et
@@ -823,11 +840,24 @@ export async function buildBoard(
 
   // Une inscription se rattache à l'opportunité quand elle en a une, à
   // l'entreprise sinon — le segment « sans fiche contact » n'a que la seconde.
+  //
+  // Une ligne peut en porter plusieurs depuis qu'on garde aussi les terminées :
+  // la vivante l'emporte toujours, c'est elle qui décrit ce qui se passe
+  // maintenant. À défaut, la plus récente — les lignes arrivent déjà triées.
+  // Une erreur ici ne fait pas tomber le tableau, mais elle ne doit pas passer
+  // inaperçue : sans inscriptions, toutes les lignes redeviennent « à
+  // démarcher » — exactement le bug qu'on vient de fermer, en silence.
+  if (enrollmentsRes.error) {
+    console.warn("[marketing-board] inscriptions illisibles :", enrollmentsRes.error.message);
+  }
+
   const enrollByOpp = new Map<string, EnrollmentCanalRow>();
   const enrollByEnt = new Map<number, EnrollmentCanalRow>();
+  const remplace = (prec: EnrollmentCanalRow | undefined, cand: EnrollmentCanalRow) =>
+    !prec || (!inscriptionVivante(prec) && inscriptionVivante(cand));
   for (const e of (enrollmentsRes.data ?? []) as EnrollmentCanalRow[]) {
-    if (e.opportunite_id) enrollByOpp.set(e.opportunite_id, e);
-    if (e.entreprise_id != null && !enrollByEnt.has(e.entreprise_id)) enrollByEnt.set(e.entreprise_id, e);
+    if (e.opportunite_id && remplace(enrollByOpp.get(e.opportunite_id), e)) enrollByOpp.set(e.opportunite_id, e);
+    if (e.entreprise_id != null && remplace(enrollByEnt.get(e.entreprise_id), e)) enrollByEnt.set(e.entreprise_id, e);
   }
 
   const agents = ((agentsRes.data ?? []) as AgentRow[]).map((a) => ({
@@ -949,6 +979,7 @@ export async function buildBoard(
           name: seq?.name ?? "Séquence",
           status: enr.status,
           holdReason: enr.hold_reason,
+          exitReason: enr.exit_reason,
         };
       })(),
       plaquette: (() => {

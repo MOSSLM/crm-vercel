@@ -3,6 +3,7 @@
  * (MarketingWebPipeline) and the matrix view (PipelineMatrix). */
 
 import type { Canal } from "@/lib/prospects/canal";
+import { motifSortieLabel, sortieARedemarcher } from "@/lib/automations/sortie-sequence";
 
 export interface BoardItem {
   id: string;
@@ -85,13 +86,27 @@ export interface BoardItem {
    * Optionnel : une réponse d'API antérieure à la fonctionnalité ne le porte pas.
    */
   canaux?: Canal[];
-  /** L'inscription en cours de cette ligne, ou null si elle n'est pas en séquence. */
+  /**
+   * L'inscription en séquence de cette ligne — `null` seulement si elle n'a
+   * JAMAIS été inscrite.
+   *
+   * Elle survit à la fin de la séquence : `status` dit si elle court encore
+   * (`inscriptionVivante`) ou comment elle s'est terminée. Ne garder que les
+   * vivantes renvoyait un prospect qui vient de finir ses relances dans le
+   * stock « pas encore en séquence », à démarcher une deuxième fois.
+   */
   sequence?: {
     enrollmentId: string;
     automationId: string;
     name: string;
     status: string;
     holdReason: string | null;
+    /**
+     * Pourquoi elle s'est fermée, quand c'est une sortie. C'est lui qui décide
+     * si le prospect retourne au stock : `hors_canal` veut dire que rien ne lui
+     * est jamais parvenu (cf. `src/lib/automations/sortie-sequence.ts`).
+     */
+    exitReason?: string | null;
   } | null;
   /**
    * La plaquette de ce prospect — le lien nominatif et ce qu'il a fait.
@@ -224,6 +239,48 @@ export const sequenceEtatLabel = (status: string): string | null =>
  * séquence. Sans quoi archiver n'aurait rien rangé du tout.
  */
 export const sequenceArchivee = (s: { status: string }): boolean => s.status === "archived";
+
+/**
+ * Une inscription qui travaille encore.
+ *
+ * `finished`, `replied` et `exited` sont des FINS : la séquence a fait son
+ * tour, le prospect a répondu, ou on l'en a sorti. Une ligne dans cet état
+ * n'est pas « à inscrire » — elle a déjà été démarchée, et la reproposer au
+ * stock est le meilleur moyen de la relancer une deuxième fois.
+ */
+export const inscriptionVivante = (s: { status: string } | null | undefined): boolean =>
+  s?.status === "active" || s?.status === "paused";
+
+/**
+ * Cette ligne reste-t-elle à démarcher ?
+ *
+ * Deux cas s'y retrouvent, et c'est voulu : jamais inscrite, et sortie sans que
+ * rien ne parte (canal mort, changement d'agent). Dans les deux cas personne
+ * n'a jamais reçu le moindre message — c'est le stock, celui qu'on attribue.
+ *
+ * Une séquence TERMINÉE, elle, n'en fait pas partie : les relances sont bien
+ * parties. C'est la confusion qui renvoyait un prospect passé en rendez-vous
+ * se faire démarcher le lendemain.
+ */
+export const aDemarcher = (s: { status: string; exitReason?: string | null } | null | undefined): boolean =>
+  !s || (s.status === "exited" && sortieARedemarcher(s.exitReason));
+
+/**
+ * Comment une inscription s'est terminée, en clair. `null` si elle court encore.
+ *
+ * Les trois fins ne se lisent pas pareil : « terminée » veut dire que toutes
+ * les relances sont parties sans réponse, « a répondu » qu'il y a quelqu'un au
+ * bout du fil, « sortie » qu'on l'a arrêtée (attribution à un agent, archivage,
+ * passage en rendez-vous). Les confondre ferait relancer le mauvais prospect.
+ */
+export const inscriptionFinLabel = (status: string, exitReason?: string | null): string | null =>
+  status === "finished"
+    ? "séquence terminée"
+    : status === "replied"
+      ? "a répondu"
+      : status === "exited"
+        ? motifSortieLabel(exitReason) ?? "sortie de séquence"
+        : null;
 
 /** Nom de séquence suffixé de son état, pour les listes déroulantes. */
 export const sequenceOptionLabel = (s: { name: string; status: string }): string => {

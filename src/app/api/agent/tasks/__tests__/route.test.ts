@@ -408,7 +408,9 @@ describe("PATCH /api/agent/tasks — l'issue décide du sort de la séquence", (
   it("sort de la séquence sur une issue qui arrête, au lieu d'enchaîner", async () => {
     brancher({ garde: EN_SEQUENCE });
     await patch({ id: "t1", status: "done", step_outcome: "not_interested", note: "pas le budget" });
-    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1");
+    // « stop » et pas « hors_canal » : quelqu'un a répondu non. Le prospect ne
+    // doit pas revenir dans le stock à démarcher.
+    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1", "stop");
     expect(mockAvancer).not.toHaveBeenCalled();
   });
 
@@ -425,7 +427,9 @@ describe("PATCH /api/agent/tasks — l'issue décide du sort de la séquence", (
     // moyen d'arrêter des relances sur un canal où le prospect n'est pas.
     brancher({ garde: EN_SEQUENCE });
     await patch({ id: "t1", status: "skipped", step_outcome: "blocked" });
-    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1");
+    // « Bloqué / mauvais numéro » met le numéro en blacklist : c'est un arrêt,
+    // pas un canal à remplacer.
+    expect(mockSortir).toHaveBeenCalledWith(expect.anything(), "enr-1", "stop");
     expect(mockAvancer).not.toHaveBeenCalled();
   });
 

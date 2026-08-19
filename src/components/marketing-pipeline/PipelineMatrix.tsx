@@ -49,7 +49,7 @@ import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog
 import { authedFetch } from "@/utils/authedFetch";
 import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
 import { aUneFicheGoogle, lienGoogle, lienMaps } from "@/lib/prospects/lien-google";
-import { AUTO_SEQUENCE, sequenceEtatLabel, sequenceOptionLabel } from "./types";
+import { AUTO_SEQUENCE, aDemarcher, inscriptionFinLabel, inscriptionVivante, sequenceEtatLabel, sequenceOptionLabel } from "./types";
 import type {
   BoardItem,
   AgentRef,
@@ -116,7 +116,10 @@ function activeStageIndex(item: BoardItem, stages: StageDef[] = STAGES): number 
   // La ligne est « faite » quand elle est en séquence. L'agent qui la suit n'est
   // pas une étape du pipeline : c'est une propriété de la ligne, réglée sous son
   // nom dans l'en-tête.
-  if (!item.sequence) return 4;
+  //
+  // Une sortie pour canal mort ne compte PAS comme faite : l'inscription a
+  // existé, mais rien n'est parti. L'étape reste à faire, autrement.
+  if (aDemarcher(item.sequence)) return 4;
   return 5;
 }
 
@@ -1127,7 +1130,19 @@ function SequenceCell({
 
   // La cellule dit la vérité sur la séquence elle-même : une ligne inscrite en
   // avance affiche sa séquence, quel que soit l'état de l'audit.
-  const done = !!item.sequence;
+  //
+  // Une inscription TERMINÉE compte aussi comme faite — l'étape « mettre en
+  // séquence » a bien eu lieu. Elle est nommée pour ce qu'elle est plutôt que
+  // rendue en « À inscrire », qui invitait à relancer un prospect déjà démarché.
+  //
+  // Mais une sortie pour canal mort n'est pas faite pour autant : rien n'est
+  // parti. Elle revient en « À inscrire », avec la raison sous les yeux — sans
+  // quoi on la remettrait sur le canal qui vient d'échouer.
+  const enCours = inscriptionVivante(item.sequence);
+  const aReprendre = aDemarcher(item.sequence);
+  const done = !!item.sequence && !aReprendre;
+  const finLabel =
+    item.sequence && !enCours ? inscriptionFinLabel(item.sequence.status, item.sequence.exitReason) : null;
   const busy = working !== null;
   const canaux = new Set(item.canaux ?? []);
   // Un brouillon reste proposé — il correspond au canal de la ligne aussi bien
@@ -1135,7 +1150,15 @@ function SequenceCell({
   // Mais son état est ANNONCÉ, ici et dans le déroulant : une séquence qui n'est
   // pas `on` ne démarre pas, et l'inscription passe d'abord par son activation.
   const activables = sequences.filter((s) => s.status === "on" || s.status === "draft");
-  const suggeree = sequenceSuggeree(canaux, activables);
+  // LA SÉQUENCE QUI VIENT D'ÉCHOUER N'EST PLUS SUGGÉRÉE.
+  // La suggestion se calcule sur les canaux, et les canaux se lisent dans le
+  // numéro : un mobile sans compte WhatsApp reste un mobile. Reproposer d'un
+  // clic la séquence WhatsApp dont ce prospect vient de sortir refermait la
+  // boucle que la sortie « hors canal » était censée ouvrir. Elle reste dans le
+  // déroulant — c'est un choix qu'on peut vouloir refaire, pas un défaut.
+  const echouee = item.sequence?.exitReason === "hors_canal" ? item.sequence.automationId : null;
+  const brut = sequenceSuggeree(canaux, activables);
+  const suggeree = brut && brut.id === echouee ? null : brut;
   const etatSuggeree = suggeree ? sequenceEtatLabel(suggeree.status) : null;
 
   return (
@@ -1149,7 +1172,13 @@ function SequenceCell({
           )}
           <span className="c-ttl">{stage.short}</span>
           <span className="c-tag">
-            {done ? <span className="pill ok">En séquence</span> : <span className="pill accent">À inscrire</span>}
+            {enCours ? (
+              <span className="pill ok">En séquence</span>
+            ) : done ? (
+              <span className="pill">Terminée</span>
+            ) : (
+              <span className="pill accent">À inscrire</span>
+            )}
           </span>
         </div>
 
@@ -1171,14 +1200,55 @@ function SequenceCell({
               <Flame className="ico-sm" />
               {item.sequence.name}
             </div>
-            {item.sequence.holdReason === "awaiting_reply" && (
+            {enCours && item.sequence.holdReason === "awaiting_reply" && (
               <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
                 en attente de réponse
               </div>
             )}
+            {/* Une séquence finie ne se réinscrit pas toute seule, mais elle
+                doit rester réinscriptible d'ici : sans ce déroulant, reprendre
+                un prospect démarché il y a trois mois obligeait à sortir du
+                board. C'est un choix, pas une case à cocher — d'où le silence
+                du bouton conseillé, réservé au stock jamais démarché. */}
+            {!enCours && (
+              <>
+                {finLabel && (
+                  <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
+                    {finLabel}
+                  </div>
+                )}
+                {activables.length > 0 && (
+                  <select
+                    className="seq-pick"
+                    style={{ marginTop: 4 }}
+                    value=""
+                    disabled={busy}
+                    aria-label="Réinscrire dans une séquence"
+                    onChange={(e) => {
+                      if (e.target.value) handlers.onEnroll?.(item, e.target.value);
+                    }}
+                  >
+                    <option value="">Réinscrire…</option>
+                    {activables.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {sequenceOptionLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
           </div>
         ) : (
           <>
+            {/* Pourquoi cette ligne est revenue à « À inscrire » alors qu'elle
+                a déjà porté une inscription. Sans ça, elle ressemble à du stock
+                neuf, et on la renvoie sur le canal qui vient d'échouer. */}
+            {aReprendre && finLabel && (
+              <div className="c-body" style={{ fontSize: 10.5, color: "var(--warn, #C8881F)" }}>
+                {item.sequence?.name} — {finLabel}
+              </div>
+            )}
             <div className="c-body muted" style={{ fontSize: 11 }}>
               {canaux.size === 0 ? (
                 // Ni adresse ni téléphone : aucune séquence ne peut rien en
@@ -1275,7 +1345,12 @@ function BulkBar({
   // Une ligne déjà inscrite ne doit pas l'être deux fois : le prospect
   // recevrait tout en double. On la retire du lot AVANT de proposer l'action,
   // pour que le compte annoncé soit celui qui partira.
-  const toEnroll = rows.filter((r) => !r.sequence);
+  //
+  // « Déjà inscrite » veut dire inscription VIVANTE — même condition que
+  // `enrollInSequence`, sinon le compte annoncé ne serait pas celui qui part.
+  // Une séquence terminée reste réinscriptible en lot : c'est ce qu'on vient
+  // chercher en filtrant sur « Séquence terminée ».
+  const toEnroll = rows.filter((r) => !inscriptionVivante(r.sequence));
   const toValidateEnrich = rows.filter((r) => r.project && !r.project.enrichment_validated);
   const toCreateSite = rows.filter((r) => r.entreprise_id != null && !r.site);
   // Symétrique de `toCreateSite` : les lignes qui ONT déjà un site. Sans elles,
@@ -1784,9 +1859,14 @@ export function PipelineMatrix({
       if (dataFilter === "incomplete" && missingCount(it) === 0) return false;
       if (dataFilter === "complete" && missingCount(it) > 0) return false;
       if (canalFilter !== "all" && !matchesCanal(it, canalFilter)) return false;
-      if (sequenceFilter === "none" && it.sequence) return false;
-      if (sequenceFilter === "any" && !it.sequence) return false;
-      if (sequenceFilter !== "all" && sequenceFilter !== "none" && sequenceFilter !== "any") {
+      // Trois états, pas deux — et la ligne de partage n'est pas « a une
+      // inscription » mais « a reçu quelque chose ». Une sortie pour canal mort
+      // (pas de compte WhatsApp) n'a rien envoyé : elle appartient au stock.
+      // Une séquence terminée, si : elle est démarchée.
+      if (sequenceFilter === "none" && !aDemarcher(it.sequence)) return false;
+      if (sequenceFilter === "any" && !inscriptionVivante(it.sequence)) return false;
+      if (sequenceFilter === "done" && (aDemarcher(it.sequence) || inscriptionVivante(it.sequence))) return false;
+      if (!["all", "none", "any", "done"].includes(sequenceFilter)) {
         if (it.sequence?.automationId !== sequenceFilter) return false;
       }
       if (ticketFilter === "open" && openNotes(it) === 0) return false;
@@ -2063,8 +2143,9 @@ export function PipelineMatrix({
             title="Séquence dans laquelle la ligne est inscrite"
           >
             <option value="all">Séquence : toutes</option>
-            <option value="none">Pas encore en séquence</option>
-            <option value="any">Déjà en séquence</option>
+            <option value="none">À démarcher</option>
+            <option value="any">En séquence</option>
+            <option value="done">Déjà démarchée</option>
             {sequences.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}

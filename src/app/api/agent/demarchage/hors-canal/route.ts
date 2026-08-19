@@ -101,7 +101,10 @@ export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) 
   let sortie = false;
   if (tache.enrollment_id) {
     try {
-      await sortirDeSequence(sc, tache.enrollment_id);
+      // « hors_canal » : rien n'est parvenu au prospect, il reste entier. Le
+      // tableau le rendra au stock à démarcher plutôt que de le ranger avec
+      // ceux qui ont dit non.
+      await sortirDeSequence(sc, tache.enrollment_id, "hors_canal");
       sortie = true;
     } catch {
       // la tâche est retirée de la file quoi qu'il arrive ; la séquence sera

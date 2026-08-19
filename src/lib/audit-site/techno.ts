@@ -87,10 +87,26 @@ function extraireGenerator(html: string): string | null {
  * rien à voir) portent la version en requête — `?ver=6.4.3` — tant que le
  * cache-busting par défaut n'a pas été désactivé.
  */
+/**
+ * La version du CŒUR WordPress, lue sur les seuls fichiers qui la portent.
+ *
+ * PIÈGE PAYÉ LE 18/08/2026 — NE PAS ÉLARGIR CE FILTRE
+ * La version précédente acceptait n'importe quel fichier de `wp-includes/`.
+ * Or WordPress y héberge des bibliothèques tierces versionnées POUR ELLES-MÊMES :
+ * `wp-includes/js/jquery/jquery.min.js?ver=3.7.1` est jQuery 3.7.1, pas
+ * WordPress 3.7.1. Un site en WordPress 6 avec Divi était donc rapporté comme
+ * tournant sur une version de 2013 — un chiffre invérifiable, énoncé devant un
+ * prospect qui n'a qu'à demander à son webmaster pour ruiner tout le rapport.
+ *
+ * Les trois motifs ci-dessous sont des fichiers du cœur, dont le `?ver=` est
+ * posé par WordPress lui-même. Aucun repli : ne rien afficher vaut infiniment
+ * mieux qu'un numéro faux, puisque « WordPress » sans version reste vrai.
+ */
 function versionWordpressParAssets(html: string): string | null {
   const m =
-    /wp-includes\/[^"'?\s]+\?ver=(\d+\.\d+(?:\.\d+)?)/i.exec(html) ??
-    /wp-emoji-release\.min\.js\?ver=(\d+\.\d+(?:\.\d+)?)/i.exec(html);
+    /wp-emoji-release\.min\.js\?ver=(\d+\.\d+(?:\.\d+)?)/i.exec(html) ??
+    /wp-includes\/js\/wp-embed\.min\.js\?ver=(\d+\.\d+(?:\.\d+)?)/i.exec(html) ??
+    /wp-includes\/css\/dist\/block-library\/style(?:\.min)?\.css\?ver=(\d+\.\d+(?:\.\d+)?)/i.exec(html);
   return m?.[1] ?? null;
 }
 

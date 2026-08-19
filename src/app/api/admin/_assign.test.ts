@@ -89,8 +89,10 @@ describe('unassignProspectFromAgent', () => {
     expect(updatesOn('entreprises')).toEqual([{ owner_id: null }]);
     expect(updatesOn('opportunites')).toEqual([{ owner_id: null }]);
     expect(calls).toContainEqual({ table: 'prospection_tasks', op: 'delete', payload: undefined });
+    // Le motif compte autant que la sortie : « reattribution » veut dire que le
+    // prospect reste à démarcher, il rejoint le stock au lieu des démarchés.
     expect(updatesOn('sequence_enrollments')).toEqual([
-      { status: 'exited', next_run_at: null },
+      { status: 'exited', next_run_at: null, exit_reason: 'reattribution' },
     ]);
   });
 

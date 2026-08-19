@@ -626,7 +626,7 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   // ce que fait « pas sur WhatsApp ».
   if (task.enrollment_id && status !== "snoozed") {
     try {
-      if (outcomeDef?.flow === "stop") await sortirDeSequence(sc, task.enrollment_id as string);
+      if (outcomeDef?.flow === "stop") await sortirDeSequence(sc, task.enrollment_id as string, "stop");
       else if (status === "done") await advanceEnrollmentAfterTask(task.enrollment_id as string);
     } catch {
       // la séquence reste en pause ; l'admin peut la reprendre depuis Démarchage

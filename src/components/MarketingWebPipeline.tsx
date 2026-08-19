@@ -42,7 +42,7 @@ import {
   ServiceTagsField,
   requiredFieldControl,
 } from "./marketing-pipeline/RequiredFieldControl";
-import { AUTO_SEQUENCE, sequenceEtatLabel, sequenceLancable } from "./marketing-pipeline/types";
+import { AUTO_SEQUENCE, inscriptionVivante, sequenceEtatLabel, sequenceLancable } from "./marketing-pipeline/types";
 import { updateAutomation } from "./automations/automations-db";
 import { errorLabel as enrollErrorLabel } from "@/lib/sales-pipeline/error-labels";
 import type {
@@ -1396,14 +1396,32 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     // Ligne → séquence, résolu AVANT d'envoyer quoi que ce soit.
     const parSequence = new Map<string, BoardItem[]>();
     const sansSequence: BoardItem[] = [];
+    // Celles qu'on renverrait droit sur le canal qui vient d'échouer.
+    const memeCanalMort: BoardItem[] = [];
     for (const it of items) {
-      if (it.sequence) continue; // déjà en séquence : on ne double pas
+      // Seule une inscription VIVANTE bloque : on ne double pas une séquence en
+      // cours. Une séquence terminée, elle, doit rester réinscriptible en lot —
+      // c'est tout l'intérêt du filtre « Déjà démarchée ».
+      if (inscriptionVivante(it.sequence)) continue;
       const cible =
         automationId === AUTO_SEQUENCE
           ? sequenceSuggeree(new Set(it.canaux ?? []), activables)?.id
           : automationId;
       if (!cible) {
         sansSequence.push(it);
+        continue;
+      }
+      // La suggestion se calcule sur les canaux, et un mobile sans compte
+      // WhatsApp reste un mobile : « séquence suggérée par canal » repropose
+      // donc exactement celle dont la ligne vient de sortir. En lot, personne
+      // ne le verrait passer. Nommer une séquence explicitement, en revanche,
+      // reste un choix qu'on respecte.
+      if (
+        automationId === AUTO_SEQUENCE &&
+        it.sequence?.exitReason === "hors_canal" &&
+        it.sequence.automationId === cible
+      ) {
+        memeCanalMort.push(it);
         continue;
       }
       const list = parSequence.get(cible);
@@ -1414,9 +1432,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     const total = [...parSequence.values()].reduce((n, l) => n + l.length, 0);
     if (total === 0) {
       toast.error(
-        sansSequence.length > 0
-          ? "Aucune séquence ne correspond au canal de ces lignes"
-          : "Ces lignes sont déjà en séquence",
+        memeCanalMort.length > 0
+          ? "Ces lignes sont déjà sorties de cette séquence faute de canal — en choisir une autre"
+          : sansSequence.length > 0
+            ? "Aucune séquence ne correspond au canal de ces lignes"
+            : "Ces lignes sont déjà en séquence",
       );
       return;
     }
@@ -1497,6 +1517,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       // renseignement. La taire ferait croire que tout est parti.
       if (sansSequence.length > 0) {
         toast.warning(`${sansSequence.length} ligne(s) sans séquence pour leur canal — non inscrites`);
+      }
+      if (memeCanalMort.length > 0) {
+        toast.warning(
+          `${memeCanalMort.length} ligne(s) déjà sorties de cette séquence faute de canal — non inscrites`,
+        );
       }
       await afterAction();
     } catch (e) {
