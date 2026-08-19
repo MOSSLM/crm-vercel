@@ -7,6 +7,16 @@ describe("deriveSubdomainLabel", () => {
     expect(deriveSubdomainLabel("http://ECOTHERME.FR")).toBe("ecotherme");
   });
 
+  it("uses the company domain instead of a business subdomain", () => {
+    expect(deriveSubdomainLabel("https://chaudiere.technichaudfroid.fr/")).toBe("technichaudfroid");
+    expect(deriveSubdomainLabel("https://devis.chauffage.example.co.uk/contact")).toBe("example");
+  });
+
+  it("keeps the tenant label for generic hosted websites", () => {
+    expect(deriveSubdomainLabel("https://technichaudfroid.wixsite.com/chauffage")).toBe("technichaudfroid");
+    expect(deriveSubdomainLabel("https://plomberie-durand.webflow.io")).toBe("plomberie-durand");
+  });
+
   it("slugifies spaces and special chars", () => {
     expect(deriveSubdomainLabel("https://eco therme&co.fr")).toBe("eco-therme-co");
   });

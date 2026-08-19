@@ -19,6 +19,7 @@ import { sliderValue } from "@/lib/site-builder/claude-design/parse-tweaks-schem
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { normalizePublishedSubdomainInput } from "@/lib/site-builder/publish-subdomain";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
 import { buildHydrationReport, mergeHydrationReports } from "@/lib/site-builder/claude-design/hydration-report";
@@ -335,19 +336,35 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     }
   };
 
-  // "Publier" deploys a demo/project site on an auto-derived subdomain (same
-  // path as the kanban "Déployer"); re-publishing keeps the existing subdomain.
+  // Publication manuelle : l'opérateur choisit l'adresse publique au lieu de
+  // subir la dérivation automatique depuis l'URL Supabase de l'entreprise.
   const [publishing, setPublishing] = React.useState(false);
   const handlePublish = async () => {
+    const saisie = window.prompt(
+      `Sous-domaine souhaité (ex: technichaudfroid ou technichaudfroid.${SITE_DOMAIN})`,
+      data?.publishedSubdomain ?? "",
+    );
+    if (saisie == null) return;
+    const subdomain = normalizePublishedSubdomainInput(saisie);
+    if (!subdomain) {
+      toast.error(`Adresse invalide : saisis seulement un sous-domaine de ${SITE_DOMAIN}`);
+      return;
+    }
+
     setPublishing(true);
     const already = !!data?.publishedSubdomain;
     const t = toast.loading(already ? "Republication…" : "Publication…");
     try {
-      const res = await authedFetch(`/api/site-builder/sites/${siteId}/deploy`, { method: "POST" });
+      await flushSaves();
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subdomain }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Échec");
-      setData((prev) => (prev ? { ...prev, publishedSubdomain: body.subdomain ?? prev.publishedSubdomain } : prev));
-      toast.success(`En ligne : ${body.url}`, { id: t });
+      setData((prev) => (prev ? { ...prev, publishedSubdomain: body.subdomain ?? subdomain } : prev));
+      toast.success(`En ligne : ${body.url ?? `https://${subdomain}.${SITE_DOMAIN}`}`, { id: t });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Publication impossible", { id: t });
     } finally {
