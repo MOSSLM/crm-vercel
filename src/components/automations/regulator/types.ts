@@ -1,5 +1,6 @@
 // types.ts — miroir de la réponse de /api/automations/regulator.
 import type { HoldReason, RegulatorSettings, SendWindow } from '@/lib/automations/regulator'
+import type { PlafondProspection } from '@/lib/rechauffeur/rechauffeur-db'
 
 export type { HoldReason, RegulatorSettings, SendWindow }
 
@@ -90,6 +91,12 @@ export interface RegulatorView {
   testGuardMigration?: string
   /** Qualité des adresses et santé de la délivrabilité. */
   verification?: RegulatorVerification
+  /**
+   * Ce que la chauffe autorise aujourd'hui — `null` s'il n'y a aucun expéditeur
+   * de réchauffage. Toujours envoyé, même réglage éteint : c'est ce qui permet
+   * de proposer l'interrupteur avec son chiffre plutôt qu'à l'aveugle.
+   */
+  plafondChauffe?: PlafondProspection | null
 }
 
 /** Ce que la page montre de la qualité des adresses (cf. `_view.ts`). */

@@ -28,6 +28,7 @@ import {
   type SendWindow,
 } from '@/lib/automations/regulator'
 import { MIN_SENDS_FOR_GUARD, measureBounceRate } from '@/lib/email/bounce-guard'
+import { plafondProspectionDuJour, type PlafondProspection } from '@/lib/rechauffeur/rechauffeur-db'
 
 export interface RegulatorQueueRow {
   id: string
@@ -101,6 +102,13 @@ export interface RegulatorSentRow {
 export interface RegulatorView {
   now: string
   settings: RegulatorSettings
+  /**
+   * Ce que le réchauffeur autorise aujourd'hui — `null` s'il n'existe pas.
+   *
+   * Toujours calculé, même réglage éteint : sans ce chiffre, l'interrupteur
+   * « plafonner par la chauffe » se proposerait à l'aveugle.
+   */
+  plafondChauffe: PlafondProspection | null
   adminUserId: string | null
   /** Union des plages de toutes les séquences actives. */
   openWindows: SendWindow[]
@@ -472,6 +480,11 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   // l'interface dit quoi jouer.
   const verification = await buildVerificationView(sb, settings, invalidHeld, pendingHeld)
 
+  // Ce que la chauffe autorise aujourd'hui. Lu même quand le réglage est
+  // ÉTEINT : c'est le seul moyen de dire à l'écran « voilà ce qui se passerait
+  // si tu l'armais », plutôt que de proposer un interrupteur à l'aveugle.
+  const plafondChauffe = await plafondProspectionDuJour(sb, new Date(nowMs)).catch(() => null)
+
   return {
     now: new Date(nowMs).toISOString(),
     settings,
@@ -491,6 +504,7 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     testGuardReady,
     testGuardMigration: TEST_GUARD_MIGRATION,
     verification,
+    plafondChauffe,
   }
 }
 

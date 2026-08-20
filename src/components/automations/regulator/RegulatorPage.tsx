@@ -44,6 +44,7 @@ import {
   minutesOfDay,
 } from './parts'
 import type { RegulatorQueueRow, RegulatorVerification, RegulatorView } from './types'
+import type { PlafondProspection } from '@/lib/rechauffeur/rechauffeur-db'
 import '../regulator.css'
 
 const AXIS_HOURS = [6, 8, 10, 12, 14, 16, 18, 20, 22]
@@ -176,6 +177,14 @@ export function RegulatorPage() {
   const nextIn = next?.sendAt ? Date.parse(next.sendAt) - now : null
   const avgGap = (s.gapMinMinutes + s.gapMaxMinutes) / 2
   const perHour = avgGap > 0 ? 60 / avgGap : 0
+
+  // Le plafond qui s'applique VRAIMENT aujourd'hui. Quand la chauffe tient la
+  // barre, c'est elle qui décide — le réglage d'ici n'est plus qu'une borne
+  // haute, et l'afficher seul ferait mentir le compteur.
+  const plafondParLaChauffe = s.plafondRechauffeur && view.plafondChauffe != null
+  const plafondDuJour = plafondParLaChauffe
+    ? Math.min(s.dailyCap, view.plafondChauffe!.plafond)
+    : s.dailyCap
   const openNow = view.sequences.filter(
     (seq) => seq.status === 'on' && seq.windows.some(([a, b]) => minutesOfDay(now, tz) >= a && minutesOfDay(now, tz) < b),
   )
@@ -277,12 +286,19 @@ export function RegulatorPage() {
             <div className="rg-metric">
               <div className="l">envoyés aujourd’hui</div>
               <div className="v">
-                {view.sentToday} <small>/ {s.dailyCap}</small>
+                {view.sentToday} <small>/ {plafondDuJour}</small>
               </div>
               <div className="rg-mini">
-                <i style={{ width: `${Math.min(100, s.dailyCap ? (view.sentToday / s.dailyCap) * 100 : 0)}%` }} />
+                <i style={{ width: `${Math.min(100, plafondDuJour ? (view.sentToday / plafondDuJour) * 100 : 0)}%` }} />
               </div>
-              <div className="d">plafond global, toutes séquences</div>
+              {/* Le plafond RÉELLEMENT appliqué, pas celui qu'on a réglé.
+                  Afficher 120 quand la chauffe n'en autorise que 6 ferait
+                  chercher la panne du côté de la file. */}
+              <div className="d">
+                {plafondParLaChauffe
+                  ? `imposé par la chauffe — réglage à ${s.dailyCap}`
+                  : 'plafond global, toutes séquences'}
+              </div>
             </div>
             <div className="rg-metric">
               <div className="l">en attente</div>
@@ -590,6 +606,7 @@ export function RegulatorPage() {
               testGuardReady={view.testGuardReady !== false}
               testGuardMigration={view.testGuardMigration ?? 'sql/20260802_test_phase_guard.sql'}
               verification={view.verification}
+              plafondChauffe={view.plafondChauffe ?? null}
               saving={saving}
               onPatch={patch}
             />
@@ -960,6 +977,7 @@ function SettingsCard({
   testGuardReady,
   testGuardMigration,
   verification,
+  plafondChauffe,
   saving,
   onPatch,
 }: {
@@ -970,6 +988,8 @@ function SettingsCard({
   testGuardReady: boolean
   testGuardMigration: string
   verification?: RegulatorVerification
+  /** Ce que la chauffe autorise aujourd'hui — `null` s'il n'y a pas d'expéditeur. */
+  plafondChauffe: PlafondProspection | null
   saving: boolean
   onPatch: (body: Record<string, unknown>, message?: string) => Promise<boolean>
 }) {
@@ -983,6 +1003,11 @@ function SettingsCard({
   const [seed, setSeed] = React.useState('apercu')
   const [cap, setCap] = React.useState(s.dailyCap)
   React.useEffect(() => setCap(s.dailyCap), [s.dailyCap])
+  // Le plafond RÉELLEMENT appliqué : le plus petit des deux quand la chauffe
+  // tient la barre. Affiché tel quel, sinon le compteur du haut mentirait sur
+  // ce qui peut encore partir aujourd'hui.
+  const capEffectif =
+    s.plafondRechauffeur && plafondChauffe ? Math.min(cap, plafondChauffe.plafond) : cap
 
   // Migration non jouée : on n'affiche pas des réglages qui échoueraient à
   // l'enregistrement, on dit quoi faire. Même parti pris que la phase de test.
@@ -1260,7 +1285,11 @@ function SettingsCard({
         />
       </SetBlock>
 
-      <SetBlock icon="flag" title="Plafond quotidien" extra={`${sentToday} / ${cap}`}>
+      <SetBlock
+        icon="flag"
+        title="Plafond quotidien"
+        extra={s.plafondRechauffeur ? `${sentToday} / ${capEffectif} · chauffe` : `${sentToday} / ${cap}`}
+      >
         <div className="rg-dual">
           <NumberField
             value={cap}
@@ -1294,6 +1323,33 @@ function SettingsCard({
         <div className="rg-bar">
           <i style={{ width: `${Math.min(100, cap ? (sentToday / cap) * 100 : 0)}%` }} />
         </div>
+        {/* ── LE COMPTE-GOUTTES ───────────────────────────────────────────
+            Le plafond d'ici est un chiffre qu'on choisit ; celui de la chauffe
+            est un chiffre qu'on mesure. Armé, le second abaisse le premier — et
+            RIEN D'AUTRE ne change : les envois autorisés restent espacés par
+            l'écart aléatoire et rangés dans les plages du jour. */}
+        <ToggleRow
+          label="Plafonner par ce que la chauffe autorise"
+          desc={
+            plafondChauffe
+              ? `Aujourd’hui la chauffe autorise ${plafondChauffe.plafond} e-mail(s) froid(s). Le plafond effectif devient le plus petit des deux — ${capEffectif}. Ce qui dépasse attend à son étape et repart demain, au rythme de la courbe.`
+              : 'Aucun expéditeur de chauffe enregistré : il n’y a rien à lire, le réglage n’aurait aucun effet.'
+          }
+          checked={s.plafondRechauffeur}
+          disabled={saving || !plafondChauffe}
+          onChange={(v) =>
+            void onPatch(
+              { plafond_rechauffeur: v },
+              v
+                ? `Plafond confié à la chauffe — ${plafondChauffe?.plafond ?? 0} e-mail(s) aujourd’hui`
+                : 'Plafond repris ici — la chauffe ne le limite plus',
+            )
+          }
+          accent
+        />
+        {s.plafondRechauffeur && plafondChauffe && (
+          <p className="rg-hint">{plafondChauffe.explication}</p>
+        )}
         <ToggleRow
           label="Envoyer uniquement du lundi au vendredi"
           checked={s.businessDaysOnly}

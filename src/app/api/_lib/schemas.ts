@@ -611,6 +611,8 @@ export const regulatorSettingsSchema = z
      * aiguillages contournent l'étape au lieu de s'y arrêter.
      */
     canaux_suspendus: z.array(z.enum(["email", "whatsapp", "sms", "call", "linkedin"])).max(5).optional(),
+    /** Le plafond du jour vaut min(daily_cap, ce que la chauffe autorise). */
+    plafond_rechauffeur: z.boolean().optional(),
 
     // ── Vérification des adresses ──────────────────────────────────────────
     /** Aucun email de prospection vers une adresse sans verdict frais. */

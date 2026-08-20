@@ -319,63 +319,79 @@ un agent l'a marqué « pas de compte WhatsApp ».
 > ⚠️ **Les trois séquences sont en `draft`.** Rien ne partira tant que personne
 > ne les aura activées.
 
-## 8. Suspendre un canal, sans arrêter la séquence
+## 8. L'e-mail attend à son étape, puis repart au compte-gouttes
 
 Le lendemain de la livraison, une question de terrain : *les boîtes d'envoi ne
 sont pas encore chaudes — comment lancer S1 en étant sûr qu'aucun e-mail ne
 parte, même pour une entreprise qui a mobile ET adresse ?*
 
-**La vérification a corrigé une idée fausse que j'avais.** Je croyais que le
-barreau WhatsApp se terminait toujours par une sortie vers S2 — donc qu'un
-prospect joignable par les deux canaux n'atteignait jamais l'e-mail. C'est faux :
-`waW2` n'a qu'une voie « il a répondu ». En cas de silence complet, le prospect
+**La vérification a d'abord corrigé une idée fausse.** Je croyais que le barreau
+WhatsApp se terminait toujours par une sortie vers S2 — donc qu'un prospect
+joignable par les deux canaux n'atteignait jamais l'e-mail. C'est faux : `waW2`
+n'a qu'une voie « il a répondu ». En cas de silence complet, le prospect
 **retombe sur le tronc** et arrive à `mlQ`, la question sur l'adresse. Après
 3 + 4 jours, il reçoit bien un e-mail. `cheminSuppose` sur la définition réelle
 le dit en une ligne ; la déduction disait le contraire.
 
-### Pourquoi ni `paused` ni la phase de test
+### La solution qu'on a écartée, et pourquoi
 
-Les deux existaient déjà, et les deux **gèlent le prospect là où il est**. Ce
-n'est pas ce qu'on veut : un artisan sans mobile doit être appelé, pas mis en
-attente six semaines. Ce qu'il fallait, c'est que la séquence **continue** en
-sautant le barreau.
+Premier réflexe : rendre `a_email` faux tant que le canal est suspendu, pour que
+l'échelle **contourne** le barreau et descende à l'appel. Ça marchait. C'était le
+mauvais arbitrage, et c'est le code qui le dit — `processConditionStep` écrit le
+verdict dans `vars.conditions` **une fois**, puis l'inscription avance. Contourner
+ne reportait donc pas l'e-mail : il l'**abandonnait**. Le jour où le canal rouvre,
+le prospect est déjà passé à l'appel et ne revient pas en arrière.
 
-### Deux effets, de natures différentes
+Matteo a tranché en une phrase : « si ça fige ceux qu'on doit contacter par
+e-mail, ça me va ». Le fait redit donc ce qu'il dit — « il a une adresse » — et
+c'est **au moment de l'envoi** qu'on retient.
 
-1. **Le contournement** — `a_email` répond « non » tant que l'e-mail est
-   suspendu. L'échelle descend d'un barreau toute seule ; rien à modifier dans
-   les séquences, rien à remettre en place après.
-2. **La ceinture** — une étape d'un genre suspendu n'envoie rien et ne pose
-   aucune tâche : elle **retient** l'inscription (motif `canal_suspendu`,
-   lisible dans le régulateur). Elle ne la fait pas avancer — franchir enverrait
-   le prospect à la suite d'un message qu'il n'a jamais reçu.
+### Ce qui est en place
 
-Le premier évite l'embouteillage, le second attrape les chemins qu'aucun
-aiguillage n'aura évités — la plaquette e-mail de S2, par exemple, qui est la
-voie « sinon » d'une question portant sur le mobile. Et un troisième filet dans
-`send-guard.ts`, parce qu'une action `send_email` de workflow n'a ni séquence ni
-aiguillage.
+**Deux réglages, dans `regulator_settings`, qui ne servent pas au même moment.**
 
-**Seul `a_email` est masqué, et c'est délibéré.** `a_mobile` sert à la fois à
-WhatsApp et à l'appel : le rendre faux parce que WhatsApp est suspendu couperait
-le téléphone, qui n'a rien demandé. L'e-mail est le seul canal qui corresponde
-exactement à un fait du prospect.
+`canaux_suspendus` — l'arrêt net. Une étape du genre suspendu n'envoie rien et
+ne pose aucune tâche : elle retient l'inscription avec le motif
+`canal_suspendu`. Trois filets, parce qu'un seul aurait une faille : le garde du
+moteur, le garde de `send-guard.ts` (une action `send_email` de workflow n'a ni
+séquence ni inscription), et le motif lisible dans le régulateur. C'est
+l'interrupteur qu'on actionne à la main, et qu'il faut rouvrir à la main.
 
-**Le `false` inventé, l'unique.** `conditions-db.ts` interdit en tête d'inventer
-un `false` — on ne saurait pas le distinguer d'une lecture ratée. L'exception
-est ici, et elle est d'une autre nature : ce n'est pas une lecture qui échoue,
-c'est une impossibilité qu'on connaît.
+`plafond_rechauffeur` — **le compte-gouttes**, et c'est le chaînon qui manquait à
+la couche 7. `capacite()` savait déjà traduire l'ancienneté d'une boîte et son
+placement mesuré en « tant d'e-mails froids aujourd'hui » ; personne ne lisait ce
+nombre en dehors de l'écran du réchauffeur. Armé, il devient le plafond :
 
-| Profil | Canal ouvert | Canal suspendu |
+```
+plafond effectif = min(daily_cap, ce que la chauffe autorise)
+```
+
+Une boîte jamais démarrée autorise **zéro** : les prospects s'accumulent à leur
+étape avec le motif « plafond du jour atteint », et repartent **d'eux-mêmes** à
+mesure que la courbe monte. Personne n'a de bouton à repousser.
+
+**Et le régulateur continue de s'appliquer tel quel.** On abaisse un plafond, on
+ne court-circuite rien : les envois autorisés restent espacés par l'écart
+aléatoire et rangés dans les plages du jour.
+
+### Deux arbitrages qui vont dans des sens opposés, exprès
+
+| Lecture qui échoue | Réponse | Pourquoi |
 | --- | --- | --- |
-| Mobile, il répond | `wa1 → waW → waDemo → ⇢S2` | identique |
-| Mobile + e-mail, silence | `… waW2 → mlQ →` **`ml1 → mlW → ml2 → mlW2`** `→ ap1 …` | `… waW2 → mlQ → ap1 → issQ → ap2 → ⇢S3` |
-| E-mail seul | `mlQ → ml1 → … → ap1 …` | `mlQ → ap1 → issQ → ap2 → ⇢S3` |
-| Fixe seul | `mlQ → ap1 …` | identique |
+| `paused` du régulateur | on n'invente pas la pause | C'est une **commodité** : l'inventer éteindrait la prospection à tort. |
+| capacité de la chauffe | **zéro** | C'est un **garde-fou armé exprès**. Rendre la main au plafond fixe pour une seconde d'indisponibilité, ce serait 120 e-mails. |
 
-Exposition au 20/08 : **nulle**. Les 131 inscriptions vivantes ont toutes un
-mobile. Ce sont les 75 en attente sur `waW` qui atteindraient l'e-mail dans une
-semaine, en cas de silence.
+Seule exception : la table `rechauffe_expediteurs` n'existe pas (`42P01`), ou il
+n'y a aucun expéditeur. Là, il n'y a pas de réchauffeur du tout — on rend `null`,
+et le plafond d'ici reprend la main. Confondre « je n'autorise rien » et « je
+n'ai rien à dire » éteindrait la prospection d'un CRM qui n'a jamais voulu de
+réchauffeur.
+
+**État au 20/08** : `plafond_rechauffeur` armé, `canaux_suspendus` vide,
+`contact@samadigitalstudio.fr` en pause et jamais démarrée → **0 e-mail
+autorisé**. Les 131 inscriptions vivantes ont toutes un mobile ; ce sont les 75
+en attente sur `waW` qui atteindraient l'e-mail dans une semaine, et qui y
+attendront.
 
 ## Ce qui n'a pas été fait, et pourquoi
 
@@ -402,6 +418,6 @@ semaine, en cas de silence.
 | `src/components/automations/SequenceCanvas.tsx` | Le plan à l'écran, le glisser, le relier en deux clics |
 | `src/components/automations/SequenceBuilder.tsx` | L'inspecteur : aiguillage, « et après ? », passage de relais |
 | `src/lib/automations/regulator.ts` | `canauxSuspendus`, les genres suspendables, le motif `canal_suspendu` |
-| `src/lib/automations/conditions-db.ts` | Le masquage d'`a_email` — le seul `false` inventé du fichier |
-| `sql/20260820_canaux_suspendus.sql` | La colonne, et pourquoi ce n'est ni une pause ni la phase de test |
+| `src/lib/rechauffeur/rechauffeur-db.ts` | `plafondProspectionDuJour` — ce que la chauffe autorise, tous expéditeurs |
+| `sql/20260820_canaux_suspendus.sql` | Les deux colonnes, et pourquoi ce n'est ni une pause ni la phase de test |
 | `sql/20260820_sequences_conditionnelles.sql` | Les trois séquences et le déplacement des 132 |

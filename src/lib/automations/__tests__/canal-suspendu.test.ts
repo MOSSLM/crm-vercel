@@ -1,22 +1,22 @@
 /**
  * @jest-environment node
  *
- * SUSPENDRE UN CANAL SANS ARRÊTER LA SÉQUENCE.
+ * SUSPENDRE L'E-MAIL, PUIS LE ROUVRIR AU COMPTE-GOUTTES.
  *
- * Le besoin vient du terrain : les boîtes d'envoi ne sont pas encore chaudes,
- * et faire partir un e-mail aujourd'hui abîmerait la réputation qu'on est
- * justement en train de construire. Les deux interrupteurs qui existaient
- * — `paused` et la phase de test — arrêtent TOUT : le prospect gèle là où il
- * est. Ce n'est pas ce qu'on veut. Un artisan sans mobile doit être appelé, pas
- * mis en attente six semaines.
+ * Les boîtes d'envoi ne sont pas chaudes. Faire partir un e-mail aujourd'hui
+ * abîmerait la réputation qu'on est en train de construire — mais retirer les
+ * étapes e-mail des séquences aurait voulu dire les réécrire plus tard.
  *
- * Ce fichier vérifie les deux moitiés du mécanisme, qui n'ont pas la même
- * nature et se contrôlent séparément :
+ * PREMIÈRE VERSION, ÉCARTÉE : rendre « a une adresse » faux, pour que l'échelle
+ * de canaux contourne le barreau et descende à l'appel. Ça marchait, et c'était
+ * le mauvais arbitrage — le verdict d'une question s'écrit UNE FOIS dans
+ * l'inscription, donc contourner n'ajournait pas l'e-mail, il l'abandonnait.
+ * Matteo a tranché : « si ça fige ceux qu'on doit contacter par e-mail, ça me
+ * va ».
  *
- *   1. LE CONTOURNEMENT — « a une adresse » répond non, donc l'échelle de
- *      canaux descend d'un barreau toute seule. Personne ne s'arrête.
- *   2. LA CEINTURE — le motif de retenue existe et se lit en français, pour
- *      les chemins qu'aucun aiguillage n'aura évités.
+ * CE QUI EST EN PLACE : le prospect va jusqu'à son étape e-mail et y RESTE, avec
+ * un motif lisible. Il repart quand le plafond le permet — et ce plafond peut
+ * être celui de la chauffe, qui monte jour après jour.
  */
 
 const mockFrom = jest.fn()
@@ -53,37 +53,22 @@ const base = (canauxSuspendus: string[]) => {
 
 beforeEach(() => mockFrom.mockReset())
 
-describe('le fait « a une adresse » suit la suspension', () => {
-  it('rend vrai quand rien n’est suspendu', async () => {
-    const faits = await releverLesFaits(base([]), { entrepriseId: 1, contactId: null, opportuniteId: null })
-    expect(faits.aEmail).toBe(true)
-    expect(faits.aMobile).toBe(true)
-  })
-
-  it('rend faux quand l’e-mail est suspendu — et ne touche PAS au mobile', async () => {
+describe('le fait « a une adresse » ne ment pas', () => {
+  // UNE VERSION DE CE FICHIER TESTAIT L'INVERSE. `aEmail` devenait faux sous
+  // suspension pour que l'échelle contourne le barreau e-mail. Ça marchait, et
+  // c'était le mauvais arbitrage : le verdict d'une question s'écrit une fois
+  // pour toutes, donc contourner n'ajournait pas l'e-mail — il l'abandonnait.
+  // Matteo a tranché : « si ça fige ceux qu'on doit contacter par e-mail, ça me
+  // va ». Le fait redit donc ce qu'il dit, et c'est l'envoi qui retient.
+  it('rend vrai même quand le canal est suspendu', async () => {
     const faits = await releverLesFaits(base(['email']), { entrepriseId: 1, contactId: null, opportuniteId: null })
-    expect(faits.aEmail).toBe(false)
-    // `a_mobile` sert à la fois à WhatsApp et à l'appel : le masquer parce
-    // qu'un canal est suspendu couperait le téléphone, qui n'a rien demandé.
+    expect(faits.aEmail).toBe(true)
     expect(faits.aMobile).toBe(true)
   })
 
-  it('suspendre WhatsApp ne rend pas le mobile invisible', async () => {
-    const faits = await releverLesFaits(base(['whatsapp']), { entrepriseId: 1, contactId: null, opportuniteId: null })
-    expect(faits.aMobile).toBe(true)
-    expect(faits.aEmail).toBe(true)
-  })
-
-  it('la colonne absente (migration non jouée) ne suspend rien', async () => {
-    mockFrom.mockImplementation((table: string) => {
-      if (table === 'entreprises')
-        return chain({ data: { email: 'a@b.fr', telephone: '0612345678', telephones: [], cohorte_demarchage: null } })
-      if (table === 'regulator_settings') return chain({ data: null, error: { code: '42703' } })
-      return chain({ data: null })
-    })
-    const sb = { from: (...args: unknown[]) => mockFrom(...args) } as unknown as SupabaseClient
-    const faits = await releverLesFaits(sb, { entrepriseId: 1, contactId: null, opportuniteId: null })
-    expect(faits.aEmail).toBe(true)
+  it('ne va même plus lire les réglages du régulateur', async () => {
+    await releverLesFaits(base(['email']), { entrepriseId: 1, contactId: null, opportuniteId: null })
+    expect(mockFrom.mock.calls.map((c) => c[0])).not.toContain('regulator_settings')
   })
 })
 
@@ -104,30 +89,26 @@ const ECHELLE: SequenceStep[] = [
 
 const idsDe = (steps: SequenceStep[], chemin: number[]) => chemin.map((i) => steps[i].id)
 
-describe('l’échelle contourne le canal suspendu au lieu de s’y arrêter', () => {
-  it('sans mobile et avec une adresse : le prospect passe par l’e-mail', () => {
+describe('l’échelle mène bien à l’e-mail, et c’est là qu’on retient', () => {
+  it('sans mobile et avec une adresse : le prospect arrive sur l’étape e-mail', () => {
+    // Suspendu ou non, le chemin est le MÊME : c'est le moteur qui retient
+    // l'inscription sur `ml1`, avec le motif `canal_suspendu`. Elle repartira
+    // de là — pas d'un autre canal — quand le plafond le permettra.
     const chemin = cheminSuppose(ECHELLE, { waQ: 'timeout', mlQ: 'reply' })
     expect(idsDe(ECHELLE, chemin)).toEqual(['waQ', 'mlQ', 'ml1', 'mlGo'])
   })
 
-  it('sans mobile, e-mail suspendu : il descend jusqu’à l’appel, il ne gèle pas', () => {
-    // `mlQ` répond « timeout » parce que `a_email` vaut faux — c'est exactement
-    // ce que produit `releverLesFaits` sous suspension. AUCUNE étape e-mail
-    // dans le chemin, et l'appel est bien atteint.
+  it('sans adresse du tout : il descend à l’appel, sans passer par l’e-mail', () => {
     const chemin = cheminSuppose(ECHELLE, { waQ: 'timeout', mlQ: 'timeout' })
     expect(idsDe(ECHELLE, chemin)).toEqual(['waQ', 'mlQ', 'ap1'])
-    expect(idsDe(ECHELLE, chemin)).not.toContain('ml1')
   })
 
-  it('avec un mobile : l’e-mail n’était de toute façon jamais sur le chemin', () => {
-    // La réponse à « et si l'entreprise a mobile + e-mail ? » : le barreau
-    // WhatsApp se termine par une sortie, la question sur l'adresse n'est
-    // jamais atteinte. C'est l'échelle qui protège, pas la suspension.
+  it('avec un mobile qui répond : l’e-mail n’est pas sur le chemin', () => {
     const chemin = cheminSuppose(ECHELLE, { waQ: 'reply' })
     expect(idsDe(ECHELLE, chemin)).toEqual(['waQ', 'wa1', 'waGo'])
   })
 
-  it('le faux de la suspension se lit bien comme un « non », pas comme un « non mesuré »', () => {
+  it('« a une adresse » faux se lit comme un non, pas comme un non mesuré', () => {
     expect(evaluerCondition({ champ: 'a_email', operateur: 'vrai' }, { aEmail: false })).toBe('non')
     expect(evaluerCondition({ champ: 'a_email', operateur: 'vrai' }, {})).toBe('non_mesure')
   })

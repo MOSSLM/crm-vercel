@@ -43,7 +43,7 @@ export async function releverLesFaits(
   const id = cible.entrepriseId
   const faits: FaitsProspect = {}
 
-  const [entreprise, contacts, presence, publiques, pipeline, rebond, appel, jetons, suspendus] = await Promise.all([
+  const [entreprise, contacts, presence, publiques, pipeline, rebond, appel, jetons] = await Promise.all([
     sb.from('entreprises').select('email, telephone, telephones, cohorte_demarchage').eq('id', id).maybeSingle(),
     sb.from('contacts').select('email, tel, first_name, last_name, is_decision_maker').eq('entreprise_id', id),
     sb.from('v_presence_actuelle').select('etat').eq('entreprise_id', id).eq('sujet', 'site_web').maybeSingle(),
@@ -74,12 +74,6 @@ export async function releverLesFaits(
     // n'abîme la réputation de la boîte.
     sb.from('entreprises_rapport_public').select('vues, plaquette_vues, plaquette_token')
       .eq('entreprise_id', id).maybeSingle(),
-    // LES CANAUX SUSPENDUS — un réglage, pas un fait du prospect, et pourtant
-    // il change la réponse. « A une adresse » sert ici à trancher une échelle
-    // de canaux : la question posée est « peut-on le joindre par là ? ». Tant
-    // que l'e-mail est suspendu, la réponse est non, et l'aiguillage descend au
-    // barreau suivant au lieu de s'arrêter devant une étape qui ne partira pas.
-    sb.from('regulator_settings').select('canaux_suspendus').eq('id', 'global').maybeSingle(),
   ])
 
   const ent = entreprise.data as
@@ -102,23 +96,23 @@ export async function releverLesFaits(
         email: c.email, tel: c.tel, isDecisionMaker: c.is_decision_maker ?? false,
       })),
     })
-    // ── LE SEUL `false` DÉLIBÉRÉ DE CE FICHIER ────────────────────────────
+    // ── ON NE MASQUE RIEN, ET C'EST UNE DÉCISION DE MATTEO ────────────────
     //
-    // L'en-tête dit qu'on n'invente jamais un `false` : on ne saurait pas le
-    // distinguer d'une lecture ratée. L'exception est ici, et elle est d'une
-    // autre nature — ce n'est pas une lecture qui échoue, c'est une
-    // impossibilité qu'on connaît. Le canal est suspendu, donc on ne peut pas
-    // joindre ce prospect par là : « non » est la vraie réponse, pas un défaut
-    // de mesure.
+    // Une version de ce fichier rendait `aEmail` faux quand le canal e-mail
+    // était suspendu, pour que l'échelle de canaux CONTOURNE le barreau et
+    // descende à l'appel. Ça marchait — et c'était le mauvais arbitrage.
     //
-    // SEUL L'E-MAIL EST MASQUÉ. `a_mobile` sert à la fois à WhatsApp et à
-    // l'appel : le rendre faux parce que WhatsApp est suspendu couperait aussi
-    // le téléphone, qui n'a rien demandé. L'e-mail est le seul canal qui
-    // corresponde exactement à un fait du prospect.
-    const canauxSuspendus = new Set(
-      ((suspendus.data as { canaux_suspendus: string[] | null } | null)?.canaux_suspendus ?? []) as string[],
-    )
-    faits.aEmail = canaux.canaux.has('email') && !canauxSuspendus.has('email')
+    // Le verdict d'une question s'écrit UNE FOIS dans l'inscription
+    // (`vars.conditions`), puis elle avance. Contourner ne reportait donc pas
+    // l'e-mail : il l'ABANDONNAIT. Le jour où le canal rouvre, le prospect est
+    // déjà passé à l'appel et ne revient pas en arrière. Matteo préfère qu'il
+    // attende : « si ça fige ceux qu'on doit contacter par e-mail, ça me va ».
+    //
+    // Le fait redevient donc ce qu'il dit : « il a une adresse ». La suspension
+    // se joue au moment de l'envoi (`canalSuspendu` dans `engine.ts`), où elle
+    // retient l'inscription au lieu de la faire avancer — et où elle se relit à
+    // chaque tick, donc se lève d'elle-même à la réouverture.
+    faits.aEmail = canaux.canaux.has('email')
     faits.aMobile = canaux.canaux.has('mobile')
     faits.aFixe = canaux.canaux.has('fixe')
     faits.cohorte = ent.cohorte_demarchage

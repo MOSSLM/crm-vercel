@@ -29,6 +29,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Temoin } from './appariement'
 import type { Famille, Glissant } from './sante'
+import { capacite, sante } from './sante'
+import { jourDeChauffe } from './courbe'
 import { ouvrir } from './coffre'
 import { reglagesDeviness, type ReglagesHote } from './hotes-connus'
 import type { SecretTemoin } from './connecteur-imap'
@@ -66,18 +68,114 @@ export async function chargerExpediteurs(
   const { data, error } = await q
   if (error) throw new Error(`rechauffe_expediteurs: ${error.message}`)
 
-  return (data ?? []).map((r) => ({
+  return (data ?? []).map(versExpediteur)
+}
+
+/** Une ligne de `rechauffe_expediteurs`, telle que le reste du code l'attend. */
+function versExpediteur(r: Record<string, unknown>): Expediteur {
+  return {
     id: String(r.id),
     email: String(r.email),
     nom: String(r.nom ?? ''),
     domaineSignant: String(r.domaine_signant),
-    statut: r.statut,
-    demarreLe: r.demarre_le ?? null,
+    statut: r.statut as Expediteur['statut'],
+    demarreLe: (r.demarre_le as string | null) ?? null,
     cibleJour: Number(r.cible_jour),
     plafondProspection: Number(r.plafond_prospection),
     fuseau: String(r.fuseau),
     fenetre: { de: Number(r.fenetre_de), a: Number(r.fenetre_a) },
-  }))
+  }
+}
+
+/**
+ * Le plafond de prospection que la chauffe autorise aujourd'hui.
+ *
+ * C'EST LE CHAÎNON QUI MANQUAIT. `capacite()` savait déjà traduire l'ancienneté
+ * et la santé d'une boîte en « tant d'e-mails froids aujourd'hui » — mais
+ * personne ne lisait ce nombre en dehors de l'écran du réchauffeur. Le
+ * régulateur envoyait donc au rythme de son plafond fixe, indifférent à l'état
+ * réel des boîtes.
+ *
+ * TOUS EXPÉDITEURS CONFONDUS, parce que le plafond du régulateur l'est aussi.
+ * Ce qu'on additionne, c'est ce que chaque boîte peut porter sans se brûler :
+ *
+ *   - `chauffe`   → la courbe module par la santé (cf. `capacite`)
+ *   - `entretien` → la montée est finie, la boîte porte son plafond entier
+ *   - le reste    → zéro. Une boîte en pause, en erreur ou bloquée par le DNS
+ *                   n'autorise rien : c'est la moitié du sens du statut.
+ *
+ * Rend `null` — et pas zéro — quand il n'y a AUCUN expéditeur, ou que la table
+ * n'existe pas. La différence compte : `null` veut dire « le réchauffeur n'a
+ * rien à dire, ne le laisse pas plafonner », zéro veut dire « il a regardé et
+ * il n'autorise rien ». Confondre les deux éteindrait la prospection d'un CRM
+ * qui n'a jamais voulu de réchauffeur.
+ */
+export interface PlafondProspection {
+  /** E-mails froids autorisés aujourd'hui, tous expéditeurs confondus. */
+  plafond: number
+  /** Le détail, pour que le chiffre soit défendable à l'écran. */
+  explication: string
+  /** Combien d'expéditeurs ont contribué. */
+  expediteurs: number
+}
+
+export async function plafondProspectionDuJour(
+  sb: SupabaseClient,
+  maintenant: Date = new Date(),
+): Promise<PlafondProspection | null> {
+  // ── UNE LECTURE RATÉE NE DOIT PAS OUVRIR LA VANNE ────────────────────────
+  //
+  // C'est le sens inverse de la pause du régulateur, et pour une raison
+  // précise : la pause est une COMMODITÉ — l'inventer sur une panne éteindrait
+  // la prospection à tort. Ce plafond-ci est un GARDE-FOU, armé exprès par
+  // quelqu'un qui a dit « c'est la chauffe qui décide ». Rendre `null` sur une
+  // erreur rendrait la main au plafond fixe — cent vingt e-mails — pour une
+  // seconde d'indisponibilité de la base. On rend zéro.
+  //
+  // Seule exception : la table n'existe pas (`42P01`). Là, il n'y a pas de
+  // réchauffeur du tout, la migration n'est pas jouée, et il n'y a rien à
+  // garder. Une colonne absente (`42703`) vaut pareil.
+  const { data, error } = await sb.from('rechauffe_expediteurs').select('*').order('email')
+  if (error) {
+    if (error.code === '42P01' || error.code === '42703') return null
+    return {
+      plafond: 0,
+      explication: `Lecture des expéditeurs impossible (${error.message}) — rien n’est autorisé tant qu’on ne sait pas.`,
+      expediteurs: 0,
+    }
+  }
+  const expediteurs = (data ?? []).map(versExpediteur)
+  if (expediteurs.length === 0) return null
+
+  let plafond = 0
+  const morceaux: string[] = []
+  for (const e of expediteurs) {
+    if (e.statut === 'entretien') {
+      plafond += e.plafondProspection
+      morceaux.push(`${e.email} : entretien, ${e.plafondProspection}/j`)
+      continue
+    }
+    if (e.statut !== 'chauffe') {
+      morceaux.push(`${e.email} : ${e.statut}, rien`)
+      continue
+    }
+    const jour = jourDeChauffe(e.demarreLe, maintenant)
+    if (jour <= 0) {
+      morceaux.push(`${e.email} : chauffe pas démarrée, rien`)
+      continue
+    }
+    const etat = sante(await glissant7Jours(sb, e.id, maintenant))
+    const c = capacite({
+      jourDeChauffe: jour,
+      cibleQuotidienne: e.cibleJour,
+      plafondDur: e.plafondProspection,
+      sante: etat,
+    })
+    plafond += c.froidAujourdhui
+    morceaux.push(`${e.email} : ${c.froidAujourdhui}/j — ${c.explication}`)
+  }
+
+  return { plafond, explication: morceaux.join(' | '), expediteurs: expediteurs.length }
 }
 
 /** Le maillage de témoins. */

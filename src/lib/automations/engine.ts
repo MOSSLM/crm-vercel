@@ -1530,7 +1530,12 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   // destinataire » corrige quelques lignes plus bas. Le motif est lisible dans
   // le régulateur, et l'inscription repart d'elle-même à la réouverture.
   if (await canalSuspendu(sb, step.kind)) {
-    await holdForSuspendedChannel(sb, enrollment.id)
+    // Déjà retenue pour ce motif : rien à réécrire. Le tick repasse toutes les
+    // minutes, et une écriture par minute et par inscription ne dirait rien de
+    // plus que la précédente.
+    if (enrollment.hold_reason !== 'canal_suspendu') {
+      await holdForSuspendedChannel(sb, enrollment.id)
+    }
     return
   }
 

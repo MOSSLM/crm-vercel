@@ -50,3 +50,30 @@ comment on column public.regulator_settings.canaux_suspendus is
 --   select canaux_suspendus from public.regulator_settings where id = 'global';
 --   -- attendu : {} — la colonne existe et ne suspend rien tant qu'on n'a pas
 --   -- basculé l'interrupteur depuis Pilotage › Régulateur.
+
+-- ── Et le plafond du jour, quand c'est la chauffe qui le décide ────────────
+--
+-- La suite de la même conversation : suspendre l'e-mail bloque les prospects à
+-- leur étape, ce qui est ce qu'on veut — mais il faut ensuite les LIBÉRER AU
+-- COMPTE-GOUTTES, au rythme que le réchauffeur juge tenable, et sans court-
+-- circuiter le régulateur (écart aléatoire, plages, plafond).
+--
+-- `capacite()` savait déjà traduire l'ancienneté et la santé d'une boîte en
+-- « tant d'e-mails froids aujourd'hui ». Personne ne lisait ce nombre en dehors
+-- de l'écran du réchauffeur. Armé, ce réglage en fait le plafond du régulateur :
+--   plafond effectif = min(daily_cap, ce que la chauffe autorise)
+--
+-- ÉTEINT PAR DÉFAUT. Un CRM sans réchauffeur verrait sinon sa prospection
+-- s'éteindre en silence : une boîte jamais démarrée autorise zéro.
+
+alter table public.regulator_settings
+  add column if not exists plafond_rechauffeur boolean not null default false;
+
+comment on column public.regulator_settings.plafond_rechauffeur is
+  'Quand vrai, le plafond quotidien vaut min(daily_cap, capacité de prospection '
+  'autorisée par le réchauffeur). Les e-mails au-delà attendent à leur étape '
+  'avec le motif « plafond du jour atteint » et repartent au compte-gouttes, '
+  'espacés par le régulateur. Éteint par défaut : sans réchauffeur, la capacité '
+  'vaut zéro et la prospection s''éteindrait en silence.';
+
+--   select canaux_suspendus, plafond_rechauffeur from public.regulator_settings;

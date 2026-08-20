@@ -54,6 +54,7 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     // `!= null` et pas un test de longueur — rouvrir tous les canaux d'un coup
     // doit pouvoir se dire.
     if (body.canaux_suspendus != null) patch.canaux_suspendus = body.canaux_suspendus
+    if (body.plafond_rechauffeur != null) patch.plafond_rechauffeur = body.plafond_rechauffeur
 
     if (body.verify_before_send != null) patch.verify_before_send = body.verify_before_send
     if (body.verify_ttl_days != null) patch.verify_ttl_days = body.verify_ttl_days

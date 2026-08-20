@@ -27,6 +27,7 @@ import {
 } from '@/lib/automations/regulator-db'
 import { enqueueVerification } from '@/lib/email/verify/service'
 import { tripBounceGuard } from '@/lib/email/bounce-guard'
+import { plafondProspectionDuJour } from '@/lib/rechauffeur/rechauffeur-db'
 import type { Automation, AutomationJob, SequenceEnrollment } from '@/components/automations/types'
 import type { RunContext as EngineContext } from '@/lib/automations/engine'
 
@@ -86,6 +87,8 @@ async function handle(req: Request): Promise<Response> {
     emailsUnverified: 0,
     /** Le disjoncteur a-t-il coupé la file sur ce tick ? */
     bounceGuardTripped: false as boolean | string,
+    /** Plafond imposé par la chauffe, quand le réglage est armé. */
+    plafondChauffe: null as number | null,
     errors: 0,
   }
 
@@ -243,8 +246,31 @@ async function handle(req: Request): Promise<Response> {
     // Consulté ici et pas plus haut : un tick sans rien à envoyer n'a rien à
     // couper, et doit rester gratuit — il repasse toutes les minutes.
     const guard = await tripBounceGuard(sb, settings)
-    const planSettings = guard.tripped ? { ...settings, paused: true } : settings
+    const apresGuard = guard.tripped ? { ...settings, paused: true } : settings
     if (guard.tripped) result.bounceGuardTripped = guard.detail ?? true
+
+    // ── LE PLAFOND DU JOUR PEUT VENIR DE LA CHAUFFE ──────────────────────────
+    //
+    // C'est ce qui fait le COMPTE-GOUTTES. Le réchauffeur sait, pour chaque
+    // boîte, combien d'e-mails froids la journée peut porter sans brûler la
+    // réputation — ancienneté sur la courbe, modulée par le placement mesuré.
+    // Armé, ce nombre devient le plafond, et tout le reste du régulateur
+    // continue de s'appliquer TEL QUEL : les envois autorisés sont espacés par
+    // l'écart aléatoire et rangés dans les plages du jour. On ne court-circuite
+    // rien, on abaisse juste le plafond.
+    //
+    // Ce qui dépasse n'est pas perdu : le planificateur rend `daily_cap`, le
+    // motif s'écrit sur l'inscription, et elle repasse au tick suivant. Les
+    // prospects s'accumulent à leur étape et repartent à mesure que la courbe
+    // monte.
+    //
+    // `min` et pas « à la place de » : le plafond d'ici reste un plafond. La
+    // chauffe peut le baisser, jamais le lever.
+    const chauffe = apresGuard.plafondRechauffeur ? await plafondProspectionDuJour(sb, new Date(nowMs)) : null
+    const planSettings = chauffe
+      ? { ...apresGuard, dailyCap: Math.min(apresGuard.dailyCap, chauffe.plafond) }
+      : apresGuard
+    if (chauffe) result.plafondChauffe = chauffe.plafond
 
     const history = await loadSendHistory(sb, planSettings, nowMs)
     // Ce que la file doit savoir des adresses : lesquelles portent un signal

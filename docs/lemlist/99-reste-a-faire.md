@@ -26,43 +26,52 @@ inscriptions avec un motif visible au lieu de les faire avancer.
 **Ce qu'il faut de toi :** relire les messages et les délais dans l'éditeur, puis
 activer S1. Les six anciennes sont archivées, pas supprimées.
 
-**Et l'e-mail dans tout ça ?** Il est suspendu — `regulator_settings.canaux_suspendus`
-vaut `{email}` depuis le 20/08, posé exprès. Voir § 1.0 bis : S1 peut être
-activée **maintenant**, sans attendre le réchauffeur.
+**Et l'e-mail dans tout ça ?** Il ne partira pas, et tu n'as rien à faire pour
+ça — voir § 1.0 bis. S1 peut être activée **maintenant**, sans attendre le
+réchauffeur.
 
-### 1.0 bis — L'e-mail est suspendu, et c'est ce qui débloque le lancement *(20/08)*
+### 1.0 bis — L'e-mail attend à son étape, et repart au compte-gouttes *(20/08)*
 
-Les boîtes d'envoi ne sont pas chaudes, et le réchauffeur attend encore sa clé
-(§ 1.3). Retirer les étapes e-mail des séquences aurait voulu dire les
-réécrire plus tard, donc réintroduire les défauts qu'on vient de corriger.
+Les boîtes d'envoi ne sont pas chaudes. Retirer les étapes e-mail des séquences
+aurait voulu dire les réécrire plus tard, donc réintroduire les défauts qu'on
+vient de corriger. À la place, deux réglages qui se complètent.
 
-À la place, **un interrupteur** : Pilotage › Régulateur › *Canaux suspendus*.
-Un canal suspendu n'envoie rien **et la séquence continue quand même** — c'est
-ce qui le distingue de la pause et de la phase de test, qui gèlent le prospect
-là où il est.
+**1. Le prospect va jusqu'à son étape e-mail — et il y reste.** Pas de
+contournement : une première version faisait répondre « non » à la question
+« a-t-il une adresse ? », pour que l'échelle descende à l'appel. Ça marchait, et
+c'était le mauvais arbitrage — le verdict d'une question s'écrit **une fois pour
+toutes** dans l'inscription, donc contourner n'ajournait pas l'e-mail, il
+l'**abandonnait**. Ta réponse a tranché : « si ça fige ceux qu'on doit contacter
+par e-mail, ça me va. »
 
-**Ce que ça change sur le vrai S1, mesuré par `cheminSuppose` :**
+**2. Le plafond du jour vient de la chauffe** — Pilotage › Régulateur ›
+*Plafonner par ce que la chauffe autorise*, **armé le 20/08**. Le plafond
+effectif vaut `min(120, ce que le réchauffeur autorise)`. Aujourd'hui
+`contact@samadigitalstudio.fr` est **en pause et jamais démarrée** : la chauffe
+autorise **0**, donc rien ne part. À mesure que la courbe monte, le nombre monte
+avec elle et les inscriptions retenues repartent **d'elles-mêmes**, sans que tu
+touches à quoi que ce soit.
 
-| Profil | Canal ouvert | Canal suspendu |
-| --- | --- | --- |
-| Mobile, il répond | `wa1 → waW → waDemo → ⇢S2` | identique |
-| **Mobile + e-mail, silence** | `wa1 → waW → wa2 → waW2 → mlQ →` **`ml1 → mlW → ml2 → mlW2`** `→ ap1 …` | `wa1 → waW → wa2 → waW2 → mlQ → ap1 → issQ → ap2 → ⇢S3` |
-| E-mail seul | `mlQ → ml1 → mlW → ml2 → mlW2 → ap1 …` | `mlQ → ap1 → issQ → ap2 → ⇢S3` |
-| Fixe seul | `mlQ → ap1 …` | identique |
+Et tout le reste du régulateur continue de s'appliquer tel quel : les envois
+autorisés sont espacés par l'écart aléatoire (7–14 min) et rangés dans les
+plages du jour. On abaisse un plafond, on ne court-circuite rien.
 
-La ligne du milieu est celle qui compte : **un prospect qui a mobile ET e-mail
-atteint bien le barreau e-mail**, après tout le cycle WhatsApp (3 + 4 jours de
-silence). Ce n'est pas l'échelle qui protège dans ce cas-là, c'est la
-suspension.
+**Ce qui dépasse n'est pas perdu :** le planificateur rend `daily_cap`, le motif
+s'écrit sur l'inscription, elle repasse au tick suivant.
+
+**Un garde-fou se ferme quand il ne sait pas.** Si la lecture des expéditeurs
+échoue, la capacité vaut **zéro**, pas « pas de plafond ». C'est le sens inverse
+de la pause du régulateur, et c'est voulu : rendre la main au plafond fixe pour
+une seconde d'indisponibilité de la base, ce serait 120 e-mails.
 
 **Exposition aujourd'hui : nulle.** Les 131 inscriptions vivantes ont toutes un
 mobile — vérifié en base. Aucune ne touche une étape e-mail maintenant ; ce sont
 les **75 en attente sur `waW`** qui y arriveraient dans une semaine si elles
-restaient silencieuses.
+restaient silencieuses, et elles y attendront.
 
-**Le jour où tu rouvres :** un clic sur le même interrupteur. Les inscriptions
-retenues repartent au tick suivant — leur `next_run_at` n'a pas été effacé,
-exprès.
+**L'interrupteur « canaux suspendus »** existe aussi (même écran) : il coupe un
+canal net, sans rien attendre du réchauffeur. Il est **éteint** — le plafond de
+chauffe fait le travail et se lève tout seul, ce que la suspension ne fait pas.
 
 ### 1.1 — Relire le message de la voie « sans réponse » ⛔
 

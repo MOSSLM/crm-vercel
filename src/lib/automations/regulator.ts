@@ -87,6 +87,20 @@ export interface RegulatorSettings {
    * est la ceinture.
    */
   canauxSuspendus: string[]
+  /**
+   * Le plafond du jour est-il celui du RÉCHAUFFEUR plutôt que celui d'ici ?
+   *
+   * Quand c'est armé, le plafond effectif vaut `min(dailyCap, ce que la chauffe
+   * autorise aujourd'hui)`. Une boîte neuve autorise zéro : les e-mails
+   * s'accumulent alors à leur étape avec le motif « plafond du jour atteint »,
+   * et repartent au compte-gouttes à mesure que la courbe monte — espacés,
+   * comme tout le reste, par l'écart aléatoire et les plages d'envoi.
+   *
+   * ÉTEINT PAR DÉFAUT, et pas par prudence molle : un CRM sans réchauffeur
+   * verrait sa prospection s'éteindre en silence le jour où on livrerait ce
+   * fichier. Le plafond ne se subit pas, il se choisit.
+   */
+  plafondRechauffeur: boolean
 
   // ── Vérification des adresses (cf. src/lib/email/verify/) ────────────────
   /** Aucun email de prospection vers une adresse sans verdict frais. */
@@ -129,6 +143,7 @@ export const DEFAULT_REGULATOR: RegulatorSettings = {
   adminUserId: null,
   testMode: false,
   canauxSuspendus: [],
+  plafondRechauffeur: false,
   verifyBeforeSend: true,
   verifyTtlDays: 120,
   riskyDailyShare: 20,
@@ -615,6 +630,7 @@ export function toRegulatorSettings(row: RegulatorRow | null | undefined): Regul
           (c): c is string => typeof c === 'string' && (CANAUX_SUSPENDABLES as readonly string[]).includes(c),
         )
       : [],
+    plafondRechauffeur: bool(row.plafond_rechauffeur, DEFAULT_REGULATOR.plafondRechauffeur),
     // La colonne peut manquer (migration non appliquée) : on retombe alors sur
     // le comportement d'avant, pas sur un garde qui bloquerait tout.
     verifyBeforeSend:
