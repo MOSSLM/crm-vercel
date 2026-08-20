@@ -47,7 +47,16 @@ et les entreprises à la création d'une opportunité : faire `UPDATE`, jamais
 
 **Republier efface le CSS du site.** `shared_assets.css` est régénéré depuis le
 gabarit : tout correctif CSS doit être cuit dans l'asset, sinon la republication
-l'annule.
+l'annule. Corollaire : un correctif qui vaut pour **tout** le parc se pose
+plutôt dans `src/app/(public)/layout.tsx`, seul calque commun au site publié et
+à l'aperçu brouillon — voir `src/lib/site-builder/defilement-lateral.ts`.
+
+**`body { overflow-x: hidden }` ne clippe rien.** Tant que `html` reste en
+`overflow: visible`, la valeur du `body` est *propagée au viewport* et `body`
+garde un `visible` d'usage. Le gabarit croit se prémunir du débordement latéral,
+il ne fait que masquer la barre : la page reste tirable au doigt. Il faut la
+règle sur `html` **et** sur `body`, et en `clip` — `hidden` ferait du `body` un
+conteneur de défilement et décollerait tous les en-têtes `sticky`.
 
 **Les images d'un artisan sont à lui seul.** Jamais versées dans le fonds
 commun — `entreprise_id` est un mur, pas un tri.

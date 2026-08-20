@@ -13,6 +13,7 @@ import {
 import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import { resolveFontLinkTags } from "@/lib/site-builder/claude-design/font-links";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
+import { CSS_SANS_DEFILEMENT_LATERAL } from "@/lib/site-builder/defilement-lateral";
 import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
@@ -608,10 +609,13 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     // sont déjà dans le body (posés côté parent, sur le markup non conditionné).
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
+    // Puis la garde anti-défilement latéral, au même rang que sur le site publié
+    // — sans quoi l'opérateur validerait ici un aperçu qui ne déborde pas, pour
+    // une démo qui, elle, déborde. Voir defilement-lateral.ts.
     // EDIT_REVEAL_CSS en dernier : l'éditeur ne défile pas, donc les blocs qui
     // n'apparaissent qu'au scroll resteraient invisibles (voir edit-reveal.ts).
     // EDIT_REVEAL_SCRIPT passe après le JS du design, pour repasser derrière lui.
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}\n${EDIT_REVEAL_CSS}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${extras ? `<script>${extras}</script>` : ""}${libTags}${bootTag}<script>${EDIT_REVEAL_SCRIPT}</script><script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}\n${CSS_SANS_DEFILEMENT_LATERAL}\n${EDIT_REVEAL_CSS}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${extras ? `<script>${extras}</script>` : ""}${libTags}${bootTag}<script>${EDIT_REVEAL_SCRIPT}</script><script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
