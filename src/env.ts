@@ -89,7 +89,49 @@ const envSchema = z
     },
   );
 
-const envResult = envSchema.safeParse({
+/**
+ * LES VARIABLES QU'ON PEUT PERDRE SANS PERDRE LE CRM.
+ *
+ * Ce schéma est lu À L'IMPORT, et `getServiceClient()` l'importe : tout ce qui
+ * jette ici éteint l'API ENTIÈRE, pas la fonctionnalité concernée. Le 20/08/2026
+ * une seule variable mal formée — `RESEND_FROM_EMAIL`, à qui `vercel env pull`
+ * avait écrit un placeholder parce qu'elle est marquée « Sensitive » — a rendu
+ * 500 sur `/api/telephony/me`, `/api/agent/journee` et `/api/entreprises/perimetre`,
+ * qui n'envoient aucun e-mail.
+ *
+ * D'où la règle : une variable OPTIONNELLE mal formée vaut ABSENTE. La
+ * fonctionnalité qui en dépend rend déjà 503 quand elle manque — c'est le
+ * contrat de chacune d'elles — et le CRM continue de tourner.
+ *
+ * Ce qui reste fatal, et doit le rester : les deux clés Supabase (sans elles
+ * rien ne peut lire quoi que ce soit), `GMAPS_API_TOKEN`, et l'exigence d'au
+ * moins un secret de cron en production (sinon les routes cron s'ouvriraient).
+ */
+const DEGRADABLES = new Set([
+  "GMAPS_AWS_REGION",
+  "GMAPS_AWS_CLUSTER",
+  "GMAPS_AWS_SERVICE",
+  "GMAPS_BASE_URL",
+  "RESEND_API_KEY",
+  "RESEND_FROM_EMAIL",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "TELEPHONY_PROVIDER",
+  "ZADARMA_KEY",
+  "ZADARMA_SECRET",
+  "ZADARMA_WEBHOOK_SECRET",
+  "RENDER_PROVIDER",
+  "RENDER_API_KEY",
+  "RENDER_API_URL",
+  "PAGESPEED_API_KEY",
+  "GOOGLE_CALENDAR_CLIENT_ID",
+  "GOOGLE_CALENDAR_CLIENT_SECRET",
+  "GA4_PROPERTY_ID",
+  "GA4_SERVICE_ACCOUNT_KEY",
+  "CLARITY_API_TOKEN",
+]);
+
+const brut: Record<string, unknown> = {
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   GMAPS_AWS_REGION: process.env.GMAPS_AWS_REGION,
@@ -117,14 +159,56 @@ const envResult = envSchema.safeParse({
   GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID,
   GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY,
   CLARITY_API_TOKEN: process.env.CLARITY_API_TOKEN,
-});
+};
 
-if (!envResult.success) {
-  const errors = Object.entries(envResult.error.flatten().fieldErrors)
-    .map(([key, msgs]) => `${key}: ${msgs?.join(", ")}`)
-    .join("; ");
-  throw new Error(
-    `Variables d'environnement manquantes ou invalides: ${errors}`
+/**
+ * Ce qui a été mis de côté, et pourquoi.
+ *
+ * Un dégradé SILENCIEUX serait pire que la panne qu'il remplace : on chercherait
+ * pendant une heure pourquoi aucun e-mail ne part alors que la clé « est bien
+ * posée ». La liste est exportée pour qu'un écran de diagnostic puisse la dire,
+ * et écrite dans le journal au démarrage.
+ */
+export const VARIABLES_IGNOREES: { variable: string; probleme: string }[] = [];
+
+/**
+ * Valide en écartant, tour par tour, les seules variables dégradables.
+ *
+ * On rejoue le schéma entier après chaque écart plutôt que de valider champ par
+ * champ : le contrôle croisé des secrets de cron porte sur DEUX variables, et
+ * le découper le ferait disparaître.
+ */
+function analyser() {
+  for (let tour = 0; tour <= DEGRADABLES.size; tour += 1) {
+    const essai = envSchema.safeParse(brut);
+    if (essai.success) return essai.data;
+
+    const ecartables = essai.error.issues.filter((i) => {
+      const nom = String(i.path[0] ?? "");
+      return DEGRADABLES.has(nom) && brut[nom] !== undefined;
+    });
+    if (ecartables.length === 0) {
+      const errors = Object.entries(essai.error.flatten().fieldErrors)
+        .map(([key, msgs]) => `${key}: ${msgs?.join(", ")}`)
+        .join("; ");
+      throw new Error(`Variables d'environnement manquantes ou invalides: ${errors}`);
+    }
+    for (const i of ecartables) {
+      const nom = String(i.path[0]);
+      VARIABLES_IGNOREES.push({ variable: nom, probleme: i.message });
+      brut[nom] = undefined;
+    }
+  }
+  // Inatteignable : chaque tour écarte au moins une variable de l'ensemble.
+  throw new Error("Variables d'environnement : validation impossible");
+}
+
+const donnees = analyser();
+
+if (VARIABLES_IGNOREES.length > 0) {
+  console.warn(
+    "[env] variables ignorées car mal formées (la fonctionnalité correspondante rendra 503) : " +
+      VARIABLES_IGNOREES.map((v) => `${v.variable} (${v.probleme})`).join(" · "),
   );
 }
 
@@ -156,4 +240,4 @@ export const {
   GA4_PROPERTY_ID,
   GA4_SERVICE_ACCOUNT_KEY,
   CLARITY_API_TOKEN,
-} = envResult.data;
+} = donnees;

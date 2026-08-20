@@ -36,7 +36,21 @@ describe('POST /api/email/send', () => {
     });
     mockEmailsSend.mockResolvedValue({ data: { id: 'res-1' }, error: null });
     mockEmailLogsInsert.mockResolvedValue({ error: null });
-    mockFrom.mockImplementation(() => ({ insert: mockEmailLogsInsert }));
+    // Depuis le 20/08/2026, le garde d'envoi lit la liste de suppression à
+    // CHAQUE envoi, sans condition, et RETIENT quand elle est illisible — une
+    // liste vide et une liste qu'on n'a pas pu lire ne sont pas la même chose.
+    // Le faux client doit donc savoir répondre à ces lectures, sinon la route
+    // rend 409 « suppression illisible » et le test mesure le mock, pas le code.
+    mockFrom.mockImplementation((table: string) => {
+      const chaine: Record<string, unknown> = { insert: mockEmailLogsInsert };
+      for (const m of ['select', 'eq', 'in', 'limit', 'order', 'neq', 'gt', 'lte', 'or']) {
+        chaine[m] = () => chaine;
+      }
+      chaine.maybeSingle = async () => ({ data: table === 'regulator_settings' ? {} : null, error: null });
+      chaine.then = (resoudre: (v: unknown) => unknown) =>
+        Promise.resolve({ data: [], error: null }).then(resoudre);
+      return chaine;
+    });
   });
   afterEach(() => {
     process.env = ORIGINAL_ENV;

@@ -2,7 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import { advanceEnrollmentAfterTask, sortirDeSequence } from "@/lib/automations/engine";
+import { advanceEnrollmentAfterTask, garerTacheAnnulee, sortirDeSequence } from "@/lib/automations/engine";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
 import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
@@ -665,10 +665,18 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   // Une tâche annulée (`skipped`) ne fait jamais avancer quoi que ce soit : le
   // geste n'a pas eu lieu. Elle peut en revanche arrêter, et c'est exactement
   // ce que fait « pas sur WhatsApp ».
+  //
+  // ANNULER N'EST NI FAIRE NI ARRÊTER — et ce troisième cas n'était traité
+  // nulle part. Sans `garerTacheAnnulee`, l'inscription restait `active` avec
+  // un `hold_reason` nul et aucune date : plus aucun tick ne la reprenait, et
+  // aucun écran ne pouvait dire pourquoi. On pose un motif plutôt qu'une
+  // action : la reprise est une décision humaine, l'invisibilité n'en est pas
+  // une.
   if (task.enrollment_id && status !== "snoozed") {
     try {
       if (outcomeDef?.flow === "stop") await sortirDeSequence(sc, task.enrollment_id as string, "stop");
       else if (status === "done") await advanceEnrollmentAfterTask(task.enrollment_id as string);
+      else if (status === "skipped") await garerTacheAnnulee(sc, task.enrollment_id as string);
     } catch {
       // la séquence reste en pause ; l'admin peut la reprendre depuis Démarchage
     }
@@ -717,6 +725,11 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     try {
       await sc.from("email_logs").insert({
         channel: "note",
+        // C'est ICI que se joue « je ne vois pas les notes de Bilal » : la
+        // colonne n'existait pas, donc les 29 premières notes sont anonymes
+        // sans recours. Toutes celles d'après portent leur auteur.
+        auteur_id: user.id,
+        direction: "interne",
         contact_id: task.contact_id ?? null,
         entreprise_id: task.entreprise_id ?? null,
         opportunite_id: task.opportunite_id ?? opportuniteId ?? null,

@@ -102,6 +102,7 @@ function renderRows(
   rows: BoardItem[],
   handlers: MatrixHandlers = noopHandlers,
   sequences: SequenceRef[] = [],
+  bulk: Partial<BulkHandlers> = {},
 ) {
   const bulkHandlers: BulkHandlers = {
     onEnrich: jest.fn(),
@@ -113,9 +114,12 @@ function renderRows(
     onPublierSites: jest.fn(),
     onCreateAudits: jest.fn(),
     onValidateAudits: jest.fn(),
+    onLisser: jest.fn(),
+    onCompleterChiffres: jest.fn(),
     onAssign: jest.fn(),
     onMove: jest.fn(),
     onArchive: jest.fn(),
+    ...bulk,
   };
   render(
     <PipelineMatrix
@@ -199,15 +203,15 @@ describe("PipelineMatrix — sélection multiple", () => {
     expect(overwrite).toBe(false);
   });
 
-  it("« Tout sélectionner » coche les lignes affichées", async () => {
+  it("la case d’en-tête coche la page affichée", async () => {
     renderMatrix();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
     expect(screen.getByText("4 sélectionnées")).toBeInTheDocument();
   });
 
   it("ne passe à chaque action que les lignes qui la concernent", async () => {
     const bulk = renderMatrix();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     // Créer les sites : seules les lignes sans site.
     fireEvent.click(bar().getByRole("button", { name: /Créer les sites/ }));
@@ -474,7 +478,7 @@ describe("PipelineMatrix — tirage des images en masse", () => {
       // Pas de site du tout : rien à remplir.
       item({ id: "n", name: "Nu" }),
     ]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     fireEvent.click(bar().getByRole("button", { name: /Tirer les images/ }));
 
@@ -484,7 +488,7 @@ describe("PipelineMatrix — tirage des images en masse", () => {
   it("écarte une ligne sans entreprise : les services sont ce qui choisit les photos", () => {
     const sansEntreprise = { ...withSite("k", "Kappa", true), entreprise_id: null };
     const bulk = renderRows([sansEntreprise]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     expect(bar().getByRole("button", { name: /Tirer les images/ })).toBeDisabled();
     expect(bulk.onTirerImages).not.toHaveBeenCalled();
@@ -516,7 +520,7 @@ describe("PipelineMatrix — publication en masse", () => {
       // Pas de site : rien à mettre en ligne.
       item({ id: "s", name: "Sigma" }),
     ]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     fireEvent.click(bar().getByRole("button", { name: /Publier les sites/ }));
 
@@ -528,7 +532,7 @@ describe("PipelineMatrix — publication en masse", () => {
       withSite("p", "Pi", {}),
       withSite("r", "Rho", { is_published: true, published_subdomain: "rho" }),
     ]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     // « Pi » n'est ni publié ni validé ; « Rho » est déjà en ligne.
     expect(
@@ -748,5 +752,242 @@ describe("PipelineMatrix — trois états de séquence", () => {
     // être là. Le déroulant, lui, reste — c'est un choix qu'on peut refaire.
     expect(screen.queryByRole("button", { name: /Séquence conseillée/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Inscrire dans une séquence")).toBeInTheDocument();
+  });
+});
+
+/**
+ * LA PAGINATION, ET CE QU'ELLE NE DOIT PAS CASSER.
+ *
+ * Le piège tient en une phrase : la page est une fenêtre d'AFFICHAGE, la
+ * sélection est une liste d'IDENTIFIANTS. Confondre les deux donnerait un
+ * tableau où changer de page décoche ce qu'on venait de cocher — c'est-à-dire
+ * un tableau où « lisser 500 fiches » redevient impossible, ce que la
+ * pagination était censée rendre possible.
+ */
+describe("PipelineMatrix — pagination", () => {
+  /** Vingt-trois lignes : de quoi avoir une dernière page incomplète. */
+  const BEAUCOUP = Array.from({ length: 23 }, (_, i) =>
+    item({ id: `p${i}`, name: `Ligne${String(i).padStart(2, "0")}` }),
+  );
+  const parPage = () => screen.getByTitle(/Combien de lignes afficher/);
+
+  it("ne pose que la première page, et dit combien de lignes il y a en tout", () => {
+    renderRows(BEAUCOUP);
+    fireEvent.change(parPage(), { target: { value: "10" } });
+
+    expect(rowNames()).toHaveLength(10);
+    expect(rowNames()[0]).toBe("Sélectionner Ligne00");
+    expect(screen.getByText("1–10 sur 23")).toBeInTheDocument();
+    expect(screen.getByText("Page 1 / 3")).toBeInTheDocument();
+  });
+
+  it("la dernière page ne montre que ce qui reste", () => {
+    renderRows(BEAUCOUP);
+    fireEvent.change(parPage(), { target: { value: "10" } });
+    fireEvent.click(screen.getByTitle("Dernière page"));
+
+    expect(rowNames()).toHaveLength(3);
+    expect(screen.getByText("21–23 sur 23")).toBeInTheDocument();
+  });
+
+  it("la case d’en-tête ne coche QUE la page affichée", () => {
+    renderRows(BEAUCOUP);
+    fireEvent.change(parPage(), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+
+    expect(screen.getByText("10 sélectionnées")).toBeInTheDocument();
+  });
+
+  // LE TEST QUI PORTE LA FONCTIONNALITÉ. Cocher page après page doit CUMULER :
+  // c'est ainsi qu'on constitue un lot de plusieurs centaines à lisser.
+  it("la sélection survit au changement de page et s’additionne", () => {
+    renderRows(BEAUCOUP);
+    fireEvent.change(parPage(), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+    fireEvent.click(screen.getByRole("button", { name: /Suivant/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+
+    expect(screen.getByText("20 sélectionnées")).toBeInTheDocument();
+    // Et le débordement se DIT : vingt cochées sur une page qui en montre dix
+    // ressemblerait sinon à un compteur cassé.
+    expect(screen.getByText("20 cochées, toutes pages confondues")).toBeInTheDocument();
+  });
+
+  it("changer un filtre ramène à la première page", () => {
+    renderRows(BEAUCOUP);
+    fireEvent.change(parPage(), { target: { value: "10" } });
+    fireEvent.click(screen.getByTitle("Dernière page"));
+    expect(screen.getByText("Page 3 / 3")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Rechercher une entreprise…"), {
+      target: { value: "Ligne1" },
+    });
+
+    // Dix résultats (Ligne10 à Ligne19) tiennent sur une page : ce qui compte
+    // est qu'on soit revenu à la PREMIÈRE, et non resté sur une page 3 vide.
+    expect(screen.getByText("Page 1 / 1")).toBeInTheDocument();
+    expect(rowNames()[0]).toBe("Sélectionner Ligne10");
+  });
+});
+
+/**
+ * LE BOUTON « LISSER ».
+ *
+ * Il n'enrichit pas, il va CHERCHER ce que la fiche n'a pas — SIRET, fiche
+ * Google, site, RGE. D'où deux garanties : il ne prend que des lignes qui ont
+ * une entreprise (le reste n'a rien à mettre en file), et il disparaît quand le
+ * handler est absent, c'est-à-dire côté agent.
+ */
+describe("PipelineMatrix — mise en file de lissage", () => {
+  const LIGNES = [
+    item({ id: "l1", name: "AvecFiche", entreprise_id: 11 }),
+    item({ id: "l2", name: "SansFiche", entreprise_id: null }),
+    item({ id: "l3", name: "AutreFiche", entreprise_id: 13 }),
+  ];
+
+  it("n’envoie que les lignes qui portent une entreprise", () => {
+    const bulk = renderRows(LIGNES);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+    fireEvent.click(bar().getByRole("button", { name: /^Lisser/ }));
+
+    expect(bulk.onLisser).toHaveBeenCalledTimes(1);
+    const [items] = (bulk.onLisser as jest.Mock).mock.calls[0];
+    expect(items.map((i: BoardItem) => i.entreprise_id)).toEqual([11, 13]);
+  });
+
+  it("n’existe pas quand le lissage n’est pas offert — c’est le cas de l’agent", () => {
+    renderRows(LIGNES, noopHandlers, [], { onLisser: undefined });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+
+    expect(bar().queryByRole("button", { name: /^Lisser/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * LE BOUTON « CHIFFRES CLÉS ».
+ *
+ * Il ne compte QUE les lignes à qui il manque vraiment un chiffre : un bouton
+ * qui annonce cent et n'en change aucune ment sur ce qu'il va faire. Et il ne
+ * prend que celles qui ont un dossier lead magnet — sans dossier, il n'y a
+ * nulle part où écrire.
+ */
+describe("PipelineMatrix — chiffres clés déduits du registre", () => {
+  const LIGNES = [
+    item({
+      id: "c1",
+      name: "SansAnnees",
+      project: project(true),
+      missing_for_site: ["Années d'expérience"],
+    }),
+    item({ id: "c2", name: "Complete", project: project(true), missing_for_site: [] }),
+    item({
+      id: "c3",
+      name: "SansDossier",
+      project: null,
+      missing_for_site: ["Années d'expérience"],
+    }),
+    item({
+      id: "c4",
+      name: "AutreManque",
+      project: project(true),
+      missing_for_site: ["Ville SEO"],
+    }),
+  ];
+
+  // L'ÉLIGIBILITÉ NE SE LIMITE PAS AUX CASES VIDES : 146 dossiers portent des
+  // installations inférieures au barème sans qu'il leur manque rien.
+  // `missing_for_site` ne peut pas le voir, et le board ne connaît pas les dates
+  // du registre — seule la route tranche, et elle rend le compte exact.
+  it("prend toutes les lignes qui ont un dossier, y compris celles qui semblent complètes", () => {
+    const bulk = renderRows(LIGNES);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
+    fireEvent.click(bar().getByRole("button", { name: /^Chiffres clés/ }));
+
+    const [items] = (bulk.onCompleterChiffres as jest.Mock).mock.calls[0];
+    expect(items.map((i: BoardItem) => i.id)).toEqual(["c1", "c2", "c4"]);
+  });
+});
+
+/**
+ * LE PANNEAU DE FILTRES, VU DE L'ÉCRAN.
+ *
+ * La grammaire (« ou » dans un bloc, « et » entre les blocs) est testée dans
+ * `filtres.test.ts`, sans React. Ce qui se joue ici est ce que le module pur ne
+ * peut pas voir : que les cases atteignent bien le tableau, que le compteur
+ * porte sur TOUT le tableau et non sur ce qui reste, et que « Réinitialiser »
+ * vide aussi les menus — un bouton qui ne viderait que les cases laisserait un
+ * tableau encore filtré et passerait pour cassé.
+ */
+describe("PipelineMatrix — filtres à cocher", () => {
+  const presence = (statut: "present" | "absent" | "inconnu") => ({
+    statut,
+    origine: "constat",
+    confiance: "haute",
+  });
+  const AVEC_SANS = [
+    item({ id: "s1", name: "AvecSite", presence_site: presence("present") }),
+    item({ id: "s2", name: "SansSite", presence_site: presence("absent") }),
+    item({ id: "s3", name: "AussiSans", presence_site: presence("absent") }),
+    item({ id: "s4", name: "JamaisVu", presence_site: null }),
+  ];
+  const ouvrirFiltres = () => fireEvent.click(screen.getByRole("button", { name: /^Filtres/ }));
+
+  it("ne garde que les entreprises vérifiées sans site", () => {
+    renderRows(AVEC_SANS);
+    ouvrirFiltres();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Vérifié sans site/ }));
+
+    expect(rowNames()).toEqual(["Sélectionner SansSite", "Sélectionner AussiSans"]);
+  });
+
+  // « Jamais regardé » n'est PAS « il n'en a pas » : c'est la distinction que
+  // constats_presence existe pour tenir, et elle doit survivre jusqu'à l'écran.
+  it("ne fait pas passer « jamais regardé » pour « sans site »", () => {
+    renderRows(AVEC_SANS);
+    ouvrirFiltres();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Vérifié sans site/ }));
+
+    expect(rowNames()).not.toContain("Sélectionner JamaisVu");
+  });
+
+  it("deux cases du même bloc s’additionnent", () => {
+    renderRows(AVEC_SANS);
+    ouvrirFiltres();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Vérifié sans site/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Jamais regardé/ }));
+
+    expect(rowNames()).toHaveLength(3);
+  });
+
+  // LE COMPTEUR PORTE SUR TOUT LE TABLEAU. S'il ne comptait que ce qui reste,
+  // cocher une case ferait tomber à zéro le compteur de toutes les autres — et
+  // on ne saurait plus ce qu'on s'apprête à ajouter.
+  it("garde les effectifs de chaque case même quand une autre est cochée", () => {
+    renderRows(AVEC_SANS);
+    ouvrirFiltres();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Vérifié sans site/ }));
+
+    const caseAvecSite = screen.getByRole("checkbox", { name: /A un site/ }).closest("label")!;
+    expect(within(caseAvecSite).getByText("1")).toBeInTheDocument();
+  });
+
+  it("« Réinitialiser » vide les cases ET la recherche", () => {
+    renderRows(AVEC_SANS);
+    fireEvent.change(screen.getByPlaceholderText("Rechercher une entreprise…"), {
+      target: { value: "Sans" },
+    });
+    ouvrirFiltres();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Vérifié sans site/ }));
+    expect(rowNames()).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /Réinitialiser/ }));
+
+    expect(rowNames()).toHaveLength(4);
+    expect(screen.getByPlaceholderText("Rechercher une entreprise…")).toHaveValue("");
+  });
+
+  it("le bouton de réinitialisation est inerte quand rien n’est filtré", () => {
+    renderRows(AVEC_SANS);
+    expect(screen.getByRole("button", { name: /Réinitialiser/ })).toBeDisabled();
   });
 });

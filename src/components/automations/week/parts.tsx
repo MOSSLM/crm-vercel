@@ -15,6 +15,7 @@ import type { WeekContactRow, WeekView } from './types'
 export const KIND_META: Record<string, { icon: string; label: string; color: string; tint: string; manual: boolean }> = {
   email: { icon: 'mail', label: 'Email', color: 'var(--accent)', tint: 'var(--accent-tint)', manual: false },
   whatsapp: { icon: 'whatsapp', label: 'WhatsApp', color: 'var(--ok)', tint: 'var(--ok-tint)', manual: true },
+  sms: { icon: 'sms', label: 'SMS', color: '#77851C', tint: 'rgba(119, 133, 28, 0.12)', manual: true },
   call: { icon: 'phone', label: 'Appel', color: 'var(--info)', tint: 'var(--info-tint)', manual: true },
   linkedin: { icon: 'linkedin', label: 'LinkedIn', color: 'var(--warn)', tint: 'var(--warn-tint)', manual: true },
   task: { icon: 'task', label: 'Tâche', color: 'var(--magic)', tint: 'var(--magic-tint)', manual: true },

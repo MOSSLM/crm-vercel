@@ -88,7 +88,12 @@ describe('unassignProspectFromAgent', () => {
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT });
     expect(updatesOn('entreprises')).toEqual([{ owner_id: null }]);
     expect(updatesOn('opportunites')).toEqual([{ owner_id: null }]);
-    expect(calls).toContainEqual({ table: 'prospection_tasks', op: 'delete', payload: undefined });
+    // Les tâches sont IGNORÉES, pas supprimées : une tâche effacée n'a jamais
+    // existé, donc plus rien ne dit qu'une approche était prévue — et le
+    // compteur du jour ment dans le sens flatteur. Même geste que le moteur
+    // (`cancelEnrollmentWork`).
+    expect(updatesOn('prospection_tasks')).toEqual([{ status: 'skipped' }]);
+    expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'delete')).toBe(false);
     // Le motif compte autant que la sortie : « reattribution » veut dire que le
     // prospect reste à démarcher, il rejoint le stock au lieu des démarchés.
     expect(updatesOn('sequence_enrollments')).toEqual([

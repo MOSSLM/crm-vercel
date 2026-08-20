@@ -37,6 +37,45 @@ const migrationAbsente = (erreur: { code?: string; message?: string } | null): b
 
 const MESSAGE_MIGRATION = "sql/20260817_technologie_explorateur_et_lots.sql n'est pas appliquée";
 
+/**
+ * GET /api/entreprises/lots
+ *
+ * La liste des lots, avec leur taille. Ajoutée pour le sélecteur d'audience
+ * d'une campagne : on ne choisit pas un lot dont on ignore combien il contient.
+ *
+ * La taille est comptée en une passe sur `lots_entreprises` plutôt qu'en une
+ * requête par lot — une trentaine de lots, c'est déjà trente allers-retours
+ * pour afficher un menu déroulant.
+ */
+export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
+  const sc = getServiceClient();
+
+  const { data, error } = await sc
+    .from("lots")
+    .select("id, nom, note, cree_le")
+    .order("cree_le", { ascending: false })
+    .limit(200);
+  if (error) {
+    if (migrationAbsente(error)) return jsonError(MESSAGE_MIGRATION, 503, {}, cors);
+    return jsonError(error.message, 500, {}, cors);
+  }
+
+  const lots = (data ?? []) as { id: string; nom: string; note: string | null; cree_le: string }[];
+  const { data: membres } = lots.length
+    ? await sc.from("lots_entreprises").select("lot_id").in("lot_id", lots.map((l) => l.id))
+    : { data: [] as { lot_id: string }[] };
+
+  const taille = new Map<string, number>();
+  for (const m of (membres ?? []) as { lot_id: string }[]) {
+    taille.set(m.lot_id, (taille.get(m.lot_id) ?? 0) + 1);
+  }
+
+  return json(
+    { lots: lots.map((l) => ({ ...l, taille: taille.get(l.id) ?? 0 })) },
+    { headers: cors },
+  );
+});
+
 export const POST = withAuth<Body>(
   { role: "admin", body: bodySchema },
   async ({ body, user, cors }) => {

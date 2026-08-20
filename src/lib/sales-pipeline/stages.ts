@@ -100,8 +100,17 @@ export const SEQ_ANY_COLUMN_ID = 'seq:any'
  * rien — normal, la séquence attend une réponse — et aucun endroit pour dire
  * qu'elle était arrivée. On croyait à une panne.
  */
-export const estColonneVisible = (step: { kind: string; waitMode?: string | null }): boolean =>
-  step.kind !== 'wait' || step.waitMode === 'reply'
+/**
+ * NI CONDITION NI PASSAGE DE RELAIS. Aucun des deux n'envoie quoi que ce soit
+ * ni n'attend personne : le moteur les traverse dans la foulée, donc aucun
+ * prospect ne s'y arrête jamais. Leur donner une colonne ajoutait au tableau
+ * une case perpétuellement vide, étiquetée « Tâche » faute de canal — et un
+ * bouton « Étape faite » qui n'avait rien à faire.
+ */
+export const estColonneVisible = (step: { kind: string; waitMode?: string | null }): boolean => {
+  if (step.kind === 'condition' || step.kind === 'transition') return false
+  return step.kind !== 'wait' || step.waitMode === 'reply'
+}
 
 export const stepColumnId = (stepId: string) => `step:${stepId}`
 export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
@@ -184,6 +193,12 @@ const CHANNEL: Record<string, { label: string; color: string; mode: ColumnMode; 
   // couleur de marque (#0A66C2), qui est à la teinte de l'azur Sama.
   email: { label: 'Email', color: '#0E93A6', mode: 'auto', cta: 'Voir la file d’envoi' },
   whatsapp: { label: 'WhatsApp', color: '#1F8A5B', mode: 'manual', cta: 'Ouvrir WhatsApp' },
+  // Le SMS prend l'olive, et c'est la seule teinte qui restait vraiment libre :
+  // le rouge est réservé au danger, le bleu et le violet sont pris par LinkedIn
+  // et le groupe séquence, l'ambre par l'appel. À 78° contre 155°, il ne se
+  // confond pas avec le vert de WhatsApp — ce qui compte, puisque ce sont les
+  // deux canaux de message et qu'ils cohabitent dans la même file.
+  sms: { label: 'SMS', color: '#77851C', mode: 'manual', cta: 'Ouvrir les SMS' },
   linkedin: { label: 'LinkedIn', color: '#0A66C2', mode: 'manual', cta: 'Ouvrir LinkedIn' },
   call: { label: 'Appel', color: '#C8881F', mode: 'manual', cta: 'Ouvrir le cockpit d’appel' },
   task: { label: 'Tâche', color: '#8AA0C0', mode: 'manual', cta: 'Traiter la tâche' },
@@ -251,7 +266,7 @@ export interface SequenceStepRef {
    * relance se lisait comme ayant sauté la colonne « il a répondu », alors qu'il
    * n'a jamais été censé la traverser.
    */
-  branch?: { waitId: string; on: 'reply' | 'timeout' } | null
+  branch?: { waitId: string; on: string } | null
 }
 
 export interface PipelineStageRef {

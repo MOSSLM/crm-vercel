@@ -93,10 +93,14 @@ describe('SequenceCanvas — la forme à l’écran', () => {
     poser()
 
     const tronc = gauche(noeudDe('s1'))
-    // « Il a répondu » à gauche, « Sans réponse » à droite : une colonne de
-    // chaque côté du tronc, à un pas d'écart.
-    expect(gauche(noeudDe('s3'))).toBe(tronc - COLONNE_L)
-    expect(gauche(noeudDe('s4'))).toBe(tronc + COLONNE_L)
+    // « Il a répondu » à gauche, « Sans réponse » à droite, symétriques autour
+    // du tronc. Les voies voisines sont à UNE `COLONNE_L` l'une de l'autre —
+    // donc à une demi-colonne du tronc chacune. C'est ce pas constant qui
+    // permet à une fourche de trois ou quatre voies de tenir sur le plan sans
+    // qu'il faille dézoomer pour la lire.
+    expect(gauche(noeudDe('s3'))).toBe(tronc - COLONNE_L / 2)
+    expect(gauche(noeudDe('s4'))).toBe(tronc + COLONNE_L / 2)
+    expect(gauche(noeudDe('s4')) - gauche(noeudDe('s3'))).toBe(COLONNE_L)
   })
 
   it('fait partir les deux voies de la même hauteur', () => {

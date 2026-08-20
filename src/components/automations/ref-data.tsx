@@ -19,6 +19,20 @@ export interface FormRef {
   name: string
 }
 
+/**
+ * Les autres séquences — pour l'étape « passer à une autre séquence ».
+ *
+ * Les archivées en font partie : une transition posée vers une séquence qu'on
+ * a rangée depuis doit rester LISIBLE dans l'éditeur, sinon la carte affiche
+ * « destination à choisir » alors qu'elle en a une. Le statut est là pour
+ * qu'on puisse le dire.
+ */
+export interface SequenceRef {
+  id: string
+  name: string
+  status: string
+}
+
 export interface RefData {
   pipelines: PipelineRef[]
   stages: StageRef[]
@@ -29,6 +43,7 @@ export interface RefData {
   task_types: TaskType[]
   tags: CrmTag[]
   forms: FormRef[]
+  sequences: SequenceRef[]
   loading: boolean
   reload: () => void
 }
@@ -52,6 +67,7 @@ const EMPTY: RefData = {
   task_types: [],
   tags: [],
   forms: [],
+  sequences: [],
   loading: true,
   reload: () => {},
 }
@@ -68,7 +84,7 @@ export function RefDataProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(async () => {
     setData((d) => ({ ...d, loading: true }))
     try {
-      const [pip, stg, usr, etpl, wtpl, scr, tt, tags, forms] = await Promise.all([
+      const [pip, stg, usr, etpl, wtpl, scr, tt, tags, forms, seqs] = await Promise.all([
         supabase.from('pipelines').select('id,nom,ordre,visible').order('ordre'),
         supabase.from('etapes_pipeline').select('id,nom,ordre,visible,pipeline_id').order('ordre'),
         supabase.from('user_profiles').select('id,full_name,role,actif'),
@@ -78,6 +94,7 @@ export function RefDataProvider({ children }: { children: React.ReactNode }) {
         supabase.from('automation_task_types').select('id,name,color'),
         supabase.from('crm_tags').select('id,name,color'),
         supabase.from('forms').select('id,name'),
+        supabase.from('automations').select('id,name,status').eq('kind', 'sequence').order('name'),
       ])
 
       const pipelines: PipelineRef[] = (pip.data ?? [])
@@ -117,6 +134,7 @@ export function RefDataProvider({ children }: { children: React.ReactNode }) {
       const task_types: TaskType[] = (tt.data ?? []) as TaskType[]
       const crmTags: CrmTag[] = (tags.data ?? []) as CrmTag[]
       const formRefs: FormRef[] = (forms.data ?? []) as FormRef[]
+      const sequences: SequenceRef[] = (seqs.data ?? []) as SequenceRef[]
 
       setData({
         pipelines,
@@ -128,6 +146,7 @@ export function RefDataProvider({ children }: { children: React.ReactNode }) {
         task_types,
         tags: crmTags,
         forms: formRefs,
+        sequences,
         loading: false,
         reload: load,
       })

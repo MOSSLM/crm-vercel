@@ -261,6 +261,11 @@ export async function recordOutcome(
     .from('email_logs')
     .insert({
       channel: 'note',
+      // `opts.userId` est déjà porté par `recordOutcome` — il ne servait qu'au
+      // journal des étapes. Une note anonyme est une note qu'on ne peut plus
+      // attribuer : elle le porte aussi.
+      auteur_id: opts.userId ?? null,
+      direction: 'interne',
       outcome: outcome.id,
       step_id: opts.stepId ?? null,
       contact_id: opp?.contact_id ?? null,

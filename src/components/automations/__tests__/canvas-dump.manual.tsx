@@ -61,6 +61,7 @@ it('écrit le plan en HTML', () => {
               onMove={() => {}}
               onDeplacer={() => {}}
               onAjouter={() => {}}
+      onRediriger={() => {}}
               carte={({ step, index }) => (
                 <div className="seq-step" data-kind={step.kind} data-reply={step.waitMode === 'reply'}>
                   <div className="hd">

@@ -191,18 +191,40 @@ export async function loadSuppressions(
   sb: SupabaseClient,
   emails: readonly string[],
 ): Promise<Set<string>> {
+  return (await lireSuppressions(sb, emails)).set
+}
+
+/**
+ * La même lecture, mais qui DIT si elle a réussi.
+ *
+ * `loadSuppressions` rend un ensemble vide quand la lecture échoue — donc
+ * « personne n'est supprimé », le côté permissif. C'est acceptable pour le
+ * calcul d'un verdict de vérification (qui est une mesure, et qui se refait),
+ * ça ne l'est pas pour décider qu'un email a le droit de partir : une liste de
+ * suppression illisible n'est pas une liste vide, et la différence est un
+ * désabonné qui reçoit quand même.
+ *
+ * Le garde d'envoi lit donc CELLE-CI et retient l'envoi quand `ok` est faux.
+ * Rien n'est perdu : le régulateur repassera.
+ */
+export async function lireSuppressions(
+  sb: SupabaseClient,
+  emails: readonly string[],
+): Promise<{ ok: boolean; set: Set<string> }> {
   const out = new Set<string>()
-  if (emails.length === 0) return out
+  if (emails.length === 0) return { ok: true, set: out }
   for (const slice of chunk([...emails], 500)) {
     try {
       const { data, error } = await sb.from('email_suppressions').select('email').in('email', slice)
-      if (error) return out
+      // Table absente = migration non appliquée : il n'y a rien à lire, et
+      // c'est un état connu, pas une panne. Tout le reste en est une.
+      if (error) return { ok: error.code === '42P01', set: out }
       for (const row of (data ?? []) as { email: string }[]) out.add(row.email)
     } catch {
-      return out
+      return { ok: false, set: out }
     }
   }
-  return out
+  return { ok: true, set: out }
 }
 
 /* ── Inscription en file ─────────────────────────────────────────────────── */

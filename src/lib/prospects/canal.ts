@@ -177,6 +177,33 @@ export function lienWhatsApp(raw: string | null | undefined, message?: string): 
   return `https://wa.me/${digits}${suffixe}`
 }
 
+/**
+ * Le lien `sms:` d'un numéro, message pré-rempli.
+ *
+ * MÊME MODÈLE QUE WHATSAPP, ET POUR LA MÊME RAISON PRATIQUE : le CRM prépare,
+ * le téléphone envoie. Ici ce n'est pourtant pas une contrainte de plateforme —
+ * l'adaptateur Zadarma porte bien un `sendSms`. Mais il n'a jamais envoyé un
+ * seul message (`sms_messages` compte zéro ligne) et son code porte encore un
+ * « CONFIRM: param names against live spec ». Un envoi payant et non éprouvé
+ * dans une boucle automatique se découvre deux cents SMS trop tard.
+ *
+ * LE `?&body=` N'EST PAS UNE FAUTE DE FRAPPE. iOS attend `&body=` dès qu'un
+ * paramètre précède, Android `?body=`. `?&body=` est la seule écriture que les
+ * deux acceptent — l'esperluette sert de séparateur à l'un et est ignorée par
+ * l'autre.
+ *
+ * Le `+` est CONSERVÉ, contrairement à `wa.me` qui le refuse : l'application de
+ * messagerie compose le numéro tel quel, et un `33612…` sans `+` partirait vers
+ * un numéro national qui n'existe pas.
+ */
+export function lienSms(raw: string | null | undefined, message?: string): string | null {
+  const e164 = toE164(raw)
+  // Un numéro court est une extension de standard interne, pas un mobile.
+  if (!e164.startsWith('+') || e164.length < 9) return null
+  const suffixe = message ? `?&body=${encodeURIComponent(message)}` : ''
+  return `sms:${e164}${suffixe}`
+}
+
 /** Libellés d'interface — une seule orthographe pour toute l'application. */
 export const CANAL_LABEL: Readonly<Record<Canal, string>> = {
   email: 'E-mail',

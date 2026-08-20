@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { MAX_PSI_PAR_LOT } from "@/utils/constants";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { filePlafonnee, parPaquets } from "@/lib/paquets";
 import { Check, Loader2, Globe, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -110,6 +111,32 @@ function storeTemplateId(variant: MarketingPipelineVariant, id: string): void {
  */
 export type MarketingPipelineVariant = "admin" | "agent";
 
+/**
+ * La taille d'un paquet d'enrichissement — celle que `marketingEnrichPrepareSchema`
+ * accepte (`opportunity_ids` plafonné à 50).
+ *
+ * Écrite ici et pas devinée : le jour où la route change son plafond, c'est la
+ * seule ligne à suivre. Trop haut, on retombe sur « invalid_body » et rien ne
+ * part ; trop bas, on multiplie les allers-retours pour rien.
+ */
+const PAQUET_ENRICH_PREPARE = 50;
+
+/** Le plafond de `marketingValidateEnrichmentSchema.project_ids`. */
+const PAQUET_VALIDATION = 100;
+
+/** Le plafond de `marketingMovePipelineSchema.opportunity_ids`. */
+const PAQUET_DEPLACEMENT = 200;
+
+/**
+ * Combien d'enrichissements tournent en même temps.
+ *
+ * Chaque appel réveille un LLM derrière l'edge function : trois cents d'un coup
+ * ne vont pas trois cents fois plus vite, ils tombent. Six est le compromis —
+ * assez pour que trois cents lignes ne prennent pas l'après-midi, assez peu
+ * pour qu'aucun fournisseur ne nous coupe.
+ */
+const ENRICH_SIMULTANES = 6;
+
 export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant }> = ({
   variant = "admin",
 }) => {
@@ -205,26 +232,46 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     // reset already-enriched ones so the edge function actually re-runs. This
     // removes the old "aucune opportunité … n'a de projet lead magnet" dead-end
     // and, when `overwrite`, wipes the previous enrichment first.
-    let projectByOpp = new Map<string, string>();
-    let prepErrors: Array<{ opportunity_id: string; error: string }> = [];
-    try {
-      const prepRes = await authedFetch("/api/marketing-pipeline/enrich-prepare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), overwrite }),
-      });
-      const prep = (await prepRes.json().catch(() => ({}))) as {
+    //
+    // PAR PAQUETS DE CINQUANTE, parce que c'est ce que la route accepte.
+    // Envoyer trois cents identifiants d'un coup rendait « invalid_body » et
+    // ne lançait RIEN : le plafond protège une requête, pas un geste, et
+    // cocher trois cents lignes est un geste. Un paquet refusé n'arrête plus
+    // les suivants — il est compté et dit à la fin.
+    const projectByOpp = new Map<string, string>();
+    const prepErrors: Array<{ opportunity_id: string; error: string }> = [];
+    {
+      type Prep = {
         prepared?: Array<{ opportunity_id: string; project_id: string }>;
         errors?: Array<{ opportunity_id: string; error: string }>;
         error?: string;
       };
-      if (!prepRes.ok) throw new Error(prep.error || "Préparation de l'enrichissement échouée");
-      projectByOpp = new Map((prep.prepared ?? []).map((p) => [p.opportunity_id, p.project_id]));
-      prepErrors = prep.errors ?? [];
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erreur lors de la préparation de l'enrichissement");
-      setWorking(null);
-      return;
+      const { reponses, echecs } = await parPaquets(
+        items.map((it) => it.id),
+        PAQUET_ENRICH_PREPARE,
+        async (paquet) => {
+          const res = await authedFetch("/api/marketing-pipeline/enrich-prepare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ opportunity_ids: paquet, overwrite }),
+          });
+          const prep = (await res.json().catch(() => ({}))) as Prep;
+          if (!res.ok) throw new Error(prep.error || `HTTP ${res.status}`);
+          return prep;
+        },
+      );
+      for (const prep of reponses) {
+        for (const p of prep.prepared ?? []) projectByOpp.set(p.opportunity_id, p.project_id);
+        prepErrors.push(...(prep.errors ?? []));
+      }
+      if (echecs.length > 0) {
+        console.error("enrich-prepare : paquets refusés", echecs);
+        const perdues = echecs.reduce((n, e) => n + e.paquet.length, 0);
+        // On ne s'arrête que si TOUT est tombé : sur trois cents lignes, en
+        // perdre cinquante vaut mieux que les perdre toutes — à condition de
+        // dire lesquelles, ce que fait le repli sur le projet déjà existant.
+        toast.warning(`${perdues} ligne(s) non préparée(s) — ${echecs[0].erreur}`);
+      }
     }
 
     // Repli défensif : une opportunité qui a déjà un projet reste enrichissable
@@ -263,8 +310,14 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
 
     try {
       let done = 0;
-      const results = await Promise.allSettled(
-        projectIds.map(async (id) => {
+      // ⚠️ UNE FILE, PLUS UNE RAFALE. `Promise.allSettled` sur toute la liste
+      // tirait autant d'appels simultanés qu'il y avait de lignes — et c'est le
+      // plafond de cinquante, maintenant levé, qui limitait accidentellement la
+      // casse. Chaque appel réveille un LLM : trois cents d'un coup ne vont pas
+      // trois cents fois plus vite, ils tombent. La file rend ses résultats
+      // dans l'ordre des tâches, ce dont dépend l'appariement au journal.
+      const results = await filePlafonnee(
+        projectIds.map((id) => async () => {
           const response = await authedFetch("/api/lead-magnet/enrich", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -282,6 +335,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           }
           return data;
         }),
+        ENRICH_SIMULTANES,
       );
 
       const processed: EnrichmentLogEntry[] = initialLogs.map((log, i) => {
@@ -331,14 +385,28 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       const url = isAgent
         ? "/api/agent/marketing-pipeline/validate-enrichment"
         : "/api/marketing-pipeline/validate-enrichment";
-      const res = await authedFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_ids: projectIds }),
+      // Même plafond, même remède qu'à l'enrichissement : la route accepte cent
+      // dossiers, la sélection peut en porter huit cents. Découper est le
+      // travail du client, pas celui de l'utilisateur.
+      const { reponses, echecs } = await parPaquets(projectIds, PAQUET_VALIDATION, async (paquet) => {
+        const res = await authedFetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_ids: paquet }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { validated?: number; error?: string };
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data.validated ?? paquet.length;
       });
-      const data = (await res.json().catch(() => ({}))) as { validated?: number; error?: string };
-      if (!res.ok) throw new Error(data.error || "Échec de la validation");
-      toast.success(`${data.validated ?? projectIds.length} enrichissement(s) validé(s)`);
+      const valides = reponses.reduce((n, v) => n + v, 0);
+      if (valides === 0 && echecs.length > 0) throw new Error(echecs[0].erreur);
+      toast.success(`${valides} enrichissement(s) validé(s)`, {
+        // Un lot partiellement passé ne doit pas s'annoncer comme complet.
+        description:
+          echecs.length > 0
+            ? `${echecs.reduce((n, e) => n + e.paquet.length, 0)} non validé(s) — ${echecs[0].erreur}`
+            : undefined,
+      });
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la validation");
@@ -1541,14 +1609,35 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     if (items.length === 0) return;
     setWorking("move-pipeline");
     try {
-      const res = await authedFetch("/api/marketing-pipeline/move-pipeline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), pipeline_id: pipelineId }),
+      // Plafond de 200 côté route : même découpage qu'ailleurs.
+      let nom: string | null = null;
+      const { reponses, echecs } = await parPaquets(
+        items.map((it) => it.id),
+        PAQUET_DEPLACEMENT,
+        async (paquet) => {
+          const res = await authedFetch("/api/marketing-pipeline/move-pipeline", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ opportunity_ids: paquet, pipeline_id: pipelineId }),
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            moved?: number;
+            pipeline_nom?: string;
+            error?: string;
+          };
+          if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+          nom = data.pipeline_nom ?? nom;
+          return data.moved ?? paquet.length;
+        },
+      );
+      const deplacees = reponses.reduce((n, v) => n + v, 0);
+      if (deplacees === 0 && echecs.length > 0) throw new Error(echecs[0].erreur);
+      toast.success(`${deplacees} opportunité(s) déplacée(s) vers ${nom ?? "le pipeline"}`, {
+        description:
+          echecs.length > 0
+            ? `${echecs.reduce((n, e) => n + e.paquet.length, 0)} non déplacée(s) — ${echecs[0].erreur}`
+            : undefined,
       });
-      const data = (await res.json().catch(() => ({}))) as { moved?: number; pipeline_nom?: string; error?: string };
-      if (!res.ok) throw new Error(data.error || "Échec du déplacement");
-      toast.success(`${data.moved ?? items.length} opportunité(s) déplacée(s) vers ${data.pipeline_nom ?? "le pipeline"}`);
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors du déplacement");
@@ -1593,6 +1682,138 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       currentReason: item.archive_reason ?? "autre",
       currentNote: item.archive_note ?? null,
     });
+  };
+
+  /**
+   * Envoie les fiches cochées dans la file de lissage.
+   *
+   * POURQUOI ICI ET PAS SEULEMENT DANS PROSPECTION → LISSAGE. L'écran du
+   * lissage choisit sa population par FILTRES — « sans SIRET », « sans fiche
+   * Google ». C'est le bon geste pour ratisser le parc, et le mauvais quand on
+   * a sous les yeux les trente lignes qu'on vient de trier à la main : rien ne
+   * décrit « ces trente-là » comme un filtre. La sélection est le filtre.
+   *
+   * ELLE NE CRÉE RIEN D'AUTRE QU'UNE PASSE. Pas d'appel, pas d'écriture sur les
+   * fiches : la file avance ensuite par son propre tick, avec son plan, ses
+   * plafonds et son écran. C'est ce qui permet de lancer cinq cents fiches sans
+   * craindre ce qui va partir — puis d'aller le regarder.
+   */
+  const lisserSelection = async (items: BoardItem[]) => {
+    const ids = [
+      ...new Set(items.map((it) => it.entreprise_id).filter((v): v is number => v != null)),
+    ];
+    if (ids.length === 0) {
+      toast.error("Aucune entreprise dans la sélection");
+      return;
+    }
+    setWorking("lisser");
+    try {
+      const res = await authedFetch("/api/lissage/passes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Ni `nom` ni `criteres` : le serveur compose le nom depuis l'origine,
+        // l'effectif et l'heure. Un champ « nommez votre passe » devant un lot
+        // qu'on vient de cocher ne serait qu'un obstacle de plus.
+        body: JSON.stringify({ entrepriseIds: ids, origine: "marketing-pipeline" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        passe?: { id: string; nom: string };
+        ajoutes?: number;
+        ecartees?: number;
+        sql_file?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(
+          data.sql_file
+            ? `${data.message ?? "Migration manquante"} — fichier à jouer : ${data.sql_file}`
+            : data.message || data.error || "Échec de la mise en file",
+        );
+      }
+      const ecartees = data.ecartees ?? 0;
+      toast.success(`${data.ajoutes ?? 0} fiche(s) en file — « ${data.passe?.nom ?? "passe"} »`, {
+        // Les écartées se DISENT. Un lot de cinquante qui en met quarante-sept
+        // en file sans le dire passe pour un lot de cinquante.
+        description:
+          (ecartees > 0 ? `${ecartees} écartée(s) : archivée(s) ou fusionnée(s). ` : "") +
+          "À suivre dans Prospection → Lissage, qui reste l’écran où on l’avance.",
+        duration: 9000,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec de la mise en file");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
+   * Déduit les chiffres clés depuis la date de création au registre.
+   *
+   * L'ENRICHISSEMENT LES CHERCHAIT DÉJÀ, et c'est le problème : il les fait
+   * deviner à un LLM à partir du texte du site du prospect, alors que la date
+   * d'immatriculation est en base et qu'une soustraction donne la réponse
+   * exacte. Ce bouton ne remplace pas l'enrichissement — il ramasse ce que
+   * l'enrichissement laisse le plus souvent vide, gratuitement.
+   */
+  const completerChiffres = async (items: BoardItem[]) => {
+    const ids = [...new Set(items.map((it) => it.project?.id).filter((v): v is string => !!v))];
+    if (ids.length === 0) {
+      toast.error("Aucun dossier lead magnet dans la sélection");
+      return;
+    }
+    setWorking("chiffres-cles");
+    try {
+      const res = await authedFetch("/api/marketing-pipeline/chiffres-cles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_ids: ids }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        completes?: number;
+        deja?: number;
+        sansDate?: number;
+        anciennetes_douteuses?: number;
+        echecs?: { project_id: string; error: string }[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Échec du calcul");
+
+      const sansDate = data.sansDate ?? 0;
+      const douteuses = data.anciennetes_douteuses ?? 0;
+      const echecs = data.echecs ?? [];
+      // CHAQUE SILENCE SE DIT SÉPARÉMENT, parce qu'ils appellent des gestes
+      // différents : « pas de date » demande un lissage, « ancienneté
+      // douteuse » demande un œil humain, « rien à faire » ne demande rien.
+      // Les fondre en « 0 complétées » laisserait croire à une panne.
+      const restes = [
+        sansDate > 0 ? `${sansDate} sans date au registre — à passer au lissage` : null,
+        douteuses > 0
+          ? `${douteuses} annonce(nt) bien plus d'ancienneté que le registre — à vérifier à la main`
+          : null,
+        echecs.length > 0 ? `${echecs.length} en échec` : null,
+      ].filter(Boolean);
+      if ((data.completes ?? 0) > 0) {
+        toast.success(`${data.completes} ligne(s) recalée(s) sur le registre`, {
+          description: restes.length > 0 ? restes.join(" · ") : undefined,
+          duration: 9000,
+        });
+      } else {
+        toast.warning("Aucun chiffre à changer", {
+          description:
+            restes.length > 0
+              ? restes.join(" · ")
+              : "Ces lignes portaient déjà des chiffres au moins égaux au barème.",
+          duration: 9000,
+        });
+      }
+      if (echecs.length > 0) console.error("chiffres-cles :", echecs);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec du calcul");
+    } finally {
+      setWorking(null);
+    }
   };
 
   /* ── Per-item handlers bound to the matrix cells ──────────────────────── */
@@ -1640,6 +1861,12 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),
     onCreerPlaquettes: (items) => creerPlaquettes(items),
+    // Le lissage est un outil d'admin : ses routes le sont, et un agent n'a pas
+    // à décider ce que le parc dépense en appels d'API.
+    onLisser: isAgent ? undefined : (items) => lisserSelection(items),
+    // Même raison que le lissage : la route est admin, et c'est une écriture de
+    // masse sur ce qui s'affichera sur des sites vendus.
+    onCompleterChiffres: isAgent ? undefined : (items) => completerChiffres(items),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
     onEnroll: isAgent ? undefined : (items, sId) => enrollInSequence(items, sId),
     onMove: (items, pId) => movePipeline(items, pId),

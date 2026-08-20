@@ -31,7 +31,7 @@ const DAY_MS = 86_400_000
 export const MIN_SENDS_FOR_GUARD = 20
 
 export interface BounceRate {
-  /** Emails réellement partis sur la fenêtre. */
+  /** E-mails réellement partis sur la fenêtre — jamais WhatsApp, jamais les notes. */
   sent: number
   /** Rebonds durs encaissés sur la fenêtre. */
   hardBounces: number
@@ -59,6 +59,18 @@ export async function measureBounceRate(sb: SupabaseClient, windowMs = DAY_MS): 
       .from('email_logs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'sent')
+      // SEULEMENT LES E-MAILS. `email_logs` porte aussi les messages WhatsApp
+      // et les notes de démarchage — 177 et 29 lignes au 19/08/2026, dont 60
+      // sur les dernières 24 h. Sans ce filtre, elles entraient au DÉNOMINATEUR
+      // d'un taux de rebond d'e-mail : le plancher de 20 était franchi sans
+      // qu'un seul e-mail soit parti, et un vrai rebond sur deux envois se
+      // lisait 1,6 % au lieu de 50 %. Le disjoncteur ne coupait donc jamais à
+      // tort — il ne coupait tout court.
+      //
+      // `channel` est `not null default 'email'` : `sendEngineEmail` ne l'écrit
+      // pas, ses envois tombent donc bien dans ce filtre. Ce sont WhatsApp et
+      // les notes qui le posent explicitement.
+      .eq('channel', 'email')
       .gte('sent_at', since)
     if (error) return EMPTY_RATE
     sent = count ?? 0

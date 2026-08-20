@@ -64,6 +64,8 @@ export const POST = withAuth<CockpitOutcomePayload>(
 
     const { error } = await sc.from("email_logs").insert({
       channel: "note",
+      auteur_id: user.id,
+      direction: "interne",
       entreprise_id: opp.entreprise_id ?? null,
       opportunite_id: opp.id,
       outcome: body.disposition,

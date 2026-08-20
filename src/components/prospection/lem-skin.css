@@ -1,0 +1,442 @@
+/* lem-skin.css — la grammaire lemlist, pour l'espace Prospection.
+ *
+ * DOUZIÈME SKIN DU DÉPÔT, ET C'EST ASSUMÉ. Le CRM en porte déjà onze
+ * (`.dm-skin`, `.tel-skin`, `.mp-scope`, `.rv-scope`…), chacun né du portage
+ * d'une maquette autonome. Le re-skin global de l'application aux couleurs
+ * lemlist est un chantier SÉPARÉ, décidé avec Matteo : c'est lui qui les fera
+ * converger. En attendant, la prospection porte la charte lemlist entière et le
+ * reste du CRM ne bouge pas d'un pixel.
+ *
+ * TOUT est préfixé `.lem-skin`, jetons compris. Ces noms de classe sont très
+ * génériques (`.btn`, `.pill`, `.card`) : sans le préfixe ils fuiraient vers le
+ * rail et le sous-menu, qui ne lisent que les utilitaires Tailwind.
+ *
+ * LES JETONS SONT PRÉFIXÉS `--lem-` POUR UNE RAISON PRÉCISE. Hors skin,
+ * `--accent` est une SURFACE de survol (#F1F2F4) ; dans un skin, c'est la
+ * couleur de marque. Deux sens pour un nom, et une collision suffirait à
+ * repeindre des boutons ailleurs dans l'app.
+ *
+ * Palette relevée le 19/08/2026 sur lemlist.com, en lisant les styles CALCULÉS
+ * de la page — pas à l'œil. Voir `docs/lemlist/06-design.md`.
+ */
+
+.lem-skin {
+  /* ── La palette de lemlist, mesurée ─────────────────────────────────── */
+  --lem-encre: #213856;        /* texte et titres — 2 788 éléments du site */
+  --lem-bleu: #316BFF;         /* boutons, anneaux, états actifs */
+  --lem-bleu-pale: #E9F3FF;    /* fonds sélectionnés, encarts */
+  --lem-gris-2: #566F8F;       /* second plan */
+  --lem-gris-3: #98A1AC;       /* DÉCORATIF SEULEMENT — voir plus bas */
+  --lem-fond: #FBFBFB;         /* fond de page, quasi blanc légèrement chaud */
+  --lem-surface: #FFFFFF;
+
+  /* Dérivés — lemlist n'expose aucune variable, ces valeurs sont les nôtres. */
+  --lem-bord: rgba(33, 56, 86, 0.10);
+  --lem-bord-2: rgba(33, 56, 86, 0.18);
+  --lem-survol: rgba(33, 56, 86, 0.04);
+  --lem-bleu-2: #1E4FD1;
+  --lem-bleu-voile: rgba(49, 107, 255, 0.10);
+
+  /* États — repris de la charte du CRM, qui mesure ses contrastes. */
+  --lem-ok: #1F8A5B;
+  --lem-ok-voile: rgba(31, 138, 91, 0.10);
+  --lem-attention: #C8881F;
+  --lem-attention-voile: rgba(200, 136, 31, 0.14);
+  --lem-danger: #B5322F;
+  --lem-danger-voile: rgba(181, 50, 47, 0.10);
+
+  /* ── Les formes ─────────────────────────────────────────────────────── */
+  --lem-rayon: 12px;           /* mesuré sur leur bouton principal */
+  --lem-rayon-2: 8px;
+  --lem-anneau: 0 0 0 1px var(--lem-bleu);
+  --lem-ombre: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --lem-police: Inter, "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+  background: var(--lem-fond);
+  color: var(--lem-encre);
+  font-family: var(--lem-police);
+  /* `min-height: 100%` ne tient pas : le parent porte un `min-height`, pas une
+     `height`, et un pourcentage se résout alors en `auto` — le fond de l'app
+     réapparaissait sous le contenu, en gris légèrement différent. `100dvh`
+     évite en plus la barre d'adresse mobile. */
+  min-height: 100dvh;
+}
+
+/* Le thème sombre du CRM : mêmes noms de jetons, autres valeurs — aucune règle
+ * plus bas ne bouge. Sans ce bloc, un skin qui écrit ses couleurs en dur casse
+ * le sombre, et `globals.css` porte un millier de lignes qui en dépendent. */
+.dark .lem-skin {
+  --lem-encre: #E8F0FA;
+  --lem-bleu: #5B8CFF;
+  --lem-bleu-pale: rgba(91, 140, 255, 0.14);
+  --lem-gris-2: #A8BEDD;
+  --lem-gris-3: #7E97BC;
+  --lem-fond: #071426;
+  --lem-surface: #0A1B33;
+  --lem-bord: rgba(255, 255, 255, 0.09);
+  --lem-bord-2: rgba(255, 255, 255, 0.16);
+  --lem-survol: rgba(255, 255, 255, 0.05);
+  --lem-bleu-2: #8AB0FF;
+  --lem-bleu-voile: rgba(91, 140, 255, 0.16);
+  --lem-ok: #46B98A;
+  --lem-ok-voile: rgba(70, 185, 138, 0.16);
+  --lem-attention: #E3A94A;
+  --lem-attention-voile: rgba(227, 169, 74, 0.16);
+  --lem-danger: #E06B68;
+  --lem-danger-voile: rgba(224, 107, 104, 0.16);
+}
+
+/* ── Le cadre ────────────────────────────────────────────────────────── */
+
+.lem-skin .lem-page { padding: 22px 26px 40px; max-width: 1440px; margin: 0 auto; }
+
+.lem-skin .lem-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+/* La police est REDITE ici, et ce n'est pas une redondance : `globals.css`
+   habille les `h1` du CRM en Instrument Serif, et cette règle-là gagne sur
+   l'héritage du conteneur. Sans ce rappel, le titre d'une campagne sort en
+   sérif au milieu d'un écran lemlist. */
+.lem-skin .lem-titre {
+  font-family: var(--lem-police);
+  font-size: 26px; font-weight: 700; line-height: 1.17;
+  letter-spacing: -0.01em; color: var(--lem-encre); margin: 0;
+}
+.lem-skin .lem-sous { font-size: 13.5px; color: var(--lem-gris-2); margin: 5px 0 0; max-width: 76ch; }
+
+/* ── Le bouton ───────────────────────────────────────────────────────── */
+/* L'anneau de 1 px de la couleur de marque EN PLUS de l'ombre : c'est ce
+ * détail, relevé sur leur appel à l'action, qui donne leur netteté aux
+ * boutons de lemlist. Sans lui, le portage a l'air mou. */
+
+.lem-skin .lem-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 18px; border-radius: var(--lem-rayon);
+  font: 500 14px/1.2 var(--lem-police);
+  background: var(--lem-surface); color: var(--lem-encre);
+  border: 1px solid var(--lem-bord-2);
+  cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.lem-skin .lem-btn:hover { background: var(--lem-survol); }
+.lem-skin .lem-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.lem-skin .lem-btn.principal {
+  background: var(--lem-bleu); color: #fff; border-color: transparent;
+  box-shadow: var(--lem-anneau), var(--lem-ombre);
+  padding: 8px 24px;
+}
+.lem-skin .lem-btn.principal:hover { background: var(--lem-bleu-2); }
+.lem-skin .lem-btn.discret { border-color: transparent; background: transparent; color: var(--lem-gris-2); }
+.lem-skin .lem-btn.discret:hover { background: var(--lem-survol); color: var(--lem-encre); }
+
+/* ── La carte ────────────────────────────────────────────────────────── */
+
+.lem-skin .lem-carte {
+  background: var(--lem-surface);
+  border: 1px solid var(--lem-bord);
+  border-radius: var(--lem-rayon);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+/* ── La pastille ─────────────────────────────────────────────────────── */
+
+.lem-skin .lem-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font: 500 11.5px/1.55 var(--lem-police);
+  background: var(--lem-bleu-pale); color: var(--lem-bleu);
+  white-space: nowrap;
+}
+.lem-skin .lem-pill[data-ton="neutre"] { background: var(--lem-survol); color: var(--lem-gris-2); }
+.lem-skin .lem-pill[data-ton="ok"] { background: var(--lem-ok-voile); color: var(--lem-ok); }
+.lem-skin .lem-pill[data-ton="attention"] { background: var(--lem-attention-voile); color: var(--lem-attention); }
+.lem-skin .lem-pill[data-ton="danger"] { background: var(--lem-danger-voile); color: var(--lem-danger); }
+
+/* ── Le tableau ──────────────────────────────────────────────────────── */
+/* Les tâches et les leads sont des TABLEAUX chez lemlist, pas des listes de
+ * cartes : c'est ce qui permet de comparer deux prospects d'un coup d'œil, et
+ * c'est exactement ce que le rail de Démarchage ne sait pas faire. */
+
+.lem-skin .lem-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.lem-skin .lem-table thead th {
+  text-align: left; padding: 9px 14px;
+  font: 500 11.5px/1.4 var(--lem-police); letter-spacing: .03em; text-transform: uppercase;
+  color: var(--lem-gris-2); background: var(--lem-fond);
+  border-bottom: 1px solid var(--lem-bord); white-space: nowrap;
+}
+.lem-skin .lem-table tbody td { padding: 11px 14px; border-bottom: 1px solid var(--lem-bord); vertical-align: middle; }
+.lem-skin .lem-table tbody tr:hover { background: var(--lem-survol); }
+.lem-skin .lem-table tbody tr:last-child td { border-bottom: 0; }
+.lem-skin .lem-table .num { font-variant-numeric: tabular-nums; }
+
+/* ── Ce qui bloque se dit là où ça bloque ────────────────────────────── */
+/* Un encart qui nomme le problème EN FRANÇAIS, à l'endroit exact où il
+ * empêche d'avancer. C'est la règle qui manquait quand 59 inscriptions ont
+ * dormi sans qu'aucun écran ne le montre. */
+
+.lem-skin .lem-alerte {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 13px; border-radius: var(--lem-rayon-2);
+  font-size: 13px; line-height: 1.45;
+  background: var(--lem-attention-voile); color: var(--lem-encre);
+  border: 1px solid transparent;
+}
+.lem-skin .lem-alerte[data-gravite="bloquant"] { background: var(--lem-danger-voile); }
+.lem-skin .lem-alerte[data-gravite="info"] { background: var(--lem-bleu-pale); }
+.lem-skin .lem-alerte b { font-weight: 600; }
+
+/* ── Le vide ─────────────────────────────────────────────────────────── */
+/* « On ne part jamais d'une page blanche » est un principe de lemlist : un
+ * écran vide propose toujours un premier geste. */
+
+.lem-skin .lem-vide { padding: 46px 20px; text-align: center; color: var(--lem-gris-2); }
+.lem-skin .lem-vide h3 { font: 600 16px/1.3 var(--lem-police); color: var(--lem-encre); margin: 0 0 6px; }
+.lem-skin .lem-vide p { font-size: 13.5px; margin: 0 auto 16px; max-width: 52ch; }
+
+/* ── Contraste ───────────────────────────────────────────────────────── */
+/* CE QUI NE SE COPIE PAS. `--lem-gris-3` (#98A1AC sur #FBFBFB) plafonne à
+ * ≈ 2,5:1 : sous le seuil de lisibilité. La charte du CRM interdit le texte
+ * courant à ce niveau, et le skin ne fait pas exception — ce gris ne sert
+ * qu'au décoratif : séparateurs, icônes inertes, texte désactivé. */
+.lem-skin .lem-decor { color: var(--lem-gris-3); }
+
+/* ── Le texte secondaire LISIBLE ─────────────────────────────────────── */
+/* `lem-decor` est réservé au décoratif — la règle est écrite juste au-dessus,
+ * et je l'ai enfreinte moi-même en habillant de gris-3 des phrases qu'on doit
+ * pouvoir LIRE : légendes de champs, motifs de verdict, explications de
+ * plafond. #98A1AC sur #FBFBFB plafonne à ≈ 2,5:1.
+ * `lem-second` est la classe qui manquait : même rôle visuel, contraste tenu. */
+.lem-skin .lem-second { color: var(--lem-gris-2); }
+
+/* ── Les champs de saisie ────────────────────────────────────────────── */
+/* Le skin n'avait aucun formulaire jusqu'ici : les deux premiers écrans ne
+ * faisaient que lire. L'anneau de focus est celui de lemlist — bleu, épais,
+ * jamais supprimé : `outline: none` sans remplacement rend un formulaire
+ * inutilisable au clavier. */
+.lem-skin .lem-champ {
+  width: 100%; box-sizing: border-box;
+  margin-top: 4px; padding: 8px 11px;
+  font: 400 13.5px/1.4 var(--lem-police);
+  color: var(--lem-encre); background: var(--lem-surface);
+  border: 1px solid var(--lem-bord-2); border-radius: var(--lem-rayon-2);
+}
+.lem-skin .lem-champ:focus-visible {
+  outline: 2px solid var(--lem-bleu); outline-offset: 1px;
+  border-color: var(--lem-bleu);
+}
+.lem-skin label { display: block; }
+
+/* ── Les onglets de vues sauvegardées ────────────────────────────────── */
+/* « Tout état visible est filtrable, et tout filtre est enregistrable en vue. »
+ * Ces onglets SONT les vues : on range son écran une fois, on le retrouve le
+ * lendemain. Le compteur d'un onglet est le nombre de lignes que sa question
+ * rend — pas un signal additionné, ce qui est précisément le défaut qu'on
+ * remplace. */
+
+.lem-skin .lem-onglets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.lem-skin .lem-onglet {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: var(--lem-rayon);
+  font: 500 13px/1.2 var(--lem-police);
+  color: var(--lem-gris-2); background: transparent;
+  border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+}
+.lem-skin .lem-onglet:hover { background: var(--lem-survol); color: var(--lem-encre); }
+.lem-skin .lem-onglet[aria-pressed="true"] {
+  background: var(--lem-bleu-pale); color: var(--lem-bleu); border-color: var(--lem-bleu-voile);
+}
+.lem-skin .lem-onglet .n { font-variant-numeric: tabular-nums; opacity: .75; }
+
+/* ── La pastille de filtre ───────────────────────────────────────────── */
+/* Une pastille = un champ + un opérateur + des valeurs. DANS la pastille les
+ * valeurs s'additionnent (toujours un OU) ; ENTRE les pastilles c'est le mode
+ * qui tranche. La règle est écrite une seule fois, dans `vue-taches.ts` — ici
+ * elle est seulement rendue visible, et c'est pour ça que le « ET » entre deux
+ * pastilles est un bouton et pas un décor. */
+
+.lem-skin .lem-filtre {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 6px 5px 11px; border-radius: 999px;
+  font: 500 12.5px/1.4 var(--lem-police);
+  background: var(--lem-surface); color: var(--lem-encre);
+  border: 1px solid var(--lem-bord-2);
+}
+.lem-skin .lem-filtre .champ { color: var(--lem-gris-2); }
+.lem-skin .lem-filtre .x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 999px;
+  border: 0; background: transparent; color: var(--lem-gris-2); cursor: pointer;
+}
+.lem-skin .lem-filtre .x:hover { background: var(--lem-survol); color: var(--lem-encre); }
+
+.lem-skin .lem-liant {
+  border: 1px solid var(--lem-bord-2); background: var(--lem-surface);
+  color: var(--lem-bleu); cursor: pointer;
+  padding: 3px 9px; border-radius: 999px;
+  font: 600 11px/1.5 var(--lem-police); letter-spacing: .04em;
+}
+.lem-skin .lem-liant:hover { background: var(--lem-bleu-pale); }
+
+/* ── Le panneau qui s'ouvre sous une pastille ────────────────────────── */
+
+.lem-skin .lem-pop {
+  position: absolute; z-index: 30; margin-top: 6px; min-width: 240px; max-width: 320px;
+  max-height: 320px; overflow-y: auto; padding: 6px;
+  background: var(--lem-surface); border: 1px solid var(--lem-bord-2);
+  border-radius: var(--lem-rayon); box-shadow: var(--lem-ombre);
+}
+.lem-skin .lem-pop button, .lem-skin .lem-pop label.opt {
+  display: flex; width: 100%; align-items: center; gap: 8px;
+  padding: 7px 9px; border: 0; border-radius: var(--lem-rayon-2);
+  background: transparent; color: var(--lem-encre); cursor: pointer;
+  font: 400 13px/1.3 var(--lem-police); text-align: left;
+}
+.lem-skin .lem-pop button:hover, .lem-skin .lem-pop label.opt:hover { background: var(--lem-survol); }
+.lem-skin .lem-pop .n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--lem-gris-2); font-size: 12px; }
+.lem-skin .lem-pop .titre {
+  padding: 6px 9px 4px; font: 500 11px/1.4 var(--lem-police);
+  letter-spacing: .04em; text-transform: uppercase; color: var(--lem-gris-2);
+}
+
+/* ── La barre des gestes de masse ────────────────────────────────────── */
+/* Elle n'apparaît qu'avec une sélection, et elle DIT combien de lignes elle
+ * touche : un geste de masse dont on ne voit pas la portée est un geste qu'on
+ * regrette. */
+
+.lem-skin .lem-barre-masse {
+  position: sticky; bottom: 16px; z-index: 20;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 14px 0 0; padding: 11px 16px;
+  background: var(--lem-encre); color: #fff;
+  border-radius: var(--lem-rayon); box-shadow: var(--lem-ombre);
+  font: 500 13px/1.2 var(--lem-police);
+}
+.lem-skin .lem-barre-masse .lem-btn {
+  background: rgba(255, 255, 255, 0.10); color: #fff; border-color: rgba(255, 255, 255, 0.22);
+}
+.lem-skin .lem-barre-masse .lem-btn:hover { background: rgba(255, 255, 255, 0.18); }
+
+/* ── La conversation, trois volets ───────────────────────────────────── */
+/* La grammaire de lemlist : filtres à gauche, le fil au centre, le dossier à
+ * droite. C'est ce qui répond à « on reste cantonné à sa carte » — on lit un
+ * échange sans perdre de vue à qui on parle. Sous 1100 px les volets latéraux
+ * passent au-dessus : un fil illisible sur trois colonnes de 200 px ne vaut
+ * pas mieux qu'une carte. */
+
+.lem-skin .lem-trois {
+  display: grid; grid-template-columns: 290px minmax(0, 1fr) 260px; gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .lem-skin .lem-trois { grid-template-columns: minmax(0, 1fr); }
+}
+
+.lem-skin .lem-volet {
+  background: var(--lem-surface); border: 1px solid var(--lem-bord);
+  border-radius: var(--lem-rayon); overflow: hidden;
+}
+.lem-skin .lem-volet .tete {
+  padding: 10px 13px; border-bottom: 1px solid var(--lem-bord);
+  font: 500 11.5px/1.4 var(--lem-police); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--lem-gris-2);
+}
+
+/* La liste des fils — une ligne par prospect, la dernière chose dite dessous. */
+.lem-skin .lem-fils { max-height: 62vh; overflow-y: auto; }
+.lem-skin .lem-fil {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 13px; border: 0; border-bottom: 1px solid var(--lem-bord);
+  background: transparent; color: var(--lem-encre); font: inherit;
+}
+.lem-skin .lem-fil:hover { background: var(--lem-survol); }
+.lem-skin .lem-fil[aria-pressed="true"] { background: var(--lem-bleu-pale); }
+.lem-skin .lem-fil .qui { font: 600 13.5px/1.3 var(--lem-police); display: block; }
+.lem-skin .lem-fil .quoi {
+  display: block; margin-top: 2px; font-size: 12.5px; color: var(--lem-gris-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Le fil lui-même. La BULLE dit le sens : ce qu'on a envoyé à droite, ce que le
+ * prospect a dit à gauche, la note d'équipe au centre et sans bulle — elle
+ * n'est adressée à personne, et lui donner la forme d'un message la ferait
+ * passer pour un envoi. */
+.lem-skin .lem-echanges { padding: 14px; max-height: 58vh; overflow-y: auto; }
+.lem-skin .lem-msg { display: flex; flex-direction: column; margin-bottom: 12px; max-width: 74%; }
+.lem-skin .lem-msg[data-sens="sortant"] { margin-left: auto; align-items: flex-end; }
+.lem-skin .lem-msg[data-sens="entrant"] { margin-right: auto; align-items: flex-start; }
+.lem-skin .lem-msg[data-sens="interne"] { max-width: 100%; align-items: stretch; }
+
+.lem-skin .lem-bulle {
+  padding: 9px 13px; border-radius: var(--lem-rayon);
+  font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.lem-skin .lem-msg[data-sens="sortant"] .lem-bulle {
+  background: var(--lem-bleu); color: #fff; border-bottom-right-radius: 4px;
+}
+.lem-skin .lem-msg[data-sens="entrant"] .lem-bulle {
+  background: var(--lem-survol); color: var(--lem-encre); border-bottom-left-radius: 4px;
+}
+.lem-skin .lem-msg[data-sens="interne"] .lem-bulle {
+  background: var(--lem-attention-voile); color: var(--lem-encre);
+  border-left: 3px solid var(--lem-attention); border-radius: var(--lem-rayon-2);
+}
+.lem-skin .lem-meta {
+  margin-top: 3px; font-size: 11.5px; color: var(--lem-gris-2);
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+}
+
+/* Le dossier de droite — des faits, pas des boutons. */
+.lem-skin .lem-fiche { padding: 12px 13px; font-size: 13px; }
+.lem-skin .lem-fiche dt {
+  font: 500 11px/1.4 var(--lem-police); letter-spacing: .03em;
+  text-transform: uppercase; color: var(--lem-gris-2); margin-top: 10px;
+}
+.lem-skin .lem-fiche dt:first-child { margin-top: 0; }
+.lem-skin .lem-fiche dd { margin: 2px 0 0; }
+
+/* ── L'entonnoir, qui est une partition ──────────────────────────────────── */
+/*
+   Une BARRE, pas un empilement de compteurs. La forme fait le travail : on voit
+   d'un coup où le fichier s'arrête. Et comme c'est une partition, la barre est
+   pleine — elle ne peut pas dépasser 100 %, ce qui est exactement le défaut
+   qu'on répare.
+
+   Les teintes sortent des jetons de la charte (`--lem-ok`, `--lem-attention`,
+   `--lem-danger`), qui sont redéfinis en sombre plus haut. En inventer d'autres
+   ici donnerait une barre qui ne suit pas le thème.
+*/
+.lem-skin .lem-entonnoir {
+  display: flex; gap: 2px; height: 26px; border-radius: var(--lem-rayon-2); overflow: hidden;
+  background: var(--lem-survol);
+}
+.lem-skin .lem-entonnoir .part { background: var(--lem-bleu); min-width: 3px; }
+.lem-skin .lem-entonnoir .part[data-ton="neutre"] { background: var(--lem-gris-3); }
+.lem-skin .lem-entonnoir .part[data-ton="ok"] { background: var(--lem-ok); }
+.lem-skin .lem-entonnoir .part[data-ton="attention"] { background: var(--lem-attention); }
+.lem-skin .lem-entonnoir .part[data-ton="danger"] { background: var(--lem-danger); }
+
+/* Le QUATRIÈME ton de la couverture : « personne n'a regardé ».
+   Il ne peut pas partager la teinte d'« on a regardé sans conclure » — c'est
+   toute la distinction que la table des constats existe pour porter. Un hachuré
+   plutôt qu'une couleur pleine : il se lit comme un vide, pas comme un état. */
+.lem-skin .lem-entonnoir .part[data-ton="vide"],
+.lem-skin .lem-legende .puce[data-ton="vide"] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--lem-gris-3) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px var(--lem-bord);
+}
+
+.lem-skin .lem-legende { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.lem-skin .lem-legende li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.lem-skin .lem-legende .puce {
+  width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--lem-bleu);
+}
+.lem-skin .lem-legende .puce[data-ton="neutre"] { background: var(--lem-gris-3); }
+.lem-skin .lem-legende .puce[data-ton="ok"] { background: var(--lem-ok); }
+.lem-skin .lem-legende .puce[data-ton="attention"] { background: var(--lem-attention); }
+.lem-skin .lem-legende .puce[data-ton="danger"] { background: var(--lem-danger); }
+.lem-skin .lem-legende .l { flex: 1; }
+.lem-skin .lem-legende b { font-variant-numeric: tabular-nums; }
+.lem-skin .lem-legende .pc { color: var(--lem-gris-2); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }

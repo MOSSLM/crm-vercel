@@ -27,3 +27,4 @@ export function lienWhatsApp(telephone: string | null | undefined, message: stri
   const numero = versFormatInternational(telephone);
   return numero ? `https://wa.me/${numero}?text=${encodeURIComponent(message)}` : null;
 }
+

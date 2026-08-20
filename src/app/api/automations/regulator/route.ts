@@ -50,6 +50,10 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     if (body.task_max_per_agent != null) patch.task_max_per_agent = body.task_max_per_agent
     if (body.admin_user_id !== undefined) patch.admin_user_id = body.admin_user_id
     if (body.test_mode != null) patch.test_mode = body.test_mode
+    // Le tableau vide est une valeur : « plus rien n'est suspendu ». D'où
+    // `!= null` et pas un test de longueur — rouvrir tous les canaux d'un coup
+    // doit pouvoir se dire.
+    if (body.canaux_suspendus != null) patch.canaux_suspendus = body.canaux_suspendus
 
     if (body.verify_before_send != null) patch.verify_before_send = body.verify_before_send
     if (body.verify_ttl_days != null) patch.verify_ttl_days = body.verify_ttl_days

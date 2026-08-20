@@ -33,7 +33,17 @@ export interface WorkflowDefinition {
 }
 
 // ── Définition d'une séquence ──────────────────────────────────────────────
-export type SeqStepKind = 'email' | 'linkedin' | 'whatsapp' | 'call' | 'wait' | 'task'
+export type SeqStepKind =
+  | 'email'
+  | 'linkedin'
+  | 'whatsapp'
+  | 'sms'
+  | 'call'
+  | 'wait'
+  | 'task'
+  | 'condition'
+  /** Passe le prospect à une AUTRE séquence, et sort de celle-ci. */
+  | 'transition'
 export type SeqStepMode = 'auto' | 'manual'
 
 export interface SequenceStep {
@@ -48,7 +58,20 @@ export interface SequenceStep {
   label?: string
   duration?: string
   action?: string
+  /**
+   * @deprecated Inertes, et volontairement.
+   *
+   * Resend n'expose aucune option de suivi dans son appel d'envoi : c'est un
+   * réglage de domaine. Ces deux champs n'ont donc jamais été transmis. Et on
+   * n'active pas le réglage de domaine non plus — pixel d'ouverture et
+   * réécriture de liens dégradent la réputation de la boîte.
+   *
+   * Conservés parce que d'anciennes définitions les portent en base ; à ne pas
+   * lire pour décider quoi que ce soit. Ce qui se mesure : les vues des liens à
+   * jeton (rapport d'audit, plaquette, démo), comptées côté serveur.
+   */
   trackOpens?: boolean
+  /** @deprecated Voir `trackOpens`. */
   trackClicks?: boolean
   skipIfReplied?: boolean
   /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
@@ -74,7 +97,98 @@ export interface SequenceStep {
    * d'atteignabilité vit dans `src/lib/automations/branches.ts` et nulle part
    * ailleurs — le moteur, l'éditeur et la prévision s'y réfèrent tous.
    */
-  branch?: { waitId: string; on: 'reply' | 'timeout' } | null
+  branch?: { waitId: string; on: string } | null
+  /**
+   * Étape `condition` : ce qu'on teste avant de bifurquer.
+   *
+   * UNE CONDITION EST UNE FOURCHE, EXACTEMENT COMME UNE ATTENTE — et c'est
+   * pour ça que `branch` ne change pas d'un octet. `on: 'reply'` veut dire
+   * « la sortie 1 », `on: 'timeout'` « la sortie 2 » ; sur une attente ça se
+   * lit « il a répondu / sans réponse », sur une condition « oui / non ».
+   * Les six séquences existantes et les 92 `vars.replies` restent valides,
+   * et `branches.ts` garde sa récursion telle quelle.
+   *
+   * Le vocabulaire des champs et des opérateurs vit dans
+   * `src/lib/automations/conditions.ts`, avec ce qu'il faut aller chercher
+   * pour l'évaluer.
+   */
+  condition?: {
+    champ: string
+    operateur: string
+    valeurs?: string[]
+    seuil?: number
+    /**
+     * Ce qu'on fait quand on NE SAIT PAS — la donnée n'a jamais été mesurée
+     * pour ce prospect. Défaut `non`, jamais un gel : c'est un gel sans
+     * réveil qui a laissé 59 inscriptions dormir des semaines. Mais la trace
+     * écrite dans `vars.conditions` distingue alors `non_mesure` de `non`,
+     * pour qu'on puisse compter après coup combien de prospects sont partis
+     * dans une voie qu'on a devinée.
+     */
+    siInconnu?: 'oui' | 'non'
+    /**
+     * L'AIGUILLAGE — quand deux voies ne suffisent pas.
+     *
+     * Absent : la condition garde ses deux sorties, `reply` = oui et
+     * `timeout` = non, et rien ne change. Présent : chaque cas ouvre SA voie,
+     * le premier vrai gagne, et une voie `sinon` ramasse le reste. Le
+     * vocabulaire et l'évaluation vivent dans
+     * `src/lib/automations/conditions.ts`.
+     *
+     * ⚠️ Un cas qu'on ne sait pas trancher n'attrape personne : il laisse
+     * passer au cas suivant. La voie « sinon » s'adresse donc AUSSI à ceux
+     * dont on ne savait rien — c'est ce qu'il faut avoir en tête en l'écrivant.
+     */
+    cas?: {
+      cle: string
+      libelle?: string
+      champ: string
+      operateur: string
+      valeurs?: string[]
+      seuil?: number
+    }[]
+  } | null
+  /**
+   * CE QUI SE PASSE APRÈS CETTE ÉTAPE — la moitié qui manquait aux voies.
+   *
+   * Absent (défaut) : on descend au suivant atteignable, et les voies d'une
+   * fourche se rejoignent sur le tronc. C'est le comportement de toujours, et
+   * il reste juste pour l'immense majorité des étapes.
+   *
+   * `fin` : la voie s'arrête là. C'est ce qui manquait — nos six séquences
+   * finissent toutes sur un appel, sans rien derrière, et le flou d'après le
+   * premier contact vient précisément de là. Une fin explicite se lit dans le
+   * canvas et se compte dans les rapports (`vars.fin`).
+   *
+   * `aller_a` : on saute à une autre étape, en avant pour couper court, en
+   * arrière pour reboucler. Un rebouclage sans issue tournerait indéfiniment :
+   * le moteur compte les passages et arrête à `MAX_TOURS`
+   * (`src/lib/automations/branches.ts`).
+   */
+  suite?:
+    | { type: 'suivre' }
+    | { type: 'aller_a'; cible: string }
+    | { type: 'fin'; motif?: string }
+    | null
+  /**
+   * Étape `transition` : la séquence suivante.
+   *
+   * POURQUOI PLUSIEURS SÉQUENCES PLUTÔT QU'UNE ÉNORME. Une séquence unique qui
+   * couvrirait premier contact, démo, engagement, closing et nurture serait
+   * illisible dans le canvas et impossible à retoucher sans risquer l'ensemble.
+   * Découpée, chaque séquence garde une question, se relit, et se réutilise —
+   * « Nurture » sert à tout le monde, quelle que soit la porte d'entrée.
+   *
+   * CE QUE ÇA FAIT, EXACTEMENT : l'inscription courante SORT (motif
+   * `transfert`, qui ne renvoie pas le prospect au stock), et une inscription
+   * s'ouvre dans la séquence visée. Le prospect n'est jamais dans deux
+   * séquences de démarchage à la fois.
+   *
+   * ⚠️ Une chaîne de séquences peut boucler. `vars.transitions` garde la liste
+   * de celles déjà traversées : on n'entre jamais deux fois dans la même par
+   * transition, et jamais plus de `MAX_TRANSITIONS` fois de suite.
+   */
+  transition?: { automationId: string; motif?: string } | null
 }
 
 export interface SequenceSettings {
@@ -226,7 +340,14 @@ export interface SequenceEnrollment {
   finished_at: string | null
 }
 
-export type ProspectionKind = 'call' | 'whatsapp' | 'linkedin' | 'email'
+/**
+ * Les natures de tâche que la base accepte — miroir exact de la contrainte
+ * `prospection_tasks_kind_check`, élargie au SMS par
+ * `sql/20260820_canal_sms.sql`. Ajouter une valeur ici sans la migration fait
+ * échouer l'INSERT, donc l'avancement de l'inscription ENTIÈRE, pas de la
+ * seule étape.
+ */
+export type ProspectionKind = 'call' | 'whatsapp' | 'sms' | 'linkedin' | 'email'
 export type ProspectionStatus = 'pending' | 'done' | 'skipped' | 'snoozed'
 
 export interface ProspectionTaskPayload {

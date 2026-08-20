@@ -4,6 +4,7 @@ import {
   correspondAuPublic,
   estFixeFr,
   estMobileFr,
+  lienSms,
   lienWhatsApp,
   premierMobile,
   sequenceSuggeree,
@@ -255,5 +256,34 @@ describe('lienWhatsApp', () => {
     expect(lienWhatsApp(null)).toBeNull()
     expect(lienWhatsApp('')).toBeNull()
     expect(lienWhatsApp('1234')).toBeNull() // extension de standard interne
+  })
+})
+
+describe('lienSms — le CRM prépare, le téléphone envoie', () => {
+  it('compose un numéro français en international, et GARDE le +', () => {
+    // C'est la différence avec `wa.me`, qui le refuse : l'application de
+    // messagerie compose le numéro tel quel.
+    expect(lienSms('06 12 34 56 78', 'Bonjour')).toBe('sms:+33612345678?&body=Bonjour')
+    expect(lienWhatsApp('06 12 34 56 78', 'Bonjour')).toBe('https://wa.me/33612345678?text=Bonjour')
+  })
+
+  it('écrit `?&body=`, la seule forme qu’iOS ET Android acceptent', () => {
+    expect(lienSms('0612345678', 'x')).toContain('?&body=')
+  })
+
+  it('encode le texte, accents et retours à la ligne compris', () => {
+    expect(lienSms('0612345678', 'Été & co\nsuite')).toBe(
+      'sms:+33612345678?&body=%C3%89t%C3%A9%20%26%20co%0Asuite',
+    )
+  })
+
+  it('omet le paramètre quand il n’y a pas de message', () => {
+    expect(lienSms('0612345678')).toBe('sms:+33612345678')
+  })
+
+  it('rend null plutôt qu’un lien mort', () => {
+    expect(lienSms(null, 'x')).toBeNull()
+    // Une extension de standard interne n'est pas un mobile.
+    expect(lienSms('1234', 'x')).toBeNull()
   })
 })

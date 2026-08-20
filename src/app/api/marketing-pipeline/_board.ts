@@ -85,6 +85,15 @@ type EntRow = {
   owner_id: string | null;
   google_url: string | null;
   google_maps_url: string | null;
+  /**
+   * La première fois qu'un geste réel est parti vers ce prospect. Posée par
+   * `PATCH /api/agent/tasks` quand une tâche est bouclée — donc par l'humain
+   * qui a appelé ou écrit, pas par l'inscription en séquence.
+   *
+   * C'est ce qui distingue « sorti de séquence sans que rien ne parte » de
+   * « sorti de séquence après six messages » : `exit_reason` ne le dit pas.
+   */
+  premiere_touche_le: string | null;
 };
 
 /**
@@ -196,6 +205,14 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
   }
   return miss;
 }
+
+/** Une ligne de `v_entreprises_presence_site` — le verdict, et d'où il vient. */
+type PresenceRow = {
+  entreprise_id: number | null;
+  statut_site: string | null;
+  origine_statut: string | null;
+  confiance_statut: string | null;
+};
 
 type ProjectRow = {
   id: string;
@@ -609,7 +626,7 @@ export async function buildBoard(
     supabase
       .from("entreprises")
       .select(
-        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, telephones, email, service_tags, note_moyenne, nombre_avis, owner_id, google_url, google_maps_url",
+        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, telephones, email, service_tags, note_moyenne, nombre_avis, owner_id, google_url, google_maps_url, premiere_touche_le",
       )
       .in("id", entIds),
     entIds.length > 0
@@ -706,6 +723,31 @@ export async function buildBoard(
   // premier cache la colonne, le second l'affiche vide. Une fonctionnalité non
   // déployée ne doit pas ressembler à une donnée manquante.
   const notesSite = await lireAudits(supabase, entIds);
+
+  /**
+   * Le site du prospect : présent, vérifié absent, ou on ne sait pas.
+   *
+   * ON LIT LA VUE, PAS LA COLONNE — la même que le moteur (`engine.ts`).
+   * `entreprises.canonical_url` ment dans les deux sens : mesuré au 20/08,
+   * **612 lignes seraient « présent » sur la seule foi de la colonne**, alors
+   * que 124 portent un constat « absent » et 62 pointent un hébergeur sans
+   * site. `v_entreprises_presence_site` applique déjà la hiérarchie — un
+   * constat l'emporte sur une colonne — et `origine_statut` dit lequel a gagné.
+   *
+   * Échec non fatal, comme les plaquettes : une base sans la vue perd le
+   * filtre, pas le tableau.
+   */
+  const presenceParEnt = new Map<number, PresenceRow>();
+  if (entIds.length > 0) {
+    const presRes = await supabase
+      .from("v_entreprises_presence_site")
+      .select("entreprise_id, statut_site, origine_statut, confiance_statut")
+      .in("entreprise_id", entIds);
+    for (const r of (presRes.data ?? []) as PresenceRow[]) {
+      if (r.entreprise_id == null) continue;
+      presenceParEnt.set(Number(r.entreprise_id), r);
+    }
+  }
 
   // Enrichment run metadata (statut/error/attempts written by the edge function).
   // These columns are optional: the board degrades gracefully if a DB predates
@@ -967,8 +1009,21 @@ export async function buildBoard(
           }
         : null,
       note_site: noteSiteDe(notesSite, o.entreprise_id),
+      // Le site DU PROSPECT — pas notre démo. `null` veut dire « la vue n'a
+      // rien pour cette fiche », ce qui est encore une autre chose que
+      // « inconnu » : personne n'a même de colonne à lire.
+      presence_site: (() => {
+        const p = o.entreprise_id != null ? presenceParEnt.get(o.entreprise_id) : undefined;
+        if (!p || !p.statut_site) return null;
+        return {
+          statut: p.statut_site as "present" | "absent" | "inconnu",
+          origine: p.origine_statut ?? null,
+          confiance: p.confiance_statut ?? null,
+        };
+      })(),
       agent: owner ? { id: owner.id, name: owner.name } : null,
       canaux: o.entreprise_id != null ? [...(canauxByEnt.get(o.entreprise_id)?.canaux ?? [])] : [],
+      premiereTouche: ent?.premiere_touche_le ?? null,
       sequence: (() => {
         const enr = enrollByOpp.get(o.id) ?? (o.entreprise_id != null ? enrollByEnt.get(o.entreprise_id) : undefined);
         if (!enr) return null;

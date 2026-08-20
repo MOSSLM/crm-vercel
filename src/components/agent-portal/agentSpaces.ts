@@ -22,6 +22,8 @@ import {
   Voicemail,
   Settings,
   User,
+  Send,
+  ListTodo,
 } from "lucide-react";
 
 /**
@@ -35,6 +37,7 @@ import {
  */
 
 export type AgentSpaceId =
+  | "prospection"
   | "pilotage"
   | "demarchage"
   | "relation"
@@ -76,6 +79,34 @@ export type AgentSpace = {
 };
 
 export const AGENT_SPACES: AgentSpace[] = [
+  /**
+   * Prospection — QUATRE ENTRÉES, PAS DOUZE.
+   *
+   * C'est le pendant agent de l'espace Prospection de l'admin, et sa brièveté
+   * est le sujet : « ma journée » (ce que je fais maintenant), « inbox » (ce
+   * qu'on m'a dit), « tâches » (mes vues), « mes campagnes » (où en sont mes
+   * prospects). Un agent ne conçoit pas d'audience — ni constructeur de
+   * campagne, ni segments, ni délivrabilité.
+   *
+   * « Ma journée » pointe sur le poste de travail existant : c'est LUI la file
+   * du jour (premiers contacts en stock, relances au calendrier). Lui donner
+   * une seconde URL n'aurait ajouté qu'un saut.
+   *
+   * Les sections qui suivent (Pilotage, Relation, Téléphonie, SAMA) ne bougent
+   * pas : ce sont d'autres métiers, et ils tournent.
+   */
+  {
+    id: "prospection",
+    label: "Prospection",
+    icon: Send,
+    href: "/espace-agent/demarchage",
+    tools: [
+      { title: "Ma journée", href: "/espace-agent/demarchage", icon: Target },
+      { title: "Inbox", href: "/espace-agent/inbox", icon: Inbox },
+      { title: "Tâches", href: "/espace-agent/taches", icon: ListTodo },
+      { title: "Mes campagnes", href: "/espace-agent/campagnes", icon: Send },
+    ],
+  },
   {
     id: "pilotage",
     label: "Pilotage",
@@ -102,9 +133,8 @@ export const AGENT_SPACES: AgentSpace[] = [
     id: "demarchage",
     label: "Démarchage",
     icon: Target,
-    href: "/espace-agent/demarchage",
+    href: "/espace-agent/qualification",
     tools: [
-      { title: "Démarchage", href: "/espace-agent/demarchage", icon: Target },
       {
         title: "Qualification",
         href: "/espace-agent/qualification",
@@ -179,6 +209,13 @@ export function getAgentSpaceById(id: AgentSpaceId): AgentSpace {
  * listed before broader ones.
  */
 const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
+  // La prospection d'abord : `/espace-agent/demarchage` appartient désormais à
+  // cette section, et le préfixe le plus spécifique doit gagner.
+  ["/espace-agent/demarchage", "prospection"],
+  ["/espace-agent/inbox", "prospection"],
+  ["/espace-agent/taches", "prospection"],
+  ["/espace-agent/campagnes", "prospection"],
+
   ["/espace-agent/dashboard", "pilotage"],
   ["/espace-agent/entonnoir", "pilotage"],
   ["/espace-agent/marketing-pipeline", "pilotage"],
@@ -187,7 +224,6 @@ const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
   ["/espace-agent/calendrier", "pilotage"],
   ["/espace-agent/rendez-vous", "pilotage"],
 
-  ["/espace-agent/demarchage", "demarchage"],
   ["/espace-agent/qualification", "demarchage"],
   ["/espace-agent/messagerie", "demarchage"],
   ["/espace-agent/sequences", "demarchage"],

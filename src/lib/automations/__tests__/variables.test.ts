@@ -328,3 +328,61 @@ describe('versionsPreparees', () => {
     expect(versionsPreparees(null)).toEqual([{ variant: 'company', message: '' }])
   })
 })
+
+// ── La valeur de repli ─────────────────────────────────────────────────────
+describe('les valeurs de repli', () => {
+  const bag: VarBag = { 'company.name': 'Toiture Martin', 'contact.first_name': '' }
+
+  it('remplace une variable vide par son repli', () => {
+    expect(interpolateVars('Bonjour {{contact.first_name | "à vous"}},', bag)).toBe('Bonjour à vous,')
+  })
+
+  it('remplace une variable ABSENTE du sac par son repli', () => {
+    expect(interpolateVars('{{company.city | "votre secteur"}}', bag)).toBe('votre secteur')
+  })
+
+  it('n’applique pas le repli quand la variable est remplie', () => {
+    expect(interpolateVars('{{company.name | "votre entreprise"}}', bag)).toBe('Toiture Martin')
+  })
+
+  it('accepte les apostrophes simples comme délimiteur', () => {
+    expect(interpolateVars("{{company.city | 'ici'}}", bag)).toBe('ici')
+  })
+
+  it('accepte un repli vide, qui est une façon explicite de ne rien mettre', () => {
+    expect(interpolateVars('a{{company.city | ""}}b', bag)).toBe('ab')
+  })
+
+  it('résout l’alias avant de décider si le repli s’applique', () => {
+    expect(interpolateVars('{{prenom | "bonjour"}}', { 'contact.first_name': 'Julien' })).toBe('Julien')
+  })
+
+  it('ne compte PAS comme manquante une variable couverte par un repli', () => {
+    expect(missingVariables('{{contact.first_name | "à vous"}}', bag)).toEqual([])
+  })
+
+  it('juge par occurrence : la même clé nue ailleurs reste un manque', () => {
+    expect(missingVariables('{{contact.first_name | "à vous"}} puis {{contact.first_name}}', bag)).toEqual([
+      'contact.first_name',
+    ])
+  })
+
+  it('cite quand même la clé dans usedVariables — le repli ne la cache pas', () => {
+    expect(usedVariables('{{company.city | "ici"}}')).toEqual(['company.city'])
+  })
+
+  it('laisse intact un texte sans repli — rien ne change pour les modèles écrits avant', () => {
+    expect(interpolateVars('Bonjour {{contact.first_name}},', bag)).toBe('Bonjour ,')
+    expect(missingVariables('Bonjour {{contact.first_name}},', bag)).toEqual(['contact.first_name'])
+  })
+
+  it('ne prend pas un « | » du texte courant pour un repli', () => {
+    expect(interpolateVars('{{company.name}} | Sama', bag)).toBe('Toiture Martin | Sama')
+  })
+
+  it('rend la version contact envoyable quand le prénom est couvert', () => {
+    // Sans repli, `pickVariant` retombe sur l'entreprise faute de prénom.
+    const pairs = [{ company: 'Bonjour,', contact: 'Bonjour {{contact.first_name | "à vous"}},' }]
+    expect(pickVariant(pairs, bag)).toBe('contact')
+  })
+})

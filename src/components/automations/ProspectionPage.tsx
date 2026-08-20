@@ -19,7 +19,7 @@ import {
   type AwaitingReplyRow,
   type ProspectionTaskFull,
 } from './prospection-db'
-import { lienWhatsApp } from '@/lib/prospects/canal'
+import { lienSms, lienWhatsApp } from '@/lib/prospects/canal'
 import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from '@/lib/automations/variables'
 import { NumeroPicker, sourceNumeros, useNumeros } from './NumeroPicker'
 import type { NumeroProspect, UsageNumero } from '@/lib/prospects/numeros'
@@ -34,6 +34,7 @@ const TABS: { id: string; label: string; icon: string; match: (t: ProspectionTas
   { id: 'today', label: "Aujourd'hui", icon: 'cal', match: () => true },
   { id: 'call', label: 'Appels', icon: 'phone', match: (t) => t.kind === 'call' },
   { id: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', match: (t) => t.kind === 'whatsapp' },
+  { id: 'sms', label: 'SMS', icon: 'sms', match: (t) => t.kind === 'sms' },
   { id: 'linkedin', label: 'LinkedIn', icon: 'linkedin', match: (t) => t.kind === 'linkedin' },
   { id: 'overdue', label: 'En retard', icon: 'warning', match: (t) => new Date(t.due_at).getTime() < Date.now() },
 ]
@@ -124,17 +125,19 @@ function contactName(t: ProspectionTaskFull): { first: string; last: string; ful
 }
 
 function kindIcon(kind: string) {
-  return kind === 'call' ? 'phone' : kind === 'whatsapp' ? 'whatsapp' : kind === 'linkedin' ? 'linkedin' : 'mail'
+  if (kind === 'call') return 'phone'
+  if (kind === 'whatsapp') return 'whatsapp'
+  if (kind === 'sms') return 'sms'
+  if (kind === 'linkedin') return 'linkedin'
+  return 'mail'
 }
 
 function kindLabel(kind: string) {
-  return kind === 'call'
-    ? 'Appel à passer'
-    : kind === 'whatsapp'
-      ? 'WhatsApp à envoyer'
-      : kind === 'linkedin'
-        ? 'Connexion LinkedIn'
-        : 'Email à valider'
+  if (kind === 'call') return 'Appel à passer'
+  if (kind === 'whatsapp') return 'WhatsApp à envoyer'
+  if (kind === 'sms') return 'SMS à envoyer'
+  if (kind === 'linkedin') return 'Connexion LinkedIn'
+  return 'Email à valider'
 }
 
 export function ProspectionPage() {
@@ -485,6 +488,21 @@ function ProsDetail({
     window.open(url, '_blank')
   }
 
+  /**
+   * Ouvre l'application de messagerie du téléphone, texte déjà écrit.
+   *
+   * `location.href` et non `window.open` : un `sms:` n'est pas une page, et
+   * l'ouvrir dans un onglet laisse un onglet blanc derrière lui.
+   */
+  function openSms() {
+    const url = lienSms(phone, message)
+    if (!url) {
+      toast.error('Ce numéro n’est pas exploitable pour un SMS.')
+      return
+    }
+    window.location.href = url
+  }
+
   return (
     <div className="pros-card">
       <div className="pros-card-hd">
@@ -583,6 +601,27 @@ function ProsDetail({
             <button className="btn outline" type="button" onClick={openWhatsApp}>
               <XI name="whatsapp" className="ico-sm" />
               Ouvrir WhatsApp
+            </button>
+          </>
+        )}
+        {task.kind === 'sms' && (
+          <>
+            {message && (
+              <button
+                className="btn outline"
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(message)
+                  toast.success('Message copié')
+                }}
+              >
+                <XI name="copyClip" className="ico-sm" />
+                Copier
+              </button>
+            )}
+            <button className="btn outline" type="button" onClick={openSms}>
+              <XI name="sms" className="ico-sm" />
+              Ouvrir les SMS
             </button>
           </>
         )}

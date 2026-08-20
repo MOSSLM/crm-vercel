@@ -16,6 +16,7 @@ export type DemChannel = {
 
 const CH: Record<DemKind, DemChannel> = {
   whatsapp: { lb: "WhatsApp", ic: "whatsapp", c: channelOf("whatsapp").color, cta: "Envoyer le WhatsApp" },
+  sms: { lb: "SMS", ic: "sms", c: channelOf("sms").color, cta: "Envoyer le SMS" },
   linkedin: { lb: "LinkedIn", ic: "linkedin", c: channelOf("linkedin").color, cta: "Envoyer le message" },
   call: { lb: "Appel", ic: "phone", c: channelOf("call").color, cta: "Appeler" },
   // L'attente n'est pas un canal : rien n'en part. Sa couleur est celle des
@@ -26,4 +27,5 @@ const CH: Record<DemKind, DemChannel> = {
 
 export const demCh = (k: string): DemChannel => CH[(k as DemKind)] ?? CH.whatsapp;
 
-export const isMessageKind = (k: string): boolean => k === "whatsapp" || k === "linkedin";
+export const isMessageKind = (k: string): boolean =>
+  k === "whatsapp" || k === "sms" || k === "linkedin";

@@ -39,9 +39,41 @@ export const VARIABLES: readonly VariableDef[] = [
   { key: 'company.phone', desc: "Téléphone de l'entreprise", sample: '06 46 04 28 76' },
   { key: 'company.email', desc: "E-mail de l'entreprise", sample: 'contact@toituremartin.fr' },
   { key: 'company.website', desc: 'Site actuel du prospect', sample: 'toituremartin.fr' },
+  // NE S'ÉCRIVENT PAS DANS UN MESSAGE — SE TESTENT, avec `{% si %}`.
+  //
+  // DEUX VARIABLES POUR TROIS ÉTATS, et ce n'est pas une maladresse : `{% si %}`
+  // teste une PRÉSENCE, donc une variable unique valant « non » prendrait la
+  // voie du OUI. Ici, « les deux vides » dit « personne n'a regardé » — et le
+  // CRM ne confond jamais un absent constaté avec un inconnu.
+  //
+  // Elles lisent la MESURE (`v_entreprises_presence_site`), pas la colonne :
+  // 67 entreprises portent une URL alors qu'un constat dit « absent ».
+  {
+    key: 'company.site_present',
+    desc: 'Rempli si on a mesuré qu’il A un site (à tester, pas à écrire)',
+    sample: 'oui',
+  },
+  {
+    key: 'company.site_absent',
+    desc: 'Rempli si on a mesuré qu’il n’a PAS de site (à tester, pas à écrire)',
+    // L'exemple vaut « oui » comme le précédent, et ce n'est pas une erreur :
+    // il montre ce que la variable CONTIENT quand elle est vraie. Un exemple
+    // vide ferait un aperçu blanc, et le catalogue interdit ça — un aperçu qui
+    // ne montre rien ne se distingue pas d'un aperçu cassé.
+    sample: 'oui',
+  },
   { key: 'owner.first_name', desc: "Prénom de l'agent qui suit le prospect", sample: 'Alex' },
   { key: 'company.demo_url', desc: 'Lien du site démo', sample: 'https://toituremartin.samadigitalstudio.fr' },
   { key: 'company.audit_url', desc: "Lien du rapport d'audit (repli : PDF)", sample: 'https://rapport.samadigitalstudio.fr/a1b2c3' },
+  {
+    // LE JETON PAR PROSPECT, ET SON REPLI. Sans jeton, la variable rend le lien
+    // COLLECTIF — la plaquette part quand même, seul le compteur de vues est
+    // perdu. Une variable vide aurait fait partir un message qui promet une
+    // plaquette avec un trou à la place du lien, ce qui est bien pire.
+    key: 'company.plaquette_url',
+    desc: 'Lien de la plaquette (jeton du prospect, repli : lien collectif)',
+    sample: 'https://crm.samadigitalstudio.fr/plaquette/a1b2c3d4e5f6a7b8',
+  },
   { key: 'calendar_link', desc: 'Lien de réservation', sample: 'https://samadigitalstudio.fr/rdv' },
 ] as const
 
@@ -71,19 +103,38 @@ export const ALIASES: Readonly<Record<string, string>> = {
   lien_site: 'company.demo_url',
   lien_demo: 'company.demo_url',
   lien_audit: 'company.audit_url',
+  lien_plaquette: 'company.plaquette_url',
   lien_lm: 'company.demo_url',
   lien_rdv: 'calendar_link',
 }
 
 /**
- * Le motif d'une variable dans un texte.
+ * Le motif d'une variable dans un texte, avec sa valeur de repli facultative.
  *
  * `[\w.]` ne suffisait pas : `prénom` porte un accent, et une clé non reconnue
  * est remplacée par du vide — l'ancien motif laissait donc `{{prénom}}` intact
  * dans le message envoyé, ce qui est encore pire qu'un blanc. `\p{L}` couvre
  * les lettres accentuées ; le drapeau `u` est requis pour ça.
+ *
+ * LE REPLI — `{{contact.first_name | "bonjour"}}`.
+ *
+ * Sans lui, une variable absente laisse un trou, et le seul recours est la
+ * bascule entreprise/contact : deux textes entiers pour un mot qui change.
+ * Le repli traite le cas au mot près, et il traite surtout celui que la
+ * bascule ne sait pas traiter — une variable qui manque à quelques fiches sur
+ * un champ qui n'a pas de version alternative (la ville, le téléphone).
+ *
+ * Le repli est un LITTÉRAL entre guillemets, jamais une autre variable : une
+ * chaîne de replis serait un langage, et un langage se débogue. Ici ce qui
+ * part est lisible dans le texte même.
+ *
+ * Conséquence directe, et c'est tout l'intérêt : **une variable qui porte un
+ * repli n'est plus « manquante »** — cf. `missingVariables`.
  */
-const VAR_PATTERN = /\{\{\s*([\p{L}\w.]+)\s*\}\}/gu
+const VAR_PATTERN = /\{\{\s*([\p{L}\w.]+)\s*(?:\|\s*(?:"([^"]*)"|'([^']*)')\s*)?\}\}/gu
+
+/** Le repli écrit sur une occurrence, ou `undefined` s'il n'y en a pas. */
+const repliDe = (m: RegExpMatchArray): string | undefined => m[2] ?? m[3]
 
 /** La clé canonique d'une écriture donnée — elle-même si elle est déjà canonique. */
 export function canonicalKey(raw: string): string {
@@ -108,19 +159,39 @@ export function usedVariables(text: string | null | undefined): string[] {
  * mais qui partira avec un trou se repère avant l'envoi, pas après.
  */
 export function missingVariables(text: string | null | undefined, vars: VarBag): string[] {
-  return usedVariables(text).filter((k) => !vars[k])
+  const out: string[] = []
+  for (const m of (text ?? '').matchAll(VAR_PATTERN)) {
+    // Un repli écrit sur CETTE occurrence comble le trou : la signaler serait
+    // demander à l'opérateur de corriger ce qu'il vient justement de couvrir.
+    // Le jugement est par occurrence, pas par clé : `{{ville}}` nu ailleurs
+    // dans le même texte reste un manque.
+    if (repliDe(m) !== undefined) continue
+    const key = canonicalKey(m[1])
+    if (!vars[key] && !out.includes(key)) out.push(key)
+  }
+  return out
 }
 
 /**
  * Remplace les variables d'un texte par leurs valeurs.
  *
  * Les alias sont résolus AVANT la substitution, donc un texte peut mélanger les
- * conventions. Une clé sans valeur devient une chaîne vide — comportement
- * historique, conservé : un `{{…}}` laissé brut dans un message envoyé à un
- * prospect est plus embarrassant qu'un blanc.
+ * conventions. Une clé sans valeur devient sa valeur de repli si elle en porte
+ * une, sinon une chaîne vide — comportement historique, conservé : un `{{…}}`
+ * laissé brut dans un message envoyé à un prospect est plus embarrassant qu'un
+ * blanc.
+ *
+ * UNE VALEUR VIDE VAUT UNE VALEUR ABSENTE. Le sac du moteur pose `''` plutôt
+ * que rien pour les champs qu'il a cherchés sans les trouver (`vars['company.demo_url'] = demoUrl ?? ''`) :
+ * distinguer les deux ici ferait dépendre le repli d'un détail de construction
+ * du sac, invisible depuis le texte.
  */
 export function interpolateVars(text: string | null | undefined, vars: VarBag): string {
-  return (text ?? '').replace(VAR_PATTERN, (_, raw: string) => vars[canonicalKey(raw)] ?? '')
+  return (text ?? '').replace(VAR_PATTERN, (_m, raw: string, dq?: string, sq?: string) => {
+    const v = vars[canonicalKey(raw)]
+    if (v) return v
+    return dq ?? sq ?? ''
+  })
 }
 
 // ── Deux variations d'un même message ──────────────────────────────────────

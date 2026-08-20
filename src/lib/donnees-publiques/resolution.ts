@@ -1,10 +1,17 @@
 /**
  * Résolution d'identité : proposer des SIRET, ne jamais en choisir un.
  *
- * Le contrat de ce module tient en une phrase : il ÉCRIT dans
- * `entreprise_siret_candidats`, jamais dans `entreprises.siret`. Le passage de
- * l'un à l'autre demande une validation humaine explicite
- * (`validerCandidat`), et c'est la seule porte.
+ * Le contrat de ce module tient en une phrase : `chercherCandidats` et
+ * `enregistrerCandidats` ÉCRIVENT dans `entreprise_siret_candidats`, jamais
+ * dans `entreprises.siret`. Le passage de l'un à l'autre a une seule porte,
+ * `validerCandidat`, et elle réinterroge toujours le registre.
+ *
+ * Cette porte s'ouvre de DEUX façons, et la seconde est arrivée le 20/08 :
+ *   · une validation humaine explicite, à l'écran ;
+ *   · la règle des quatre critères du registre des bots — « adresse + code
+ *     postal + nom + métier concordants » — quand un SEUL SIREN est candidat.
+ *     `decide_par` vaut alors `null` et la source dit `resolution_auto` : on ne
+ *     fait croire à personne qu'un humain a regardé.
  *
  * Pourquoi cette rigidité : un rapprochement faux n'est pas une donnée fausse
  * isolée, c'est une CONTAMINATION. Le mauvais SIRET amène ensuite la mauvaise
@@ -187,8 +194,10 @@ export const enregistrerCandidats = async (
  * LA porte. Un candidat validé devient le SIRET de la fiche.
  *
  * Écrit `entreprises.siret` — la seule écriture de tout ce socle qui touche
- * `entreprises`, et elle exige un `decide_par` : on veut pouvoir dire QUI a
- * tranché, des mois plus tard, devant une fiche qui s'avère fausse.
+ * `entreprises`. `decide_par` dit QUI a tranché, pour pouvoir le retrouver des
+ * mois plus tard devant une fiche qui s'avère fausse ; `null` y est une réponse
+ * légitime et non un oubli : c'est la règle des quatre critères qui a décidé,
+ * et `siret_source` le nomme.
  *
  * LE SIRET EST TOUJOURS VÉRIFIÉ AU REGISTRE avant d'être écrit, même quand il
  * arrive d'ailleurs que de la liste de candidats — d'une recherche web, du pied
@@ -206,7 +215,15 @@ export const validerCandidat = async (
   params: {
     entreprise_id: number;
     siret: string;
-    decide_par: string;
+    /**
+     * QUI a tranché. `null` quand personne ne l'a fait à la main : la décision
+     * vient alors de la règle des quatre critères du registre (un seul SIREN
+     * candidat, nom + code postal + adresse + métier concordants), et c'est
+     * `source: 'resolution_auto'` qui le dit. Mettre un uuid d'utilisateur
+     * serait plus commode et ferait croire, dans six mois, que quelqu'un a
+     * regardé cette fiche.
+     */
+    decide_par: string | null;
     commentaire?: string;
     /** D'où vient le numéro : 'resolution' (liste), 'recherche_web', 'saisie'. */
     source?: string;

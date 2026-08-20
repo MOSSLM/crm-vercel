@@ -67,10 +67,15 @@ const AGG_VIDE: EnrollAgg = { active: 0, paused: 0, finished: 0, total: 0 }
 const CHANNEL_ICON: Record<SeqStepKind, string> = {
   email: 'mail',
   whatsapp: 'whatsapp',
+  sms: 'sms',
   linkedin: 'linkedin',
   call: 'phone',
   task: 'task',
   wait: 'clock',
+  // Une condition n'est pas un canal : elle n'envoie rien, elle aiguille.
+  condition: 'branch',
+  // Un passage de relais non plus : il ferme cette séquence et en ouvre une autre.
+  transition: 'share',
 }
 
 type StatusFilter = 'all' | AutomationStatus

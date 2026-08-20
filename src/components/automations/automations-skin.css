@@ -1114,8 +1114,17 @@
   stroke-width: 2;
   color: var(--border-2);
 }
+.au-skin .seq-lien[data-on]           { stroke: var(--accent); color: var(--accent); }
 .au-skin .seq-lien[data-on="reply"]   { stroke: var(--ok);   color: var(--ok); }
 .au-skin .seq-lien[data-on="timeout"] { stroke: var(--warn); color: var(--warn); }
+.au-skin .seq-lien[data-on="sinon"]   { stroke: var(--text-4); color: var(--text-4); }
+/* Une redirection ne descend pas, elle saute : le pointillé le dit avant qu'on
+   ait suivi le trait du regard. */
+.au-skin .seq-lien.redirection {
+  stroke: var(--info); color: var(--info);
+  stroke-width: 1.75;
+  stroke-dasharray: 5 4;
+}
 
 .au-skin .seq-node { position: absolute; }
 
@@ -1161,14 +1170,24 @@
   padding: 8px 10px;
   display: flex; flex-direction: column;
 }
+/* Les voies d'un aiguillage n'ont pas de couleur attitrée : leurs clés sont
+   quelconques. Le bleu par défaut, et les deux sorties historiques gardent le
+   vert et l'orangé qu'on leur connaît. « Sinon » reste gris — c'est la voie de
+   ceux dont on ne sait rien, elle ne doit pas attirer l'œil comme un cas. */
+.au-skin .seq-voie[data-on]           { border-color: var(--accent); background: var(--accent-tint); }
 .au-skin .seq-voie[data-on="reply"]   { border-color: var(--ok);   background: var(--ok-tint); }
 .au-skin .seq-voie[data-on="timeout"] { border-color: var(--warn); background: var(--warn-tint); }
+.au-skin .seq-voie[data-on="sinon"]   { border-color: var(--border-strong); background: var(--hover); }
+.au-skin .seq-voie[data-orpheline]    { border-color: var(--danger); background: var(--danger-tint); border-style: dashed; }
 .au-skin .seq-voie .hd {
   display: flex; align-items: center; gap: 5px;
   font-size: 11.5px; font-weight: 600;
 }
+.au-skin .seq-voie[data-on] .hd           { color: var(--accent-2); }
 .au-skin .seq-voie[data-on="reply"] .hd   { color: var(--ok); }
 .au-skin .seq-voie[data-on="timeout"] .hd { color: var(--warn); }
+.au-skin .seq-voie[data-on="sinon"] .hd   { color: var(--text-3); }
+.au-skin .seq-voie[data-orpheline] .hd    { color: var(--danger); }
 .au-skin .seq-voie .vide {
   margin-top: 8px;
   font-size: 11px; font-style: italic; color: var(--text-3);
@@ -1220,6 +1239,39 @@
 /* La carte tirée reste à sa place, estompée : la voir disparaître pendant le
    geste ferait sauter tout le plan sous le curseur. */
 .au-skin .seq-carte[data-fantome] { opacity: .35; }
+
+/* Choisir la destination d'un renvoi : la carte armée se distingue, les cibles
+   permises s'offrent, les autres s'effacent. Sans ce troisième état on cliquait
+   une carte hors de portée sans comprendre pourquoi rien ne se passait. */
+.au-skin .seq-carte[data-relie] .seq-step {
+  border-color: var(--info);
+  box-shadow: 0 0 0 3px var(--info-tint);
+}
+.au-skin .seq-carte[data-visable] { cursor: pointer; }
+.au-skin .seq-carte[data-visable] .seq-step {
+  border-color: var(--info);
+  border-style: dashed;
+}
+.au-skin .seq-carte[data-visable]:hover .seq-step { background: var(--info-tint); }
+.au-skin .seq-carte[data-hors-portee] { opacity: .3; cursor: not-allowed; }
+
+/* Ce qui se passe APRÈS la carte, écrit sur la carte : deux voisines peuvent
+   se suivre à l'écran sans que l'une mène à l'autre. */
+.au-skin .seq-carte .apres {
+  position: absolute; left: 8px; bottom: -9px;
+  z-index: 3;
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 18px; padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  max-width: calc(100% - 16px);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.au-skin .seq-carte .apres[data-type="fin"]     { color: var(--text-2); border-color: var(--border-strong); }
+.au-skin .seq-carte .apres[data-type="aller_a"] { color: var(--info); border-color: var(--info); }
+.au-skin .seq-carte .outils button[data-arme] { background: var(--info-tint); color: var(--info); opacity: 1; }
 
 .au-skin .seq-carte { cursor: grab; }
 .au-skin .seq-carte:active { cursor: grabbing; }
@@ -1296,6 +1348,29 @@
   border-right: 1px solid var(--border);
 }
 
+/* Les incohérences de renvoi : posées SUR le plan, pas dans l'inspecteur. Une
+   incohérence concerne deux cartes — la ranger dans le panneau de l'une des
+   deux obligerait à l'avoir sélectionnée pour la découvrir. */
+.au-skin .seq-avertis {
+  position: absolute; right: 14px; top: 12px;
+  z-index: 5;
+  display: flex; flex-direction: column; gap: 5px;
+  max-width: 360px;
+}
+.au-skin .seq-avertis button {
+  display: flex; align-items: flex-start; gap: 6px;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px; line-height: 1.4;
+  color: var(--warn);
+  background: var(--warn-tint);
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.au-skin .seq-avertis button:hover { background: var(--surface); }
+
+.au-skin .seq-aide[data-relie] { color: var(--info); border-color: var(--info); }
 .au-skin .seq-aide {
   position: absolute; left: 14px; top: 12px;
   display: flex; align-items: center; gap: 6px;
@@ -1976,6 +2051,8 @@
 .au-skin .seq-regchip svg { flex-shrink: 0; margin-top: 1px; }
 .au-skin .seq-regchip a { color: inherit; text-decoration: underline; }
 .au-skin .seq-regchip.manual { border-color: var(--warn); background: var(--warn-tint); color: var(--warn); }
+/* Une impasse, pas un réglage. Le seul endroit du builder peint en danger. */
+.au-skin .seq-regchip.impasse { border-color: var(--danger); background: var(--danger-tint); color: var(--danger); }
 
 .au-skin .seq-guards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .au-skin .seq-guards li {
@@ -2337,3 +2414,33 @@
 .au-skin .stats-seq-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .au-skin .stats-seq-name:hover { color: var(--accent-2); }
 .au-skin .stats-seq-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+/* ── Éditeur de message : les outils de rédaction ─────────────────────────── */
+/*
+   Deux affordances de plus que les variables, et volontairement DISCRÈTES :
+   un repli et un conditionnel ne s'écrivent pas à chaque message, mais quand
+   il en faut un il ne faut pas avoir à se souvenir de la syntaxe.
+*/
+.au-skin .msg-ed-outils { display: flex; flex-wrap: wrap; gap: 4px; }
+.au-skin .msg-ed-outil {
+  display: inline-flex; align-items: center; gap: 3px; position: relative;
+  border: 1px dashed var(--border); border-radius: 999px; padding: 2px 8px;
+  font-size: 10.5px; line-height: 1.6; color: var(--text-3); cursor: pointer;
+}
+.au-skin .msg-ed-outil:hover { border-color: var(--accent); color: var(--accent-2); }
+.au-skin .msg-ed-outil select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: 0; padding: 0;
+}
+.au-skin .msg-ed-outil:has(select:disabled) { opacity: .45; cursor: default; }
+
+/* Une FAUTE de structure n'est pas un trou : le message ne peut pas partir. */
+.au-skin .msg-ed-faute {
+  display: flex; align-items: flex-start; gap: 5px;
+  border-left: 2px solid var(--warn, #d97706); padding-left: 7px;
+  font-size: 11px; line-height: 1.45; color: var(--warn, #d97706);
+}
+/* Un dépassement DUR se lit comme une erreur, un avis de longueur comme un avis. */
+.au-skin .msg-ed-count.alerte { color: var(--danger); }
+.au-skin .msg-ed-count.avis { color: var(--warn, #d97706); }
+.au-skin .msg-ed-count .alerte { color: var(--danger); }

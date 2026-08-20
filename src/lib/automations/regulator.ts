@@ -30,6 +30,25 @@ export const DEFAULT_WINDOWS: SendWindow[] = [
 
 export type TaskRoutingMode = 'pref' | 'strict' | 'admin'
 
+/**
+ * Les genres d'étape qu'on peut suspendre.
+ *
+ * Ce sont bien des GENRES D'ÉTAPE et pas des canaux de contact : on suspend
+ * « envoyer un e-mail », pas « avoir une adresse ». `wait`, `condition`,
+ * `transition` et `task` n'y figurent pas — ils ne s'adressent à personne, les
+ * suspendre n'aurait aucun sens et casserait la séquence.
+ */
+export const CANAUX_SUSPENDABLES = ['email', 'whatsapp', 'sms', 'call', 'linkedin'] as const
+export type CanalSuspendable = (typeof CANAUX_SUSPENDABLES)[number]
+
+export const CANAL_SUSPENDABLE_LABEL: Record<CanalSuspendable, string> = {
+  email: 'E-mail',
+  whatsapp: 'WhatsApp',
+  sms: 'SMS',
+  call: 'Appel',
+  linkedin: 'LinkedIn',
+}
+
 export interface RegulatorSettings {
   gapMinMinutes: number
   gapMaxMinutes: number
@@ -51,6 +70,23 @@ export interface RegulatorSettings {
    * séquence avance quand même — cf. `src/lib/email/test-guard.ts`.
    */
   testMode: boolean
+  /**
+   * Genres d'étape suspendus — le canal existe dans les séquences, mais on ne
+   * s'en sert pas encore.
+   *
+   * CE N'EST NI UNE PAUSE NI LA PHASE DE TEST, et la différence est tout
+   * l'intérêt : `paused` gèle le régulateur, la phase de test gèle chaque
+   * prospect à son étape. Ici la séquence CONTINUE — l'échelle de canaux passe
+   * au barreau suivant. Un artisan sans mobile se fait appeler ; il n'attend
+   * pas six semaines que les boîtes d'envoi soient chaudes.
+   *
+   * Deux effets, de natures différentes : `a_email` répond « non » tant que
+   * l'e-mail est là-dedans (les aiguillages de canal contournent l'étape), et
+   * une étape du genre suspendu ne part JAMAIS — elle retient l'inscription
+   * avec le motif `canal_suspendu`. Le premier évite l'embouteillage, le second
+   * est la ceinture.
+   */
+  canauxSuspendus: string[]
 
   // ── Vérification des adresses (cf. src/lib/email/verify/) ────────────────
   /** Aucun email de prospection vers une adresse sans verdict frais. */
@@ -92,6 +128,7 @@ export const DEFAULT_REGULATOR: RegulatorSettings = {
   taskMaxPerAgent: 8,
   adminUserId: null,
   testMode: false,
+  canauxSuspendus: [],
   verifyBeforeSend: true,
   verifyTtlDays: 120,
   riskyDailyShare: 20,
@@ -123,6 +160,8 @@ export type HoldReason =
   | 'lien_manquant' // le message promet l'audit, l'entreprise n'a aucune mesure à montrer
   | 'demo_manquante' // le message promet la démo, aucun site n'est marqué « Prêt à envoyer »
   | 'message_vide' // l'étape n'a ni modèle ni texte — la tâche serait posée sans rien à dire
+  | 'tache_annulee' // la tâche de l'étape a été annulée : le geste n'a pas eu lieu, et rien ne le rejouera
+  | 'canal_suspendu' // le canal de l'étape est suspendu — rien ne part, la séquence attend qu'on le rouvre
 
 /** Une entrée de la file, telle qu'elle sort de la base. */
 export interface QueueItem {
@@ -568,6 +607,14 @@ export function toRegulatorSettings(row: RegulatorRow | null | undefined): Regul
     taskMaxPerAgent: Math.max(1, int(row.task_max_per_agent, DEFAULT_REGULATOR.taskMaxPerAgent)),
     adminUserId: typeof row.admin_user_id === 'string' ? row.admin_user_id : null,
     testMode: bool(row.test_mode, DEFAULT_REGULATOR.testMode),
+    // Une valeur inconnue est ÉCARTÉE plutôt que gardée : une faute de frappe
+    // en base suspendrait un canal qui n'existe pas, ce qui ne se verrait nulle
+    // part — alors qu'un canal qu'on croyait suspendu et qui envoie, si.
+    canauxSuspendus: Array.isArray(row.canaux_suspendus)
+      ? (row.canaux_suspendus as unknown[]).filter(
+          (c): c is string => typeof c === 'string' && (CANAUX_SUSPENDABLES as readonly string[]).includes(c),
+        )
+      : [],
     // La colonne peut manquer (migration non appliquée) : on retombe alors sur
     // le comportement d'avant, pas sur un garde qui bloquerait tout.
     verifyBeforeSend:
@@ -636,9 +683,17 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
     case 'awaiting_reply':
       // Ce n'est pas une panne : la séquence fait exactement ce qu'on lui a
       // demandé. Le libellé doit dire à qui revient le geste suivant.
+      //
+      // LES DEUX CAS N'ONT RIEN À VOIR, et les afficher pareil est ce qui a
+      // laissé 59 inscriptions dormir des semaines. Avec une date de relance,
+      // l'attente se termine toute seule. Sans date — `replyTimeoutDays: 0` —
+      // AUCUN TICK NE LA REPRENDRA : `next_run_at` vaut null, l'inscription a
+      // quitté la file, et le seul geste qui la ranime est un humain qui
+      // clique « il a répondu ». « Reprend au clic » le disait trop doucement :
+      // ça se lisait comme un fonctionnement, pas comme une impasse.
       return at != null
         ? 'en attente de réponse — relance prévue'
-        : 'en attente de réponse — reprend au clic'
+        : 'attente sans limite — rien ne la réveillera, sauf un clic « a répondu »'
     case 'lien_manquant':
       // Le geste attendu est de lancer l'audit, pas de patienter : le libellé
       // le dit, sinon on croit à un report technique et on laisse traîner.
@@ -649,6 +704,19 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
       // Le geste attendu est d'écrire, pas d'attendre. Un libellé vague
       // laisserait croire à un report technique et l'étape dormirait.
       return 'message à écrire — l’étape est vide'
+    case 'tache_annulee':
+      // ANNULER N'EST PAS FAIRE, et ce n'est pas non plus arrêter. Le geste
+      // prévu n'a pas eu lieu : la séquence ne peut ni avancer (ce serait
+      // enchaîner sur quelque chose qui n'est pas arrivé) ni se fermer (rien
+      // ne dit que le prospect a refusé). Elle attend donc une décision — et
+      // c'est ce motif qui la rend visible. Sans lui, l'inscription restait
+      // active, sans motif et sans réveil : invisible pour toujours.
+      return 'tâche annulée — reprendre ou sortir de la séquence'
+    case 'canal_suspendu':
+      // Le motif désigne un réglage, pas un défaut du prospect : le geste qui
+      // débloque est de rouvrir le canal dans le régulateur, et le libellé doit
+      // envoyer là plutôt que de laisser chercher du côté de la fiche.
+      return 'canal suspendu — rien ne part tant qu’il n’est pas rouvert'
     default:
       return ''
   }

@@ -77,6 +77,24 @@ export interface BoardItem {
     /** Un axe au moins a été écarté faute de confiance : l'analyse est partielle. */
     partielle: boolean;
   } | null;
+  /**
+   * Le site DU PROSPECT — trois états, jamais deux.
+   *
+   * Lu dans `v_entreprises_presence_site`, la même vue que le moteur : un
+   * constat l'emporte sur la colonne `canonical_url`, qui ment dans les deux
+   * sens (612 lignes seraient « présent » sur sa seule foi, dont 124 ont un
+   * constat « absent »). `origine` dit qui a tranché — `constat` vaut mieux que
+   * `colonne`.
+   *
+   * `null` n'est pas un quatrième état à afficher comme les autres : c'est
+   * « la vue n'a rien pour cette fiche », donc rien n'a jamais été regardé.
+   * Optionnel : absent d'une réponse d'API antérieure au 20/08/2026.
+   */
+  presence_site?: {
+    statut: "present" | "absent" | "inconnu";
+    origine: string | null;
+    confiance: string | null;
+  } | null;
   agent: { id: string; name: string } | null;
   /**
    * Par quoi ce prospect est joignable — entreprise ET contacts confondus.
@@ -95,6 +113,17 @@ export interface BoardItem {
    * vivantes renvoyait un prospect qui vient de finir ses relances dans le
    * stock « pas encore en séquence », à démarcher une deuxième fois.
    */
+  /**
+   * La première fois qu'un geste réel est parti vers ce prospect — appel passé,
+   * message envoyé —, posée par `PATCH /api/agent/tasks` quand une tâche est
+   * bouclée.
+   *
+   * C'est la seule trace qui survit à la sortie de séquence : `exit_reason` dit
+   * POURQUOI on est sorti, jamais si quelque chose était parti avant.
+   *
+   * Optionnel : une réponse d'API antérieure au 20/08/2026 ne le porte pas.
+   */
+  premiereTouche?: string | null;
   sequence?: {
     enrollmentId: string;
     automationId: string;
@@ -262,8 +291,25 @@ export const inscriptionVivante = (s: { status: string } | null | undefined): bo
  * parties. C'est la confusion qui renvoyait un prospect passé en rendez-vous
  * se faire démarcher le lendemain.
  */
-export const aDemarcher = (s: { status: string; exitReason?: string | null } | null | undefined): boolean =>
-  !s || (s.status === "exited" && sortieARedemarcher(s.exitReason));
+export const aDemarcher = (item: {
+  sequence?: { status: string; exitReason?: string | null } | null;
+  premiereTouche?: string | null;
+}): boolean => {
+  // DÉJÀ TOUCHÉ = PLUS JAMAIS DANS LE STOCK. `premiere_touche_le` est posée
+  // quand une tâche est bouclée — un appel passé, un message envoyé. Elle
+  // survit à tout : à la fin de la séquence, à la sortie, au changement
+  // d'agent. `exit_reason`, lui, dit pourquoi on est sorti et jamais si
+  // quelque chose était parti avant.
+  //
+  // Sans cette ligne, `reattribution` renvoie au stock un prospect qui en
+  // était à sa quatrième relance : on lui réenverrait l'accroche. Le cas ne
+  // mord pas aujourd'hui (aucune inscription en `reattribution` en base) mais
+  // il mordra à la première désattribution — et c'est exactement le genre de
+  // faute qu'on ne voit qu'en la lisant chez le prospect.
+  if (item.premiereTouche) return false;
+  const s = item.sequence;
+  return !s || (s.status === "exited" && sortieARedemarcher(s.exitReason));
+};
 
 /**
  * Comment une inscription s'est terminée, en clair. `null` si elle court encore.
@@ -405,6 +451,29 @@ export interface BulkHandlers {
    * combien ont été créées et combien existaient déjà.
    */
   onCreerPlaquettes: (items: BoardItem[]) => void;
+  /**
+   * Envoie les lignes cochées dans la file de LISSAGE (Prospection → Lissage) :
+   * celle qui va chercher le SIRET, la fiche Google, le site et le RGE.
+   *
+   * C'est le préalable à l'enrichissement, pas son doublon. Enrichir travaille
+   * sur ce que la fiche PORTE ; lisser va chercher ce qu'elle n'a pas. Une
+   * fiche sans SIRET n'a rien à donner à l'annuaire ni à l'ADEME — l'enrichir
+   * d'abord, c'est enrichir du vide.
+   *
+   * Absent en mode agent : le lissage dépense des appels d'API sur le parc,
+   * c'est une décision d'admin.
+   */
+  onLisser?: (items: BoardItem[]) => void;
+  /**
+   * Déduit les chiffres clés (années d'expérience, installations, clients) de
+   * la DATE DE CRÉATION au registre, sans aucun appel ni crédit d'IA.
+   *
+   * C'est la variable qui manque le plus après un enrichissement — 564 dossiers
+   * sur 882 au 20/08 — alors que 352 d'entre eux portent déjà la date en base.
+   * Ne remplit que les cases vides, et jamais les chiffres confirmés par le
+   * client. Les fiches sans date relèvent du lissage, pas de ce bouton.
+   */
+  onCompleterChiffres?: (items: BoardItem[]) => void;
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
   onAssign?: (items: BoardItem[], agentId: string) => void;
   /**

@@ -26,6 +26,14 @@ export type MotifSortie =
   | 'reattribution'
   /** La fiche a été rangée — la question du démarchage ne se pose plus. */
   | 'archive'
+  /**
+   * Passé à une AUTRE séquence : le démarchage continue, ailleurs.
+   *
+   * Ne renvoie PAS au stock — contrairement à `reattribution`, où plus rien ne
+   * tourne pour ce prospect. Ici une inscription est déjà ouverte en face ; le
+   * remettre à démarcher le ferait ré-inscrire une seconde fois.
+   */
+  | 'transfert'
 
 /**
  * Cette sortie laisse-t-elle le prospect à démarcher ?
@@ -56,6 +64,8 @@ export const motifSortieLabel = (motif: string | null | undefined): string | nul
       return 'retirée à son agent'
     case 'archive':
       return 'fiche archivée'
+    case 'transfert':
+      return 'passée à une autre séquence'
     default:
       return null
   }

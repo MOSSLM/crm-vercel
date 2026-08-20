@@ -276,9 +276,21 @@ export async function unassignProspectFromAgent(
   const syncErr = await syncOpportuniteOwners(sc, entrepriseId, null);
   if (syncErr) return { ok: false, error: syncErr };
 
+  // Les tâches en attente sont IGNORÉES, jamais supprimées.
+  //
+  // Le `delete` d'origine effaçait la preuve : une tâche supprimée n'a jamais
+  // existé, donc plus personne ne peut dire qu'une approche avait été prévue ni
+  // pourquoi elle n'a pas eu lieu — et les compteurs du jour se retrouvent à
+  // mentir dans le sens flatteur. C'est aussi ce que fait déjà le moteur quand
+  // il annule le travail d'une inscription (`cancelEnrollmentWork`) : `_assign`
+  // était l'exception, pas la règle.
+  //
+  // `pending` seulement, volontairement : une tâche `snoozed` porte une mise de
+  // côté datée — un rappel calé pour la rentrée — et la toucher ici ferait
+  // ressortir aujourd'hui les prospects les plus chauds du parc.
   const { error: taskErr } = await sc
     .from("prospection_tasks")
-    .delete()
+    .update({ status: "skipped" })
     .eq("entreprise_id", entrepriseId)
     .eq("status", "pending");
   if (taskErr) return { ok: false, error: taskErr.message };

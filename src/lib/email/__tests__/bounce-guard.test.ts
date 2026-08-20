@@ -124,3 +124,56 @@ describe('tripBounceGuard', () => {
     expect((await tripBounceGuard(sb, settings())).tripped).toBe(true)
   })
 })
+
+/**
+ * LE DÉNOMINATEUR NE COMPTE QUE DES E-MAILS.
+ *
+ * `email_logs` est la table commune : elle porte les e-mails, mais aussi les
+ * messages WhatsApp et les notes de démarchage — 177 et 29 lignes en production
+ * au 19/08/2026, dont 60 sur les dernières 24 h, pour ZÉRO e-mail de séquence
+ * jamais parti. Sans filtre, le plancher statistique de 20 envois était franchi
+ * par du WhatsApp, et un rebond dur sur deux vrais envois se lisait 1,6 % au
+ * lieu de 50 %.
+ */
+describe('le dénominateur ne compte que des e-mails', () => {
+  /** Rend les filtres `.eq()` posés sur `email_logs`, dans l'ordre. */
+  const filtresSurLesEnvois = () => {
+    const poses: [string, unknown][] = []
+    const chaine = (result: Record<string, unknown>, espionne: boolean) => {
+      const self: Record<string, unknown> = {}
+      for (const m of ['select', 'gte', 'order', 'limit', 'in']) self[m] = jest.fn(() => self)
+      self.eq = jest.fn((col: string, val: unknown) => {
+        if (espionne) poses.push([col, val])
+        return self
+      })
+      self.then = (resoudre: (v: unknown) => unknown) => Promise.resolve(result).then(resoudre)
+      return self
+    }
+    const sb = {
+      from: jest.fn((table: string) =>
+        table === 'email_logs'
+          ? chaine({ count: 40, error: null }, true)
+          : chaine({ count: 2, error: null }, false),
+      ),
+    }
+    return { sb: sb as never, poses }
+  }
+
+  it('filtre sur channel = email', async () => {
+    const { sb, poses } = filtresSurLesEnvois()
+    await measureBounceRate(sb)
+    expect(poses).toContainEqual(['channel', 'email'])
+    expect(poses).toContainEqual(['status', 'sent'])
+  })
+
+  // `channel` est `not null default 'email'` en base et `sendEngineEmail` ne
+  // l'écrit pas : ses envois tombent dans le filtre sans qu'on ait rien à
+  // changer côté moteur. Ce test fige cette dépendance — si quelqu'un rendait
+  // la colonne nullable, il casserait le disjoncteur en silence.
+  it('mesure quand même, et rend un taux exact', async () => {
+    const { sb } = filtresSurLesEnvois()
+    const r = await measureBounceRate(sb)
+    expect(r).toEqual({ sent: 40, hardBounces: 2, rate: 5, measured: true })
+    expect(r.sent).toBeGreaterThanOrEqual(MIN_SENDS_FOR_GUARD)
+  })
+})

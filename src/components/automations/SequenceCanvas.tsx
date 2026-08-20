@@ -3,27 +3,42 @@
 //
 // POURQUOI UN PLAN
 // Tant qu'une séquence était une file d'étapes, une colonne suffisait. Les
-// attentes à délai ont changé ça : elles ouvrent DEUX suites, et deux
-// alternatives empilées verticalement se lisent comme une chronologie. On
-// croyait lire « puis », on lisait « ou bien ». Ici le tronc descend au centre
-// et chaque fourche écarte ses voies à gauche et à droite — la forme de la
-// séquence se voit enfin d'un coup d'œil.
+// fourches ont changé ça : elles ouvrent plusieurs suites, et des alternatives
+// empilées verticalement se lisent comme une chronologie. On croyait lire
+// « puis », on lisait « ou bien ». Ici le tronc descend au centre, chaque
+// fourche écarte ses voies symétriquement, et une voie qui porte elle-même une
+// fourche s'élargit d'autant — la forme de la séquence se voit d'un coup d'œil,
+// sur autant de niveaux qu'elle en a.
 //
 // DÉPLACER UNE CARTE EST UN GESTE D'ÉDITION, PAS DE MISE EN PAGE
 // Aucune coordonnée n'est stockée : la position se déduit du tableau d'étapes
 // (`src/lib/automations/canvas.ts`). Tirer une carte ne la « pose » donc pas
 // quelque part, ça la RANGE : nouvel ordre, et nouvelle voie si on la lâche
-// dans l'autre branche. Le dessin ne peut pas mentir sur ce que le moteur fera,
-// puisqu'il n'existe pas d'autre vérité que le tableau.
+// dans une autre branche. Le dessin ne peut pas mentir sur ce que le moteur
+// fera, puisqu'il n'existe pas d'autre vérité que le tableau.
+//
+// RELIER, EN REVANCHE, SE FAIT EN DEUX CLICS
+// Tirer veut déjà dire « range-la ailleurs ». S'il fallait aussi tirer depuis
+// un bord pour relier, les deux gestes se disputeraient les mêmes pixels. On
+// arme donc la redirection sur une carte (↪), on clique la cible, c'est fini —
+// et les cartes hors de portée s'effacent au lieu de refuser en silence.
 //
 // CE QUE LE PLAN AUTORISE ET CE QU'IL REFUSE
 // Les places d'accueil sont calculées, pas devinées : `depotValide` écarte les
-// dépôts qui produiraient une définition incohérente (une attente dans sa
-// propre voie) ou sans effet. Un marqueur ne s'affiche que là où le geste veut
-// dire quelque chose.
+// dépôts qui produiraient une définition incohérente (une fourche dans sa
+// propre voie) ou sans effet, et `ciblesDeRedirection` dit où un renvoi a le
+// droit d'aller. Un marqueur ne s'affiche que là où le geste veut dire quelque
+// chose.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { XI } from './icons'
-import { ISSUE_LABEL, type BrancheEtape } from '@/lib/automations/branches'
+import {
+  ciblesDeRedirection,
+  estAttenteReponse,
+  libelleIssue,
+  suiteDeLEtape,
+  type BrancheEtape,
+  type Issue,
+} from '@/lib/automations/branches'
 import {
   ancrage,
   CARTE_H,
@@ -41,6 +56,11 @@ import type { SequenceStep } from './types'
 
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 1.6
+/**
+ * Jusqu'où le curseur peut s'écarter d'une colonne pour la viser, en
+ * demi-colonnes. Au-delà, on ne vise rien.
+ */
+const SEUIL_COL = 0.75
 
 interface Vue {
   x: number
@@ -64,6 +84,31 @@ function chemin(ax: number, ay: number, bx: number, by: number): string {
   ].join(' ')
 }
 
+/**
+ * Le trait d'une REDIRECTION : il sort par la droite, longe, et revient.
+ *
+ * Un coude vertical comme les autres traits traverserait toutes les cartes
+ * situées entre la source et la cible — et, sur un rebouclage, remonterait
+ * pile sous la colonne du tronc, où il se ferait passer pour un connecteur
+ * normal. En le sortant du flux, on lit tout de suite que ce trait-là ne
+ * descend pas : il saute.
+ */
+function contournement(a: NoeudCanvas, b: NoeudCanvas, largeur: number): string {
+  const sortie = { x: a.x + a.l, y: a.y + a.h / 2 }
+  const entree = { x: b.x + b.l, y: b.y + b.h / 2 }
+  const couloir = Math.min(largeur - 8, Math.max(sortie.x, entree.x) + 26)
+  const r = 12
+  const sens = entree.y > sortie.y ? 1 : -1
+  return [
+    `M ${sortie.x} ${sortie.y}`,
+    `L ${couloir - r} ${sortie.y}`,
+    `Q ${couloir} ${sortie.y} ${couloir} ${sortie.y + sens * r}`,
+    `L ${couloir} ${entree.y - sens * r}`,
+    `Q ${couloir} ${entree.y} ${couloir - r} ${entree.y}`,
+    `L ${entree.x} ${entree.y}`,
+  ].join(' ')
+}
+
 export function SequenceCanvas({
   steps,
   selectedId,
@@ -72,6 +117,7 @@ export function SequenceCanvas({
   onMove,
   onDeplacer,
   onAjouter,
+  onRediriger,
   carte,
 }: {
   steps: SequenceStep[]
@@ -87,6 +133,15 @@ export function SequenceCanvas({
   onDeplacer: (stepId: string, cible: CibleDepot) => void
   /** `null` = ajouter au tronc, sinon dans la voie indiquée. */
   onAjouter: (branch: BrancheEtape | null) => void
+  /**
+   * Relier une carte à une autre — « après celle-ci, va là ».
+   *
+   * DEUX CLICS PLUTÔT QU'UN GLISSER. Tirer une carte veut déjà dire « range-la
+   * ailleurs » ; s'il fallait aussi tirer depuis un bord pour relier, les deux
+   * gestes se disputeraient les mêmes pixels et on ferait l'un pour l'autre.
+   * Ici : on arme la redirection sur une carte, on clique la cible, c'est fini.
+   */
+  onRediriger: (stepId: string, cibleId: string | null) => void
   /** Le rendu d'une carte d'étape — l'éditeur le fournit, le plan le place. */
   carte: (args: { step: SequenceStep; index: number; orpheline: boolean }) => React.ReactNode
 }) {
@@ -106,6 +161,32 @@ export function SequenceCanvas({
     depart: { x: number; y: number }
     actif: boolean
   } | null>(null)
+  /** La carte dont on est en train de choisir la destination, s'il y en a une. */
+  const [relie, setRelie] = useState<string | null>(null)
+
+  /**
+   * Les cartes que la redirection en cours peut viser.
+   *
+   * Calculé par `ciblesDeRedirection`, jamais ici : c'est le même module qui
+   * dit au moteur où une redirection a le droit d'aller. Deux réponses, ce
+   * serait un écran qui propose une cible que le moteur refuse.
+   */
+  const visables = useMemo(() => {
+    if (!relie) return null
+    const from = steps.findIndex((s) => s.id === relie)
+    if (from < 0) return null
+    return new Set(ciblesDeRedirection(steps, from).map((i) => steps[i].id))
+  }, [relie, steps])
+
+  // Échap annule — c'est la sortie qu'on cherche quand on a armé par erreur.
+  useEffect(() => {
+    if (!relie) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRelie(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [relie])
 
   const plan = useMemo(() => planCanvas(steps), [steps])
   const cibles = useMemo(() => ciblesDeDepot(steps, plan), [steps, plan])
@@ -226,13 +307,32 @@ export function SequenceCanvas({
   const cibleActive = useMemo(() => {
     if (!drag?.actif) return null
     const RAYON = LIGNE_H * 1.5
-    const colVisee = Math.round((drag.x - MARGE - CARTE_L / 2) / COLONNE_L) + plan.colMin
+    // La colonne est une DEMI-colonne depuis les fourches à trois voies : selon
+    // le nombre de sorties, les cartes se posent sur les demi-colonnes paires
+    // ou impaires. Une égalité stricte ne trouverait donc rien une fois sur
+    // deux — on retient la colonne OCCUPÉE la plus proche du curseur.
+    const colExacte = ((drag.x - MARGE - CARTE_L / 2) * 2) / COLONNE_L + plan.colMin
+    const valides = cibles.filter((c) => depotValide(steps, drag.stepId, c))
+    let colVisee: number | null = null
+    let ecartCol = Infinity
+    for (const c of valides) {
+      const d = Math.abs(c.col - colExacte)
+      if (d < ecartCol) {
+        ecartCol = d
+        colVisee = c.col
+      }
+    }
+    // ET LE DROIT DE NE VISER AUCUNE COLONNE. Sans ce seuil, lâcher une carte
+    // exactement là où elle est la propulsait dans la colonne voisine : ses
+    // propres places étant écartées comme sans effet, la plus proche restante
+    // se trouvait ailleurs. Au-delà d'une demi-colonne, on ne vise rien — et ne
+    // rien viser est la bonne façon d'annuler.
+    if (ecartCol > SEUIL_COL) colVisee = null
 
     let meilleure: CibleDepot | null = null
     let best = Infinity
-    for (const c of cibles) {
+    for (const c of valides) {
       if (c.col !== colVisee) continue
-      if (!depotValide(steps, drag.stepId, c)) continue
       const ecart = Math.abs(drag.y - c.y)
       if (ecart < best) {
         best = ecart
@@ -268,6 +368,20 @@ export function SequenceCanvas({
     if (!a || !b) return null
     const pa = ancrage(a)
     const pb = ancrage(b)
+    // UNE REDIRECTION NE DESCEND PAS, elle saute. Le trait part du BORD de la
+    // carte source et vise le bord de la cible, en contournant par l'extérieur :
+    // un coude vertical comme les autres traverserait toutes les cartes
+    // intermédiaires et se confondrait avec la descente.
+    if (l.redirection) {
+      return (
+        <path
+          key={l.key}
+          d={contournement(a, b, plan.largeur)}
+          className="seq-lien redirection"
+          markerEnd="url(#seq-fleche)"
+        />
+      )
+    }
     return (
       <path
         key={l.key}
@@ -315,11 +429,18 @@ export function SequenceCanvas({
             enCoursDeDrag={drag?.stepId ?? null}
             total={steps.length}
             carte={carte}
+            relie={relie}
+            visable={visables ? visables.has(steps[n.index ?? -1]?.id ?? '') : null}
             onSelect={onSelect}
             onDelete={onDelete}
             onMove={onMove}
             onAjouter={onAjouter}
             onGrip={commencerDrag}
+            onArmer={(id) => setRelie((c) => (c === id ? null : id))}
+            onViser={(id) => {
+              if (relie && relie !== id) onRediriger(relie, id)
+              setRelie(null)
+            }}
           />
         ))}
 
@@ -328,7 +449,14 @@ export function SequenceCanvas({
             className="seq-cible"
             style={{ left: cibleActive.x, top: cibleActive.y - 2, width: CARTE_L }}
           >
-            <span>{cibleActive.branch ? ISSUE_LABEL[cibleActive.branch.on].titre : 'Tronc commun'}</span>
+            <span>
+              {cibleActive.branch
+                ? libelleIssue(
+                    steps.find((s) => s.id === cibleActive.branch?.waitId),
+                    cibleActive.branch.on,
+                  ).titre
+                : 'Tronc commun'}
+            </span>
           </div>
         )}
       </div>
@@ -349,9 +477,11 @@ export function SequenceCanvas({
 
       {/* En HAUT à gauche : en bas, cette bande recouvrait la pastille de fin de
           séquence et le bouton d'ajout, tous deux centrés en pied de plan. */}
-      <div className="seq-aide">
-        <XI name="grip" className="ico-xs" />
-        Tirez une carte pour la ranger · glissez le fond · ⌘+molette pour zoomer
+      <div className="seq-aide" data-relie={relie ? '' : undefined}>
+        <XI name={relie ? 'branch' : 'grip'} className="ico-xs" />
+        {relie
+          ? 'Cliquez la carte vers laquelle renvoyer — Échap pour annuler'
+          : 'Tirez une carte pour la ranger · ↪ pour renvoyer ailleurs · ⌘+molette pour zoomer'}
       </div>
     </div>
   )
@@ -360,17 +490,20 @@ export function SequenceCanvas({
 /** Une case du plan : entrée, étape, voie, reprise ou fin. */
 function Noeud({
   noeud,
-  colMin,
   steps,
   selectedId,
   enCoursDeDrag,
   total,
   carte,
+  relie,
+  visable,
   onSelect,
   onDelete,
   onMove,
   onAjouter,
   onGrip,
+  onArmer,
+  onViser,
 }: {
   noeud: NoeudCanvas
   colMin: number
@@ -379,11 +512,17 @@ function Noeud({
   enCoursDeDrag: string | null
   total: number
   carte: (args: { step: SequenceStep; index: number; orpheline: boolean }) => React.ReactNode
+  /** La carte dont on choisit la destination, s'il y en a une. */
+  relie: string | null
+  /** Pendant ce choix : cette carte est-elle une cible permise ? `null` hors choix. */
+  visable: boolean | null
   onSelect: (id: string) => void
   onDelete: (id: string) => void
   onMove: (stepId: string, dir: -1 | 1) => void
   onAjouter: (branch: BrancheEtape | null) => void
   onGrip: (stepId: string, e: React.PointerEvent) => void
+  onArmer: (stepId: string) => void
+  onViser: (stepId: string) => void
 }) {
   const style: React.CSSProperties = {
     left: noeud.x,
@@ -424,15 +563,33 @@ function Noeud({
 
   if (noeud.type === 'voie' && noeud.waitId) {
     const waitId = noeud.waitId
-    const on = noeud.on ?? 'reply'
+    const on: Issue = noeud.on ?? 'reply'
+    const fourche = steps.find((s) => s.id === waitId)
+    const sortie = libelleIssue(fourche, on)
     const vide = (noeud.etapes ?? []).length === 0
+    // L'icône dit la NATURE de la sortie, pas son rang : une attente répond
+    // « il a répondu / le délai a filé », une condition et un aiguillage
+    // répondent par un test. Prendre l'icône sur la position aurait mis une
+    // horloge sur « sinon ».
+    const icone = noeud.voieOrpheline
+      ? 'warning'
+      : estAttenteReponse(fourche)
+        ? on === 'reply'
+          ? 'check'
+          : 'clock'
+        : 'branch'
     return (
-      <div className="seq-node seq-voie" style={style} data-on={on}>
+      <div
+        className="seq-node seq-voie"
+        style={style}
+        data-on={on}
+        data-orpheline={noeud.voieOrpheline || undefined}
+      >
         <div className="hd">
-          <XI name={on === 'reply' ? 'check' : 'clock'} className="ico-xs" />
-          {ISSUE_LABEL[on].titre}
+          <XI name={icone} className="ico-xs" />
+          {sortie.titre}
         </div>
-        {vide && <div className="vide">{ISSUE_LABEL[on].aide}</div>}
+        {vide && <div className="vide">{sortie.aide}</div>}
         <button
           type="button"
           className="add"
@@ -452,21 +609,56 @@ function Noeud({
   const step = steps[noeud.index ?? -1]
   if (!step) return null
 
+  const suite = suiteDeLEtape(step)
+  const enChoix = relie != null
+  const source = relie === step.id
+  // Pendant un choix de destination, la carte n'est plus saisissable : elle est
+  // un bouton « c'est vers toi ». Laisser le glisser actif ferait déplacer une
+  // étape en croyant la viser.
+  const cliquable = enChoix && !source && visable === true
+
   return (
     <div
       className="seq-node seq-carte"
       style={style}
       data-selected={selectedId === step.id}
       data-fantome={enCoursDeDrag === step.id || undefined}
-      title="Cliquer pour régler · tirer pour ranger"
+      data-relie={source || undefined}
+      data-visable={cliquable || undefined}
+      data-hors-portee={(enChoix && !source && !cliquable) || undefined}
+      title={
+        cliquable
+          ? 'Renvoyer vers cette étape'
+          : enChoix && !source
+            ? 'Hors de portée : une redirection ne peut viser que le tronc commun ou sa propre voie'
+            : 'Cliquer pour régler · tirer pour ranger'
+      }
       // La carte ENTIÈRE se saisit : c'est le seuil de déplacement qui
       // départage le clic du glisser (cf. `commencerDrag`), pas une poignée de
       // quelques pixels qu'il faudrait viser.
-      onPointerDown={(e) => onGrip(step.id, e)}
+      onPointerDown={(e) => {
+        if (enChoix) {
+          e.stopPropagation()
+          if (cliquable) onViser(step.id)
+          return
+        }
+        onGrip(step.id, e)
+      }}
     >
       <span className="grip" aria-hidden>
         <XI name="grip" className="ico-sm" />
       </span>
+      {/* CE QUI SE PASSE APRÈS, SUR LA CARTE. Une fin de voie ou un renvoi ne
+          se devine pas en regardant les traits : deux cartes voisines peuvent
+          se suivre à l'écran sans que l'une mène à l'autre. */}
+      {suite.type !== 'suivre' && (
+        <span className="apres" data-type={suite.type}>
+          <XI name={suite.type === 'fin' ? 'flag' : 'branch'} className="ico-xs" />
+          {suite.type === 'fin'
+            ? suite.motif?.trim() || 'S’arrête ici'
+            : `→ ${steps.findIndex((x) => x.id === suite.cible) + 1 || '?'}`}
+        </span>
+      )}
       {/* Les outils, eux, arrêtent l'événement : sans ça, viser la corbeille
           commencerait un déplacement de la carte. */}
       <div className="outils" onPointerDown={(e) => e.stopPropagation()}>
@@ -491,6 +683,23 @@ function Noeud({
           }}
         >
           <XI name="chevdown" className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          title={
+            source
+              ? 'Annuler le renvoi'
+              : suite.type === 'aller_a'
+                ? 'Changer la destination du renvoi'
+                : 'Renvoyer vers une autre étape'
+          }
+          data-arme={source || undefined}
+          onClick={(e) => {
+            e.stopPropagation()
+            onArmer(step.id)
+          }}
+        >
+          <XI name="branch" className="ico-sm" />
         </button>
         <button
           type="button"

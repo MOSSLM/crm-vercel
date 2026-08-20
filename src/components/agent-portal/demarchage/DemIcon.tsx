@@ -113,6 +113,7 @@ const MAP: Record<string, LucideIcon> = {
   user: User,
   users: Users,
   warning: AlertTriangle,
+  sms: MessageSquare,
   whatsapp: MessageCircle,
   x: X,
   zap: Zap,

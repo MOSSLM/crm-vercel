@@ -117,6 +117,10 @@ export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) 
   try {
     await sc.from("email_logs").insert({
       channel: "note",
+      // Qui l'a écrite. Sans cette ligne, la note est anonyme POUR TOUJOURS —
+      // aucun écran ne peut retrouver après coup ce qui n'a pas été enregistré.
+      auteur_id: user.id,
+      direction: "interne",
       contact_id: tache.contact_id,
       entreprise_id: tache.entreprise_id,
       opportunite_id: tache.opportunite_id,

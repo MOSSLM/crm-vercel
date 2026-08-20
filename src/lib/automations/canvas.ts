@@ -1,25 +1,34 @@
 // canvas.ts — la séquence posée en deux dimensions.
 //
-// CE QUI NE TENAIT PLUS
-// Depuis que les attentes ouvrent deux suites, l'éditeur empilait les voies
-// l'une SOUS l'autre dans une colonne de 720 px. Deux conséquences :
+// CE QUI NE TENAIT PLUS, ET DEUX FOIS PLUTÔT QU'UNE
 //
-//   · « il a répondu » et « sans réponse » se lisaient l'une après l'autre,
-//     comme une suite chronologique, alors que ce sont deux alternatives. Il
-//     fallait relire les en-têtes pour comprendre qu'on ne les traverse jamais
-//     toutes les deux ;
-//   · une séquence à deux fourches descendait sur trois écrans. On ne voyait
-//     jamais la forme de ce qu'on éditait, seulement un fragment.
+// D'abord, les attentes à délai : elles ouvrent deux suites, et l'éditeur les
+// empilait l'une SOUS l'autre dans une colonne. « Il a répondu » et « sans
+// réponse » se lisaient l'une après l'autre, comme une chronologie ; on croyait
+// lire « puis », on lisait « ou bien ». Deux alternatives, ça se met CÔTE À
+// CÔTE. D'où ce module.
 //
-// Deux alternatives, ça se met CÔTE À CÔTE. D'où ce module : il calcule, pour
-// une liste d'étapes, une grille où le tronc descend au centre et où chaque
-// fourche écarte ses deux voies à gauche et à droite.
+// Ensuite, l'imbrication. Le plan ne dessinait qu'UN niveau de fourche : une
+// attente placée dans la voie « sans réponse » d'une première attente
+// fonctionnait très bien côté moteur — la règle d'atteignabilité est récursive
+// depuis le premier jour — mais ses étapes ressortaient sur le tronc, marquées
+// orphelines. On croyait à une erreur, et on n'écrivait pas la séquence dont on
+// avait besoin. La mise en page est donc récursive elle aussi : une voie qui
+// porte une fourche s'élargit d'autant, et le tronc reste au milieu.
+//
+// TROIS CHOSES QUE LE PLAN DIT, ET QU'IL EST SEUL À DIRE
+//   · combien de voies une fourche ouvre — deux pour une attente, autant que de
+//     cas pour un aiguillage, plus « sinon » ;
+//   · quelles voies REVIENNENT au tronc, et lesquelles s'arrêtent ou repartent
+//     ailleurs (`suite`) ;
+//   · quelles cartes se renvoient l'une vers l'autre — les traits en pointillé,
+//     qui font la JONCTION sans qu'il faille un type de carte pour ça.
 //
 // AUCUNE COORDONNÉE N'EST STOCKÉE, ET C'EST VOULU
 // `definition.steps` reste un tableau plat dont l'ORDRE fait foi : c'est lui
 // que le moteur parcourt. Laisser poser les cartes n'importe où obligerait à
 // écrire un x/y en base, et rien n'empêcherait alors de dessiner une carte
-// au-dessus de son attente pendant que le moteur, lui, l'exécute après. Le
+// au-dessus de sa fourche pendant que le moteur, lui, l'exécute après. Le
 // dessin mentirait. Ici la position se DÉDUIT du tableau ; déplacer une carte
 // n'est donc pas un déplacement visuel mais un vrai geste d'édition —
 // `deplacerVers` réécrit l'ordre et la voie.
@@ -29,13 +38,18 @@
 
 import type { SequenceStep } from '@/components/automations/types'
 import {
-  aUneBrancheSilence,
+  arbreEditeur,
+  estFourche,
+  estSortie,
   etapesDeBranche,
   indexDeLAttente,
-  planEditeur,
   positionDInsertion,
+  sortiesDeLaFourche,
+  suiteDeLEtape,
   type BrancheEtape,
-  type IssueAttente,
+  type Issue,
+  type NoeudPlan,
+  type VoiePlan,
 } from './branches'
 
 /* ── Géométrie ────────────────────────────────────────────────────────────
@@ -63,8 +77,17 @@ export const PIED_VOIE = 34
 /** Marge autour du plan, pour que la première carte ne colle pas au bord. */
 export const MARGE = 40
 
+/**
+ * LA COLONNE EST UNE DEMI-COLONNE, et c'est ce qui permet aux fourches à trois
+ * ou quatre voies de rester centrées sur le tronc.
+ *
+ * Le tronc est en 0, les voies d'une fourche à N sorties en `2·k − (N−1)` :
+ * −1 / +1 à deux voies (la disposition de toujours), −2 / 0 / +2 à trois,
+ * −3 / −1 / +1 / +3 à quatre. Toujours symétrique, toujours un écart constant
+ * d'une `COLONNE_L` entre deux voies voisines.
+ */
 export const xDeColonne = (col: number, colMin: number): number =>
-  MARGE + (col - colMin) * COLONNE_L
+  MARGE + ((col - colMin) * COLONNE_L) / 2
 
 export type TypeNoeud = 'entree' | 'etape' | 'voie' | 'reprise' | 'fin'
 
@@ -76,8 +99,10 @@ export interface NoeudCanvas {
   index?: number
   /** `voie` / `reprise` : l'attente concernée. */
   waitId?: string
-  /** `voie` : laquelle des deux. */
-  on?: IssueAttente
+  /** `voie` : laquelle des sorties de la fourche. */
+  on?: Issue
+  /** `voie` : sa sortie n'existe plus sur la fourche — rien n'en partira. */
+  voieOrpheline?: boolean
   /** `voie` : les étapes qu'elle contient, dans l'ordre. */
   etapes?: number[]
   /** `etape` : elle déclare une voie qu'aucune fourche dessinée ne porte. */
@@ -99,8 +124,14 @@ export interface LienCanvas {
   key: string
   de: string
   vers: string
-  /** Posé sur les deux traits qui sortent d'une fourche : ils se colorent. */
-  on?: IssueAttente
+  /** Posé sur les traits qui sortent d'une fourche : ils se colorent. */
+  on?: Issue
+  /**
+   * Trait de REDIRECTION — « après cette carte, va là ». En pointillé, parce
+   * qu'il ne suit pas la descente : il la court-circuite, en avant pour couper
+   * court, en arrière pour reboucler.
+   */
+  redirection?: boolean
 }
 
 export interface PlanCanvas {
@@ -113,149 +144,242 @@ export interface PlanCanvas {
   hauteur: number
 }
 
+const cleEtape = (step: SequenceStep) => `s:${step.id}`
+const cleVoie = (waitId: string, on: Issue) => `v:${waitId}:${on}`
+const cleReprise = (waitId: string) => `r:${waitId}`
+
+/* ── Mesurer avant de placer ──────────────────────────────────────────────
+ *
+ * Une fourche imbriquée dans une voie élargit la voie qui la porte, qui élargit
+ * la fourche au-dessus, jusqu'au tronc. On mesure donc de bas en haut, puis on
+ * place de haut en bas — sinon il faudrait décaler ce qui est déjà posé chaque
+ * fois qu'on découvre un niveau de plus.
+ *
+ * L'unité est la DEMI-COLONNE : une carte en occupe deux, et c'est ce qui
+ * permet à une fourche à trois voies de rester centrée sur le tronc sans que
+ * personne ne tombe sur une position fractionnaire.
+ */
+
+const LARGEUR_CARTE = 2
+
+const largeurListe = (noeuds: NoeudPlan[]): number =>
+  noeuds.length === 0 ? LARGEUR_CARTE : Math.max(...noeuds.map(largeurNoeud))
+
+const largeurVoie = (voie: VoiePlan): number => Math.max(LARGEUR_CARTE, largeurListe(voie.contenu))
+
+function largeurNoeud(n: NoeudPlan): number {
+  if (n.type === 'etape') return LARGEUR_CARTE
+  const total = n.voies.reduce((a, v) => a + largeurVoie(v), 0)
+  return Math.max(LARGEUR_CARTE, total)
+}
+
+const hauteurListe = (noeuds: NoeudPlan[]): number =>
+  noeuds.reduce((a, n) => a + hauteurNoeud(n), 0)
+
+const hauteurContenuVoie = (voie: VoiePlan): number =>
+  Math.max(LIGNE_H, hauteurListe(voie.contenu))
+
 /** La hauteur d'un cadre de voie, bandes comprises. */
 export function hauteurDeVoie(nbEtapes: number): number {
   return EN_TETE_VOIE + Math.max(1, nbEtapes) * LIGNE_H - GOUTTIERE + PIED_VOIE
 }
 
-const cleEtape = (step: SequenceStep) => `s:${step.id}`
-const cleVoie = (waitId: string, on: IssueAttente) => `v:${waitId}:${on}`
-const cleReprise = (waitId: string) => `r:${waitId}`
+const hauteurCadreVoie = (voie: VoiePlan): number =>
+  EN_TETE_VOIE + hauteurContenuVoie(voie) - GOUTTIERE + PIED_VOIE
+
+function hauteurNoeud(n: NoeudPlan): number {
+  if (n.type === 'etape') return LIGNE_H
+  const voies = Math.max(...n.voies.map(hauteurCadreVoie))
+  return LIGNE_H + voies + GOUTTIERE + PASTILLE_H + GOUTTIERE
+}
+
+/**
+ * Cette voie rejoint-elle le tronc ?
+ *
+ * Une voie qui se termine sur « finir ici » ou qui repart ailleurs ne revient
+ * pas. Dessiner le trait quand même serait le seul endroit du plan qui mentirait
+ * sur ce que le moteur fait. Une voie VIDE, elle, rejoint : il n'y a rien
+ * dedans pour en décider autrement.
+ */
+function voieRejoint(steps: SequenceStep[], voie: VoiePlan): boolean {
+  const dernier = voie.contenu[voie.contenu.length - 1]
+  if (!dernier) return true
+  if (dernier.type === 'fourche') return true
+  if (estSortie(steps[dernier.index])) return false
+  return suiteDeLEtape(steps[dernier.index]).type === 'suivre'
+}
 
 /**
  * Le plan complet : entrée, tronc, fourches, voies, reprises, fin.
  *
- * L'ordre de `planEditeur` est repris tel quel — c'est la même lecture du
- * tableau plat, simplement projetée sur deux axes au lieu d'un. Les deux voies
- * d'une même attente partent donc de la même ligne, et la reprise attend la
- * plus longue des deux.
+ * Le tronc descend au centre ; chaque fourche écarte ses voies symétriquement,
+ * autant qu'elle a de sorties, et une voie qui porte elle-même une fourche
+ * s'élargit d'autant. C'est ce qui manquait : une attente placée dans la voie
+ * « sans réponse » d'une première attente fonctionnait côté moteur mais ne se
+ * dessinait pas — ses étapes ressortaient sur le tronc, marquées orphelines,
+ * et on croyait à une erreur.
  */
 export function planCanvas(steps: SequenceStep[]): PlanCanvas {
-  const brut: (Omit<NoeudCanvas, 'x'> & { col: number })[] = []
+  type Brut = Omit<NoeudCanvas, 'x'> & { col: number; colCadre?: number }
+  const brut: Brut[] = []
   const liens: LienCanvas[] = []
-  let y = MARGE
-  let precedent = 'entree'
 
-  brut.push({ key: 'entree', type: 'entree', col: 0, y, l: CARTE_L, h: PASTILLE_H })
-  y += LIGNE_H
-
-  const lien = (de: string, vers: string, on?: IssueAttente) => {
+  const lien = (de: string, vers: string, on?: Issue) => {
     liens.push({ key: `${de}→${vers}`, de, vers, ...(on ? { on } : {}) })
   }
 
-  const plan = planEditeur(steps)
-  for (let p = 0; p < plan.length; p++) {
-    const ligne = plan[p]
+  /**
+   * Pose une liste de nœuds sous `y`, centrée sur `centre`.
+   *
+   * `precedent` est la carte à relier à la première : `null` dans une voie, où
+   * les cartes ne sont chaînées QU'ENTRE ELLES. Relier le cadre à sa première
+   * carte tracerait un trait depuis le bas du cadre vers un point situé plus
+   * haut — un trait qui remonte, masqué par les cartes sauf dans leurs
+   * interstices, où il se ferait passer pour un connecteur normal.
+   */
+  function placer(
+    noeuds: NoeudPlan[],
+    centre: number,
+    depart: number,
+    precedent: string | null,
+  ): { y: number; precedent: string | null } {
+    let y = depart
+    let prec = precedent
 
-    if (ligne.type === 'etape') {
-      const step = steps[ligne.index]
+    for (const n of noeuds) {
+      const step = steps[n.index]
       const key = cleEtape(step)
       brut.push({
         key,
         type: 'etape',
-        index: ligne.index,
-        col: 0,
+        index: n.index,
+        col: centre,
         y,
         l: CARTE_L,
         h: CARTE_H,
-        // Une étape rendue sur le tronc alors qu'elle déclare une voie n'a pas
-        // trouvé sa fourche : attente supprimée, ou fourche imbriquée que
-        // l'éditeur ne dessine pas. On la signale plutôt que de la masquer.
-        orpheline: !!step.branch,
+        // Une carte rendue sur le tronc alors qu'elle déclare une voie n'a pas
+        // trouvé sa fourche : celle-ci a été supprimée, ou elle est déclarée
+        // plus bas qu'elle. On la signale plutôt que de la masquer — mais rien
+        // n'en partira.
+        ...(n.perdue ? { orpheline: true } : {}),
       })
-      lien(precedent, key)
-      precedent = key
+      if (prec) lien(prec, key)
+      prec = key
       y += LIGNE_H
-      continue
-    }
 
-    if (ligne.type !== 'branche') continue
+      if (n.type === 'etape') continue
 
-    // Les voies d'une même attente arrivent groupées, suivies de leur reprise.
-    // On les consomme ensemble : elles partagent leur hauteur de départ.
-    const waitId = ligne.waitId
-    const voies = []
-    while (p < plan.length && plan[p].type === 'branche') {
-      const l = plan[p] as { type: 'branche'; waitId: string; on: IssueAttente; etapes: number[] }
-      if (l.waitId !== waitId) break
-      voies.push(l)
-      p++
-    }
-    // `p` pointe maintenant sur la reprise (ou sur autre chose si le plan est
-    // tronqué) ; la boucle for l'incrémentera, d'où le recul d'un cran.
-    if (plan[p]?.type !== 'reprise') p--
+      const largeurs = n.voies.map(largeurVoie)
+      const totale = largeurs.reduce((a, w) => a + w, 0)
+      let curseur = centre - totale / 2
+      const departY = y
+      let bas = departY
 
-    const departY = y
-    let bas = departY
-    for (const voie of voies) {
-      // `reply` à gauche, `timeout` à droite : l'ordre de lecture d'un « si /
-      // sinon », et il ne change jamais d'une séquence à l'autre.
-      const col = voie.on === 'reply' ? -1 : 1
-      const h = hauteurDeVoie(voie.etapes.length)
-      const keyVoie = cleVoie(waitId, voie.on)
-      brut.push({
-        key: keyVoie,
-        type: 'voie',
-        waitId,
-        on: voie.on,
-        etapes: voie.etapes,
-        col,
-        y: departY,
-        l: CARTE_L,
-        h,
-      })
-      lien(precedent, keyVoie, voie.on)
-
-      // Les cartes de la voie ne sont chaînées QU'ENTRE ELLES. Relier le cadre
-      // à sa première carte tracerait un trait depuis le bas du cadre vers un
-      // point situé plus haut — un trait qui remonte, masqué par les cartes
-      // sauf dans leurs interstices, où il se faisait passer pour un connecteur
-      // normal. L'appartenance au cadre se voit déjà : la carte est dedans.
-      let precedentDansLaVoie: string | null = null
-      voie.etapes.forEach((idx, k) => {
-        const key = cleEtape(steps[idx])
+      n.voies.forEach((voie, k) => {
+        const w = largeurs[k]
+        const centreVoie = curseur + w / 2
+        curseur += w
+        const h = hauteurCadreVoie(voie)
+        const keyVoie = cleVoie(step.id, voie.on)
         brut.push({
-          key,
-          type: 'etape',
-          index: idx,
-          col,
-          y: departY + EN_TETE_VOIE + k * LIGNE_H,
-          l: CARTE_L,
-          h: CARTE_H,
+          key: keyVoie,
+          type: 'voie',
+          waitId: step.id,
+          on: voie.on,
+          etapes: voie.contenu.filter((x) => x.type === 'etape').map((x) => x.index),
+          ...(voie.orpheline ? { voieOrpheline: true } : {}),
+          col: centreVoie,
+          // Le cadre déborde la carte dès qu'il contient une sous-fourche : sa
+          // largeur suit celle de son contenu, pas celle d'une carte.
+          colCadre: centreVoie - w / 2 + 1,
+          y: departY,
+          l: ((w - LARGEUR_CARTE) * COLONNE_L) / 2 + CARTE_L,
+          h,
         })
-        if (precedentDansLaVoie) lien(precedentDansLaVoie, key)
-        precedentDansLaVoie = key
+        lien(key, keyVoie, voie.on)
+        placer(voie.contenu, centreVoie, departY + EN_TETE_VOIE, null)
+        bas = Math.max(bas, departY + h)
+        if (voieRejoint(steps, voie)) lien(keyVoie, cleReprise(step.id), voie.on)
       })
-      bas = Math.max(bas, departY + h)
-      // Chaque voie rejoint la reprise : c'est ce qui dit que les deux chemins
-      // se retrouvent, et que ce qui suit part quoi qu'il arrive. Le trait part
-      // du CADRE et non de la dernière carte, car sous celle-ci il reste la
-      // bande du bouton « Ajouter ici », que le trait traversait de biais.
-      lien(keyVoie, cleReprise(waitId), voie.on)
+
+      y = bas + GOUTTIERE
+      brut.push({
+        key: cleReprise(step.id),
+        type: 'reprise',
+        waitId: step.id,
+        col: centre,
+        y,
+        l: CARTE_L,
+        h: PASTILLE_H,
+      })
+      prec = cleReprise(step.id)
+      y += PASTILLE_H + GOUTTIERE
     }
 
-    y = bas + GOUTTIERE
-    brut.push({ key: cleReprise(waitId), type: 'reprise', waitId, col: 0, y, l: CARTE_L, h: PASTILLE_H })
-    precedent = cleReprise(waitId)
-    y += PASTILLE_H + GOUTTIERE
+    return { y, precedent: prec }
   }
 
-  brut.push({ key: 'fin', type: 'fin', col: 0, y, l: CARTE_L, h: PASTILLE_H })
-  lien(precedent, 'fin')
+  const arbre = arbreEditeur(steps)
+  brut.push({ key: 'entree', type: 'entree', col: 0, y: MARGE, l: CARTE_L, h: PASTILLE_H })
+  const { y: basDuTronc } = placer(arbre, 0, MARGE + LIGNE_H, 'entree')
 
-  const cols = brut.map((n) => n.col)
+  brut.push({ key: 'fin', type: 'fin', col: 0, y: basDuTronc, l: CARTE_L, h: PASTILLE_H })
+  // La dernière carte du tronc mène à la fin — sauf si elle s'arrête ou repart.
+  const dernier = arbre[arbre.length - 1]
+  const clotureLibre =
+    !dernier ||
+    dernier.type === 'fourche' ||
+    (!estSortie(steps[dernier.index]) && suiteDeLEtape(steps[dernier.index]).type === 'suivre')
+  if (clotureLibre) {
+    const avant = dernier
+      ? avantLaFin(dernier, steps)
+      : 'entree'
+    lien(avant, 'fin')
+  }
+
+  // ── LES REDIRECTIONS, EN DERNIER ─────────────────────────────────────────
+  //
+  // Elles ne participent pas à la mise en page : une carte qui en vise une
+  // autre ne la déplace pas, elle tire un trait par-dessus. C'est ce qui rend
+  // la JONCTION possible sans nouveau type de carte — trois voies qui pointent
+  // toutes vers la même étape SONT un point de rendez-vous, et le plan le
+  // montre en trois traits qui convergent.
+  for (const step of steps) {
+    const suite = suiteDeLEtape(step)
+    if (suite.type !== 'aller_a') continue
+    const cible = steps.find((x) => x.id === suite.cible)
+    if (!cible) continue
+    liens.push({
+      key: `red:${step.id}→${cible.id}`,
+      de: cleEtape(step),
+      vers: cleEtape(cible),
+      redirection: true,
+    })
+  }
+
+  const cols = brut.map((n) => n.colCadre ?? n.col)
   const colMin = Math.min(0, ...cols)
-  const colMax = Math.max(0, ...cols)
-  const noeuds: NoeudCanvas[] = brut.map((n) => ({ ...n, x: xDeColonne(n.col, colMin) }))
+  const colMax = Math.max(0, ...brut.map((n) => n.col))
+  const noeuds: NoeudCanvas[] = brut.map(({ colCadre, ...n }) => ({
+    ...n,
+    x: xDeColonne(colCadre ?? n.col, colMin),
+  }))
 
   return {
     noeuds,
     liens,
     colMin,
     colMax,
-    largeur: MARGE * 2 + (colMax - colMin + 1) * COLONNE_L,
-    hauteur: y + PASTILLE_H + MARGE,
+    largeur: MARGE * 2 + CARTE_L + ((colMax - colMin) * COLONNE_L) / 2,
+    hauteur: basDuTronc + PASTILLE_H + MARGE,
   }
+}
+
+/** La clé du nœud qui précède la pastille de fin : la dernière carte, ou la reprise. */
+function avantLaFin(dernier: NoeudPlan, steps: SequenceStep[]): string {
+  return dernier.type === 'fourche'
+    ? cleReprise(steps[dernier.index].id)
+    : cleEtape(steps[dernier.index])
 }
 
 /**
@@ -293,62 +417,94 @@ export interface CibleDepot {
  */
 export function ciblesDeDepot(steps: SequenceStep[], plan: PlanCanvas): CibleDepot[] {
   const cibles: CibleDepot[] = []
-  /** Le marqueur se pose au milieu de la gouttière, au-dessus du nœud. */
-  const auDessusDe = (n: NoeudCanvas) => ({ x: n.x, y: n.y - GOUTTIERE / 2 })
+  const rang = new Map(steps.map((s, i) => [s.id, i]))
 
-  // Tronc : au-dessus de chaque étape de tronc, puis tout à la fin.
+  // ── Une place au-dessus de CHAQUE carte, où qu'elle soit ────────────────
+  //
+  // Les positions viennent du plan, jamais d'un calcul refait ici : depuis que
+  // les fourches s'imbriquent, les cartes d'une voie ne sont plus espacées
+  // d'une ligne pleine — une sous-fourche en occupe plusieurs. Recalculer
+  // aurait posé les marqueurs à côté des cartes qu'ils désignent.
   for (const n of plan.noeuds) {
-    if (n.type !== 'etape' || n.col !== 0 || n.index == null) continue
-    cibles.push({ key: `t:${n.index}`, index: n.index, branch: null, col: 0, ...auDessusDe(n) })
+    if (n.type !== 'etape' || n.index == null) continue
+    const step = steps[n.index]
+    cibles.push({
+      key: `a:${step.id}`,
+      index: n.index,
+      branch: step.branch ?? null,
+      col: n.col,
+      x: n.x,
+      y: n.y - GOUTTIERE / 2,
+    })
   }
+
   const fin = plan.noeuds.find((n) => n.type === 'fin')
   if (fin) {
-    cibles.push({ key: 't:fin', index: steps.length, branch: null, col: 0, ...auDessusDe(fin) })
+    cibles.push({
+      key: 't:fin',
+      index: steps.length,
+      branch: null,
+      col: fin.col,
+      x: fin.x,
+      y: fin.y - GOUTTIERE / 2,
+    })
   }
 
-  // Voies : au-dessus de chaque étape, puis à la suite de la dernière.
+  // ── Et une à la SUITE de chaque voie, sous sa dernière carte ────────────
   for (const voie of plan.noeuds) {
-    if (voie.type !== 'voie' || !voie.waitId || !voie.on) continue
+    if (voie.type !== 'voie' || !voie.waitId || voie.on == null) continue
     const branch: BrancheEtape = { waitId: voie.waitId, on: voie.on }
-    const etapes = voie.etapes ?? []
-    etapes.forEach((idx, k) => {
-      cibles.push({
-        key: `v:${voie.waitId}:${voie.on}:${k}`,
-        index: idx,
-        branch,
-        col: voie.col,
-        x: voie.x,
-        y: voie.y + EN_TETE_VOIE + k * LIGNE_H - GOUTTIERE / 2,
-      })
-    })
+    // La colonne des cartes de la voie, pas le bord gauche de son cadre : les
+    // deux ne coïncident que sur une voie qui ne porte aucune sous-fourche.
+    const xCartes = xDeColonne(voie.col, plan.colMin)
     cibles.push({
       key: `v:${voie.waitId}:${voie.on}:fin`,
       index: positionDInsertion(steps, voie.waitId, voie.on),
       branch,
       col: voie.col,
-      x: voie.x,
-      y: voie.y + EN_TETE_VOIE + Math.max(1, etapes.length) * LIGNE_H - GOUTTIERE / 2,
+      x: xCartes,
+      y: voie.y + voie.h - PIED_VOIE - GOUTTIERE / 2,
     })
   }
 
-  return cibles
+  // Une place au-dessus d'une carte n'a de sens que si la carte existe encore.
+  return cibles.filter((c) => c.index <= steps.length && (c.branch == null || rang.has(c.branch.waitId)))
 }
 
 /**
  * Ce qui part avec la carte que l'on tire.
  *
- * Une attente à fourche emmène ses deux voies : les laisser derrière ferait
- * d'un coup de quatre étapes des orphelines qui déclarent une voie qui n'est
- * plus au-dessus d'elles. Pour toute autre étape, le bloc se réduit à elle.
+ * Une fourche emmène TOUTES ses voies. Pour toute autre étape, le bloc se
+ * réduit à elle.
  */
 export function blocDeplace(steps: SequenceStep[], from: number): number[] {
   const step = steps[from]
-  if (!step || !aUneBrancheSilence(step)) return [from]
-  const suite = [
-    ...etapesDeBranche(steps, step.id, 'reply'),
-    ...etapesDeBranche(steps, step.id, 'timeout'),
-  ]
-  return [from, ...suite].sort((a, b) => a - b)
+  if (!step || !estFourche(step)) return [from]
+  // TOUT CE QUI PEND SOUS ELLE, sur autant de niveaux qu'il y en a. Toutes ses
+  // sorties d'abord — en laisser une derrière ferait d'un coup une poignée
+  // d'orphelines qui déclarent une voie qui n'est plus au-dessus d'elles — puis
+  // les sous-fourches de ces voies, récursivement, pour la même raison.
+  const pris = new Set<number>([from])
+  const aVisiter = [step.id]
+  while (aVisiter.length > 0) {
+    const id = aVisiter.pop() as string
+    const fourche = steps.find((s) => s.id === id)
+    for (const sortie of sortiesDeLaFourche(fourche)) {
+      for (const i of etapesDeBranche(steps, id, sortie.cle)) {
+        if (pris.has(i)) continue
+        pris.add(i)
+        if (estFourche(steps[i])) aVisiter.push(steps[i].id)
+      }
+    }
+    // Les voies orphelines partent aussi : elles pointent sur cette fourche.
+    steps.forEach((s, i) => {
+      if (s.branch?.waitId === id && !pris.has(i)) {
+        pris.add(i)
+        if (estFourche(s)) aVisiter.push(s.id)
+      }
+    })
+  }
+  return [...pris].sort((a, b) => a - b)
 }
 
 /**

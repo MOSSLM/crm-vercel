@@ -12,6 +12,8 @@ import { authedFetch } from '@/utils/authedFetch'
 import { XI } from '../icons'
 import { ToggleRow } from '../atoms'
 import {
+  CANAL_SUSPENDABLE_LABEL,
+  CANAUX_SUSPENDABLES,
   GAP_PRESETS,
   formatHM,
   holdReasonLabel,
@@ -19,6 +21,7 @@ import {
   normalizeWindows,
   overlappingWindows,
   windowsUnion,
+  type CanalSuspendable,
   type RegulatorSettings,
   type SendWindow,
 } from '@/lib/automations/regulator'
@@ -985,6 +988,12 @@ function SettingsCard({
   // l'enregistrement, on dit quoi faire. Même parti pris que la phase de test.
   const verifyReady = verification?.ready !== false
 
+  // Les canaux suspendus, typés : la liste vient de la base et peut porter une
+  // valeur qu'on ne connaît pas encore (migration plus récente que le code).
+  const suspendus = s.canauxSuspendus.filter((c): c is CanalSuspendable =>
+    (CANAUX_SUSPENDABLES as readonly string[]).includes(c),
+  )
+
   const [lo, hi] = gap
   const avg = (lo + hi) / 2
   const preset = GAP_PRESETS.find((p) => p.min === s.gapMinMinutes && p.max === s.gapMaxMinutes)
@@ -1064,6 +1073,50 @@ function SettingsCard({
             </p>
           </div>
         )}
+      </SetBlock>
+
+      {/* ── CANAUX SUSPENDUS ────────────────────────────────────────────────
+          Le réglage qui permet de lancer une séquence multicanal avant que les
+          boîtes d'envoi soient chaudes : l'e-mail reste écrit dans la séquence,
+          il ne part simplement pas, et l'échelle de canaux passe au barreau
+          suivant. C'est ce qui le distingue de la phase de test juste au-dessus,
+          qui gèle le prospect là où il est. */}
+      <SetBlock
+        icon="warning"
+        title="Canaux suspendus"
+        extra={suspendus.length === 0 ? 'aucun' : `${suspendus.length} suspendu${suspendus.length > 1 ? 's' : ''}`}
+      >
+        <p className="rg-hint" style={{ marginTop: 0 }}>
+          Un canal suspendu <b>n’envoie rien et ne pose aucune tâche</b> — mais la séquence continue :
+          les questions « a-t-il un mobile ? / une adresse ? » répondent non et le prospect descend au
+          canal suivant. Rien à modifier dans les séquences, rien à remettre en place après.
+        </p>
+        {CANAUX_SUSPENDABLES.map((canal) => (
+          <ToggleRow
+            key={canal}
+            label={CANAL_SUSPENDABLE_LABEL[canal]}
+            desc={
+              canal === 'email'
+                ? 'Aucun e-mail de prospection ne part, quel que soit le chemin — séquence, workflow ou envoi du moteur.'
+                : undefined
+            }
+            checked={suspendus.includes(canal)}
+            disabled={saving}
+            onChange={(v) =>
+              void onPatch(
+                {
+                  canaux_suspendus: v
+                    ? [...suspendus, canal]
+                    : suspendus.filter((c) => c !== canal),
+                },
+                v
+                  ? `${CANAL_SUSPENDABLE_LABEL[canal]} suspendu — les séquences routent autour`
+                  : `${CANAL_SUSPENDABLE_LABEL[canal]} rouvert — les inscriptions retenues repartent au prochain tick`,
+              )
+            }
+            accent={canal === 'email'}
+          />
+        ))}
       </SetBlock>
 
       <SetBlock icon="clock" title="Écart entre deux emails" extra="toutes séquences">

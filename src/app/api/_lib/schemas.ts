@@ -604,6 +604,13 @@ export const regulatorSettingsSchema = z
     admin_user_id: z.string().uuid().nullable().optional(),
     /** Phase de test : seules les adresses de test_email_addresses reçoivent. */
     test_mode: z.boolean().optional(),
+    /**
+     * Canaux suspendus — des GENRES D'ÉTAPE, pas des canaux de contact. Une
+     * étape de ce genre n'envoie rien et ne pose aucune tâche ; « a une
+     * adresse » répond non tant que l'e-mail y figure, pour que les
+     * aiguillages contournent l'étape au lieu de s'y arrêter.
+     */
+    canaux_suspendus: z.array(z.enum(["email", "whatsapp", "sms", "call", "linkedin"])).max(5).optional(),
 
     // ── Vérification des adresses ──────────────────────────────────────────
     /** Aucun email de prospection vers une adresse sans verdict frais. */

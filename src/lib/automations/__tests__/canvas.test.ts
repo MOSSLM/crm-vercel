@@ -171,15 +171,18 @@ describe('ciblesDeDepot', () => {
   const cibles = ciblesDeDepot(FOURCHE, plan)
   const par = (key: string) => cibles.find((c) => c.key === key)
 
+  // UNE PLACE PAR CARTE, désignée par l'identifiant de la carte et non par son
+  // rang : depuis que les fourches s'imbriquent, le rang d'une carte ne dit plus
+  // à quel niveau elle vit, et deux niveaux différents portaient la même clé.
   it('ouvre une place au-dessus de chaque étape de tronc, et une à la fin', () => {
-    expect(par('t:0')).toMatchObject({ index: 0, branch: null, col: 0 })
-    expect(par('t:5')).toMatchObject({ index: 5, branch: null, col: 0 })
+    expect(par('a:s1')).toMatchObject({ index: 0, branch: null, col: 0 })
+    expect(par('a:s6')).toMatchObject({ index: 5, branch: null, col: 0 })
     expect(par('t:fin')).toMatchObject({ index: FOURCHE.length, branch: null })
   })
 
   it('ouvre une place dans chaque voie, marquée de la bonne branche', () => {
-    expect(par('v:s2:reply:0')).toMatchObject({ index: 2, branch: { waitId: 's2', on: 'reply' } })
-    expect(par('v:s2:timeout:0')).toMatchObject({ index: 4, branch: { waitId: 's2', on: 'timeout' } })
+    expect(par('a:s3')).toMatchObject({ index: 2, branch: { waitId: 's2', on: 'reply' } })
+    expect(par('a:s5')).toMatchObject({ index: 4, branch: { waitId: 's2', on: 'timeout' } })
   })
 
   it('ouvre une place en fin de voie, y compris quand la voie est vide', () => {

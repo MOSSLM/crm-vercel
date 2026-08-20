@@ -14,6 +14,7 @@ import {
   etapeSuivante,
   retourVersLaReponse,
   aUneBrancheSilence,
+  type Issue,
 } from '../branches'
 import type { SequenceStep } from '@/components/automations/types'
 
@@ -26,9 +27,17 @@ const SEQUENCE: SequenceStep[] = [
   { id: 's5', kind: 'call', day: 5 },
 ]
 
-/** `vars.replies` sous la forme que lit le moteur : index d'étape → instant. */
-const repondu = (...indexes: number[]) => (i: number) => indexes.includes(i)
-const jamais = () => false
+/**
+ * Le lecteur d'issue tel que le moteur le construit : il rend la CLÉ DE SORTIE
+ * de la fourche, pas un booléen. `'reply'` est la sortie 1, `'timeout'` la
+ * sortie 2 — les mêmes noms qu'avant les aiguillages, et les mêmes que dans
+ * `definition.steps`.
+ */
+const repondu =
+  (...indexes: number[]) =>
+  (i: number): Issue =>
+    indexes.includes(i) ? 'reply' : 'timeout'
+const jamais = (): Issue => 'timeout'
 
 describe('etapeSuivante', () => {
   it('mène à la branche « il a répondu » quand une réponse est déclarée', () => {

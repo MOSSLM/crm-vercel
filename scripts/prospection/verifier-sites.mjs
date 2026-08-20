@@ -23,9 +23,13 @@
  * Un site à soi parle de soi. Un annuaire, une page de réseau ou le site d'un
  * fabricant ne portent, au mieux, qu'un de ces éléments — et souvent aucun.
  *
- * Il n'écrit rien. Il produit `_VERIFICATION.md` et un JSON des id à revoir.
+ * Il produit `_VERIFICATION.md` et un JSON des id à revoir. Il n'écrit en base
+ * QUE sous `--constats` : la visite fait alors foi et pose ses constats de
+ * présence — deux indices ou plus → présent, NXDOMAIN → absent, joint sans
+ * indice → inconnu. Sans le drapeau, il ne touche à rien.
  *
  *   node scripts/prospection/verifier-sites.mjs --cohorte B_sans_site
+ *   node scripts/prospection/verifier-sites.mjs --ids 12,34 --constats
  */
 
 import { readFile, writeFile } from "node:fs/promises";
@@ -264,6 +268,12 @@ async function main() {
   const ENV = await lireEnvLocal();
   const argv = process.argv;
   const cohorte = argv.includes("--cohorte") ? argv[argv.indexOf("--cohorte") + 1] : "B_sans_site";
+  // `--ids` CIBLE. Sans lui, ce script prend une cohorte entière — ce qui est le
+  // bon geste quand on lance une passe à la main, et le mauvais quand c'est la
+  // file du lissage qui appelle : elle a réclamé vingt fiches, pas cinq cents.
+  const idsVoulus = argv.includes("--ids")
+    ? (argv[argv.indexOf("--ids") + 1] ?? "").split(",").map((n) => Number(n.trim())).filter(Boolean)
+    : null;
   const sortie = path.join(RACINE, ".prospection", "dossiers");
 
   const cle = ENV.SUPABASE_SERVICE_ROLE_KEY;
@@ -272,9 +282,12 @@ async function main() {
       headers: { apikey: cle, Authorization: `Bearer ${cle}` },
     })).json();
 
+  const champs = "id,name,ville,code_postal,telephone,canonical_url,site_web_canonique";
   const brutes = await lire(
-    `entreprises?cohorte_demarchage=eq.${encodeURIComponent(cohorte)}` +
-      `&archived_at=is.null&select=id,name,ville,code_postal,telephone,canonical_url,site_web_canonique&limit=2000`,
+    idsVoulus
+      ? `entreprises?id=in.(${idsVoulus.join(",")})&select=${champs}&limit=2000`
+      : `entreprises?cohorte_demarchage=eq.${encodeURIComponent(cohorte)}` +
+        `&archived_at=is.null&select=${champs}&limit=2000`,
   );
 
   /*

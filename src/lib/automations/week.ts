@@ -401,6 +401,10 @@ const BLOCKING_HOLDS = new Set([
   // L'étape n'a ni modèle ni texte : elle retient la séquence jusqu'à ce que
   // quelqu'un écrive le message. C'est un vrai blocage, pas un report d'horaire.
   'message_vide',
+  // La tâche de l'étape a été annulée. Rien ne la rejouera : c'est un blocage
+  // au sens plein, et la semaine doit le porter — c'est même le seul endroit
+  // où ces inscriptions réapparaissent.
+  'tache_annulee',
 ])
 
 /**
@@ -815,8 +819,93 @@ export function readReplies(vars: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (!Number.isInteger(Number(k)) || typeof v !== 'string' || !v) continue
+    // La clé est l'IDENTIFIANT de l'étape depuis le 20/08/2026, le rang avant.
+    // On accepte les deux : `lireLeSac` (branches.ts) cherche l'identifiant
+    // d'abord et retombe sur le rang. Filtrer sur « c'est un entier » aurait
+    // jeté tous les sacs neufs.
+    if (!k || typeof v !== 'string' || !v) continue
     out[k] = v
+  }
+  return out
+}
+
+/**
+ * Verdicts de conditions, par index d'étape (`{"3": "oui"}`).
+ *
+ * MIROIR EXACT DE `readReplies`, et volontairement : une condition est une
+ * fourche comme une attente, son issue se lit donc au même endroit et de la
+ * même façon — dans `vars`, porté par l'inscription, rien à stocker ailleurs
+ * qui puisse diverger de la définition quand celle-ci est retouchée.
+ *
+ * TROIS VALEURS, PAS DEUX. `non_mesure` prend la même voie que `non` (sauf
+ * réglage `siInconnu`), mais il s'écrit différemment : c'est ce qui permet de
+ * demander plus tard « combien de prospects sont partis dans une voie qu'on a
+ * devinée ? ». Un `non` mesuré et un `non` faute de données ne sont pas la
+ * même chose, ici comme partout ailleurs dans ce CRM.
+ */
+export function readConditions(vars: unknown): Record<string, string> {
+  const raw = (vars as Record<string, unknown> | null)?.conditions
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!k || typeof v !== 'string' || !v) continue
+    out[k] = v
+  }
+  return out
+}
+
+/**
+ * Les cas d'un aiguillage qu'on n'a PAS SU trancher, par étape.
+ *
+ * TRACE SEULEMENT — aucune voie ne s'en déduit. Sur une fourche à deux voies,
+ * `non_mesure` portait à lui seul les deux informations : où l'on va, et qu'on
+ * l'a deviné. Une cascade ne peut pas faire ça, puisqu'un cas non mesuré ne
+ * décide de rien : il laisse passer au suivant. Sans ce second sac, « sinon »
+ * aurait ramassé sans distinction ceux qu'aucun cas ne décrit et ceux dont la
+ * base était muette — et on n'aurait plus jamais pu séparer les deux.
+ */
+export function readNonMesures(vars: unknown): Record<string, string[]> {
+  const raw = (vars as Record<string, unknown> | null)?.nonMesures
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!k || !Array.isArray(v)) continue
+    const cles = v.filter((x): x is string => typeof x === 'string' && !!x)
+    if (cles.length > 0) out[k] = cles
+  }
+  return out
+}
+
+/**
+ * Les séquences déjà traversées par transition, dans l'ordre.
+ *
+ * Portée d'inscription en inscription : c'est elle qui empêche un prospect de
+ * faire l'aller-retour entre deux séquences qui se renvoient la balle. Sans
+ * elle, deux cartes « passer à » suffiraient à écrire une boucle infinie —
+ * lente, invisible, et chaque tour coûte un message à un vrai artisan.
+ */
+export function readTransitions(vars: unknown): string[] {
+  const raw = (vars as Record<string, unknown> | null)?.transitions
+  if (!Array.isArray(raw)) return []
+  return raw.filter((x): x is string => typeof x === 'string' && !!x)
+}
+
+/**
+ * Combien de fois l'inscription a été posée sur chaque étape.
+ *
+ * N'existe QUE pour les rebouclages : sans redirection en arrière, chaque étape
+ * est franchie une fois et le sac ne sert à rien. Avec, il est le seul garde-fou
+ * — une boucle sans issue enverrait un message par tick jusqu'à ce que
+ * quelqu'un s'en aperçoive.
+ */
+export function readTours(vars: unknown): Record<string, number> {
+  const raw = (vars as Record<string, unknown> | null)?.tours
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = Number(v)
+    if (!k || !Number.isFinite(n) || n <= 0) continue
+    out[k] = Math.round(n)
   }
   return out
 }

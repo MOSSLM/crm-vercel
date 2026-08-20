@@ -19,11 +19,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { advanceEnrollmentAfterReply, reprendreSurLaBrancheReponse } from '@/lib/automations/engine'
-import { retourVersLaReponse } from '@/lib/automations/branches'
+import { cleDeFourche, retourVersLaReponse } from '@/lib/automations/branches'
 import { readReplies } from '@/lib/automations/week'
 import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
 
 export type ReplyError = 'introuvable' | 'inactive' | 'pas_en_attente'
+
+/** Les étapes de la séquence, ou une liste vide — jamais une exception. */
+async function lireLesEtapes(sb: SupabaseClient, automationId: string): Promise<SequenceStep[]> {
+  const { data } = await sb
+    .from('automations')
+    .select('definition')
+    .eq('id', automationId)
+    .maybeSingle()
+  const def = (data?.definition as SequenceDefinition) ?? { steps: [] }
+  return (Array.isArray(def.steps) ? def.steps : []) as SequenceStep[]
+}
 
 export interface ReplyResult {
   ok: boolean
@@ -81,7 +92,15 @@ export async function declarerReponse(
     return { ok: false, error: 'pas_en_attente' }
   }
 
-  const replies = { ...readReplies(enrollment.vars), [String(idx)]: new Date().toISOString() }
+  // ⚠️ LA RÉPONSE SE NOTE SOUS L'IDENTIFIANT DE L'ATTENTE, plus sous son rang :
+  // insérer une étape plus haut décalait le sac, et la réponse d'un prospect
+  // se mettait à désigner une autre attente que celle qu'il avait levée. C'est
+  // arrivé le 20/08/2026 sur neuf inscriptions.
+  const stepsIci = await lireLesEtapes(sb, enrollment.automation_id)
+  const replies = {
+    ...readReplies(enrollment.vars),
+    [cleDeFourche(stepsIci, idx)]: new Date().toISOString(),
+  }
   await sb
     .from('sequence_enrollments')
     .update({ vars: { ...(enrollment.vars ?? {}), replies }, hold_reason: null })
@@ -104,20 +123,17 @@ async function rattraperDepuisLeSilence(
   enrollment: Pick<SequenceEnrollment, 'id' | 'automation_id' | 'current_step' | 'vars'>,
   idx: number,
 ): Promise<ReplyResult | null> {
-  const { data: auto } = await sb
-    .from('automations')
-    .select('definition')
-    .eq('id', enrollment.automation_id)
-    .maybeSingle()
-  const def = (auto?.definition as SequenceDefinition) ?? { steps: [] }
-  const steps = (Array.isArray(def.steps) ? def.steps : []) as SequenceStep[]
+  const steps = await lireLesEtapes(sb, enrollment.automation_id)
 
   const retour = retourVersLaReponse(steps, idx)
   if (!retour) return null
 
   // La réponse se note sur l'ATTENTE, pas sur l'étape courante : c'est elle qui
   // décide de la branche, et c'est elle que `etapeSuivante` relira.
-  const replies = { ...readReplies(enrollment.vars), [String(retour.waitIdx)]: new Date().toISOString() }
+  const replies = {
+    ...readReplies(enrollment.vars),
+    [cleDeFourche(steps, retour.waitIdx)]: new Date().toISOString(),
+  }
   await sb
     .from('sequence_enrollments')
     .update({ vars: { ...(enrollment.vars ?? {}), replies }, hold_reason: null })

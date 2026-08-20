@@ -17,15 +17,36 @@ import { moveStep } from './sequence-steps'
 import { SequenceCanvas } from './SequenceCanvas'
 import {
   attentesEnAmont,
+  casDeLaCondition,
+  ciblesDeRedirection,
+  incoherencesDeSuite,
   ISSUE_LABEL,
+  libelleIssue,
   positionDInsertion,
-  type IssueAttente,
+  sortiesDeLaFourche,
+  suiteDeLEtape,
+  type Issue,
 } from '@/lib/automations/branches'
+import {
+  CHAMPS_CONDITION,
+  CHAMP_LABEL,
+  OPERATEUR_LABEL,
+  SORTIE_SINON,
+  VALEURS_DE,
+  libelleCas,
+  libelleCondition,
+  operateursDe,
+  raisonDeRefus,
+  raisonDeRefusAiguillage,
+  type CasAiguillage,
+  type ChampCondition,
+  type Condition,
+} from '@/lib/automations/conditions'
 import { deplacerVers, type CibleDepot } from '@/lib/automations/canvas'
 import { MessageEditor } from './MessageEditor'
+import { rendreMessage } from '@/lib/automations/redaction'
 import { normalizeWindows } from '@/lib/automations/regulator'
 import {
-  interpolateVars,
   pickVariant,
   sampleVars,
   variantText,
@@ -53,7 +74,7 @@ export function SequenceBuilder({ id }: { id: string }) {
    * `false` fermé · `true` ouvert sur le tronc · `{waitId, on}` ouvert depuis
    * une voie, où l'étape choisie ira directement.
    */
-  const [picker, setPicker] = useState<boolean | { waitId: string; on: IssueAttente }>(false)
+  const [picker, setPicker] = useState<boolean | { waitId: string; on: Issue }>(false)
   const [loading, setLoading] = useState(true)
   const [vars, setVars] = useState<VarBag>(() => sampleVars())
   const [previewOn, setPreviewOn] = useState<string | null>(null)
@@ -203,7 +224,8 @@ export function SequenceBuilder({ id }: { id: string }) {
           mode: kind === 'email' ? 'auto' : kind === 'wait' ? undefined : 'manual',
           day: prev.length === 0 ? 0 : lastDay + 2,
           // Pas de `sendAt` : l'heure d'un email appartient au régulateur.
-          ...(kind === 'email' ? { trackOpens: true, trackClicks: true } : {}),
+          // Pas de `trackOpens`/`trackClicks` non plus : rien ne les lit, et on
+          // ne veut ni pixel ni réécriture de liens (voir l'étape Email).
           ...(cible ? { branch: { waitId: cible.waitId, on: cible.on } } : {}),
           ...preset,
         }
@@ -255,6 +277,36 @@ export function SequenceBuilder({ id }: { id: string }) {
         const at = positionDInsertion(sans, branch.waitId, branch.on)
         return [...sans.slice(0, at), modifiee, ...sans.slice(at)]
       })
+    },
+    [touch],
+  )
+
+  /**
+   * Renvoyer une carte vers une autre — ou couper le renvoi.
+   *
+   * `null` remet la suite à « continuer », ce qui est aussi ce qu'on veut quand
+   * on annule : une étape sans suite déclarée descend au suivant, comme avant
+   * qu'on ne touche à rien.
+   */
+  const rediriger = useCallback(
+    (stepId: string, cibleId: string | null) => {
+      touch()
+      setSteps((prev) =>
+        prev.map((s) =>
+          s.id === stepId
+            ? { ...s, suite: cibleId ? { type: 'aller_a' as const, cible: cibleId } : { type: 'suivre' as const } }
+            : s,
+        ),
+      )
+    },
+    [touch],
+  )
+
+  /** Une réécriture d'ensemble — bascule d'une condition en aiguillage, par ex. */
+  const reecrire = useCallback(
+    (fn: (prev: SequenceStep[]) => SequenceStep[]) => {
+      touch()
+      setSteps((prev) => fn(prev))
     },
     [touch],
   )
@@ -576,10 +628,12 @@ export function SequenceBuilder({ id }: { id: string }) {
             onMove={reorder}
             onDeplacer={deplacer}
             onAjouter={(branch) => setPicker(branch ?? true)}
+            onRediriger={rediriger}
             carte={({ step, index, orpheline }) => (
               <SeqStep step={step} index={index} orpheline={orpheline} />
             )}
           />
+          <AvertissementsSequence steps={steps} onSelect={setSelectedId} />
           <button
             type="button"
             className="seq-ajout"
@@ -602,6 +656,8 @@ export function SequenceBuilder({ id }: { id: string }) {
           previewOn={previewOn}
           onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)}
           onBranche={(b) => selectedStep && setBranche(selectedStep.id, b)}
+          onReecrire={reecrire}
+          sequenceId={id}
         />
       </div>
 
@@ -743,6 +799,8 @@ function useStepMeta(step: SequenceStep): StepMeta {
     const tpl = ref.whatsapp_templates.find((t) => t.id === step.template)
     return { icon: 'whatsapp', title: tpl?.name || 'WhatsApp', subtitle: 'Message à valider manuellement' }
   }
+  if (step.kind === 'sms')
+    return { icon: 'sms', title: step.label || 'SMS', subtitle: 'Texto préparé — ouvert dans le téléphone' }
   if (step.kind === 'call') {
     const sc = ref.call_scripts.find((s) => s.id === step.script)
     return { icon: 'phone', title: sc?.name || 'Appel à passer', subtitle: 'Action manuelle — file de démarchage' }
@@ -759,6 +817,32 @@ function useStepMeta(step: SequenceStep): StepMeta {
             : 'Reprend quand on clique « Il a répondu »',
         }
       : { icon: 'clock', title: 'Attendre', subtitle: 'Délai avant la prochaine étape' }
+  }
+  if (step.kind === 'condition') {
+    // Le libellé de la fourche EST la question qu'elle pose : sans lui, toutes
+    // les conditions d'une séquence se ressemblent sur le plan.
+    const cas = casDeLaCondition(step)
+    return cas.length > 0
+      ? {
+          icon: 'filter',
+          title: 'Aiguillage',
+          subtitle: `${cas.length + 1} voies · ${cas.map((c) => libelleCas(c)).join(' · ')}`,
+        }
+      : {
+          icon: 'branch',
+          title: libelleCondition((step.condition ?? {}) as Partial<Condition>),
+          subtitle: 'Sépare le chemin — n’envoie rien',
+        }
+  }
+  if (step.kind === 'transition') {
+    const seq = ref.sequences?.find((x) => x.id === step.transition?.automationId)
+    return {
+      icon: 'share',
+      title: seq?.name || 'Passer à une autre séquence',
+      subtitle: step.transition?.automationId
+        ? 'Sort d’ici et ouvre là-bas'
+        : 'Destination à choisir',
+    }
   }
   return { icon: 'task', title: 'Tâche', subtitle: 'Action manuelle' }
 }
@@ -860,26 +944,593 @@ function BrancheSection({
           onChange={(e) => {
             const v = e.target.value
             if (!v) return onBranche(null)
-            const [waitId, on] = v.split(':')
-            onBranche({ waitId, on: on as IssueAttente })
+            // La clé de sortie peut contenir n'importe quoi ; seul le PREMIER
+            // deux-points sépare l'identifiant de la fourche de la sortie.
+            const coupe = v.indexOf(':')
+            onBranche({ waitId: v.slice(0, coupe), on: v.slice(coupe + 1) })
           }}
         >
           <option value="">Toujours — tronc commun</option>
           {attentes.map((w) =>
-            (['reply', 'timeout'] as const).map((on) => (
-              <option key={`${steps[w].id}:${on}`} value={`${steps[w].id}:${on}`}>
-                Étape {w + 1} · {ISSUE_LABEL[on].titre}
+            /* MÊME STOCKAGE, PLUSIEURS LECTURES : sur une attente ça se lit
+               « il a répondu / sans réponse », sur une condition « oui / non »,
+               sur un aiguillage le libellé du cas. `sortiesDeLaFourche` est le
+               seul endroit qui sait combien il y en a et comment elles
+               s'appellent — l'éditeur n'a pas à connaître la nature de l'étape. */
+            sortiesDeLaFourche(steps[w]).map((sortie) => (
+              <option key={`${steps[w].id}:${sortie.cle}`} value={`${steps[w].id}:${sortie.cle}`}>
+                Étape {w + 1} · {sortie.titre}
               </option>
             )),
           )}
         </select>
         <p className="rg-hint">
           {courant
-            ? ISSUE_LABEL[courant.on].aide
+            ? libelleIssue(
+                steps[steps.findIndex((x) => x.id === courant.waitId)],
+                courant.on,
+              ).aide
             : 'Traversée quoi qu’il arrive. Placez-la sur une voie pour qu’elle ne parte que dans ce cas-là.'}
         </p>
       </Field>
     </Section>
+  )
+}
+
+/**
+ * Les trois champs d'un test : ce qu'on regarde, comment, et à quoi on compare.
+ *
+ * Le même bloc sert à la question unique et à chaque cas d'un aiguillage. Deux
+ * copies auraient fini par ne plus proposer les mêmes opérateurs — et personne
+ * ne s'en apercevrait avant qu'une voie ne se vide.
+ */
+function TestCondition({
+  c,
+  onChange,
+}: {
+  c: Partial<Condition>
+  onChange: (p: Record<string, unknown>) => void
+}) {
+  const champ = c.champ as ChampCondition
+  const connu = CHAMPS_CONDITION.includes(champ)
+  const ops = connu ? operateursDe(champ) : []
+  const valeurs = connu ? VALEURS_DE[champ] : undefined
+
+  return (
+    <>
+      <select
+        className="input"
+        aria-label="Champ testé"
+        value={connu ? champ : ''}
+        onChange={(e) => {
+          const nouveau = e.target.value as ChampCondition
+          // Changer de champ jette l'opérateur et les valeurs : ils ne veulent
+          // plus rien dire, et les garder ferait une condition incohérente
+          // qu'on ne verrait qu'au premier prospect.
+          onChange({
+            champ: nouveau,
+            operateur: operateursDe(nouveau)[0],
+            valeurs: undefined,
+            seuil: undefined,
+          })
+        }}
+      >
+        <option value="">Choisir…</option>
+        {CHAMPS_CONDITION.map((k) => (
+          <option key={k} value={k}>
+            {CHAMP_LABEL[k]}
+          </option>
+        ))}
+      </select>
+
+      {connu && ops.length > 1 && (
+        <select
+          className="input"
+          aria-label="Opérateur"
+          value={c.operateur}
+          onChange={(e) => onChange({ operateur: e.target.value })}
+          style={{ marginTop: 6 }}
+        >
+          {ops.map((o) => (
+            <option key={o} value={o}>
+              {OPERATEUR_LABEL[o]}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {connu && (c.operateur === 'est' || c.operateur === 'nest_pas') && valeurs && (
+        <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+          {valeurs.map((v) => (
+            <label key={v.valeur} style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={(c.valeurs ?? []).includes(v.valeur)}
+                onChange={() => {
+                  const actuelles = c.valeurs ?? []
+                  onChange({
+                    valeurs: actuelles.includes(v.valeur)
+                      ? actuelles.filter((x) => x !== v.valeur)
+                      : [...actuelles, v.valeur],
+                  })
+                }}
+              />
+              {v.libelle}
+            </label>
+          ))}
+        </div>
+      )}
+
+      {connu && (c.operateur === 'au_moins' || c.operateur === 'au_plus') && (
+        <input
+          className="input mono"
+          type="number"
+          aria-label="Seuil"
+          value={c.seuil ?? ''}
+          onChange={(e) => onChange({ seuil: e.target.value === '' ? undefined : Number(e.target.value) })}
+          style={{ marginTop: 6 }}
+        />
+      )}
+    </>
+  )
+}
+
+/** La première clé de cas encore libre — `c1`, `c2`… Stable une fois posée. */
+function nouvelleCle(cas: readonly CasAiguillage[]): string {
+  let n = cas.length + 1
+  while (cas.some((c) => c.cle === `c${n}`)) n++
+  return `c${n}`
+}
+
+/**
+ * Écrire une condition — ce qu'on teste, et où va-t-on quand on ne sait pas.
+ *
+ * DEUX FORMES, ET ON CHOISIT LAQUELLE.
+ *
+ * · **Une question** : deux voies, oui et non. `siInconnu` dit où envoyer celui
+ *   dont la donnée manque — et ce cas n'est pas rare : 672 entreprises sur
+ *   2 884 ont un effectif « inconnu », 374 des 933 tâches n'ont pas de cohorte.
+ *   Sans ce réglage visible, la voie « non » ramasserait silencieusement tous
+ *   les prospects mal renseignés.
+ *
+ * · **Un aiguillage** : autant de voies que de cas, plus « sinon ». Le premier
+ *   cas vrai gagne, donc l'ORDRE compte, et c'est pour ça qu'on peut le
+ *   changer ici. `siInconnu` disparaît : dans une cascade, un cas qu'on ne sait
+ *   pas trancher n'attrape personne, il laisse passer au suivant. C'est
+ *   « sinon » qui ramasse — et il faut l'écrire en le sachant.
+ *
+ * ON REFUSE D'ÉCRIRE PLUTÔT QUE D'ÉCRIRE UNE CONDITION QUI NE TRANCHERA JAMAIS.
+ * `raisonDeRefus` et `raisonDeRefusAiguillage` disent en français ce qui manque,
+ * à l'endroit où ça manque : une condition incohérente déployée enverrait tout
+ * le monde dans la même voie sans que personne le voie.
+ */
+function ConditionSection({
+  step,
+  onUpdate,
+  onReecrire,
+}: {
+  step: SequenceStep
+  onUpdate: (p: Partial<SequenceStep>) => void
+  onReecrire: (fn: (prev: SequenceStep[]) => SequenceStep[]) => void
+}) {
+  const c = step.condition ?? { champ: '', operateur: '' }
+  const cas = casDeLaCondition(step)
+  const aiguillage = cas.length > 0
+  const refus = aiguillage
+    ? raisonDeRefusAiguillage(cas)
+    : raisonDeRefus(c as Partial<Condition>)
+
+  const maj = (p: Record<string, unknown>) =>
+    onUpdate({ condition: { ...c, ...p } as SequenceStep['condition'] })
+
+  const majCas = (cle: string, p: Record<string, unknown>) =>
+    maj({ cas: cas.map((x) => (x.cle === cle ? { ...x, ...p } : x)) })
+
+  /**
+   * Passer d'une question à un aiguillage — EN EMPORTANT LES VOIES.
+   *
+   * Les étapes déjà écrites portent `on: 'reply'` et `on: 'timeout'`. Si l'on
+   * se contentait d'ajouter les cas, ces deux clés ne correspondraient plus à
+   * aucune sortie : les voies deviendraient orphelines et rien n'en partirait
+   * plus. On les renomme donc dans le même geste — « oui » devient le premier
+   * cas, « non » devient « sinon ».
+   */
+  const versAiguillage = () =>
+    onReecrire((prev) =>
+      prev.map((s) => {
+        if (s.id === step.id) {
+          return {
+            ...s,
+            condition: {
+              ...c,
+              cas: [
+                {
+                  cle: 'c1',
+                  champ: c.champ,
+                  operateur: c.operateur,
+                  ...(c.valeurs ? { valeurs: c.valeurs } : {}),
+                  ...(c.seuil != null ? { seuil: c.seuil } : {}),
+                },
+              ],
+            } as SequenceStep['condition'],
+          }
+        }
+        if (s.branch?.waitId !== step.id) return s
+        return { ...s, branch: { waitId: step.id, on: s.branch.on === 'reply' ? 'c1' : SORTIE_SINON } }
+      }),
+    )
+
+  /**
+   * Revenir à une question — offert SEULEMENT quand il ne reste qu'un cas.
+   *
+   * À deux cas ou plus, revenir en arrière obligerait à verser deux voies dans
+   * une seule : les messages de l'une et de l'autre s'entremêleraient dans le
+   * tableau, et personne ne saurait plus lequel part à qui. Retirer les cas un
+   * par un est plus long, mais on voit ce qu'on perd.
+   */
+  const versQuestion = () =>
+    onReecrire((prev) =>
+      prev.map((s) => {
+        if (s.id === step.id) {
+          const premier = cas[0]
+          return {
+            ...s,
+            condition: {
+              champ: premier.champ,
+              operateur: premier.operateur,
+              ...(premier.valeurs ? { valeurs: premier.valeurs } : {}),
+              ...(premier.seuil != null ? { seuil: premier.seuil } : {}),
+              ...(c.siInconnu ? { siInconnu: c.siInconnu } : {}),
+            } as SequenceStep['condition'],
+          }
+        }
+        if (s.branch?.waitId !== step.id) return s
+        return {
+          ...s,
+          branch: { waitId: step.id, on: s.branch.on === cas[0].cle ? 'reply' : 'timeout' },
+        }
+      }),
+    )
+
+  const bougerCas = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= cas.length) return
+    const copie = [...cas]
+    ;[copie[i], copie[j]] = [copie[j], copie[i]]
+    maj({ cas: copie })
+  }
+
+  return (
+    <Section label={aiguillage ? 'L’aiguillage' : 'Ce qu’on teste'}>
+      <Field label="Forme" hint={aiguillage ? `${cas.length + 1} voies` : '2 voies'}>
+        <SegFull
+          value={aiguillage ? 'aiguillage' : 'question'}
+          options={[
+            { value: 'question', label: 'Une question' },
+            { value: 'aiguillage', label: 'Un aiguillage' },
+          ]}
+          onChange={(v) => {
+            if (v === 'aiguillage' && !aiguillage) versAiguillage()
+            if (v === 'question' && aiguillage && cas.length === 1) versQuestion()
+          }}
+        />
+        {aiguillage && cas.length > 1 && (
+          <p className="rg-hint">
+            Pour revenir à une simple question, retirez les cas jusqu’à n’en garder qu’un : verser deux voies
+            dans une seule mélangerait leurs messages sans qu’on puisse dire lequel part à qui.
+          </p>
+        )}
+      </Field>
+
+      {!aiguillage && (
+        <>
+          <Field label="Test">
+            <TestCondition c={c as Partial<Condition>} onChange={maj} />
+          </Field>
+
+          <Field label="Si on ne sait pas" hint="la donnée manque pour ce prospect">
+            <select
+              className="input"
+              value={c.siInconnu ?? 'non'}
+              onChange={(e) => maj({ siInconnu: e.target.value as 'oui' | 'non' })}
+            >
+              <option value="non">Prendre la voie « non »</option>
+              <option value="oui">Prendre la voie « oui »</option>
+            </select>
+            <p className="rg-hint">
+              Une condition ne gèle JAMAIS l’inscription — c’est un gel sans réveil qui a laissé 59 inscriptions
+              dormir des semaines. Elle tranche, et elle note qu’elle a tranché sans savoir : on peut donc compter
+              après coup combien de prospects sont partis dans une voie devinée.
+            </p>
+          </Field>
+        </>
+      )}
+
+      {aiguillage && (
+        <>
+          {cas.map((cs, i) => (
+            <Field
+              key={cs.cle}
+              label={`Cas ${i + 1}`}
+              hint={i === 0 ? 'testé en premier' : `testé après le cas ${i}`}
+            >
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input
+                  className="input"
+                  style={{ flex: 1 }}
+                  aria-label={`Nom de la voie du cas ${i + 1}`}
+                  placeholder={libelleCondition(cs)}
+                  value={cs.libelle ?? ''}
+                  onChange={(e) => majCas(cs.cle, { libelle: e.target.value })}
+                />
+                <button
+                  className="btn ghost sm icon"
+                  type="button"
+                  title="Tester plus tôt"
+                  disabled={i === 0}
+                  onClick={() => bougerCas(i, -1)}
+                >
+                  <XI name="chevup" className="ico-sm" />
+                </button>
+                <button
+                  className="btn ghost sm icon"
+                  type="button"
+                  title="Tester plus tard"
+                  disabled={i === cas.length - 1}
+                  onClick={() => bougerCas(i, 1)}
+                >
+                  <XI name="chevdown" className="ico-sm" />
+                </button>
+                <button
+                  className="btn ghost sm icon"
+                  type="button"
+                  title="Retirer ce cas"
+                  onClick={() => maj({ cas: cas.filter((x) => x.cle !== cs.cle) })}
+                >
+                  <XI name="trash" className="ico-sm" />
+                </button>
+              </div>
+              <TestCondition c={cs} onChange={(p) => majCas(cs.cle, p)} />
+            </Field>
+          ))}
+
+          <button
+            className="btn outline sm"
+            type="button"
+            onClick={() => maj({ cas: [...cas, { cle: nouvelleCle(cas), champ: '', operateur: '' }] })}
+          >
+            <XI name="plus" className="ico-sm" />
+            Ajouter un cas
+          </button>
+
+          <p className="rg-hint" style={{ marginTop: 10 }}>
+            Le premier cas vrai gagne. Un cas qu’on ne sait pas mesurer n’attrape personne : il laisse passer au
+            suivant, et « sinon » ramasse. <b>Écrivez donc « sinon » pour quelqu’un dont on ne sait rien</b>, pas
+            seulement pour ceux qu’aucun cas ne décrit.
+          </p>
+        </>
+      )}
+
+      {refus && (
+        <div className="seq-regchip manual" style={{ marginTop: 8 }}>
+          <XI name="warning" className="ico-sm" />
+          <span>
+            {refus}{' '}
+            {aiguillage
+              ? 'Tant que c’est le cas, ce cas n’attrapera personne et les prospects iront dans « sinon ».'
+              : 'Tant que c’est le cas, tous les prospects prendront la voie choisie ci-dessus.'}
+          </span>
+        </div>
+      )}
+
+      {!refus && (
+        <p className="rg-hint" style={{ marginTop: 8 }}>
+          Se lira :{' '}
+          <b>
+            {aiguillage
+              ? cas.map((x) => libelleCas(x)).join(' · sinon ') + ' · sinon…'
+              : libelleCondition(c as Partial<Condition>)}
+          </b>
+        </p>
+      )}
+    </Section>
+  )
+}
+
+/**
+ * Choisir la séquence suivante.
+ *
+ * PLUSIEURS SÉQUENCES PLUTÔT QU'UNE ÉNORME, et c'est un choix de lisibilité
+ * autant que de moteur : « premier contact », « démo envoyée », « engagé »,
+ * « nurture » posent chacune UNE question et se relisent seules. La même chose
+ * écrite d'un bloc tiendrait sur cinq écrans et personne n'oserait la retoucher.
+ *
+ * ⚠️ LE PROSPECT SORT D'ICI EN ENTRANT LÀ-BAS. Il n'est jamais dans deux
+ * séquences de démarchage à la fois — sinon deux fils de messages partiraient
+ * en parallèle chez le même artisan, chacun ignorant l'autre.
+ */
+function TransitionSection({
+  sequenceId,
+  step,
+  onUpdate,
+}: {
+  sequenceId: string
+  step: SequenceStep
+  onUpdate: (p: Partial<SequenceStep>) => void
+}) {
+  const ref = useRefData()
+  const choisie = step.transition?.automationId ?? ''
+  // Soi-même est exclu : une séquence qui se repasse le prospect à elle-même
+  // rouvrirait une inscription identique à l'infini. Le moteur le refuse déjà
+  // (`processTransitionStep`) ; ne pas le proposer évite d'avoir à l'expliquer.
+  const autres = ref.sequences.filter((x) => x.id !== sequenceId)
+
+  return (
+    <Section label="Séquence suivante">
+      <Field label="Passer le prospect à" hint={choisie ? undefined : 'à choisir'}>
+        <select
+          className="select"
+          value={choisie}
+          onChange={(e) =>
+            onUpdate({
+              transition: e.target.value
+                ? { automationId: e.target.value, ...(step.transition?.motif ? { motif: step.transition.motif } : {}) }
+                : null,
+            })
+          }
+        >
+          <option value="">Choisir une séquence…</option>
+          {autres.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+              {x.status !== 'on' ? ` — ${x.status}` : ''}
+            </option>
+          ))}
+        </select>
+        <p className="rg-hint">
+          L’inscription courante se ferme (motif « passée à une autre séquence », qui ne renvoie pas le prospect
+          au stock) et une inscription s’ouvre en face. Une séquence en pause gèle ce qu’elle reçoit avec un
+          motif visible plutôt que de le perdre : on peut donc poser le relais avant de l’avoir lancée.
+        </p>
+      </Field>
+      {!choisie && (
+        <div className="seq-regchip manual">
+          <XI name="warning" className="ico-sm" />
+          <span>
+            Sans destination, la séquence s’arrête ici pour ce prospect — elle ne le fera pas continuer plus bas.
+          </span>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+/**
+ * CE QUI SE PASSE APRÈS CETTE ÉTAPE.
+ *
+ * C'est la section qui manquait, et son absence a un nom : « après le premier
+ * contact et l'appel, c'est le flou ». Une voie ne savait que rejoindre le
+ * tronc ; aucune ne pouvait s'arrêter pour de bon, aucune ne pouvait renvoyer
+ * ailleurs. Les six séquences finissaient donc toutes sur un appel, sans rien
+ * derrière — le flou était écrit dans les séquences, pas dans le pipeline.
+ *
+ * LA JONCTION N'EST PAS UN TYPE DE CARTE, C'EST UN RENVOI PARTAGÉ. Trois voies
+ * qui renvoient toutes vers la même étape SONT un point de rendez-vous, et le
+ * plan le montre en trois traits qui convergent. Une carte « rejoindre » en
+ * plus aurait fallu la placer, la déplacer, la supprimer — pour ne rien dire de
+ * plus.
+ */
+function SuiteSection({
+  steps,
+  step,
+  onUpdate,
+}: {
+  steps: SequenceStep[]
+  step: SequenceStep
+  onUpdate: (p: Partial<SequenceStep>) => void
+}) {
+  const idx = steps.findIndex((s) => s.id === step.id)
+  const suite = suiteDeLEtape(step)
+  const cibles = idx < 0 ? [] : ciblesDeRedirection(steps, idx)
+
+  return (
+    <Section label="Et après ?">
+      <Field
+        label="À la fin de cette étape"
+        hint={suite.type === 'suivre' ? 'la suite normale' : suite.type === 'fin' ? 'terminé' : 'renvoi'}
+      >
+        <SegFull
+          value={suite.type}
+          options={[
+            { value: 'suivre', label: 'Continuer' },
+            { value: 'aller_a', label: 'Renvoyer' },
+            { value: 'fin', label: 'Finir' },
+          ]}
+          onChange={(v) => {
+            if (v === 'suivre') return onUpdate({ suite: { type: 'suivre' } })
+            if (v === 'fin') return onUpdate({ suite: { type: 'fin' } })
+            const premiere = cibles[0]
+            onUpdate({
+              suite:
+                premiere == null
+                  ? { type: 'suivre' }
+                  : { type: 'aller_a', cible: steps[premiere].id },
+            })
+          }}
+        />
+      </Field>
+
+      {suite.type === 'aller_a' && (
+        <Field label="Renvoyer vers" hint={cibles.length === 0 ? 'aucune cible possible' : undefined}>
+          <select
+            className="select"
+            value={suite.cible}
+            onChange={(e) => onUpdate({ suite: { type: 'aller_a', cible: e.target.value } })}
+          >
+            {!cibles.some((i) => steps[i].id === suite.cible) && (
+              <option value={suite.cible}>Étape supprimée — à corriger</option>
+            )}
+            {cibles.map((i) => (
+              <option key={steps[i].id} value={steps[i].id}>
+                Étape {i + 1} · {steps[i].kind}
+                {i <= idx ? ' (en arrière)' : ''}
+              </option>
+            ))}
+          </select>
+          <p className="rg-hint">
+            Une redirection ne peut viser que le tronc commun ou sa propre voie. Viser une voie sœur ferait
+            recevoir au prospect la première carte d’un chemin et rien de la suite — sans que rien ne le dise.
+            Un renvoi en arrière reboucle : il lui faut une fourche ou une fin pour en sortir, sinon le moteur
+            s’arrête au bout de 12 tours.
+          </p>
+        </Field>
+      )}
+
+      {suite.type === 'fin' && (
+        <Field label="Motif" hint="écrit sur la carte, et gardé sur l’inscription">
+          <input
+            className="input"
+            placeholder="sans réponse après 3 relances"
+            value={suite.motif ?? ''}
+            onChange={(e) => onUpdate({ suite: { type: 'fin', motif: e.target.value } })}
+          />
+          <p className="rg-hint">
+            La séquence se termine ici pour ceux qui passent par cette carte. C’est ce qui remplace le prospect
+            qui reste « en attente » sans que rien ne le réveille : une fin datée et motivée se compte, un silence
+            non.
+          </p>
+        </Field>
+      )}
+    </Section>
+  )
+}
+
+/**
+ * Ce qui, dans la séquence entière, ne tient pas debout.
+ *
+ * POSÉ SUR LE PLAN, PAS DANS L'INSPECTEUR. Une incohérence de renvoi concerne
+ * deux cartes : la montrer dans le panneau de l'une des deux obligerait à
+ * l'avoir sélectionnée pour la découvrir. Ici elle se voit sans rien cliquer,
+ * et un clic emmène sur la carte fautive.
+ */
+function AvertissementsSequence({
+  steps,
+  onSelect,
+}: {
+  steps: SequenceStep[]
+  onSelect: (id: string) => void
+}) {
+  const soucis = incoherencesDeSuite(steps)
+  if (soucis.length === 0) return null
+  return (
+    <div className="seq-avertis">
+      {soucis.map((s) => (
+        <button key={s.stepId + s.phrase} type="button" onClick={() => onSelect(s.stepId)}>
+          <XI name="warning" className="ico-xs" />
+          {s.phrase}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -891,6 +1542,8 @@ function SeqStepInspector({
   previewOn,
   onUpdate,
   onBranche,
+  onReecrire,
+  sequenceId,
 }: {
   steps: SequenceStep[]
   step: SequenceStep | undefined
@@ -900,6 +1553,8 @@ function SeqStepInspector({
   previewOn: string | null
   onUpdate: (p: Partial<SequenceStep>) => void
   onBranche: (branch: SequenceStep['branch']) => void
+  onReecrire: (fn: (prev: SequenceStep[]) => SequenceStep[]) => void
+  sequenceId: string
 }) {
   if (!step) {
     return (
@@ -919,6 +1574,14 @@ function SeqStepInspector({
       </div>
       <div className="inspector-body">
         <BrancheSection steps={steps} step={step} onBranche={onBranche} />
+        {step.kind === 'condition' && (
+          <ConditionSection step={step} onUpdate={onUpdate} onReecrire={onReecrire} />
+        )}
+        {step.kind === 'transition' && (
+          <TransitionSection sequenceId={sequenceId} step={step} onUpdate={onUpdate} />
+        )}
+        {/* Un passage de relais n'a pas de suite : il sort. */}
+        {step.kind !== 'transition' && <SuiteSection steps={steps} step={step} onUpdate={onUpdate} />}
         <Section label="Timing">
           <Field label="Jour" hint="depuis le début">
             <input
@@ -961,8 +1624,40 @@ function SeqStepInspector({
               <SupaSelect table="email_templates" icon="template" value={step.template} onChange={(v) => onUpdate({ template: v as string })} />
             </Field>
             <EmailTemplatePreview templateId={step.template ?? null} vars={vars} previewOn={previewOn} />
-            <ToggleRow label="Tracker les ouvertures" checked={step.trackOpens !== false} onChange={(v) => onUpdate({ trackOpens: v })} accent />
-            <ToggleRow label="Tracker les clics" checked={step.trackClicks !== false} onChange={(v) => onUpdate({ trackClicks: v })} accent />
+            {/*
+              Les deux interrupteurs restent, éteints et expliqués, comme celui
+              du PDF juste en dessous.
+
+              Ils promettaient un réglage PAR ÉTAPE qui n'existe nulle part :
+              Resend n'a aucune option de suivi dans son appel d'envoi (vérifié
+              dans le SDK), c'est un réglage de domaine. Les valeurs écrites ici
+              n'ont donc jamais été transmises — cochées ou non, il ne se passait
+              rien, et l'opérateur croyait mesurer.
+
+              Et on n'active pas non plus le réglage de domaine : le pixel
+              d'ouverture et la réécriture des liens dégradent tous deux la
+              réputation de la boîte. Décision de Matteo, 19/08/2026.
+
+              Ce qui se mesure sans rien dégrader : les liens à jeton (rapport
+              d'audit, plaquette, démo) comptent leurs vues côté serveur, par
+              prospect. C'est la même information, sans pixel.
+            */}
+            <ToggleRow
+              label="Tracker les ouvertures"
+              checked={false}
+              onChange={() => {}}
+              disabled
+              desc="Volontairement absent : le pixel d’ouverture dégrade la réputation de la boîte. Le rapport d’audit et la plaquette comptent déjà leurs vues, par prospect."
+              accent
+            />
+            <ToggleRow
+              label="Tracker les clics"
+              checked={false}
+              onChange={() => {}}
+              disabled
+              desc="Volontairement absent : la réécriture des liens dégrade la délivrabilité. Les liens à jeton comptent leurs visites sans être réécrits."
+              accent
+            />
             {/*
               La case reste, désactivée et expliquée. `audits.pdf_url` n'est
               écrit par AUCUN code du dépôt — `savePdfUrl` n'a pas d'appelant et
@@ -1007,6 +1702,7 @@ function SeqStepInspector({
                   onChange={(message) => onUpdate({ message })}
                   vars={vars}
                   rows={4}
+                  canal="whatsapp"
                   previewOn={previewOn ?? 'des valeurs d’exemple'}
                   placeholder="Bonjour, je suis bien avec {{company.name}} ?"
                 />
@@ -1022,6 +1718,29 @@ function SeqStepInspector({
             )}
           </Section>
         )}
+        {step.kind === 'sms' && (
+          <Section label="SMS manuel">
+            <Field label="Message">
+              <MessageEditor
+                value={step.message || ''}
+                onChange={(message) => onUpdate({ message })}
+                vars={vars}
+                rows={4}
+                canal="sms"
+                previewOn={previewOn ?? 'des valeurs d’exemple'}
+                placeholder="Bonjour {{company.name}}, "
+              />
+            </Field>
+            {/* Le compteur de l'éditeur dit déjà le coût. Ce qu'il ne peut pas
+                dire, c'est POURQUOI le CRM n'envoie pas lui-même. */}
+            <p className="rg-hint">
+              Le SMS n’est pas envoyé par le CRM : la tâche ouvre l’application de messagerie du
+              téléphone avec le texte déjà écrit. Un fournisseur existe côté téléphonie, mais il n’a
+              jamais envoyé un seul message — le brancher dans une boucle automatique se paierait au
+              premier lot.
+            </p>
+          </Section>
+        )}
         {step.kind === 'linkedin' && (
           <Section label="LinkedIn manuel">
             <Field label="Action">
@@ -1034,12 +1753,21 @@ function SeqStepInspector({
                 ]}
               />
             </Field>
-            <Field label="Message de connexion" hint={`${(step.message || '').length}/300`}>
+            {/*
+              LE DÉCOMPTE ÉTAIT FAUX DEUX FOIS, et il s'affichait ici.
+              « /300 » : LinkedIn plafonne la note d'invitation à 200 caractères,
+              pas 300. Et il comptait `step.message`, c'est-à-dire la SOURCE :
+              un message de 190 caractères dont 40 sont `{{company.name}}` en
+              fait 180 ou 210 selon le prospect. Le compteur vit désormais dans
+              l'éditeur, qui mesure le rendu et connaît la limite du canal.
+            */}
+            <Field label={step.action === 'inmail' ? 'Message InMail' : 'Note d’invitation'}>
               <MessageEditor
                 value={step.message || ''}
                 onChange={(message) => onUpdate({ message })}
                 vars={vars}
                 rows={4}
+                canal={step.action === 'inmail' ? 'linkedin_message' : 'linkedin_invitation'}
                 previewOn={previewOn ?? 'des valeurs d’exemple'}
               />
             </Field>
@@ -1071,10 +1799,31 @@ function SeqStepInspector({
                     onChange={(e) => onUpdate({ replyTimeoutDays: Math.max(0, Number(e.target.value) || 0) })}
                   />
                   <p className="rg-hint">
-                    0 = on attend indéfiniment. Le prospect reste garé, visible dans « En attente de réponse », et rien
-                    ne part tant que personne n’a cliqué.
+                    Au bout de ce délai, la voie « sans réponse » part toute seule. Les jours des étapes suivantes se
+                    comptent depuis la relance.
                   </p>
                 </Field>
+                {/*
+                  L'AVERTISSEMENT QUI MANQUAIT. Un délai nul ne se lit pas comme
+                  une impasse — il se lit comme un réglage prudent, et c'est
+                  exactement pour ça que 59 inscriptions ont dormi des semaines
+                  sans que personne ne le voie. Il faut le dire au moment où on
+                  le pose, et le dire en danger : aucune horloge ne les
+                  réveillera, et la voie « sans réponse » ne peut même pas être
+                  dessinée tant que le délai vaut 0.
+                */}
+                {!step.replyTimeoutDays && (
+                  <div className="seq-regchip impasse">
+                    <XI name="warning" className="ico-sm" />
+                    <span>
+                      <strong>Attente sans limite.</strong> Aucune horloge ne réveillera ces prospects : seul un clic
+                      sur « Il a répondu » les fera repartir. Tant que ce champ vaut 0, la voie{' '}
+                      <strong>« Sans réponse »</strong> n’existe pas et rien ne peut y être écrit — c’est ce réglage qui
+                      a laissé <strong>59 inscriptions</strong> dormir sans date de réveil. Poser un délai est presque
+                      toujours le bon choix.
+                    </span>
+                  </div>
+                )}
                 <div className="seq-regchip manual">
                   <XI name="user" className="ico-sm" />
                   <span>
@@ -1159,9 +1908,9 @@ function EmailTemplatePreview({
       previewOn={previewOn}
       rendu={(variant) => (
         <>
-          <strong>{interpolateVars(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
+          <strong>{rendreMessage(variantText(tpl.subject, variant), vars) || '(sans objet)'}</strong>
           {'\n\n'}
-          {interpolateVars(variantText(tpl.body, variant), vars)}
+          {rendreMessage(variantText(tpl.body, variant), vars)}
         </>
       )}
     />
@@ -1185,7 +1934,7 @@ function WhatsappTemplatePreview({
       pairs={[tpl.body]}
       vars={vars}
       previewOn={previewOn}
-      rendu={(variant) => interpolateVars(variantText(tpl.body, variant), vars)}
+      rendu={(variant) => rendreMessage(variantText(tpl.body, variant), vars)}
       pied={
         <p className="rg-hint">
           Ce texte vient des{' '}
@@ -1340,7 +2089,15 @@ function SeqStepPickerModal({
   const cats: {
     label: string
     cat: string
-    items: { kind: SeqStepKind; icon: string; name: string; desc: string; waitMode?: 'reply' }[]
+    items: {
+      kind: SeqStepKind
+      icon: string
+      name: string
+      desc: string
+      waitMode?: 'reply'
+      /** Ouvre directement la condition en mode aiguillage, avec un premier cas. */
+      cas?: boolean
+    }[]
   }[] = [
     {
       label: 'Étapes automatiques',
@@ -1364,11 +2121,37 @@ function SeqStepPickerModal({
       ],
     },
     {
+      label: 'Aiguillage',
+      cat: 'action',
+      items: [
+        {
+          kind: 'condition',
+          icon: 'branch',
+          name: 'Condition',
+          desc: 'Sépare le chemin en deux — « oui » et « non » — sans rien envoyer',
+        },
+        {
+          kind: 'condition',
+          icon: 'filter',
+          name: 'Aiguillage à plusieurs voies',
+          desc: 'Une voie par cas, plus « sinon » — le premier cas vrai gagne',
+          cas: true,
+        },
+        {
+          kind: 'transition',
+          icon: 'share',
+          name: 'Passer à une autre séquence',
+          desc: 'Ferme cette séquence pour ce prospect et l’ouvre dans une autre',
+        },
+      ],
+    },
+    {
       label: 'Étapes manuelles (file de démarchage)',
       cat: 'manual',
       items: [
         { kind: 'call', icon: 'phone', name: 'Appel téléphonique', desc: 'Avec script pré-rédigé' },
         { kind: 'whatsapp', icon: 'whatsapp', name: 'WhatsApp', desc: 'Message à valider et envoyer' },
+        { kind: 'sms', icon: 'sms', name: 'SMS', desc: 'Texto préparé, ouvert dans le téléphone' },
         { kind: 'linkedin', icon: 'linkedin', name: 'LinkedIn', desc: 'Connexion ou InMail' },
         { kind: 'task', icon: 'task', name: 'Tâche personnalisée', desc: 'Action libre à valider' },
       ],
@@ -1396,9 +2179,24 @@ function SeqStepPickerModal({
                 <div className="picker-grid">
                   {c.items.map((it) => (
                     <div
-                      key={`${it.kind}-${it.waitMode ?? 'default'}`}
+                      key={`${it.kind}-${it.waitMode ?? (it.cas ? 'cas' : 'default')}`}
                       className={`picker-card ${c.cat}`}
-                      onClick={() => onPick(it.kind, it.waitMode ? { waitMode: it.waitMode, replyTimeoutDays: 3 } : undefined)}
+                      onClick={() =>
+                        onPick(
+                          it.kind,
+                          it.waitMode
+                            ? { waitMode: it.waitMode, replyTimeoutDays: 3 }
+                            : it.cas
+                              ? {
+                                  condition: {
+                                    champ: '',
+                                    operateur: '',
+                                    cas: [{ cle: 'c1', champ: '', operateur: '' }],
+                                  },
+                                }
+                              : undefined,
+                        )
+                      }
                     >
                       <div className="top">
                         <span className="ic">

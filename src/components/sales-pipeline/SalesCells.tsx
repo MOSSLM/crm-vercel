@@ -36,6 +36,7 @@ import {
   Undo2,
   User,
   type LucideIcon,
+  MessageSquare,
 } from 'lucide-react'
 import {
   channelOf,
@@ -54,6 +55,7 @@ import type { SalesBoardRow, SalesTaskInfo } from './types'
 export const KIND_ICON: Record<string, LucideIcon> = {
   email: Mail,
   whatsapp: MessageCircle,
+  sms: MessageSquare,
   linkedin: Linkedin,
   call: Phone,
   task: ClipboardCheck,

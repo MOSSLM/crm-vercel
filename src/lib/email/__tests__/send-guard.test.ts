@@ -16,6 +16,8 @@ const clientOf = (state: {
   allowlist?: string[]
   verifications?: Row[]
   suppressions?: Row[]
+  /** Simule une lecture qui échoue, table par table. */
+  erreurs?: Partial<Record<'regulator_settings' | 'email_suppressions', { code?: string; message?: string }>>
 }) => {
   const chain = (result: { data: unknown; error?: unknown }) => {
     const self: Record<string, unknown> = {}
@@ -31,16 +33,27 @@ const clientOf = (state: {
     from: jest.fn((table: string) => {
       switch (table) {
         case 'regulator_settings':
-          return chain({
-            data: { verify_before_send: state.verifyBeforeSend ?? false, test_mode: state.testMode ?? false },
-            error: null,
-          })
+          return chain(
+            state.erreurs?.regulator_settings
+              ? { data: null, error: state.erreurs.regulator_settings }
+              : {
+                  data: {
+                    verify_before_send: state.verifyBeforeSend ?? false,
+                    test_mode: state.testMode ?? false,
+                  },
+                  error: null,
+                },
+          )
         case 'test_email_addresses':
           return chain({ data: (state.allowlist ?? []).map((email) => ({ email })), error: null })
         case 'email_verifications':
           return chain({ data: state.verifications ?? [], error: null })
         case 'email_suppressions':
-          return chain({ data: state.suppressions ?? [], error: null })
+          return chain(
+            state.erreurs?.email_suppressions
+              ? { data: null, error: state.erreurs.email_suppressions }
+              : { data: state.suppressions ?? [], error: null },
+          )
         default:
           return chain({ data: [], error: null })
       }
@@ -194,5 +207,105 @@ describe('loadSendPolicy / eligibilityFor', () => {
     const sb = clientOf({ verifyBeforeSend: true })
     const policy = await loadSendPolicy(sb, [])
     expect(eligibilityFor(policy, 'pas-une-adresse')).toBe('blocked')
+  })
+})
+
+/* ── Ce que l'audit du 20/08/2026 a trouvé ───────────────────────────────── */
+
+describe('la suppression ne dépend d’aucun réglage', () => {
+  beforeEach(() => {
+    resetSendGuardCache()
+    resetTestGuardCache()
+  })
+
+  /**
+   * LE DÉFAUT, TEL QU'IL ÉTAIT. Le contrôle de suppression vivait dans
+   * `if (await verifyEnabled(sb))`. Éteindre « vérifier les adresses avant
+   * d'envoyer » — un réglage de délivrabilité — éteignait donc aussi, en
+   * silence, la liste des rebonds durs, des plaintes et des DÉSABONNEMENTS.
+   * L'en-tête du fichier promettait pourtant l'inverse depuis le premier jour.
+   */
+  it('bloque un désabonné même quand la vérification est éteinte', async () => {
+    const sb = clientOf({
+      verifyBeforeSend: false,
+      suppressions: [{ email: 'parti@artisan.fr' }],
+    })
+    const v = await allowRecipient(sb, 'parti@artisan.fr')
+    expect(v.allowed).toBe(false)
+    expect(v.reason).toBe('email_suppressed')
+  })
+
+  it('laisse passer les autres adresses, vérification éteinte', async () => {
+    const sb = clientOf({ verifyBeforeSend: false, suppressions: [{ email: 'parti@artisan.fr' }] })
+    expect((await allowRecipient(sb, 'present@artisan.fr')).allowed).toBe(true)
+  })
+
+  // UNE LISTE ILLISIBLE N'EST PAS UNE LISTE VIDE. Retenir coûte un tour de
+  // régulateur ; se tromper coûte un email à quelqu'un qui s'est désabonné.
+  it('retient l’envoi quand la liste des désabonnés ne peut pas être lue', async () => {
+    const sb = clientOf({
+      verifyBeforeSend: false,
+      erreurs: { email_suppressions: { code: '57014', message: 'canceling statement' } },
+    })
+    const v = await allowRecipient(sb, 'quelquun@artisan.fr')
+    expect(v.allowed).toBe(false)
+    expect(v.reason).toBe('suppression_illisible')
+    expect(BLOCK_LABEL[v.reason!]).toMatch(/illisible/i)
+  })
+
+  // Table absente = migration non appliquée. Il n'y a rien à lire, c'est un
+  // état connu, et bloquer toute la prospection pour ça serait absurde.
+  it('n’est pas retenu quand la table n’existe pas encore', async () => {
+    const sb = clientOf({
+      verifyBeforeSend: false,
+      erreurs: { email_suppressions: { code: '42P01', message: 'relation does not exist' } },
+    })
+    expect((await allowRecipient(sb, 'quelquun@artisan.fr')).allowed).toBe(true)
+  })
+
+  it('le régulateur voit lui aussi les désabonnés, vérification éteinte', async () => {
+    const sb = clientOf({ verifyBeforeSend: false, suppressions: [{ email: 'parti@artisan.fr' }] })
+    const policy = await loadSendPolicy(sb, ['parti@artisan.fr', 'present@artisan.fr'])
+    expect(eligibilityFor(policy, 'parti@artisan.fr')).toBe('blocked')
+    expect(eligibilityFor(policy, 'present@artisan.fr')).toBe('ok')
+  })
+})
+
+describe('« le réglage dit non » n’est pas « je n’ai pas pu le lire »', () => {
+  beforeEach(() => {
+    resetSendGuardCache()
+    resetTestGuardCache()
+  })
+
+  /**
+   * La lecture ne destructurait pas `error` : une requête en échec rendait
+   * `data = null`, donc `verify_before_send = false` — la réponse permissive —
+   * et la mettait en cache quinze secondes. Le garde s'ouvrait sur une panne.
+   */
+  it('retombe du côté prudent quand le réglage est illisible', async () => {
+    const sb = clientOf({
+      erreurs: { regulator_settings: { code: '57014', message: 'canceling statement' } },
+      verifications: [],
+    })
+    // Vérification supposée ACTIVE : l'adresse sans verdict est retenue.
+    const v = await allowRecipient(sb, 'inconnue@artisan.fr')
+    expect(v.allowed).toBe(false)
+    expect(v.reason).toBe('email_unverified')
+  })
+
+  it('mais une colonne absente reste un « non » légitime', async () => {
+    const sb = clientOf({
+      erreurs: { regulator_settings: { code: '42703', message: 'column does not exist' } },
+    })
+    expect((await allowRecipient(sb, 'inconnue@artisan.fr')).allowed).toBe(true)
+  })
+
+  // Un incident de quelques secondes ne doit pas gouverner les quinze
+  // suivantes : un échec ne se met jamais en cache.
+  it('ne met jamais un échec de lecture en cache', async () => {
+    const enPanne = clientOf({ erreurs: { regulator_settings: { code: '57014' } } })
+    await allowRecipient(enPanne, 'inconnue@artisan.fr')
+    const remis = clientOf({ verifyBeforeSend: false })
+    expect((await allowRecipient(remis, 'inconnue@artisan.fr')).allowed).toBe(true)
   })
 })

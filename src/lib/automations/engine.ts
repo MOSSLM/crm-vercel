@@ -7,18 +7,31 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
-import { etapeSuivante } from '@/lib/automations/branches'
+import {
+  casDeLaCondition,
+  cleDeFourche,
+  etapeSuivante,
+  lecteurDIssue,
+  lireLeSac,
+  MAX_TOURS,
+  suiteDeLEtape,
+} from '@/lib/automations/branches'
+import { evaluerAiguillage, evaluerCondition } from '@/lib/automations/conditions'
+import { ajouterLesPieces, releverLesFaits } from '@/lib/automations/conditions-db'
 import type { MotifSortie } from '@/lib/automations/sortie-sequence'
 import {
+  readConditions,
+  readNonMesures,
   readReplies,
   readSkippedSteps,
+  readTours,
+  readTransitions,
   readStepShifts,
   readVariant,
   stepStartMs,
   type StepAnchor,
 } from '@/lib/automations/week'
 import {
-  interpolateVars,
   otherVariant,
   pickVariant,
   usedVariables,
@@ -27,7 +40,9 @@ import {
   type VarBag,
   type VariantPair,
 } from '@/lib/automations/variables'
-import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
+import { rendreConditionnels, rendreMessage } from '@/lib/automations/redaction'
+import { BLOCK_LABEL, allowRecipient, type BlockReason } from '@/lib/email/send-guard'
+import { adresseDeReponse } from '@/lib/email/adresse-reponse'
 import { recordSend } from '@/lib/email/verify/service'
 import {
   cleanEmail,
@@ -49,6 +64,8 @@ import { getAppUrl } from '@/lib/app-url'
 import { collecterCanaux } from '@/lib/prospects/canal'
 import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 import { rapportEnvoyable, assurerJetonRapport } from '@/lib/audit-site/rapport'
+import { assurerJetonsPlaquette } from '@/lib/audit/plaquette'
+import { urlPlaquette } from '@/lib/audit/plaquette-lien'
 import { choisirSiteMontrable, urlPubliqueDuSite } from '@/lib/site-builder/demo-share-url'
 
 const DAY_MS = 86_400_000
@@ -151,6 +168,33 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       vars['company.name'] = e.name ?? ''
       vars['company.city'] = e.ville ?? ''
       vars['company.website'] = e.site_web_canonique ?? ''
+      // ── A-T-IL UN SITE ? LA COLONNE NE SUFFIT PAS ────────────────────────
+      //
+      // `company.website` est la COLONNE, et elle ment dans les deux sens : 67
+      // entreprises portent une URL alors qu'un constat dit « absent »
+      // (NXDOMAIN, ou l'URL de quelqu'un d'autre), et 34 240 n'ont jamais été
+      // regardées — leur colonne vide ne prouve rien.
+      //
+      // Écrire « une version plus vendeuse de VOTRE site » à un artisan qui
+      // n'en a pas est la faute la plus visible qu'on puisse commettre, et elle
+      // part chez le prospect. D'où cette variable SÉPARÉE, lue dans la vue qui
+      // porte déjà la hiérarchie (constat > colonne > rien) : le conditionnel
+      // `{% si company.a_un_site %}` s'écrit dessus, jamais sur l'URL.
+      //
+      // DEUX VARIABLES, PARCE QU'IL Y A TROIS ÉTATS ET QUE `{% si %}` TESTE
+      // UNE PRÉSENCE. Une seule variable valant « oui »/« non » ne marcherait
+      // pas : « non » est une chaîne présente, donc `{% si %}` prendrait la
+      // voie du OUI. Avec deux variables, les trois états s'expriment sans
+      // ajouter un opérateur au langage :
+      //   présent  → site_present rempli, site_absent vide
+      //   absent   → l'inverse
+      //   inconnu  → les DEUX vides, et `{% si %}` prend « sinon » dans les
+      //              deux cas. C'est le bon côté de l'erreur : proposer un site
+      //              à qui en a un se corrige d'un mot ; affirmer « votre
+      //              site » à qui n'en a pas, non.
+      const presence = await lirePresenceSite(sb, entrepriseId)
+      vars['company.site_present'] = presence === 'present' ? 'oui' : ''
+      vars['company.site_absent'] = presence === 'absent' ? 'oui' : ''
       companyEmail = cleanEmail(e.email)
       vars['company.email'] = companyEmail ?? ''
       ownerId = (e.owner_id as string | null) ?? null
@@ -245,6 +289,16 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
 
     vars['company.audit_url'] = auditUrl ?? ''
     vars['company.demo_url'] = demoUrl ?? ''
+    // LA PLAQUETTE : jeton par prospect, créé ici s'il n'existe pas — pour la
+    // même raison que le rapport. Le jeton ne naissait que dans le board du
+    // marketing pipeline, que l'envoi automatique ne traverse jamais.
+    //
+    // ET UN REPLI QUI N'EST PAS VIDE. Si la fonction manque ou refuse, on rend
+    // le lien COLLECTIF : la plaquette part quand même, on perd seulement le
+    // compteur de vues (et donc la condition « a ouvert la plaquette » pour
+    // ce prospect-là). Une variable vide ferait partir un message qui promet
+    // une plaquette avec un trou à la place du lien.
+    vars['company.plaquette_url'] = await lirePlaquetteUrl(sb, entrepriseId, ownerId)
   }
 
   // `owner.first_name` et `calendar_link` étaient annoncés dans le builder
@@ -269,6 +323,35 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     auditPdfUrl,
     demoUrl,
     vars,
+  }
+}
+
+/**
+ * « present » / « absent » / vide — l'état MESURÉ du site du prospect.
+ *
+ * LIT LA VUE, PAS LA COLONNE. `v_entreprises_presence_site` porte la hiérarchie
+ * écrite une seule fois (`sql/20260820_presence_site_colonne.sql`) : un constat
+ * `present`/`absent` l'emporte sur la colonne, la colonne l'emporte sur un
+ * constat `inconnu`. La refaire ici en TypeScript serait une deuxième version
+ * de la même règle — et la première divergence serait invisible : un prospect
+ * lirait un message écrit pour quelqu'un d'autre.
+ *
+ * Rend une chaîne VIDE sur « inconnu » et sur toute erreur. Un conditionnel
+ * prend alors la voie « sinon », qui est celle qu'on écrit pour un prospect
+ * dont on ne sait rien — jamais celle qui parle de « votre site ».
+ */
+async function lirePresenceSite(sb: SupabaseClient, entrepriseId: number): Promise<string> {
+  try {
+    const { data } = await sb
+      .from('v_entreprises_presence_site')
+      .select('statut_site')
+      .eq('entreprise_id', entrepriseId)
+      .maybeSingle()
+    const statut = (data as { statut_site?: string } | null)?.statut_site
+    return statut === 'present' || statut === 'absent' ? statut : ''
+  } catch {
+    // Vue absente (migration non jouée) : on ne devine pas. Vide = « sinon ».
+    return ''
   }
 }
 
@@ -319,6 +402,23 @@ async function lireCalendarLink(sb: SupabaseClient, ownerId: string | null): Pro
  * appliquée), et une séquence en cours d'exécution ne doit pas s'interrompre
  * pour ça — elle repart simplement sur le PDF.
  */
+/**
+ * Le lien de plaquette de ce prospect. Jamais vide — voir `resolveEntities`.
+ */
+async function lirePlaquetteUrl(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  ownerId: string | null,
+): Promise<string> {
+  try {
+    const { jetons } = await assurerJetonsPlaquette(sb, [entrepriseId], ownerId)
+    const jeton = jetons.find((j) => j.entrepriseId === entrepriseId)?.jeton
+    return urlPlaquette(jeton || null)
+  } catch {
+    return urlPlaquette(null)
+  }
+}
+
 async function lireRapportUrl(
   sb: SupabaseClient,
   entrepriseId: number,
@@ -495,6 +595,27 @@ export async function stepRawText(
 }
 
 /**
+ * Le texte débarrassé de ses branches non prises, pour les deux gardes-fous.
+ *
+ * LES GARDES JUGENT SUR CE QUI PARTIRA, PAS SUR CE QUI EST ÉCRIT. Un message
+ * qui dit « {% si company.demo_url %}voici votre aperçu {{company.demo_url}}{% fin %} »
+ * ne promet rien à un prospect sans démo : la branche n'est pas prise, la
+ * phrase n'existe pas. Juger sur le texte brut gèlerait l'inscription pour une
+ * promesse que le prospect ne lira jamais — et un gel est exactement ce qu'on
+ * a passé la couche 0 à défaire.
+ *
+ * C'est aussi ce qui rend le conditionnel utile ici : il donne enfin une façon
+ * d'écrire une étape qui se DÉGRADE au lieu de se bloquer.
+ *
+ * Les variables ne sont volontairement pas interpolées : les gardes cherchent
+ * la CITATION d'une clé, pas sa valeur. C'est tout leur intérêt — le lien est
+ * fabriqué, donc son absence ne laisse qu'un trou invisible après interpolation.
+ */
+function texteQuiPartira(texte: string | null | undefined, vars: VarBag): string {
+  return rendreConditionnels(texte, vars).rendu
+}
+
+/**
  * Cette étape promet-elle un audit que l'entreprise n'a pas ?
  *
  * Le lien EXISTE toujours depuis qu'on crée le jeton à la demande — donc son
@@ -516,7 +637,7 @@ export async function etapePromettUnAuditAbsent(
 ): Promise<boolean> {
   if (entrepriseId == null) return false
   const texte = await stepRawText(sb, step, vars, forced)
-  if (!usedVariables(texte).includes('company.audit_url')) return false
+  if (!usedVariables(texteQuiPartira(texte, vars)).includes('company.audit_url')) return false
   return !(await rapportEnvoyable(sb, entrepriseId))
 }
 
@@ -540,7 +661,7 @@ export async function etapePromettUneDemoAbsente(
 ): Promise<boolean> {
   if (vars['company.demo_url']) return false
   const texte = await stepRawText(sb, step, vars, forced)
-  return usedVariables(texte).includes('company.demo_url')
+  return usedVariables(texteQuiPartira(texte, vars)).includes('company.demo_url')
 }
 
 /**
@@ -557,15 +678,112 @@ export async function resolveMessageVars(ctx: RunContext): Promise<VarBag> {
 }
 
 /**
- * Rendu d'un texte de message.
+ * Rendu d'un texte de message — LE seul chemin, pour toutes les étapes.
  *
- * Délègue à `interpolateVars`, qui résout d'abord les anciennes écritures
- * (`{{company_name}}`, `{{prénom}}`…) vers leur clé canonique. Sans ce
- * détour, un modèle rédigé dans la messagerie et choisi dans une étape de
- * séquence partait au prospect avec ses variables vidées.
+ * Délègue à `rendreMessage`, qui déplie les blocs conditionnels puis résout
+ * les variables. La résolution passe par `interpolateVars`, qui traduit
+ * d'abord les anciennes écritures (`{{company_name}}`, `{{prénom}}`…) vers
+ * leur clé canonique : sans ce détour, un modèle rédigé dans la messagerie et
+ * choisi dans une étape de séquence partait au prospect avec ses variables
+ * vidées.
+ *
+ * Tout ce qui part d'une séquence passe par ici — corps, objet, titre de
+ * tâche. C'est ce qui garantit qu'un message écrit avec un conditionnel se
+ * comporte pareil quel que soit le canal, et que l'aperçu de l'éditeur, qui
+ * appelle la même fonction, montre bien ce qui partira.
  */
 export function interpolate(text: string | null | undefined, vars: VarBag): string {
-  return interpolateVars(text, vars)
+  return rendreMessage(text, vars)
+}
+
+/**
+ * Le régulateur est-il en pause ?
+ *
+ * Sans réglage lisible on rend `false` : inventer une pause éteindrait toute la
+ * prospection sur une panne de lecture, et le garde d'envoi comme la phase de
+ * test restent derrière. C'est l'arbitrage inverse de la liste de suppression,
+ * et pour une raison précise — une pause est une COMMODITÉ d'exploitation, une
+ * suppression est un refus du prospect.
+ */
+async function regulateurEnPause(sb: SupabaseClient): Promise<boolean> {
+  try {
+    const { data, error } = await sb
+      .from('regulator_settings')
+      .select('paused')
+      .eq('id', 'global')
+      .maybeSingle()
+    if (error) return false
+    return (data as { paused?: boolean } | null)?.paused === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Le canal e-mail est-il suspendu ?
+ *
+ * Même arbitrage que la pause : sans réglage lisible on rend `false`. Inventer
+ * une suspension éteindrait la prospection sur une panne de lecture, et les
+ * gardes qui suivent (suppressions, phase de test, vérification) restent
+ * derrière.
+ */
+async function canalEmailSuspendu(sb: SupabaseClient): Promise<boolean> {
+  try {
+    const { data, error } = await sb
+      .from('regulator_settings')
+      .select('canaux_suspendus')
+      .eq('id', 'global')
+      .maybeSingle()
+    if (error) return false
+    const canaux = (data as { canaux_suspendus?: string[] | null } | null)?.canaux_suspendus
+    return Array.isArray(canaux) && canaux.includes('email')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Un envoi retenu se journalise QUAND MÊME, avec son motif.
+ *
+ * C'est ce qui permet de répondre à « qu'est-ce qui serait parti ? » — la
+ * question qu'on se pose en sortant du mode test. Un blocage silencieux ne
+ * laisserait aucune trace de ce que la séquence voulait faire.
+ */
+async function journaliserBlocage(
+  sb: SupabaseClient,
+  opts: {
+    to: string
+    toName?: string | null
+    subject: string
+    text: string
+    contactId?: string | null
+    entrepriseId?: number | null
+    opportuniteId?: string | null
+    type?: string
+    automationId?: string | null
+    enrollmentId?: string | null
+  },
+  motif: BlockReason,
+): Promise<void> {
+  try {
+    await sb.from('email_logs').insert({
+      contact_id: opts.contactId ?? null,
+      entreprise_id: opts.entrepriseId ?? null,
+      opportunite_id: opts.opportuniteId ?? null,
+      automation_id: opts.automationId ?? null,
+      enrollment_id: opts.enrollmentId ?? null,
+      to_email: opts.to,
+      to_name: opts.toName ?? null,
+      subject: opts.subject,
+      body_text: opts.text,
+      type: opts.type ?? 'automation',
+      status: 'failed',
+      blocked_reason: motif,
+      error_message: BLOCK_LABEL[motif],
+    })
+  } catch {
+    /* le log ne doit pas bloquer */
+  }
 }
 
 /** Signature du CRM (mono-équipe) : la plus récemment mise à jour. */
@@ -605,30 +823,42 @@ export async function sendEngineEmail(
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY non configuré' }
 
+  // ── LA PAUSE GÉNÉRALE COUVRE AUSSI CE CHEMIN ─────────────────────────────
+  //
+  // Le régulateur trie la file en amont, et quand il est en pause il ne libère
+  // rien : pour les séquences, cette lecture est donc redondante. Elle ne l'est
+  // PAS pour les workflows — `act.send_email` (executeAction) appelle cette
+  // fonction directement, sans passer par la file. Le disjoncteur de rebonds
+  // promet que « si la réalité dérape, tout s'arrête » : il pose `paused`, et
+  // ce chemin-là continuait d'envoyer.
+  //
+  // Lecture tolérante : sans réglage lisible on n'invente pas une pause, le
+  // garde d'envoi et la phase de test restent derrière.
+  if (await regulateurEnPause(sb)) {
+    await journaliserBlocage(sb, opts, 'regulateur_en_pause')
+    return { ok: false, blocked: true, error: 'regulateur_en_pause' }
+  }
+
+  // ── LE CANAL E-MAIL EST-IL SUSPENDU ? ────────────────────────────────────
+  //
+  // Troisième filet, et il attrape ce que les deux autres laissent passer. Les
+  // aiguillages de canal évitent l'étape en amont, le garde du moteur retient
+  // l'inscription — mais une action `send_email` de workflow n'a ni séquence,
+  // ni aiguillage, ni inscription. Elle arrive ici directement.
+  //
+  // Même lecture tolérante que la pause, pour la même raison : une panne de
+  // lecture ne doit pas inventer une suspension.
+  if (await canalEmailSuspendu(sb)) {
+    await journaliserBlocage(sb, opts, 'canal_email_suspendu')
+    return { ok: false, blocked: true, error: 'canal_email_suspendu' }
+  }
+
   // Phase de test : on n'appelle même pas Resend pour un destinataire hors
   // liste blanche. L'envoi est tout de même journalisé — avec son motif — pour
   // qu'on voie exactement ce qui SERAIT parti.
   const verdict = await allowRecipient(sb, opts.to)
   if (!verdict.allowed) {
-    try {
-      await sb.from('email_logs').insert({
-        contact_id: opts.contactId ?? null,
-        entreprise_id: opts.entrepriseId ?? null,
-        opportunite_id: opts.opportuniteId ?? null,
-        automation_id: opts.automationId ?? null,
-        enrollment_id: opts.enrollmentId ?? null,
-        to_email: opts.to,
-        to_name: opts.toName ?? null,
-        subject: opts.subject,
-        body_text: opts.text,
-        type: opts.type ?? 'automation',
-        status: 'failed',
-        blocked_reason: verdict.reason,
-        error_message: BLOCK_LABEL[verdict.reason ?? 'mode_test'],
-      })
-    } catch {
-      /* le log ne doit pas bloquer */
-    }
+    await journaliserBlocage(sb, opts, verdict.reason ?? 'mode_test')
     return { ok: false, blocked: true, error: verdict.reason }
   }
 
@@ -639,10 +869,25 @@ export async function sendEngineEmail(
   const text = sigText ? `${opts.text}\n\n${sigText}` : opts.text
 
   let fromEmail = process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev'
+  // L'adresse de retour est OPTIONNELLE et le reste : sans base configurée, on
+  // ne pose pas de `Reply-To`. Une adresse inventée enverrait les réponses des
+  // prospects dans une boîte qui n'existe pas — le contraire du but.
+  //
+  // Le SOUS-ADRESSAGE (`contact+<inscription>@`) est un second interrupteur,
+  // éteint par défaut, et ce n'est pas de la prudence gratuite : la messagerie
+  // du domaine est hébergée chez LWS (MX `mail.samadigitalstudio.com`), un
+  // mutualisé dont la prise en charge du `+` n'est pas garantie. Un serveur qui
+  // ne la connaît pas rejette la réponse du prospect — on perdrait la réponse
+  // elle-même pour gagner son appariement. On l'allume une fois éprouvé, en
+  // posant `reply_to_sous_adressage` dans la config Resend.
+  let replyToBase: string | null = process.env.RESEND_REPLY_TO ?? null
+  let sousAdressage = process.env.RESEND_REPLY_TO_SOUS_ADRESSAGE === 'oui'
   try {
     const { data: conn } = await sb.from('automation_connections').select('config').eq('id', 'resend').maybeSingle()
     const cfg = (conn?.config ?? {}) as Record<string, string>
     if (cfg.from_email) fromEmail = cfg.from_email
+    if (cfg.reply_to) replyToBase = cfg.reply_to
+    if (cfg.reply_to_sous_adressage) sousAdressage = /^(oui|true|1)$/i.test(String(cfg.reply_to_sous_adressage))
   } catch {
     /* utilise l'env */
   }
@@ -662,6 +907,38 @@ export async function sendEngineEmail(
     }
   }
 
+  // ── L'identité de l'envoi, portée par le message lui-même ─────────────────
+  //
+  // Trois ajouts qui ne changent rien à ce qui part, et sans lesquels rien ne
+  // revient.
+  //
+  // `replyTo` sous-adressé porte l'inscription : c'est lui qui permettra
+  // d'apparier une réponse. Un email déjà parti sans lui ne sera JAMAIS
+  // appariable — c'est ce qui rend ces lignes urgentes plutôt qu'optionnelles.
+  //
+  // `tags` sont renvoyées par Resend dans les événements de son webhook. Sans
+  // elles, une ouverture arrive dans `email_events` sans qu'on sache de quelle
+  // séquence ni de quel prospect elle vient, et les conditions « a ouvert » et
+  // « a cliqué » n'ont rien à lire.
+  //
+  // `headers` servent au diagnostic. On ne s'y fie pas pour l'appariement :
+  // peu de clients de messagerie renvoient un en-tête personnalisé.
+  const replyTo = adresseDeReponse(replyToBase, sousAdressage ? opts.enrollmentId : null)
+  const tags: { name: string; value: string }[] = []
+  const headers: Record<string, string> = {}
+  // Resend refuse une étiquette hors [A-Za-z0-9_-] et rejette alors TOUT
+  // l'envoi. Un identifiant biscornu ne doit pas coûter un email.
+  const etiquetable = /^[A-Za-z0-9_-]{1,256}$/
+  const marquer = (nom: string, entete: string, valeur: string | number | null | undefined) => {
+    const v = String(valeur ?? '').trim()
+    if (!v) return
+    headers[entete] = v
+    if (etiquetable.test(v)) tags.push({ name: nom, value: v })
+  }
+  marquer('inscription', 'X-Sama-Inscription', opts.enrollmentId)
+  marquer('sequence', 'X-Sama-Sequence', opts.automationId)
+  marquer('entreprise', 'X-Sama-Entreprise', opts.entrepriseId)
+
   const resend = new Resend(apiKey)
   let status: 'sent' | 'failed' = 'sent'
   let errorMessage: string | undefined
@@ -671,9 +948,12 @@ export async function sendEngineEmail(
     const result = await resend.emails.send({
       from: fromEmail,
       to: opts.toName ? `${opts.toName} <${opts.to}>` : opts.to,
+      replyTo: replyTo ?? undefined,
       subject: opts.subject,
       html,
       text,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      tags: tags.length > 0 ? tags : undefined,
       attachments: attachments.length > 0 ? attachments : undefined,
     })
     if (result.error) {
@@ -730,6 +1010,18 @@ async function executeAction(
   ctx: RunContext,
   ent: ResolvedEntities,
   automationId: string,
+  /**
+   * ESSAI À BLANC. `isTest` ne marquait que la ligne de `automation_runs` : le
+   * bouton « Tester » choisissait la PREMIÈRE vraie opportunité de l'étape de
+   * déclenchement, brouillon compris, et lui envoyait un vrai e-mail. Le mot
+   * « tester » ne peut pas vouloir dire ça.
+   *
+   * Ici, les actions à effet EXTERNE rendent `skipped` avec le message qui
+   * serait parti — ce qui est justement ce qu'on veut voir d'un essai. Les
+   * actions internes (poser une tâche, changer d'étape) continuent : elles se
+   * défont, et c'est en les regardant qu'on juge le workflow.
+   */
+  essai = false,
 ): Promise<TraceEntry> {
   const at = new Date().toISOString()
   const cfg = node.config
@@ -747,6 +1039,16 @@ async function executeAction(
         const variant = pickVariant([sujet, corps], ent.vars)
         const subject = interpolate(variantText(sujet, variant), ent.vars)
         const text = interpolate(variantText(corps, variant), ent.vars)
+        // L'ESSAI NE PART PAS. On rend ce qui SERAIT parti, à l'adresse qui
+        // l'aurait reçu — un essai muet ne prouve rien, un essai qui envoie
+        // n'est pas un essai.
+        if (essai) {
+          return {
+            ...base,
+            status: 'skipped',
+            message: `Essai — non envoyé. À : ${ent.contactEmail} · Objet : ${subject}\n${text}`,
+          }
+        }
         const r = await sendEngineEmail(sb, {
           to: ent.contactEmail,
           toName: ent.contactName,
@@ -965,7 +1267,7 @@ export async function runWorkflowAutomation(
       return { runId } // la suite reprendra via le ticker
     }
 
-    const entry = await executeAction(sb, node, ctx, ent, automation.id)
+    const entry = await executeAction(sb, node, ctx, ent, automation.id, !!opts.isTest)
     trace.push(entry)
     if (entry.status === 'error') finalStatus = 'error'
     nodeId = getSlotChild(def, nodeId, 'next')
@@ -1023,7 +1325,18 @@ export async function assignManualTask(
 
 // ── Séquences : inscription + avancement ───────────────────────────────────
 function stepIsManual(step: SequenceStep): boolean {
-  return step.kind === 'call' || step.kind === 'whatsapp' || step.kind === 'linkedin' || step.kind === 'task'
+  // Le SMS est manuel comme WhatsApp, et le fichier `sql/20260820_canal_sms.sql`
+  // dit pourquoi : un fournisseur existe mais n'a jamais envoyé un message, et
+  // son adaptateur porte encore un « CONFIRM contre la spec ». Le jour où
+  // l'envoi par le CRM sera éprouvé, il s'ajoutera comme un MODE de cette même
+  // étape — rien ici n'aura besoin de bouger.
+  return (
+    step.kind === 'call' ||
+    step.kind === 'whatsapp' ||
+    step.kind === 'sms' ||
+    step.kind === 'linkedin' ||
+    step.kind === 'task'
+  )
 }
 
 /**
@@ -1080,7 +1393,16 @@ async function poserTacheDEtape(
 export async function enrollInSequence(
   automation: Automation,
   ctx: RunContext,
-  opts: { createdBy?: string | null } = {},
+  opts: {
+    createdBy?: string | null
+    /**
+     * Ce que la nouvelle inscription emporte en plus des variables du prospect.
+     * Sert au passage de relais : la chaîne des séquences déjà traversées doit
+     * survivre au changement d'inscription, sinon le garde-fou de boucle
+     * repart de zéro à chaque saut.
+     */
+    vars?: Record<string, unknown>
+  } = {},
 ): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
   const sb = getServiceClient()
   const ent = await resolveEntities(sb, ctx)
@@ -1119,7 +1441,7 @@ export async function enrollInSequence(
       current_step: 0,
       status: 'active',
       next_run_at: new Date().toISOString(),
-      vars: ent.vars,
+      vars: { ...ent.vars, ...(opts.vars ?? {}) },
       created_by: opts.createdBy ?? null,
     })
     .select('id')
@@ -1176,6 +1498,39 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   // attentes chacune, ce n'est plus un cas marginal.
   if (step.kind === 'wait') {
     await processWaitStep(sb, enrollment, steps, idx, step)
+    return
+  }
+
+  // Une CONDITION n'envoie rien et n'attend personne : elle tranche et on
+  // continue dans la foulée. Elle est traitée ici, avec l'attente, pour la même
+  // raison — ni contact, ni audit, ni site démo à résoudre.
+  if (step.kind === 'condition') {
+    await processConditionStep(sb, enrollment, steps, idx, step)
+    return
+  }
+
+  // Un PASSAGE DE RELAIS non plus n'envoie rien : il ferme cette inscription et
+  // en ouvre une ailleurs.
+  if (step.kind === 'transition') {
+    await processTransitionStep(sb, enrollment, idx, step)
+    return
+  }
+
+  // ── LA CEINTURE : un canal suspendu n'envoie rien, et ne pose rien ───────
+  //
+  // Les aiguillages de canal contournent déjà les étapes suspendues — c'est
+  // `releverLesFaits` qui rend « a une adresse » faux. Mais une séquence peut
+  // atteindre une étape e-mail autrement : par la voie « sinon » d'une question
+  // qui portait sur le mobile, par exemple, comme la plaquette de S2. Ce garde
+  // est là pour ces chemins-là, et il vient AVANT `resolveEntities` : rien à
+  // résoudre pour une étape qui ne partira pas.
+  //
+  // On RETIENT, on ne franchit pas. Franchir enverrait le prospect à la suite
+  // d'un message qu'il n'a jamais reçu — l'erreur exacte que le garde « aucun
+  // destinataire » corrige quelques lignes plus bas. Le motif est lisible dans
+  // le régulateur, et l'inscription repart d'elle-même à la réouverture.
+  if (await canalSuspendu(sb, step.kind)) {
+    await holdForSuspendedChannel(sb, enrollment.id)
     return
   }
 
@@ -1370,6 +1725,209 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
  * dans le vide — et sur WhatsApp, deux messages sans réponse mènent au blocage.
  * L'inscription se gare donc jusqu'à ce que quelqu'un déclare la réponse.
  */
+/**
+ * Trancher une fourche qui teste, puis avancer.
+ *
+ * TROIS CHOSES QUI TIENNENT CETTE FONCTION :
+ *
+ * 1. **On écrit le verdict AVANT d'avancer.** `avancerApres` relit
+ *    `vars.conditions` pour savoir quelle voie est atteignable : si on
+ *    avançait d'abord, la condition serait invisible et les DEUX voies
+ *    seraient inatteignables — l'inscription sauterait par-dessus les deux et
+ *    finirait la séquence sans rien envoyer. C'est le risque n° 3 du plan, et
+ *    c'est l'ordre de ces deux lignes qui l'écarte.
+ *
+ * 2. **`non_mesure` s'écrit tel quel**, pas comme un `non`. Il prend la même
+ *    voie (sauf réglage `siInconnu`), mais la trace distingue « c'est faux »
+ *    de « on n'a pas su » — sans quoi personne ne pourra jamais compter
+ *    combien de prospects sont partis dans une voie devinée.
+ *
+ * 3. **On ne gèle jamais.** Le réflexe serait de garer l'inscription quand on
+ *    ne sait pas ; c'est exactement ce qui a laissé 59 inscriptions dormir
+ *    sans réveil. Une condition tranche toujours.
+ *
+ * Une étape `condition` sans condition écrite (l'éditeur l'a posée, personne
+ * ne l'a remplie) rend `non_mesure` par le même chemin : elle prend sa voie
+ * par défaut et le dit, au lieu de bloquer la séquence.
+ */
+async function processConditionStep(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  steps: SequenceStep[],
+  idx: number,
+  step: SequenceStep,
+): Promise<void> {
+  const brute = step.condition
+  const cas = casDeLaCondition(step)
+  // Sans condition écrite, le verdict est `non_mesure` — et `lecteurDIssue`
+  // en tirera la voie par défaut. Une étape que l'éditeur a posée et que
+  // personne n'a remplie ne bloque donc rien.
+  let verdict: string = 'non_mesure'
+  let nonMesures: string[] = []
+
+  if (cas.length > 0 || (brute && typeof brute.champ === 'string')) {
+    const cond = {
+      champ: brute?.champ,
+      operateur: brute?.operateur,
+      valeurs: brute?.valeurs,
+      seuil: brute?.seuil,
+      siInconnu: brute?.siInconnu,
+    } as Parameters<typeof evaluerCondition>[0]
+    const brutFaits = await releverLesFaits(sb, {
+      entrepriseId: enrollment.entreprise_id ?? null,
+      contactId: enrollment.contact_id ?? null,
+      opportuniteId: enrollment.opportunite_id ?? null,
+    })
+    // ── L'AUDIT ET LA DÉMO NE SE RELÈVENT PAS LÀ-BAS ─────────────────────────
+    //
+    // `releverLesFaits` ne pose ni `auditPret` ni `demoPrete` : `conditions-db`
+    // les laisse volontairement au moteur, parce que le moteur les résout DÉJÀ
+    // pour ses propres gardes (`etapePromettUnAuditAbsent`,
+    // `etapePromettUneDemoAbsente`) et que les deux doivent répondre pareil.
+    //
+    // Sauf que `ajouterLesPieces` n'était appelée NULLE PART : les deux faits
+    // restaient `undefined`, donc « l'audit est-il prêt ? » rendait toujours
+    // `non_mesure` et la condition partait sur la voie par défaut. Une fourche
+    // écrite dans l'éditeur qui ne mesure jamais ce qu'elle prétend tester est
+    // pire qu'une fourche absente : elle a l'air de fonctionner.
+    //
+    // La démo se lit dans `company.demo_url`, RÉSOLU PAR LE MÊME CHEMIN que
+    // l'envoi (`resolveEntities`) : `etapePromettUneDemoAbsente` juge sur cette
+    // variable, et une condition qui jugerait autrement pourrait aiguiller vers
+    // une branche que le garde bloquerait ensuite.
+    const entCond =
+      enrollment.entreprise_id != null || enrollment.contact_id != null
+        ? await resolveEntities(sb, {
+            contact_id: enrollment.contact_id,
+            opportunite_id: enrollment.opportunite_id,
+            entreprise_id: enrollment.entreprise_id,
+          })
+        : null
+    const faits = ajouterLesPieces(brutFaits, {
+      auditPret:
+        enrollment.entreprise_id != null ? await rapportEnvoyable(sb, enrollment.entreprise_id) : undefined,
+      demoPrete: entCond ? Boolean(entCond.vars['company.demo_url']) : undefined,
+    })
+    // On ne garde QUE le verdict : la voie se déduit ailleurs, une seule fois
+    // (`lecteurDIssue`). Deux endroits qui appliquent `siInconnu`, ce sont deux
+    // endroits qui finiront par ne plus dire la même chose.
+    //
+    // UN AIGUILLAGE, LUI, ÉCRIT DIRECTEMENT SA SORTIE : il n'y a pas de
+    // `siInconnu` à appliquer après coup — un cas qu'on ne sait pas trancher ne
+    // capture personne, il laisse passer, et « sinon » ramasse. Ce que l'on
+    // n'a pas su mesurer part dans un second sac, pour qu'on puisse plus tard
+    // séparer ceux qu'aucun cas ne décrit de ceux dont la base était muette.
+    if (cas.length > 0) {
+      const issue = evaluerAiguillage(cas, faits)
+      verdict = issue.sortie
+      nonMesures = issue.nonMesures
+    } else {
+      verdict = evaluerCondition(cond, faits)
+    }
+  }
+
+  // ⚠️ LA CLÉ EST L'IDENTIFIANT DE L'ÉTAPE, PLUS SON RANG. Insérer une étape
+  // au milieu d'une séquence en cours décalait tout ce qui suit, et les
+  // verdicts déjà écrits se mettaient à désigner d'autres fourches.
+  const cle = cleDeFourche(steps, idx)
+  const conditions = { ...readConditions(enrollment.vars), [cle]: verdict }
+  const sacNonMesures = { ...readNonMesures(enrollment.vars) }
+  if (nonMesures.length > 0) sacNonMesures[cle] = nonMesures
+  else delete sacNonMesures[cle]
+  const vars = {
+    ...((enrollment.vars as Record<string, unknown> | null) ?? {}),
+    conditions,
+    nonMesures: sacNonMesures,
+  }
+  await sb.from('sequence_enrollments').update({ vars }).eq('id', enrollment.id)
+
+  // L'inscription relue porte le verdict : c'est cette copie que `avancerApres`
+  // doit voir, pas celle d'avant l'écriture.
+  await avancerApres(sb, { ...enrollment, vars }, steps, idx)
+}
+
+/** Au-delà, la chaîne de séquences tourne en rond : on arrête. */
+export const MAX_TRANSITIONS = 4
+
+/**
+ * Passer le prospect à une AUTRE séquence.
+ *
+ * POURQUOI CE N'EST PAS UNE SIMPLE INSCRIPTION DE PLUS. Le prospect SORT de la
+ * séquence courante — motif `transfert`, qui ne le renvoie pas au stock, parce
+ * qu'une inscription est déjà ouverte en face. Le laisser dans les deux ferait
+ * partir deux fils de messages en parallèle chez le même artisan, chacun
+ * ignorant l'autre : c'est la faute que le découpage en plusieurs séquences
+ * rend possible, et c'est ici qu'on l'empêche.
+ *
+ * QUATRE REFUS, ET AUCUN NE GÈLE. Destination absente, destination qui est la
+ * séquence elle-même, séquence déjà traversée, chaîne trop longue : dans les
+ * quatre cas on TERMINE en écrivant pourquoi (`vars.fin`). Garer l'inscription
+ * en attendant qu'un humain regarde serait un gel sans réveil — la faute qui a
+ * laissé 59 inscriptions dormir des semaines.
+ *
+ * ⚠️ ON N'EXIGE PAS QUE LA CIBLE SOIT ACTIVE. Une séquence en pause gèle ses
+ * inscriptions avec un motif visible (`sequence_paused`) plutôt que de les
+ * perdre : c'est exactement ce qu'on veut d'un relais posé vers une séquence
+ * qu'on n'a pas encore lancée. Refuser aurait fait disparaître le prospect.
+ */
+async function processTransitionStep(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  idx: number,
+  step: SequenceStep,
+): Promise<void> {
+  const cible = step.transition?.automationId ?? null
+  const chaine = readTransitions(enrollment.vars)
+  const dejaVues = new Set([...chaine, enrollment.automation_id])
+
+  const arreter = async (motif: string) => {
+    const vars = {
+      ...((enrollment.vars as Record<string, unknown> | null) ?? {}),
+      fin: { etape: idx, motif },
+    }
+    await sb
+      .from('sequence_enrollments')
+      .update({
+        status: 'finished',
+        next_run_at: null,
+        send_at: null,
+        hold_reason: null,
+        finished_at: new Date().toISOString(),
+        vars,
+      })
+      .eq('id', enrollment.id)
+  }
+
+  if (!cible) return arreter('passage de relais sans destination')
+  if (dejaVues.has(cible)) return arreter('passage de relais vers une séquence déjà traversée')
+  if (chaine.length >= MAX_TRANSITIONS) {
+    return arreter(`passage de relais refusé après ${MAX_TRANSITIONS} séquences`)
+  }
+
+  const { data: autoRow } = await sb.from('automations').select('*').eq('id', cible).maybeSingle()
+  const destination = autoRow as Automation | null
+  if (!destination || destination.kind !== 'sequence') {
+    return arreter('passage de relais vers une séquence introuvable')
+  }
+
+  const { enrolled, enrollmentId } = await enrollInSequence(
+    destination,
+    {
+      contact_id: enrollment.contact_id,
+      opportunite_id: enrollment.opportunite_id,
+      entreprise_id: enrollment.entreprise_id,
+    },
+    { vars: { transitions: [...chaine, enrollment.automation_id] } },
+  )
+
+  // Ni canal, ni fiche : `enrollInSequence` a refusé. On ne sort pas de la
+  // séquence courante pour autant — sortir sans rien ouvrir en face ferait
+  // disparaître le prospect de tous les écrans à la fois.
+  if (!enrolled && !enrollmentId) return arreter('passage de relais impossible — plus aucun canal')
+
+  await sortirDeSequence(sb, enrollment.id, 'transfert')
+}
+
 async function processWaitStep(
   sb: SupabaseClient,
   enrollment: SequenceEnrollment,
@@ -1383,7 +1941,7 @@ async function processWaitStep(
   }
 
   const timeoutDays = Number(step.replyTimeoutDays) || 0
-  const dejaRepondu = Boolean(readReplies(enrollment.vars)[String(idx)])
+  const dejaRepondu = Boolean(lireLeSac(readReplies(enrollment.vars), steps, idx))
   // Déjà garée et pourtant réveillée par le ticker : le délai de relance est
   // échu et personne n'a répondu. On avance quand même — c'est exactement ce
   // que « relancer au bout de n jours » veut dire.
@@ -1432,6 +1990,35 @@ const HELD_REASONS: ReadonlySet<string> = new Set([
  * de test — ou ajouter l'adresse à la liste — la fait repartir au tick suivant,
  * sans réveil manuel.
  */
+/**
+ * Ce genre d'étape est-il suspendu ?
+ *
+ * Une lecture par étape de canal, et pas de mémoire de processus : le réglage
+ * se bascule pour arrêter des envois, et un cache qui le retiendrait cinq
+ * minutes ferait partir cinq minutes d'e-mails après le clic. C'est le sens
+ * même du bouton qui interdit de le mettre en cache.
+ */
+async function canalSuspendu(sb: SupabaseClient, kind: string): Promise<boolean> {
+  const settings = await loadRegulatorSettings(sb)
+  return settings.canauxSuspendus.includes(kind)
+}
+
+/**
+ * Canal suspendu : l'inscription attend, elle ne franchit pas.
+ *
+ * `next_run_at` n'est PAS effacé — au contraire de `awaiting_reply`, qui sort
+ * l'inscription de la file parce qu'elle attend un humain. Ici on attend un
+ * réglage : le tick doit continuer à passer dessus, pour qu'elle reparte toute
+ * seule à la seconde où le canal rouvre, sans qu'on ait à réveiller qui que ce
+ * soit à la main.
+ */
+export async function holdForSuspendedChannel(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({ send_at: null, hold_reason: 'canal_suspendu' })
+    .eq('id', enrollmentId)
+}
+
 export async function holdForTestPhase(sb: SupabaseClient, enrollmentId: string): Promise<void> {
   await sb
     .from('sequence_enrollments')
@@ -1641,9 +2228,46 @@ async function avancerApres(
   fromIdx: number,
   opts: { reanchor?: boolean } = {},
 ): Promise<void> {
-  const replies = readReplies(enrollment.vars)
-  const nextIdx = etapeSuivante(steps, fromIdx, (i) => Boolean(replies[String(i)]))
-  await scheduleStep(sb, enrollment, steps, nextIdx, { ...opts, fromIdx })
+  // Les DEUX sacs : `vars.replies` pour les attentes, `vars.conditions` pour
+  // les fourches qui testent. `lecteurDIssue` est le seul endroit qui sait
+  // lequel interroger — le moteur, l'éditeur et la prévision s'y réfèrent tous.
+  const lire = lecteurDIssue(steps, readReplies(enrollment.vars), readConditions(enrollment.vars))
+  let nextIdx = etapeSuivante(steps, fromIdx, lire)
+
+  // ── CE QUE L'ÉTAPE A DÉCLARÉ POUR LA SUITE ──────────────────────────────
+  //
+  // `etapeSuivante` l'a déjà appliqué — c'est LE module du chemin, et le
+  // moteur ne re-décide rien. Reste à en garder la TRACE : une séquence qui
+  // s'arrête parce que l'auteur l'a écrit et une séquence qui s'arrête parce
+  // qu'une cible a disparu se terminent toutes les deux, et rien ne les
+  // distinguerait sans ça.
+  const suite = suiteDeLEtape(steps[fromIdx])
+  let fin: { etape: number; motif: string } | null = null
+  if (suite.type === 'fin') {
+    fin = { etape: fromIdx, motif: suite.motif?.trim() || 'fin de voie' }
+  } else if (suite.type === 'aller_a' && !steps.some((x) => x.id === suite.cible)) {
+    fin = { etape: fromIdx, motif: 'renvoi vers une étape supprimée' }
+  }
+
+  // ── LE GARDE-FOU DE BOUCLE ───────────────────────────────────────────────
+  //
+  // Un renvoi en arrière est fait pour reboucler : « relance, attends, relance
+  // encore ». S'il manque la fourche qui en sort, l'inscription repasserait
+  // indéfiniment par les mêmes cartes — un message par tick, chez un vrai
+  // artisan. On compte donc les passages, et on ARRÊTE plutôt que d'envoyer.
+  // L'éditeur avertit avant (`incoherencesDeSuite`) ; ceci est le filet.
+  const tours = { ...readTours(enrollment.vars) }
+  if (nextIdx < steps.length) {
+    const cle = cleDeFourche(steps, nextIdx)
+    const passages = (tours[cle] ?? 0) + 1
+    tours[cle] = passages
+    if (passages > MAX_TOURS) {
+      fin = { etape: nextIdx, motif: `boucle arrêtée après ${MAX_TOURS} tours` }
+      nextIdx = steps.length
+    }
+  }
+
+  await scheduleStep(sb, enrollment, steps, nextIdx, { ...opts, fromIdx, fin, tours })
 }
 
 /** Pose l'inscription sur une étape précise et calcule sa date de départ. */
@@ -1652,8 +2276,27 @@ async function scheduleStep(
   enrollment: SequenceEnrollment,
   steps: SequenceStep[],
   nextIdx: number,
-  opts: { reanchor?: boolean; fromIdx?: number } = {},
+  opts: {
+    reanchor?: boolean
+    fromIdx?: number
+    /** Pourquoi la séquence s'arrête ici, quand l'auteur ou le filet l'a décidé. */
+    fin?: { etape: number; motif: string } | null
+    /** Le compteur de passages, quand il vient d'être incrémenté. */
+    tours?: Record<string, number>
+  } = {},
 ): Promise<void> {
+  const varsAvant = (enrollment.vars as Record<string, unknown> | null) ?? {}
+  const varsSuite =
+    opts.fin || opts.tours
+      ? {
+          vars: {
+            ...varsAvant,
+            ...(opts.tours ? { tours: opts.tours } : {}),
+            ...(opts.fin ? { fin: opts.fin } : {}),
+          },
+        }
+      : {}
+
   if (nextIdx >= steps.length) {
     await sb
       .from('sequence_enrollments')
@@ -1664,6 +2307,7 @@ async function scheduleStep(
         send_at: null,
         hold_reason: null,
         finished_at: new Date().toISOString(),
+        ...varsSuite,
       })
       .eq('id', enrollment.id)
     return
@@ -1694,6 +2338,7 @@ async function scheduleStep(
       next_run_at: new Date(runAt).toISOString(),
       send_at: null,
       hold_reason: null,
+      ...varsSuite,
       ...(opts.reanchor
         ? { anchor_at: new Date(now).toISOString(), anchor_step: anchor.anchorStep }
         : {}),
@@ -1720,6 +2365,60 @@ export async function advanceEnrollmentAfterTask(enrollmentId: string): Promise<
   // le traitement immédiat ne doit jamais se lire comme un échec de la
   // déclaration qui l'a déclenché — le prochain tick reprendra la main.
   await traiterEtapeCourante(sb, enrollmentId).catch(() => {})
+}
+
+/**
+ * Gare une inscription dont la tâche vient d'être ANNULÉE.
+ *
+ * ANNULER N'EST NI FAIRE NI ARRÊTER, et c'est ce troisième cas qui n'était
+ * traité nulle part. `advanceEnrollmentAfterTask` ne s'applique pas — enchaîner
+ * l'étape suivante reviendrait à faire comme si le geste avait eu lieu — et
+ * `sortirDeSequence` non plus : rien ne dit que le prospect a refusé, c'est
+ * l'agent qui a passé son tour. Résultat, l'inscription restait `active` avec
+ * `hold_reason` nul, `send_at` nul et `next_run_at` nul : **aucun tick ne la
+ * reprend, aucun écran ne la montre, aucun motif ne l'explique.**
+ *
+ * Mesuré le 20/08/2026 : une seule inscription dans cet état en production
+ * (« Adiana Services », WhatsApp fait puis appel annulé le 13/08). Une seule,
+ * parce que le cas demande une annulation SANS autre tâche derrière — mais elle
+ * y serait restée indéfiniment, et rien n'aurait dit pourquoi.
+ *
+ * On pose donc un motif plutôt qu'une action : la reprise est une décision
+ * humaine, l'invisibilité n'en était pas une.
+ *
+ * NE FAIT RIEN si une autre tâche court encore (`pending` ou `snoozed`) : c'est
+ * elle qui portera la séquence, et la garer donnerait un motif de blocage à une
+ * inscription qui n'est pas bloquée.
+ */
+export async function garerTacheAnnulee(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  const { data: enr } = await sb
+    .from('sequence_enrollments')
+    .select('id, opportunite_id, status, hold_reason')
+    .eq('id', enrollmentId)
+    .maybeSingle()
+  const enrollment = enr as {
+    id: string
+    opportunite_id: string | null
+    status: string
+    hold_reason: string | null
+  } | null
+  if (!enrollment || enrollment.status !== 'active' || enrollment.hold_reason) return
+
+  if (enrollment.opportunite_id) {
+    const { data: encore } = await sb
+      .from('prospection_tasks')
+      .select('id')
+      .eq('opportunite_id', enrollment.opportunite_id)
+      .in('status', ['pending', 'snoozed'])
+      .limit(1)
+    if ((encore ?? []).length > 0) return
+  }
+
+  await sb
+    .from('sequence_enrollments')
+    .update({ hold_reason: 'tache_annulee', send_at: null })
+    .eq('id', enrollmentId)
+    .eq('status', 'active')
 }
 
 /**

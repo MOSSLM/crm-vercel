@@ -127,6 +127,11 @@ export async function GET(req: Request) {
 
         const { error: noteErr } = await db.from("email_logs").insert({
           channel:        "note",
+          // Pas d'auteur : c'est le CRM qui écrit, et `auteur_id` null veut dire
+          // exactement ça. `direction` est POSÉE plutôt que laissée au défaut —
+          // le défaut de la colonne est « sortant », et une note n'est pas un
+          // envoi.
+          direction:      "interne",
           entreprise_id:  opp?.entreprise_id ?? null,
           opportunite_id: row.opportunite_id,
           outcome:        "other",

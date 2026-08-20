@@ -29,6 +29,11 @@ import {
   FileText,
   Target,
   ChevronRight,
+  ChevronLeft,
+  ScanSearch,
+  CalendarClock,
+  SlidersHorizontal,
+  RotateCcw,
   MessageSquare,
   ListChecks,
   BookOpen,
@@ -60,6 +65,7 @@ import type {
   BulkHandlers,
   NoteSubject,
 } from "./types";
+import { GROUPES, compter, passeLesFiltres, type CleFiltre } from "./filtres";
 import "./mp-skin.css";
 
 /* ── Stage model ──────────────────────────────────────────────────────────
@@ -97,6 +103,23 @@ export const STAGES: StageDef[] = [
  */
 export const AGENT_STAGES: StageDef[] = STAGES.filter((s) => s.id !== "sequence");
 
+/**
+ * Combien de lignes par page, au choix.
+ *
+ * Le tableau rendait TOUTES les lignes retenues par les filtres — 882 au
+ * 20/08, chacune avec ses cinq cartes d'étape, sa vignette et sa plaquette.
+ * Autant de DOM que la page mettait plusieurs secondes à poser, pour un écran
+ * qui n'en montre qu'une vingtaine à la fois.
+ *
+ * La liste va jusqu'à 1000 parce qu'une page EST l'unité de sélection : cocher
+ * la case d'en-tête coche la page, donc lisser cinq cents fiches d'un coup se
+ * fait en réglant la page sur cinq cents. Un plafond plus bas aurait obligé à
+ * cocher page après page — ce qui marche, mais qu'on ne devrait pas avoir à
+ * faire pour un geste que Matteo a demandé explicitement.
+ */
+export const TAILLES_DE_PAGE = [10, 20, 30, 50, 100, 200, 500, 1000] as const;
+
+
 type CellStatus = "done" | "active" | "locked";
 
 function siteValidated(item: BoardItem): boolean {
@@ -119,7 +142,7 @@ function activeStageIndex(item: BoardItem, stages: StageDef[] = STAGES): number 
   //
   // Une sortie pour canal mort ne compte PAS comme faite : l'inscription a
   // existé, mais rien n'est parti. L'étape reste à faire, autrement.
-  if (aDemarcher(item.sequence)) return 4;
+  if (aDemarcher(item)) return 4;
   return 5;
 }
 
@@ -1139,7 +1162,7 @@ function SequenceCell({
   // parti. Elle revient en « À inscrire », avec la raison sous les yeux — sans
   // quoi on la remettrait sur le canal qui vient d'échouer.
   const enCours = inscriptionVivante(item.sequence);
-  const aReprendre = aDemarcher(item.sequence);
+  const aReprendre = aDemarcher(item);
   const done = !!item.sequence && !aReprendre;
   const finLabel =
     item.sequence && !enCours ? inscriptionFinLabel(item.sequence.status, item.sequence.exitReason) : null;
@@ -1394,6 +1417,19 @@ function BulkBar({
   // celles qui ont déjà un jeton — le board ne le sait pas, et la route est
   // rejouable : elle dit elle-même combien existaient déjà.
   const toPlaquette = rows.filter((r) => r.entreprise_id != null);
+  // Le lissage travaille sur des ENTREPRISES, pas sur des opportunités : une
+  // ligne sans fiche n'a rien à mettre en file, et la route la refuserait.
+  const toLisser = rows.filter((r) => r.entreprise_id != null);
+  // Les chiffres clés vivent sur le dossier lead magnet : sans dossier, il n'y a
+  // nulle part où les écrire.
+  //
+  // L'ÉLIGIBILITÉ NE SE LIMITE PAS AUX CASES VIDES, et c'est une correction :
+  // 146 dossiers portent des installations INFÉRIEURES au barème sans qu'il leur
+  // manque rien — une estimation antérieure les tirait des seuls avis Google.
+  // `missing_for_site` ne peut pas le voir, puisque la case est remplie. Et le
+  // board ne connaît pas les dates du registre : seule la route peut trancher,
+  // et elle rend le compte exact de ce qu'elle a changé.
+  const toChiffres = rows.filter((r) => r.project);
 
   const ct = (n: number) => <span className="ct">{n}</span>;
 
@@ -1404,6 +1440,59 @@ function BulkBar({
         <X className="ico-sm" />
       </button>
       <div className="tb-div" />
+
+      {/*
+        AVANT « Enrichir », et l'ordre est le fond du bouton : enrichir travaille
+        sur ce que la fiche PORTE, lisser va chercher ce qu'elle n'a pas. Une
+        fiche sans SIRET n'a rien à donner à l'annuaire ni à l'ADEME — l'enrichir
+        d'abord revient à enrichir du vide, et c'est ce qui laissait des lignes
+        sans ancienneté après un enrichissement qui avait pourtant « marché ».
+      */}
+      {bulk.onLisser && (
+        <>
+          <button
+            className="btn sm"
+            disabled={busy || toLisser.length === 0}
+            title={
+              toLisser.length === 0
+                ? "Aucune entreprise dans la sélection"
+                : `Mettre ${toLisser.length} fiche(s) dans la file de lissage : SIRET, fiche Google, site, RGE. Rien ne part maintenant — la passe apparaît dans Prospection → Lissage, où elle s'avance.`
+            }
+            onClick={() => bulk.onLisser!(toLisser)}
+          >
+            <ScanSearch className="ico-sm" />
+            Lisser
+            {ct(toLisser.length)}
+          </button>
+          <div className="tb-div" />
+        </>
+      )}
+
+      {/*
+        L'autre moitié du même geste : lisser va CHERCHER la date de création,
+        celui-ci en DÉDUIT les chiffres. Rien ne sort, rien n'est facturé — la
+        date est déjà en base pour 352 des 564 dossiers auxquels il manque une
+        ancienneté, et l'enrichissement la faisait pourtant deviner par un LLM.
+      */}
+      {bulk.onCompleterChiffres && (
+        <>
+          <button
+            className="btn sm"
+            disabled={busy || toChiffres.length === 0}
+            title={
+              toChiffres.length === 0
+                ? "Aucun dossier lead magnet dans la sélection"
+                : `Recaler les chiffres clés de ${toChiffres.length} ligne(s) sur la date de création au registre — sans appel ni crédit d'IA. Remplit ce qui est vide et remonte ce qui est sous le barème ; ne baisse jamais un chiffre et ne touche jamais à ceux confirmés par le client.`
+            }
+            onClick={() => bulk.onCompleterChiffres!(toChiffres)}
+          >
+            <CalendarClock className="ico-sm" />
+            Chiffres clés
+            {ct(toChiffres.length)}
+          </button>
+          <div className="tb-div" />
+        </>
+      )}
 
       <label className="ow" title="Vide l'enrichissement précédent avant de relancer, pour repartir de zéro (les corrections manuelles seront perdues).">
         <input type="checkbox" checked={overwrite} onChange={(e) => onOverwriteChange(e.target.checked)} />
@@ -1825,6 +1914,14 @@ export function PipelineMatrix({
   const [sort, setSort] = React.useState<SortMode>("recent");
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  // LA SÉLECTION SURVIT AU CHANGEMENT DE PAGE, la pagination non : on garde des
+  // identifiants, pas des lignes. C'est ce qui permet de cocher trois pages de
+  // cent puis de lancer un lissage sur les trois cents d'un coup.
+  const [parPage, setParPage] = React.useState<number>(TAILLES_DE_PAGE[4]);
+  const [page, setPage] = React.useState(1);
+  /** Les cases cochées du panneau de filtres — « OU dans un groupe, ET entre eux ». */
+  const [coches, setCoches] = React.useState<Set<CleFiltre>>(new Set());
+  const [panneauFiltres, setPanneauFiltres] = React.useState(false);
   const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
   const [menu, setMenu] = React.useState<MenuState>(null);
 
@@ -1863,21 +1960,22 @@ export function PipelineMatrix({
       // inscription » mais « a reçu quelque chose ». Une sortie pour canal mort
       // (pas de compte WhatsApp) n'a rien envoyé : elle appartient au stock.
       // Une séquence terminée, si : elle est démarchée.
-      if (sequenceFilter === "none" && !aDemarcher(it.sequence)) return false;
+      if (sequenceFilter === "none" && !aDemarcher(it)) return false;
       if (sequenceFilter === "any" && !inscriptionVivante(it.sequence)) return false;
-      if (sequenceFilter === "done" && (aDemarcher(it.sequence) || inscriptionVivante(it.sequence))) return false;
+      if (sequenceFilter === "done" && (aDemarcher(it) || inscriptionVivante(it.sequence))) return false;
       if (!["all", "none", "any", "done"].includes(sequenceFilter)) {
         if (it.sequence?.automationId !== sequenceFilter) return false;
       }
       if (ticketFilter === "open" && openNotes(it) === 0) return false;
       if (ticketFilter === "none" && openNotes(it) > 0) return false;
+      if (!passeLesFiltres(it, coches)) return false;
       if (nq) {
         const hay = [displayName(it), it.ville ?? "", it.company_url ?? "", it.tags ?? ""].join(" ").toLowerCase();
         if (!hay.includes(nq)) return false;
       }
       return true;
     });
-  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden]);
+  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden, coches]);
 
   const visibleRows = React.useMemo(() => {
     const rows =
@@ -1926,20 +2024,103 @@ export function PipelineMatrix({
     return m;
   }, [baseRows, stages]);
 
-  // On n'agit jamais sur une ligne qu'on ne voit pas : la sélection est
-  // intersectée avec les lignes affichées.
+  /**
+   * Les effectifs de chaque case, comptés sur TOUT ce que l'API a rendu et non
+   * sur ce que les filtres laissent passer. Sinon cocher une case ferait tomber
+   * à zéro le compteur de toutes les autres — et on ne saurait plus ce qu'on
+   * s'apprête à ajouter.
+   */
+  const effectifs = React.useMemo(() => compter(items), [items]);
+  const nbCoches = coches.size;
+
+  const basculer = (cle: CleFiltre) =>
+    setCoches((s) => {
+      const n = new Set(s);
+      if (n.has(cle)) n.delete(cle);
+      else n.add(cle);
+      return n;
+    });
+
+  /**
+   * Tout remettre à zéro — les cases ET les menus.
+   *
+   * Un bouton qui ne viderait que le panneau laisserait un tableau encore
+   * filtré par l'étape, le canal ou la recherche, et donnerait à croire que la
+   * remise à zéro ne marche pas. `hidden` part aussi : une ligne masquée est un
+   * filtre, même si elle ne s'affiche pas comme tel.
+   */
+  const toutReinitialiser = () => {
+    setCoches(new Set());
+    setQ("");
+    setStageFilter("all");
+    setDataFilter("all");
+    setCanalFilter("all");
+    setSequenceFilter("all");
+    setTicketFilter("all");
+    setAttribution("all");
+    setOwner("all");
+    setPipelineFilter("all");
+    setHideAttributed(false);
+    setHidden(new Set());
+    setPage(1);
+  };
+
+  /** Y a-t-il quoi que ce soit à réinitialiser ? Sinon le bouton ne sert à rien. */
+  const filtreActif =
+    nbCoches > 0 ||
+    q.trim() !== "" ||
+    stageFilter !== "all" ||
+    dataFilter !== "all" ||
+    canalFilter !== "all" ||
+    sequenceFilter !== "all" ||
+    ticketFilter !== "all" ||
+    attribution !== "all" ||
+    owner !== "all" ||
+    pipelineFilter !== "all" ||
+    hideAttributed ||
+    hidden.size > 0;
+
+  /* ── La page ─────────────────────────────────────────────────────────────
+   *
+   * `visibleRows` reste ce que les filtres retiennent ; `pageRows` est ce que
+   * le tableau POSE. La distinction porte tout le reste : la sélection et les
+   * actions de masse travaillent sur `visibleRows`, l'affichage et la case
+   * d'en-tête sur `pageRows`.
+   */
+  const nbPages = Math.max(1, Math.ceil(visibleRows.length / parPage));
+  // Borner au rendu plutôt qu'attendre l'effet : un filtre qui réduit la liste
+  // afficherait sinon une page vide le temps d'un tour de boucle.
+  const pageSure = Math.min(Math.max(1, page), nbPages);
+  const pageRows = React.useMemo(
+    () => visibleRows.slice((pageSure - 1) * parPage, pageSure * parPage),
+    [visibleRows, pageSure, parPage],
+  );
+
+  // Changer un filtre revient à la première page. Sans ça, chercher un nom
+  // depuis la page 7 ne montrerait rien alors que le résultat existe.
+  React.useEffect(() => {
+    setPage(1);
+  }, [q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, stageFilter, sort, parPage, coches]);
+
+  // On n'agit jamais sur une ligne que les filtres excluent — mais on agit
+  // volontiers sur une ligne d'une AUTRE PAGE. C'est la sélection qui traverse
+  // la pagination, pas l'inverse : cocher trois pages de cent puis lancer sur
+  // les trois cents est justement le geste que la pagination doit permettre.
   const selectedRows = React.useMemo(
     () => visibleRows.filter((it) => selected.has(it.id)),
     [visibleRows, selected],
   );
-  /** Lignes visibles auxquelles il manque encore une variable requise. */
+  /** Lignes retenues par les filtres auxquelles il manque une variable requise. */
   const incompleteRows = React.useMemo(() => visibleRows.filter((it) => missingCount(it) > 0), [visibleRows]);
-  const allVisibleSelected = visibleRows.length > 0 && selectedRows.length === visibleRows.length;
-  const toggleAllVisible = () =>
+  // LA CASE D'EN-TÊTE COCHE LA PAGE, pas les 882 lignes retenues par les
+  // filtres : c'est ce que Matteo a demandé, et c'est le seul comportement où
+  // le nombre coché est le nombre qu'on a sous les yeux.
+  const allPageSelected = pageRows.length > 0 && pageRows.every((it) => selected.has(it.id));
+  const toggleAllPage = () =>
     setSelected((s) => {
       const n = new Set(s);
-      if (allVisibleSelected) visibleRows.forEach((it) => n.delete(it.id));
-      else visibleRows.forEach((it) => n.add(it.id));
+      if (allPageSelected) pageRows.forEach((it) => n.delete(it.id));
+      else pageRows.forEach((it) => n.add(it.id));
       return n;
     });
 
@@ -2246,6 +2427,80 @@ export function PipelineMatrix({
         )}
 
         <div className="tb-div" />
+        {/* ── Le panneau de filtres à cocher ──────────────────────────────
+            Un seul bouton plutôt qu'une rangée de menus supplémentaires : la
+            barre était déjà le grief n° 1 (« trop chargée, trop rigide »).
+            Ce qui est coché se lit sur la pastille, sans ouvrir. */}
+        <div className="filtres-pop-hote">
+          <button
+            className={"btn subtle sm" + (nbCoches > 0 ? " on" : "")}
+            onClick={() => setPanneauFiltres((v) => !v)}
+            title="Filtrer sur le site du prospect, sa note, notre démo et l'audit"
+          >
+            <SlidersHorizontal className="ico-sm" />
+            Filtres
+            {nbCoches > 0 && <span className="ct">{nbCoches}</span>}
+          </button>
+
+          {panneauFiltres && (
+            <>
+              <div className="mp-scope-pop-scrim" onClick={() => setPanneauFiltres(false)} />
+              <div className="filtres-pop" role="group" aria-label="Filtres">
+                <div className="fp-tete">
+                  <strong>Filtres</strong>
+                  <span className="fp-regle">
+                    Plusieurs cases d’un même bloc = <b>ou</b> ; entre les blocs = <b>et</b>
+                  </span>
+                </div>
+                {GROUPES.map((g) => (
+                  <div className="fp-groupe" key={g.id}>
+                    <div className="fp-titre" title={g.aide}>
+                      {g.titre}
+                    </div>
+                    {g.options.map((o) => (
+                      <label className="fp-case" key={o.cle} title={o.aide}>
+                        <input
+                          type="checkbox"
+                          checked={coches.has(o.cle)}
+                          onChange={() => basculer(o.cle)}
+                        />
+                        <span className="fp-label">{o.label}</span>
+                        {/* L'effectif est compté sur TOUT le tableau : c'est ce
+                            qui permet de savoir ce qu'une case ajouterait. */}
+                        <span className="fp-ct">{effectifs[o.cle] ?? 0}</span>
+                      </label>
+                    ))}
+                  </div>
+                ))}
+                <div className="fp-pied">
+                  <button
+                    className="btn ghost sm"
+                    disabled={nbCoches === 0}
+                    onClick={() => setCoches(new Set())}
+                  >
+                    Décocher tout
+                  </button>
+                  <span className="fp-reste">
+                    {visibleRows.length} ligne{visibleRows.length > 1 ? "s" : ""} retenue
+                    {visibleRows.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <button
+          className="btn ghost sm"
+          disabled={!filtreActif}
+          onClick={toutReinitialiser}
+          title="Vider les cases, les menus, la recherche et les lignes masquées"
+        >
+          <RotateCcw className="ico-sm" />
+          Réinitialiser
+        </button>
+
+        <div className="tb-div" />
         <span className="tb-lb">Template</span>
         <select
           className="mp-select"
@@ -2338,18 +2593,26 @@ export function PipelineMatrix({
           style={{ "--ncol": stages.length } as React.CSSProperties}
         >
           <div className="mx-corner">
-            <label className="cnr-sel" title="Tout sélectionner / désélectionner">
+            <label
+              className="cnr-sel"
+              title={`Cocher les ${pageRows.length} lignes de cette page — les autres pages gardent ce qui y est déjà coché`}
+            >
               <input
                 type="checkbox"
-                checked={allVisibleSelected}
-                onChange={toggleAllVisible}
-                disabled={visibleRows.length === 0}
-                aria-label="Tout sélectionner"
+                checked={allPageSelected}
+                onChange={toggleAllPage}
+                disabled={pageRows.length === 0}
+                aria-label="Cocher la page"
               />
               <span className="t">Entreprise</span>
             </label>
+            {/* Le compte de la PAGE et celui des filtres sont dits séparément :
+                « 100 lignes » sur un tableau qui en retient 882 laisserait
+                croire que les filtres ont tout écarté. */}
             <div className="s">
-              {visibleRows.length} lignes
+              {nbPages > 1
+                ? `${pageRows.length} sur ${visibleRows.length}`
+                : `${visibleRows.length} lignes`}
               {selectedRows.length > 0 ? ` · ${selectedRows.length} sél.` : ""}
             </div>
           </div>
@@ -2402,7 +2665,7 @@ export function PipelineMatrix({
               <div className="s">Ajustez les filtres ou la recherche.</div>
             </div>
           ) : (
-            visibleRows.map((r) => (
+            pageRows.map((r) => (
               <React.Fragment key={r.id}>
                 <RowHead
                   item={r}
@@ -2450,6 +2713,75 @@ export function PipelineMatrix({
               </React.Fragment>
             ))
           )}
+        </div>
+      </div>
+
+      {/* ── pagination ──────────────────────────────────────────────────────
+          Les deux réglages sont côte à côte parce qu'ils se répondent : la
+          taille de page est aussi l'unité de sélection, donc « 500 par page »
+          et « cocher la page » sont le même geste en deux clics. */}
+      <div className="pager">
+        <span className="pg-lb">Par page</span>
+        <select
+          className="mp-select"
+          value={parPage}
+          onChange={(e) => setParPage(Number(e.target.value))}
+          title="Combien de lignes afficher — et donc combien la case d’en-tête coche d’un coup"
+        >
+          {TAILLES_DE_PAGE.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+
+        <span className="pg-info">
+          {visibleRows.length === 0
+            ? "Aucune ligne"
+            : `${(pageSure - 1) * parPage + 1}–${(pageSure - 1) * parPage + pageRows.length} sur ${visibleRows.length}`}
+          {/* Le nombre coché est déjà dit par la barre de sélection : on ne le
+              répète QUE lorsqu'il déborde de la page qu'on regarde — sinon
+              « Enrichir 240 » sur une page de cent passe pour un bug. */}
+          {selectedRows.length > pageRows.length && (
+            <>
+              {" · "}
+              <strong>{selectedRows.length} cochées, toutes pages confondues</strong>
+            </>
+          )}
+        </span>
+
+        <div className="pg-nav">
+          <button
+            className="btn ghost sm"
+            disabled={pageSure <= 1}
+            onClick={() => setPage(1)}
+            title="Première page"
+          >
+            «
+          </button>
+          <button className="btn ghost sm" disabled={pageSure <= 1} onClick={() => setPage(pageSure - 1)}>
+            <ChevronLeft className="ico-sm" />
+            Précédent
+          </button>
+          <span className="pg-num">
+            Page {pageSure} / {nbPages}
+          </span>
+          <button
+            className="btn ghost sm"
+            disabled={pageSure >= nbPages}
+            onClick={() => setPage(pageSure + 1)}
+          >
+            Suivant
+            <ChevronRight className="ico-sm" />
+          </button>
+          <button
+            className="btn ghost sm"
+            disabled={pageSure >= nbPages}
+            onClick={() => setPage(nbPages)}
+            title="Dernière page"
+          >
+            »
+          </button>
         </div>
       </div>
 

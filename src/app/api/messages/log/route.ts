@@ -14,7 +14,7 @@ export const OPTIONS = (req: Request) => preflight(req);
  * here at click time with the pre-filled message. Also nudges the opportunity to
  * the "Première approche" stage when it's still a fresh lead.
  */
-export const POST = withAuth({}, async ({ req, cors }) => {
+export const POST = withAuth({}, async ({ req, user, cors }) => {
   const parsed = await parseJson(req, messageLogSchema, cors);
   if (!parsed.ok) return parsed.response;
   const b = parsed.data;
@@ -27,6 +27,11 @@ export const POST = withAuth({}, async ({ req, cors }) => {
     .from("email_logs")
     .insert({
       channel: b.channel,
+      // QUI a ouvert ce WhatsApp. Les 177 lignes existantes ne le disent pas —
+      // la colonne n'existait pas — et le fil d'activité d'équipe ne pouvait
+      // donc rien attribuer. `direction` reste au défaut « sortant » : ici on
+      // envoie vraiment.
+      auteur_id: user.id,
       contact_id: b.contact_id ?? null,
       entreprise_id: b.entreprise_id ?? null,
       opportunite_id: b.opportunite_id ?? null,

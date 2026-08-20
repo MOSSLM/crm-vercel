@@ -119,7 +119,7 @@ describe("env.ts expose les clés du radar à ceux qui les lisent", () => {
  * lecture du fichier, pour que l'oubli devienne bruyant quelle que soit la
  * variable concernée.
  */
-describe("les trois listes de env.ts nomment exactement les mêmes variables", () => {
+describe("les listes de env.ts nomment exactement les mêmes variables", () => {
   const source = readFileSync(join(__dirname, "..", "env.ts"), "utf8").split("\n");
 
   /** Noms majuscules d'un bloc délimité, à l'indentation donnée. */
@@ -136,11 +136,12 @@ describe("les trois listes de env.ts nomment exactement les mêmes variables", (
 
   const schema = noms("const envSchema = z", "  })", /^ {4}([A-Z][A-Z0-9_]*):/);
   const luesDepuisProcessEnv = noms(
-    "const envResult = envSchema.safeParse({",
-    "});",
+    "const brut: Record<string, unknown> = {",
+    "};",
     /^ {2}([A-Z][A-Z0-9_]*): process\.env\./,
   );
-  const exportees = noms("export const {", "} = envResult.data;", /^ {2}([A-Z][A-Z0-9_]*),/);
+  const exportees = noms("export const {", "} = donnees;", /^ {2}([A-Z][A-Z0-9_]*),/);
+  const degradables = noms("const DEGRADABLES = new Set([", "]);", /^ {2}"([A-Z][A-Z0-9_]*)",/);
 
   it("le schéma et la lecture de process.env couvrent le même ensemble", () => {
     expect(schema.length).toBeGreaterThan(10); // le découpage tient encore
@@ -149,5 +150,29 @@ describe("les trois listes de env.ts nomment exactement les mêmes variables", (
 
   it("tout ce qui est validé est aussi exporté", () => {
     expect([...exportees].sort()).toEqual([...schema].sort());
+  });
+
+  // LA QUATRIÈME LISTE, née le 20/08/2026. Une variable dégradable qui ne
+  // figure plus au schéma ne dégraderait rien : elle serait simplement ignorée
+  // par une liste que personne ne relit. Et une faute de frappe y est invisible
+  // — c'est un `Set<string>`, aucun typage ne la rattrape.
+  it("tout ce qui est déclaré dégradable existe dans le schéma", () => {
+    expect(degradables.length).toBeGreaterThan(10);
+    expect(degradables.filter((n) => !schema.includes(n))).toEqual([]);
+  });
+
+  // Ce qui NE DOIT PAS être dégradable, et pourquoi : sans les clés Supabase
+  // rien ne peut lire quoi que ce soit ; sans secret de cron en production, les
+  // routes cron s'ouvriraient ; GMAPS_API_TOKEN reste exigé par choix.
+  it("ne dégrade jamais ce qui est vital", () => {
+    for (const vitale of [
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "GMAPS_API_TOKEN",
+      "CRON_SECRET",
+      "PG_CRON_SECRET",
+    ]) {
+      expect(degradables).not.toContain(vitale);
+    }
   });
 });

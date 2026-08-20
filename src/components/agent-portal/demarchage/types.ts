@@ -7,7 +7,7 @@ import type { ProspectionTaskPayload } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
 /** Les canaux réellement possibles dans notre file (`wait` = attente-réponse). */
-export type DemKind = "call" | "whatsapp" | "linkedin" | "wait";
+export type DemKind = "call" | "whatsapp" | "sms" | "linkedin" | "wait";
 
 /**
  * La cohorte de la campagne d'août : « A » a déjà un site (mauvais), « B » n'a

@@ -115,6 +115,12 @@ describe('processSequenceEnrollment', () => {
       }),
       user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
       agent_settings: tableChain({ data: [], error: null }),
+      // Depuis le 20/08/2026, le garde d'envoi lit la liste de suppression à
+      // CHAQUE envoi, sans condition — une suppression est une décision du
+      // prospect, elle ne dépend pas du réglage « vérifier avant d'envoyer ».
+      // Une lecture impossible retient l'envoi, ce qui est voulu : c'est
+      // pourquoi la table doit exister ici, même vide.
+      email_suppressions: tableChain({ data: [], error: null }),
       ...over,
     };
     mockFrom.mockImplementation((table: string) => {
@@ -1102,6 +1108,8 @@ describe('le lien du rapport d’audit', () => {
       sequence_enrollments: tableChain(),
       prospection_tasks: tableChain({ data: [], error: null }),
       regulator_settings: tableChain({ data: { id: 'global' }, error: null }),
+      // Le garde d'envoi lit la suppression à chaque envoi depuis le 20/08.
+      email_suppressions: tableChain({ data: [], error: null }),
       user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
       agent_settings: tableChain({ data: [], error: null }),
       entreprises_audit_site: tableChain({ data: null, error: null, count: 0 } as any),
@@ -1290,6 +1298,8 @@ describe('le lien du site démo', () => {
       sequence_enrollments: tableChain(),
       prospection_tasks: tableChain({ data: [], error: null }),
       regulator_settings: tableChain({ data: { id: 'global' }, error: null }),
+      // Le garde d'envoi lit la suppression à chaque envoi depuis le 20/08.
+      email_suppressions: tableChain({ data: [], error: null }),
       user_profiles: tableChain({ data: [{ id: 'admin-1' }], error: null }),
       agent_settings: tableChain({ data: [], error: null }),
       entreprises_audit_site: tableChain({ data: null, error: null, count: 5 } as any),

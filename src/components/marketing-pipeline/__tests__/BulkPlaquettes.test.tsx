@@ -118,7 +118,7 @@ const bouton = () => bar().getByRole("button", { name: /Créer les plaquettes/ }
 describe("Créer les plaquettes — l'action de masse", () => {
   it("prend les lignes qui n'ont ni site ni audit : c'est toute la cohorte visée", () => {
     const bulk = renderMatrix([sansRien]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     fireEvent.click(bouton());
 
@@ -128,7 +128,7 @@ describe("Créer les plaquettes — l'action de masse", () => {
 
   it("écarte les lignes sans fiche entreprise — il n'y a rien à quoi rattacher un jeton", () => {
     const bulk = renderMatrix([sansRien, sansEntreprise]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
 
     fireEvent.click(bouton());
 
@@ -139,13 +139,13 @@ describe("Créer les plaquettes — l'action de masse", () => {
     // Le compte est ce qui permet de vérifier la sélection AVANT de cliquer :
     // deux lignes cochées, une seule éligible, ça doit se voir.
     renderMatrix([sansRien, sansEntreprise]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
     expect(bouton()).toHaveTextContent("1");
   });
 
   it("reste inerte quand la sélection ne porte aucune entreprise", () => {
     renderMatrix([sansEntreprise]);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tout sélectionner" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Cocher la page" }));
     expect(bouton()).toBeDisabled();
   });
 });

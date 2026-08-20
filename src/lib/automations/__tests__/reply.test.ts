@@ -129,11 +129,17 @@ describe('declarerReponse', () => {
     const result = await declarerReponse(sb, 'enr-1');
 
     expect(result).toEqual({ ok: true, stepIndex: 1, rattrapage: true });
-    // La réponse se note sur l'ATTENTE (index 1), pas sur l'étape courante :
-    // c'est elle qui décide de la voie, et c'est elle que le moteur relira.
+    // La réponse se note sur l'ATTENTE (`s2`), pas sur l'étape courante : c'est
+    // elle qui décide de la voie, et c'est elle que le moteur relira.
+    //
+    // ET SOUS SON IDENTIFIANT, PAS SOUS SON RANG. Le rang bouge dès qu'on
+    // insère une étape plus haut : le 20/08/2026, l'ajout d'une carte au milieu
+    // de « WhatsApp seul » a fait désigner à neuf réponses déjà notées une autre
+    // attente que celle que les prospects avaient levée.
     const vars = updates[0].vars as { replies: Record<string, string> };
-    expect(typeof vars.replies['1']).toBe('string');
-    expect(vars.replies['3']).toBeUndefined();
+    expect(typeof vars.replies['s2']).toBe('string');
+    expect(vars.replies['1']).toBeUndefined();
+    expect(vars.replies['s4']).toBeUndefined();
     // Retour au DÉBUT de la voie réponse (`s3`, index 2), l'ancre posée sur
     // l'attente : les J+n de cette voie ont été écrits en partant de là.
     expect(mockReprendre).toHaveBeenCalledWith('enr-1', 2, 1);

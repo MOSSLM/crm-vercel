@@ -1,5 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
+  Bell,
+  MessagesSquare,
+  ListTodo,
+  Fingerprint,
+  Flame,
   LayoutGrid,
   Target,
   Users,
@@ -42,6 +48,8 @@ import {
   Settings,
   SlidersHorizontal,
   Bot,
+  Send,
+  ShieldCheck,
 } from "lucide-react";
 
 /**
@@ -55,6 +63,7 @@ import {
 
 export type SpaceId =
   | "hub"
+  | "prospection"
   | "acquisition"
   | "relation"
   | "production"
@@ -86,6 +95,46 @@ export const SPACES: Space[] = [
     icon: LayoutGrid,
     href: "/dashboard",
     tools: [{ title: "Accueil Studio", href: "/dashboard", icon: LayoutGrid }],
+  },
+  /**
+   * Prospection — l'espace de la refonte lemlist.
+   *
+   * UN SEUL ESPACE, décidé avec Matteo : le démarchage était éclaté sur quatre
+   * surfaces (Démarchage, Séquences, Pipeline commercial, Marketing pipeline)
+   * et personne ne voyait le stock. Les outils ci-dessous existent tous — on
+   * n'inscrit ici aucune route à venir : la règle du fichier est « pas de lien
+   * mort », et un menu qui promet un écran absent est pire qu'un menu court.
+   */
+  {
+    id: "prospection",
+    label: "Prospection",
+    icon: Send,
+    href: "/prospection/campagnes",
+    tools: [
+      { title: "Campagnes", href: "/prospection/campagnes", icon: Send },
+      { title: "Conversations", href: "/prospection/conversations", icon: MessagesSquare },
+      { title: "Séquences", href: "/automations/sequences", icon: Workflow },
+      { title: "Semaine", href: "/automations/semaine", icon: CalendarDays },
+      { title: "Tâches", href: "/prospection/taches", icon: ListTodo },
+      { title: "Signaux", href: "/prospection/signaux", icon: Bell },
+      // LES LEADS DE LA REFONTE, ET ILS EXISTENT DÉJÀ. L'explorateur porte les
+      // 25 familles de filtres, les segments enregistrés et le figeage en lot —
+      // il est plus riche que le « Leads » de lemlist. Il ne lui manquait que
+      // d'être atteignable depuis l'espace où on démarche : y arriver
+      // demandait de passer par Acquisition, donc de quitter la prospection.
+      // On ne le DÉPLACE pas — il reste dans Acquisition, où il sert aussi.
+      { title: "Leads", href: "/entreprises/explorateur", icon: Building2 },
+      { title: "Rapports", href: "/prospection/rapports", icon: BarChart3 },
+      { title: "Lissage", href: "/prospection/lissage", icon: Sparkles },
+      { title: "Choix du SIRET", href: "/prospection/identite", icon: Fingerprint },
+      { title: "Modèles", href: "/automations/modeles", icon: LayoutTemplate },
+      { title: "Délivrabilité", href: "/prospection/delivrabilite", icon: ShieldCheck },
+      { title: "Réchauffeur", href: "/prospection/rechauffeur", icon: Flame },
+      { title: "Régulateur", href: "/automations/regulateur", icon: SlidersHorizontal },
+      { title: "Journal", href: "/automations/journal", icon: Activity },
+      // Les désabonnés de lemlist : suppressions, plaintes, rebonds durs.
+      { title: "Désabonnés", href: "/blacklist", icon: Ban },
+    ],
   },
   {
     id: "acquisition",
@@ -249,6 +298,8 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/sections-library", "web"],
   ["/forms", "web"],
   ["/media-library", "web"],
+
+  ["/prospection", "prospection"],
 
   ["/dashboard", "hub"],
 ];

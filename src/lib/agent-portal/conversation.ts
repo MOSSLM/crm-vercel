@@ -26,6 +26,7 @@
 
 /** Ce que ce module a besoin de savoir d'une étape — rien de plus. */
 export type ConversationStep = {
+  id?: string;
   kind?: string;
   waitMode?: string | null;
   branch?: { waitId?: string; on?: string } | null;
@@ -49,7 +50,11 @@ export function stepIsInConversation(
 
   for (let i = 0; i < stepIndex; i++) {
     const s = steps[i];
-    if (s?.kind === "wait" && s.waitMode === "reply" && replies[String(i)]) return true;
+    // La clé est l'identifiant de l'étape depuis le 20/08/2026, son rang avant.
+    // Chercher les deux, sinon une réponse notée hier deviendrait invisible dès
+    // qu'on insère une étape au-dessus (cf. `cleDeFourche`).
+    const note = s?.id != null ? (replies[s.id] ?? replies[String(i)]) : replies[String(i)];
+    if (s?.kind === "wait" && s.waitMode === "reply" && note) return true;
   }
   return false;
 }

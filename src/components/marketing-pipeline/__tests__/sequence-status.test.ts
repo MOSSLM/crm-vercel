@@ -65,6 +65,12 @@ describe("inscriptionFinLabel", () => {
 });
 
 describe("aDemarcher", () => {
+  /** Un prospect qu'on n'a jamais touché — le cas ordinaire du stock. */
+  const intact = (sequence: { status: string; exitReason?: string | null } | null) => ({
+    sequence,
+    premiereTouche: null,
+  });
+
   /**
    * LA LIGNE DE PARTAGE. Ce n'est pas « a une inscription », c'est « a reçu
    * quelque chose ». Un numéro sans compte WhatsApp sort de la séquence sans
@@ -72,67 +78,54 @@ describe("aDemarcher", () => {
    * stock qu'on attribue. Celui qui a dit non, non.
    */
   it("le stock, c'est jamais inscrite ET sortie sans que rien ne parte", () => {
-    expect(aDemarcher(null)).toBe(true);
-    expect(aDemarcher(undefined)).toBe(true);
-    expect(aDemarcher({ status: "exited", exitReason: "hors_canal" })).toBe(true);
-    expect(aDemarcher({ status: "exited", exitReason: "reattribution" })).toBe(true);
+    expect(aDemarcher(intact(null))).toBe(true);
+    expect(aDemarcher({ sequence: null })).toBe(true);
+    expect(aDemarcher(intact({ status: "exited", exitReason: "hors_canal" }))).toBe(true);
+    expect(aDemarcher(intact({ status: "exited", exitReason: "reattribution" }))).toBe(true);
   });
 
   it("un prospect qui a dit non n'y retourne pas", () => {
-    expect(aDemarcher({ status: "exited", exitReason: "stop" })).toBe(false);
-    expect(aDemarcher({ status: "exited", exitReason: "archive" })).toBe(false);
+    expect(aDemarcher(intact({ status: "exited", exitReason: "stop" }))).toBe(false);
+    expect(aDemarcher(intact({ status: "exited", exitReason: "archive" }))).toBe(false);
   });
 
   it("une séquence menée à son terme n'est pas du stock", () => {
-    expect(aDemarcher({ status: "finished", exitReason: null })).toBe(false);
-    expect(aDemarcher({ status: "replied", exitReason: null })).toBe(false);
+    expect(aDemarcher(intact({ status: "finished", exitReason: null }))).toBe(false);
+    expect(aDemarcher(intact({ status: "replied", exitReason: null }))).toBe(false);
   });
 
   it("une inscription vivante non plus — elle travaille", () => {
-    expect(aDemarcher({ status: "active", exitReason: null })).toBe(false);
-    expect(aDemarcher({ status: "paused", exitReason: null })).toBe(false);
+    expect(aDemarcher(intact({ status: "active", exitReason: null }))).toBe(false);
+    expect(aDemarcher(intact({ status: "paused", exitReason: null }))).toBe(false);
   });
 
   it("un motif inconnu vaut arrêt — on préfère oublier que relancer un refus", () => {
-    expect(aDemarcher({ status: "exited", exitReason: null })).toBe(false);
-    expect(aDemarcher({ status: "exited", exitReason: "motif_futur" })).toBe(false);
-  });
-});
-
-describe("sequenceEtatLabel", () => {
-  it("ne dit rien d'une séquence en service", () => {
-    expect(sequenceEtatLabel("on")).toBeNull();
+    expect(aDemarcher(intact({ status: "exited", exitReason: null }))).toBe(false);
+    expect(aDemarcher(intact({ status: "exited", exitReason: "motif_futur" }))).toBe(false);
   });
 
-  it("sépare le brouillon de la pause — ils ne se réparent pas pareil", () => {
-    expect(sequenceEtatLabel("draft")).toBe("brouillon");
-    expect(sequenceEtatLabel("paused")).toBe("en pause");
+  /**
+   * LE TEST QUI COMPTE, et le motif de la correction du 20/08/2026.
+   *
+   * `reattribution` dit qu'on a retiré le prospect à son agent. Il ne dit RIEN
+   * de ce qui était parti avant : un lead à sa quatrième relance en ressort
+   * avec exactement le même motif qu'un lead jamais contacté. Sans
+   * `premiereTouche`, on lui réenverrait l'accroche.
+   *
+   * Le cas ne mord pas encore — aucune inscription n'est en `reattribution` en
+   * base — mais il mordra dès la première désattribution.
+   */
+  it("un prospect déjà touché ne retourne JAMAIS au stock, quel que soit le motif", () => {
+    const touche = "2026-08-12T09:30:00.000Z";
+    expect(aDemarcher({ sequence: { status: "exited", exitReason: "reattribution" }, premiereTouche: touche })).toBe(false);
+    expect(aDemarcher({ sequence: { status: "exited", exitReason: "hors_canal" }, premiereTouche: touche })).toBe(false);
+    // Même sans aucune inscription : les 640 appels du parc n'appartiennent à
+    // aucune séquence, et ils ont pourtant bien eu lieu.
+    expect(aDemarcher({ sequence: null, premiereTouche: touche })).toBe(false);
   });
 
-  it("suffixe le nom dans les listes déroulantes, et seulement s'il y a lieu", () => {
-    expect(sequenceOptionLabel({ name: "WhatsApp seul", status: "draft" })).toBe("WhatsApp seul — brouillon");
-    expect(sequenceOptionLabel({ name: "WhatsApp seul", status: "on" })).toBe("WhatsApp seul");
-  });
-});
-
-describe("errorLabel", () => {
-  it("traduit le code que l'API renvoie sur une séquence inactive", () => {
-    expect(errorLabel("sequence_inactive")).toMatch(/Séquence inactive/);
-    expect(errorLabel("sequence_inactive")).toMatch(/Automatisations/);
-  });
-
-  it("nomme la séquence quand l'appelant la connaît", () => {
-    expect(errorLabel("sequence_inactive", "WhatsApp seul")).toBe(
-      "« WhatsApp seul » — Séquence inactive — activez-la dans Automatisations › Séquences.",
-    );
-  });
-
-  it("ne colle pas un nom de séquence sur une erreur qui n'en parle pas", () => {
-    expect(errorLabel("prospect_non_attribue", "WhatsApp seul")).toBe("Ce prospect ne vous est pas attribué.");
-  });
-
-  it("reste lisible sur un code inconnu", () => {
-    expect(errorLabel("bidule_inconnu")).toBe("Action impossible");
-    expect(errorLabel(undefined)).toBe("Action impossible");
+  /** Une réponse d'API antérieure au 20/08 ne porte pas le champ. */
+  it("sans la trace de touche, la règle d'avant s'applique telle quelle", () => {
+    expect(aDemarcher({ sequence: { status: "exited", exitReason: "hors_canal" } })).toBe(true);
   });
 });

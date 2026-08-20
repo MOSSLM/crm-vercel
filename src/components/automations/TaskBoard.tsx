@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { XI } from './icons'
 import { Avatar } from './regulator/parts'
 import './regulator.css'
-import { lienWhatsApp } from '@/lib/prospects/canal'
+import { lienSms, lienWhatsApp } from '@/lib/prospects/canal'
 import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from '@/lib/automations/variables'
 import { sourceNumeros, useNumeros } from './NumeroPicker'
 import type { UsageNumero } from '@/lib/prospects/numeros'
@@ -32,6 +32,7 @@ export interface BoardColumn {
 const KIND_ICON: Record<string, string> = {
   call: 'phone',
   whatsapp: 'whatsapp',
+  sms: 'sms',
   linkedin: 'linkedin',
   email: 'mail',
 }
@@ -180,6 +181,10 @@ function TaskCard({
   // fiche contact, il vient de `entreprises.telephone`. Mais 47 entreprises du
   // parc en ont plusieurs, et l'agent doit pouvoir en essayer un autre sans
   // quitter la carte.
+  // Un SMS exige un MOBILE, exactement comme WhatsApp : un fixe ne reçoit pas
+  // de texto. Il emprunte donc le même classement — l'usage porte le nom du
+  // canal qui l'a introduit, pas celui de la règle, mais c'est bien la règle
+  // « mobile d'abord » qu'on veut ici.
   const usage: UsageNumero = task.kind === 'call' ? 'appel' : 'whatsapp'
   const numeros = useNumeros(sourceNumeros(task), usage, task.payload?.phone ?? task.contacts?.tel ?? null)
   const [choisi, setChoisi] = useState<string | null>(null)
@@ -199,6 +204,18 @@ function TaskCard({
       window.open(url, '_blank')
       return
     }
+    if (task.kind === 'sms') {
+      // Même modèle que WhatsApp : le CRM prépare, le téléphone envoie. Un
+      // fournisseur existe côté téléphonie, mais il n'a jamais envoyé un seul
+      // message — cf. `sql/20260820_canal_sms.sql`.
+      const url = lienSms(phone, message)
+      if (!url) {
+        toast.error('Aucun numéro exploitable sur cette fiche')
+        return
+      }
+      window.location.href = url
+      return
+    }
     if (task.kind === 'call') {
       if (!phone) {
         toast.error('Aucun numéro sur ce contact')
@@ -216,7 +233,13 @@ function TaskCard({
   }
 
   const openLabel =
-    task.kind === 'whatsapp' ? 'Ouvrir WhatsApp' : task.kind === 'call' ? 'Appeler' : 'Ouvrir LinkedIn'
+    task.kind === 'whatsapp'
+      ? 'Ouvrir WhatsApp'
+      : task.kind === 'sms'
+        ? 'Ouvrir les SMS'
+        : task.kind === 'call'
+          ? 'Appeler'
+          : 'Ouvrir LinkedIn'
 
   return (
     <div className={'tb-card' + (overdue ? ' late' : '')}>
@@ -261,7 +284,7 @@ function TaskCard({
           </select>
         </label>
       )}
-      {numeros.length > 1 && (task.kind === 'whatsapp' || task.kind === 'call') && (
+      {numeros.length > 1 && (task.kind === 'whatsapp' || task.kind === 'sms' || task.kind === 'call') && (
         <label className="tb-assign">
           <span>Numéro</span>
           <select className="select" value={phone} onChange={(e) => setChoisi(e.target.value)}>
