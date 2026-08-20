@@ -165,7 +165,7 @@ describe('assignProspectToAgent', () => {
 
     const res = await assignProspectToAgent(ENT, AGENT);
 
-    expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-streak' });
+    expect(res).toMatchObject({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-streak' });
     expect(insertsOn('opportunites')).toEqual([]);
   });
 
@@ -223,7 +223,7 @@ describe('assignProspectToAgent', () => {
 
     const res = await assignProspectToAgent(ENT, AGENT);
 
-    expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
+    expect(res).toMatchObject({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
     expect(insertsOn('opportunites')).toEqual([]);
     expect(updatesOn('opportunites')).toEqual([{ owner_id: AGENT }]);
   });
@@ -235,7 +235,7 @@ describe('assignProspectToAgent', () => {
 
     const res = await assignProspectToAgent(ENT, AGENT);
 
-    expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-neuve' });
+    expect(res).toMatchObject({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-neuve' });
     expect(insertsOn('opportunites')).toEqual([
       {
         entreprise_id: ENT,
@@ -259,11 +259,16 @@ describe('assignProspectToAgent', () => {
     expect(res.ok && res.opportuniteId).toBe('opp-neuve');
   });
 
-  // Le trigger `entreprises_sync_opportunite_owner` propage `owner_id` sur les
-  // affaires dès que l'entreprise change de main. Si on jugeait « déjà attribué »
-  // d'après l'affaire, il serait toujours vrai et l'appel à froid ne serait
-  // jamais semé. C'est l'ancien propriétaire de l'ENTREPRISE qui fait foi.
-  it("sème l'appel à froid même si l'affaire porte déjà le bon propriétaire", async () => {
+  /**
+   * PLUS AUCUNE TÂCHE N'EST SEMÉE À LA MAIN.
+   *
+   * L'attribution posait une tâche « Appel à froid » sans séquence, sans étape
+   * et sans inscription. Elles se sont accumulées — 631 en attente au
+   * 20/08/2026, dont 86 sur des entreprises déjà inscrites ailleurs, c'est-à-dire
+   * du travail en double. La règle est maintenant : on met en séquence, et c'est
+   * la séquence qui produit les tâches.
+   */
+  it("ne sème plus de tâche : c'est la séquence qui en produit", async () => {
     results['entreprises.select'] = entreprise(null);
     results['opportunites.select'] = {
       data: [{ id: 'opp-1', owner_id: AGENT, pipeline_id: 'p-streak', is_test: false }],
@@ -271,10 +276,17 @@ describe('assignProspectToAgent', () => {
 
     await assignProspectToAgent(ENT, AGENT);
 
-    expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(true);
+    expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(false);
   });
 
-  it("ne réamorce pas l'appel à froid quand l'agent avait déjà l'entreprise", async () => {
+  /**
+   * Le trigger `entreprises_sync_opportunite_owner` propage `owner_id` sur les
+   * affaires dès que l'entreprise change de main. Si on jugeait « déjà
+   * attribué » d'après l'affaire, ce serait toujours vrai et la mise en séquence
+   * n'aurait jamais lieu. C'est l'ancien propriétaire de l'ENTREPRISE qui fait
+   * foi — et sur une entreprise déjà à lui, on ne retente rien.
+   */
+  it("ne remet pas en séquence quand l'agent avait déjà l'entreprise", async () => {
     results['entreprises.select'] = entreprise(AGENT);
     results['opportunites.select'] = {
       data: [{ id: 'opp-1', owner_id: AGENT, pipeline_id: 'p-streak', is_test: false }],
@@ -283,7 +295,24 @@ describe('assignProspectToAgent', () => {
     const res = await assignProspectToAgent(ENT, AGENT);
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
-    expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(false);
+    expect(calls.some((c) => c.table === 'automations')).toBe(false);
+  });
+
+  /**
+   * AUCUNE SÉQUENCE NE CORRESPOND N'EST PAS UNE ERREUR — c'est une information.
+   * L'entreprise est attribuée, elle ne produira simplement aucune tâche, et le
+   * compte rendu doit le dire : autrefois elle en produisait une (l'appel à
+   * froid) et personne ne remarquait que rien ne la couvrait.
+   */
+  it("attribue quand même le prospect qu'aucune séquence ne couvre, et le dit", async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: null, pipeline_id: 'p-streak', is_test: false }],
+    };
+
+    const res = await assignProspectToAgent(ENT, AGENT);
+
+    expect(res).toMatchObject({ ok: true, sequence: 'injoignable' });
   });
 
   it("échoue proprement sur une entreprise inconnue", async () => {

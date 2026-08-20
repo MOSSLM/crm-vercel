@@ -4,12 +4,18 @@
  * La file de démarchage, côté serveur.
  *
  * CE QUE CE FICHIER GARDE
- * Cette route a caché pendant des semaines les tâches sans `enrollment_id` —
- * c'est-à-dire tout l'appel à froid, soit le mode de travail principal de la
- * campagne d'août 2026. Le filtre tenait en cinq mots (`.not("enrollment_id",
- * "is", null)`) et rien ne le contredisait. Ces tests sont ce contredit :
- * une tâche à froid ENTRE dans la file, n'est jamais comptée comme discussion,
- * et consomme la cadence du jour comme n'importe quelle relance.
+ * « Ceux qui ne sont pas en séquence, on ne doit pas les voir dans des tâches,
+ * même pas d'appels. Dans tous les cas on met en séquence pour avoir des
+ * tâches. » Le filtre `enrollment_id IS NOT NULL` est donc de retour — mais la
+ * raison a changé de camp : ce n'est plus une décision d'écran, c'est que
+ * l'attribution MET EN SÉQUENCE au lieu de semer une tâche d'appel
+ * (`mettreEnSequence`, `_assign.ts`). Une tâche sans inscription ne sait dire
+ * ni ce qui a été tenté avant, ni ce qui vient après.
+ *
+ * Ce que ces tests protègent de la bascule inverse : la CADENCE, elle, compte
+ * tout ce qui a été bouclé aujourd'hui, séquence ou pas — vingt appels passés
+ * ce matin occupent vingt places de la journée, et les oublier rouvrirait une
+ * journée déjà pleine.
  *
  * Le faux client Supabase applique RÉELLEMENT les filtres posés par la route
  * (`eq`, `in`, `not ... is null`) sur un petit jeu de lignes, plutôt que de
@@ -161,7 +167,10 @@ type Reponse = {
 
 const lire = async (res: Response) => (await res.json()) as Reponse;
 
-/** Une tâche d'appel à froid : pas d'inscription, pas de séquence. */
+/**
+ * Une tâche SANS inscription — le contre-exemple. Elle ne doit plus jamais
+ * ressortir de la file : c'est ce que le premier test vérifie.
+ */
 const froide = (id: string, cohorte: string | null = "B_sans_site") => ({
   id,
   kind: "call",
@@ -202,52 +211,41 @@ const enSequence = (id: string, cohorte: string | null = "A_site_faible") => ({
   automation_id: null,
 });
 
-describe("GET /api/agent/tasks — l'appel à froid entre dans la file", () => {
+describe("GET /api/agent/tasks — pas d'inscription, pas de tâche", () => {
   beforeEach(() => {
     __resetServiceClientForTests();
     mockFrom.mockReset();
     mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
   });
 
-  it("remonte une tâche sans inscription, marquée hors séquence", async () => {
-    brancher({ taches: [froide("t1")] });
-    const { tasks } = await lire(await appel());
-    expect(tasks.map((t) => t.id)).toEqual(["t1"]);
-    expect(tasks[0].hors_sequence).toBe(true);
-    expect(tasks[0].sequence).toBeNull();
-  });
-
-  it("ne prend jamais une tâche à froid pour une discussion en cours", async () => {
-    // Sans inscription, il n'y a ni étape ni réponse enregistrée : la classer
-    // « en discussion » la sortirait du quota, et la cadence ne voudrait plus
-    // rien dire dès la première journée d'appels à froid.
-    brancher({ taches: [froide("t1")] });
-    const { tasks } = await lire(await appel());
-    expect(tasks[0].in_conversation).toBe(false);
-  });
-
-  it("marque hors séquence UNIQUEMENT ce qui l'est", async () => {
+  /**
+   * LE STOCK QU'ON RETIRE : 631 appels en attente au 20/08/2026, semés un par
+   * un par l'ancienne attribution, dont 86 sur des entreprises DÉJÀ inscrites
+   * ailleurs — c'est-à-dire du travail en double, dans la file d'un agent qui
+   * n'avait aucun moyen de le voir.
+   */
+  it("écarte une tâche qui n'appartient à aucune inscription", async () => {
     brancher({ taches: [froide("t1"), enSequence("t2")] });
     const { tasks } = await lire(await appel());
-    const parId = Object.fromEntries(tasks.map((t) => [t.id, t.hors_sequence]));
-    expect(parId).toEqual({ t1: true, t2: false });
-  });
-
-  it("`?froid=0` restitue l'ancienne file : les relances, rien d'autre", async () => {
-    brancher({ taches: [froide("t1"), enSequence("t2")] });
-    const { tasks } = await lire(await appel("?froid=0"));
     expect(tasks.map((t) => t.id)).toEqual(["t2"]);
   });
 
+  it("ne laisse plus aucune ligne se dire « hors séquence »", async () => {
+    brancher({ taches: [enSequence("t2")] });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].hors_sequence).toBe(false);
+    expect(tasks[0].sequence).not.toBeUndefined();
+  });
+
   it("porte la date de PREMIÈRE TOUCHE de l'entreprise, ou son absence", async () => {
-    // C'est elle qui sépare les deux files du poste de travail : sans date, la
+    // C'est elle qui sépare les trois files du poste de travail : sans date, la
     // ligne est un premier contact ; avec, c'est un suivi. La déduire côté
     // écran donnerait une seconde vérité à côté de celle des cohortes.
     brancher({
       taches: [
-        froide("t1"),
+        enSequence("t1"),
         {
-          ...froide("t2"),
+          ...enSequence("t2"),
           entreprise: { ...froide("t2").entreprise, premiere_touche_le: "2026-08-14T10:00:00.000Z" },
         },
       ],
@@ -259,13 +257,13 @@ describe("GET /api/agent/tasks — l'appel à froid entre dans la file", () => {
     });
   });
 
-  it("compte un appel à froid bouclé aujourd'hui dans la cadence du jour", async () => {
-    // Vingt appels à froid passés ce matin occupent vingt places de la
-    // journée : les ignorer rouvrirait une journée déjà pleine.
-    brancher({
-      taches: [froide("t1")],
-      faites: [faite("call")],
-    });
+  /**
+   * LA CADENCE NE SE FILTRE PAS, ELLE. Une tâche bouclée est du temps d'agent
+   * dépensé, qu'elle vienne d'une séquence ou du stock d'avant. Lui appliquer
+   * le même filtre qu'à la file rouvrirait une journée déjà pleine.
+   */
+  it("compte dans la cadence du jour même ce qui n'avait pas d'inscription", async () => {
+    brancher({ taches: [enSequence("t1")], faites: [faite("call")] });
     const { meta } = await lire(await appel());
     expect(meta.done_today_by_kind).toEqual({ call: 1 });
   });
@@ -278,15 +276,6 @@ describe("GET /api/agent/tasks — l'appel à froid entre dans la file", () => {
     const { meta } = await lire(await appel());
     expect(meta.done_today_by_kind).toEqual({});
   });
-
-  it("laisse les tâches bouclées à froid dehors quand `?froid=0`", async () => {
-    brancher({
-      taches: [],
-      faites: [faite("call")],
-    });
-    const { meta } = await lire(await appel("?froid=0"));
-    expect(meta.done_today_by_kind).toEqual({});
-  });
 });
 
 describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
@@ -297,7 +286,7 @@ describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
   });
 
   it("porte la cohorte sur chaque ligne de file", async () => {
-    brancher({ taches: [froide("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
+    brancher({ taches: [enSequence("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
     const { tasks } = await lire(await appel());
     expect(Object.fromEntries(tasks.map((t) => [t.id, t.cohorte]))).toEqual({
       t1: "B_sans_site",
@@ -306,13 +295,13 @@ describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
   });
 
   it("rend `null` pour une entreprise hors campagne", async () => {
-    brancher({ taches: [froide("t1", null)] });
+    brancher({ taches: [enSequence("t1", null)] });
     const { tasks } = await lire(await appel());
     expect(tasks[0].cohorte).toBeNull();
   });
 
   it("ne garde qu'une cohorte quand on la demande", async () => {
-    brancher({ taches: [froide("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
+    brancher({ taches: [enSequence("t1", "B_sans_site"), enSequence("t2", "A_site_faible")] });
     const { tasks, meta } = await lire(await appel("?cohorte=A_site_faible"));
     expect(tasks.map((t) => t.id)).toEqual(["t2"]);
     expect(meta.cohorte).toBe("A_site_faible");
@@ -322,7 +311,7 @@ describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
     // Une faute de frappe dans l'URL ne doit pas laisser croire qu'il n'y a
     // rien à faire aujourd'hui : une file trop large se voit, une file vide se
     // croit.
-    brancher({ taches: [froide("t1", "B_sans_site")] });
+    brancher({ taches: [enSequence("t1", "B_sans_site")] });
     const { tasks, meta } = await lire(await appel("?cohorte=C_inventee"));
     expect(tasks.map((t) => t.id)).toEqual(["t1"]);
     expect(meta.cohorte).toBeNull();

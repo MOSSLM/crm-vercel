@@ -69,6 +69,19 @@ export interface LectureTaches {
   erreur: string | null
 }
 
+/**
+ * PAS D'INSCRIPTION, PAS DE TÂCHE — la même règle que la file de l'agent.
+ *
+ * Mot pour mot : « ceux qui ne sont pas en séquence, on ne doit pas les voir
+ * dans des tâches, même pas d'appels. Dans tous les cas on met en séquence pour
+ * avoir des tâches. »
+ *
+ * Ce qui sortait d'ici sans inscription, c'était le stock semé par l'ancienne
+ * attribution : 631 appels en attente au 20/08/2026, dont 86 sur des entreprises
+ * DÉJÀ inscrites ailleurs — du travail en double, et un tableau que sa taille
+ * rendait illisible. `assignProspectToAgent` met désormais en séquence, donc
+ * plus rien n'entre ici sans une étape derrière.
+ */
 export async function lireLesTaches(
   sb: SupabaseClient,
   opts: { agentId?: string | null } = {},
@@ -83,12 +96,14 @@ export async function lireLesTaches(
         .from('prospection_tasks')
         .select(CHAMPS + 'entreprise:entreprises(name, ville, cohorte_demarchage, premiere_touche_le)')
         .eq('assignee_id', opts.agentId)
+        .not('enrollment_id', 'is', null)
         .order('due_at', { ascending: true })
         .limit(PLAFOND),
       sb
         .from('prospection_tasks')
         .select(CHAMPS + 'entreprise:entreprises!inner(name, ville, cohorte_demarchage, premiere_touche_le, owner_id)')
         .eq('entreprise.owner_id', opts.agentId)
+        .not('enrollment_id', 'is', null)
         .order('due_at', { ascending: true })
         .limit(PLAFOND),
     ])
@@ -104,6 +119,7 @@ export async function lireLesTaches(
     const { data, error } = await sb
       .from('prospection_tasks')
       .select(CHAMPS + 'entreprise:entreprises(name, ville, cohorte_demarchage, premiere_touche_le)')
+      .not('enrollment_id', 'is', null)
       .order('due_at', { ascending: true })
       .limit(PLAFOND)
     if (error) return { lignes: [], tronque: false, erreur: error.message }

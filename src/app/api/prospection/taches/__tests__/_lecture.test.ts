@@ -35,7 +35,7 @@ function clientAvec(taches: Ligne[]) {
   const appels: { filtre: string; valeur: unknown }[] = []
 
   const chaineTaches = () => {
-    const etat: { colonne?: string; valeur?: unknown } = {}
+    const etat: { colonne?: string; valeur?: unknown; enSequence?: boolean } = {}
     const chaine: Record<string, unknown> = {
       select: (champs: string) => {
         etat.colonne = /entreprises!inner/.test(champs) ? 'proprietaire' : 'attribution'
@@ -46,12 +46,25 @@ function clientAvec(taches: Ligne[]) {
         etat.valeur = valeur
         return chaine
       },
+      // La lecture écarte désormais tout ce qui n'appartient à aucune
+      // inscription : « pas de séquence, pas de tâche ». Le faux client
+      // l'applique pour de vrai, sinon le filtre pourrait disparaître du code
+      // sans qu'aucun test ne bronche.
+      // Volontairement HORS de `appels`, qui ne recense que les filtres de
+      // périmètre : ce filtre-ci n'en est pas un, et il est vérifié par ce
+      // qu'il retire réellement de la liste.
+      not: () => {
+        etat.enSequence = true
+        return chaine
+      },
       order: () => chaine,
       limit: () => {
-        const gardees = taches.filter((t) =>
-          etat.colonne === 'proprietaire'
-            ? (t.entreprise as { owner_id?: string })?.owner_id === etat.valeur
-            : t.assignee_id === etat.valeur,
+        const gardees = taches.filter(
+          (t) =>
+            (etat.colonne === 'proprietaire'
+              ? (t.entreprise as { owner_id?: string })?.owner_id === etat.valeur
+              : t.assignee_id === etat.valeur) &&
+            (!etat.enSequence || t.enrollment_id != null),
         )
         return Promise.resolve({ data: gardees, error: null })
       },
@@ -83,8 +96,10 @@ const tache = (id: string, attribuee: string | null, proprietaire: string | null
   done_at: null,
   entreprise_id: 1,
   assignee_id: attribuee,
-  automation_id: null,
-  enrollment_id: null,
+  automation_id: 'a1',
+  // Toute tâche de test appartient à une inscription : sans elle, la lecture
+  // l'écarte — c'est la règle, pas un détail de montage.
+  enrollment_id: `e-${id}`,
   step_id: null,
   routing_reason: null,
   entreprise: { name: `Ent ${id}`, ville: null, cohorte_demarchage: null, premiere_touche_le: null, owner_id: proprietaire },
@@ -119,6 +134,22 @@ describe('lireLesTaches — le périmètre de l’agent', () => {
     const { sb } = clientAvec([tache('d', MOI, MOI)])
     const r = await lireLesTaches(sb, { agentId: MOI })
     expect(r.lignes).toHaveLength(1)
+  })
+
+  /**
+   * PAS D'INSCRIPTION, PAS DE TÂCHE.
+   *
+   * Ce qui entrait ici sans inscription, c'était le stock semé par l'ancienne
+   * attribution — 631 appels en attente au 20/08/2026, dont 86 sur des
+   * entreprises déjà inscrites ailleurs, c'est-à-dire du travail en double.
+   * Une tâche sans séquence ne sait dire ni ce qui a été tenté avant, ni ce qui
+   * vient après.
+   */
+  it('écarte une tâche qui n’appartient à aucune inscription', async () => {
+    const orpheline = { ...tache('o', MOI, MOI), automation_id: null, enrollment_id: null }
+    const { sb } = clientAvec([orpheline, tache('a', MOI, MOI)])
+    const { lignes } = await lireLesTaches(sb, { agentId: MOI })
+    expect(lignes.map((l) => l.id)).toEqual(['a'])
   })
 
   it('interroge bien les deux colonnes, et sur le bon agent', async () => {

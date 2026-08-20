@@ -347,8 +347,9 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
           <div>
             <h1 className="lem-titre">Tâches</h1>
             <p className="lem-sous">
-              La file entière, en tableau. Les pastilles se cumulent, le tri se clique, et un
-              filtre qu’on garde devient une vue — <em>on range son écran une fois</em>.
+              {chargement || panne
+                ? 'La file, en tableau.'
+                : `${lignes.length} tâche${lignes.length > 1 ? 's' : ''} en séquence, dont ${enAttente} en attente.`}
             </p>
           </div>
           <button
@@ -447,6 +448,12 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
               </button>
             ))}
           </Panneau>
+
+          {criteres.filtres.length > 0 && !chargement && (
+            <span className="lem-second" style={{ fontSize: 12 }}>
+              {vues_.length} sur {lignes.length}
+            </span>
+          )}
 
           <div style={{ flex: 1 }} />
 
@@ -580,13 +587,6 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
           )}
         </div>
 
-        {!chargement && vues_.length > 0 && (
-          <p className="lem-second" style={{ fontSize: 12.5, marginTop: 10 }}>
-            {vues_.length} ligne{vues_.length > 1 ? 's' : ''} sur {lignes.length} — {enAttente} en
-            attente dans la file entière. {resumerCriteres(criteres)}.
-          </p>
-        )}
-
         {/* ── Les gestes de masse ─────────────────────────────────────── */}
         {selection.size > 0 && (
           <div className="lem-barre-masse">
@@ -667,20 +667,23 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
             <button className="lem-btn" disabled={occupe} onClick={() => agirEnMasse('ignorer')}>
               <X size={14} /> Ignorer
             </button>
+            {/* CE QUE CETTE BARRE NE FAIT PAS, dit au moment où la question se
+                pose. Boucler une tâche date la première touche de l'entreprise
+                et fait avancer sa séquence — et les deux cohortes se comparent
+                à l'âge depuis cette date. Cocher cinquante appels « faits »
+                ici daterait cinquante premiers contacts qui n'ont pas eu lieu. */}
+            <span
+              className="lem-second"
+              style={{ fontSize: 11.5 }}
+              title="Boucler une tâche date la première touche de l’entreprise et fait avancer sa séquence : cinquante « faits » d’un coup dateraient cinquante premiers contacts qui n’ont pas eu lieu."
+            >
+              pas de « terminer » ici
+            </span>
             <button className="lem-btn discret" onClick={() => setSelection(new Set())}>
               Annuler
             </button>
           </div>
         )}
-
-        {/* CE QUE CET ÉCRAN NE FAIT PAS, ET POURQUOI — dit ici plutôt que
-            découvert par son absence. */}
-        <p className="lem-second" style={{ fontSize: 12, marginTop: 14, maxWidth: '76ch' }}>
-          <b>« Terminer » n’est pas un geste de masse.</b> Boucler une tâche date la première touche
-          de l’entreprise et fait avancer sa séquence — et les deux cohortes se comparent à l’âge
-          depuis cette date. Cocher cinquante appels « faits » ici daterait cinquante premiers
-          contacts qui n’ont pas eu lieu. « Fait » reste là où le travail se fait.
-        </p>
       </div>
     </div>
   )

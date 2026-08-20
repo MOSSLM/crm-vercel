@@ -138,26 +138,23 @@ const cohorteDe = (entreprise: unknown): string | null => {
 };
 
 // La file de démarchage : les tâches manuelles en attente sur les prospects de
-// cet agent, EN SÉQUENCE OU NON.
+// cet agent — TOUTES RATTACHÉES À UNE INSCRIPTION.
 //
-// POURQUOI L'APPEL À FROID EST ENTRÉ DANS LA FILE
-// Cette route a longtemps filtré `enrollment_id IS NOT NULL`, au nom d'une
-// décision produit assumée : « cet écran ne montre que les entreprises en
-// séquence ». Cette décision supposait que le démarchage COMMENCE par une
-// inscription. Ce n'est plus vrai : à partir du 17 août 2026, cent entreprises
-// par jour sont assignées et appelées à froid, et l'inscription en séquence ne
-// vient qu'APRÈS le premier contact. Le filtre ne cachait donc plus un cas
-// marginal — il cachait le mode de travail principal (65 tâches d'appel
-// invisibles en production le jour où on l'a mesuré), et aucune des cent
-// entreprises du jour n'aurait jamais paru dans le cockpit.
+// POURQUOI L'APPEL À FROID EN SORT (20/08/2026)
+// La règle est celle de Matteo, mot pour mot : « ceux qui ne sont pas en
+// séquence, on ne doit pas les voir dans des tâches, même pas d'appels. Dans
+// tous les cas on met en séquence pour avoir des tâches. »
 //
-// Une tâche à froid n'a ni séquence, ni étape, ni réponse enregistrée : elle
-// sort d'ici avec `sequence: null`, `hors_sequence: true`, et n'est JAMAIS
-// « en discussion » (cf. `enDiscussion`). Elle consomme en revanche le quota du
-// jour au même titre qu'une relance : c'est le même temps d'agent.
+// Le froid était entré ici en août, quand l'attribution semait une tâche
+// d'appel par entreprise. Ce n'est plus le cas : `assignProspectToAgent` MET EN
+// SÉQUENCE (cf. `mettreEnSequence`), et c'est la séquence qui produit les
+// tâches. Le stock laissé par l'ancienne façon de faire — 631 appels en attente
+// dont 86 sur des entreprises déjà inscrites ailleurs, donc du travail en
+// double — n'est pas ce qu'un agent doit voir en ouvrant sa journée.
 //
-// `?froid=0` restitue l'ancien comportement — utile pour comparer une file à
-// l'autre, ou pour une séance consacrée aux seules relances.
+// Ce qu'une tâche sans inscription ne sait pas dire : ce qui a été tenté avant,
+// ce qui vient après, quoi faire de l'issue. C'est tout le sujet.
+//
 // `?cohorte=A_site_faible|B_sans_site` restreint la file à une cohorte de la
 // campagne : sans ce filtre, les deux cohortes se mélangent et il devient
 // impossible de les comparer au même âge.
@@ -168,8 +165,6 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
   const sc = getServiceClient();
 
   const params = new URL(req.url).searchParams;
-  // Le froid est le défaut : il faut le demander explicitement pour le perdre.
-  const avecFroid = params.get("froid") !== "0";
   // Vocabulaire fermé : une valeur inconnue (faute de frappe, vieux lien) est
   // ignorée plutôt que passée à Postgres, qui rendrait une file vide sans dire
   // pourquoi. Une file trop large se voit ; une file vide se croit.
@@ -189,8 +184,9 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     // replanifiée (`due_at` déplacé), pas une tâche terminée. Sans elle, une
     // relance disparaîtrait de la frise au lieu de reparaître le jour choisi.
     .in("status", ["pending", "snoozed"])
-    .in("kind", ["call", "whatsapp", "linkedin"]);
-  if (!avecFroid) filesQuery = filesQuery.not("enrollment_id", "is", null);
+    .in("kind", ["call", "whatsapp", "linkedin"])
+    // LA RÈGLE : pas d'inscription, pas de tâche. Voir l'en-tête.
+    .not("enrollment_id", "is", null);
   if (cohorte) filesQuery = filesQuery.eq("entreprise.cohorte_demarchage", cohorte);
 
   const { data, error } = await filesQuery
@@ -229,14 +225,13 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
   // discussion a besoin des mêmes séquences et des mêmes inscriptions que la
   // file : un seul aller-retour pour les deux.
   //
-  // Le froid compte ICI AUSSI, et sans filtre de cohorte. Ces tâches-là
-  // alimentent `done_today_by_kind`, c'est-à-dire la part de cadence DÉJÀ
-  // consommée aujourd'hui : vingt appels à froid passés ce matin occupent
-  // vingt places de la journée, qu'ils viennent d'une séquence ou non, et que
-  // l'écran regarde la cohorte A ou l'ensemble. Les oublier rouvrirait une
-  // journée déjà pleine.
+  // Ce qui a été bouclé compte ICI SANS AUCUN FILTRE — ni séquence, ni cohorte.
+  // Ces tâches-là alimentent `done_today_by_kind`, c'est-à-dire la part de
+  // cadence DÉJÀ consommée aujourd'hui : vingt appels passés ce matin occupent
+  // vingt places de la journée, qu'ils viennent d'une séquence ou non. Les
+  // oublier rouvrirait une journée déjà pleine.
   const todayStart = dayStartIso();
-  let doneQuery = sc
+  const doneQuery = sc
     .from("prospection_tasks")
     .select(
       "kind, step_id, automation_id, enrollment_id, " +
@@ -245,7 +240,6 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     .eq("entreprise.owner_id", user.id)
     .eq("status", "done")
     .gte("done_at", todayStart);
-  if (!avecFroid) doneQuery = doneQuery.not("enrollment_id", "is", null);
   const { data: doneRows } = await doneQuery.limit(1000);
   const done = (doneRows ?? []) as unknown as DoneRow[];
 
@@ -537,7 +531,6 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
         // Ce que la file a réellement montré, pour que l'écran puisse le dire
         // au lieu de le supposer.
         cohorte,
-        froid: avecFroid,
       },
     },
     { headers: cors },

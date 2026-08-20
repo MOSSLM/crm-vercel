@@ -1,6 +1,9 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getAgentPipeline, type AgentStage } from "@/app/api/agent/_lib";
 import { isRealDeal, pickSurvivor, type DealRecord } from "@/lib/opportunites/one-per-company";
+import { collecterCanaux, sequenceSuggeree, type PublicVise } from "@/lib/prospects/canal";
+import { enrollInSequence, processSequenceEnrollment } from "@/lib/automations/engine";
+import type { Automation, SequenceEnrollment } from "@/components/automations/types";
 
 type ServiceClient = ReturnType<typeof getServiceClient>;
 
@@ -57,9 +60,137 @@ async function syncOpportuniteOwners(
   return updErr ? updErr.message : null;
 }
 
+/**
+ * Ce qu'est devenue la mise en séquence de ce prospect.
+ *
+ * `aucune_sequence` n'est PAS une erreur : c'est une information que l'admin
+ * doit voir. Une entreprise attribuée sans séquence qui lui corresponde ne
+ * produira aucune tâche — autrefois elle en produisait une (l'appel à froid) et
+ * personne ne remarquait qu'aucune séquence ne la couvrait.
+ */
+export type MiseEnSequence =
+  | "inscrit"
+  | "deja_inscrit"
+  | "aucune_sequence"
+  | "injoignable"
+  | "erreur";
+
 export type AssignResult =
-  | { ok: true; entrepriseId: number; agentId: string; opportuniteId: string }
+  | {
+      ok: true;
+      entrepriseId: number;
+      agentId: string;
+      opportuniteId: string;
+      sequence?: MiseEnSequence;
+    }
   | { ok: false; error: string };
+
+/**
+ * METTRE EN SÉQUENCE — ce qui remplace la tâche « Appel à froid ».
+ *
+ * LA RÈGLE, MOT POUR MOT : « ceux qui ne sont pas en séquence, on ne doit pas
+ * les voir dans des tâches, même pas d'appels. Dans tous les cas on met en
+ * séquence pour avoir des tâches. »
+ *
+ * L'attribution semait jusqu'ici une tâche d'appel sans séquence, sans étape et
+ * sans inscription. Elles se sont accumulées — 631 en attente au 20/08/2026,
+ * dont 86 sur des entreprises DÉJÀ inscrites ailleurs, c'est-à-dire du travail
+ * en double. Une tâche sans séquence ne sait rien dire : ni ce qui a été tenté,
+ * ni ce qui vient après, ni quoi faire de l'issue.
+ *
+ * ON NE CHOISIT RIEN À LA MAIN. `sequenceSuggeree` lit le public déclaré par
+ * chaque séquence (`settings.requireCanaux` / `excludeCanaux`) et le compare
+ * aux canaux réels du prospect. Une séquence créée demain entre dans le choix
+ * sans qu'on retouche cette fonction — et une séquence EN SERVICE l'emporte sur
+ * un brouillon, sans quoi l'inscription partirait contre un mur.
+ *
+ * QUAND RIEN NE CORRESPOND, ON NE CRÉE RIEN. Pas de tâche de repli : c'est très
+ * exactement ce qu'on vient de retirer. Le prospect est attribué, il apparaît
+ * dans le marketing pipeline, et le compte rendu dit « aucune séquence ».
+ */
+async function mettreEnSequence(
+  sc: ServiceClient,
+  entrepriseId: number,
+  opportuniteId: string,
+  agentId: string,
+): Promise<MiseEnSequence> {
+  try {
+    const [entRes, contactsRes, seqRes] = await Promise.all([
+      sc.from("entreprises").select("email, telephone, telephones").eq("id", entrepriseId).maybeSingle(),
+      sc.from("contacts").select("id, email, tel, is_decision_maker").eq("entreprise_id", entrepriseId),
+      sc.from("automations").select("*").eq("kind", "sequence").in("status", ["on", "draft"]),
+    ]);
+
+    const ent = entRes.data as { email?: string | null; telephone?: string | null; telephones?: string[] | null } | null;
+    const contacts = (contactsRes.data ?? []) as {
+      id: string;
+      email: string | null;
+      tel: string | null;
+      is_decision_maker: boolean | null;
+    }[];
+
+    const { canaux } = collecterCanaux({
+      entrepriseEmail: ent?.email ?? null,
+      entrepriseTelephones: [ent?.telephone ?? null, ...(ent?.telephones ?? [])],
+      contacts: contacts.map((c) => ({
+        email: c.email,
+        tel: c.tel,
+        isDecisionMaker: c.is_decision_maker,
+      })),
+    });
+    if (canaux.size === 0) return "injoignable";
+
+    const sequences = (seqRes.data ?? []) as Automation[];
+    const choisie = sequenceSuggeree(
+      canaux,
+      sequences.map((a) => ({
+        ...((a.settings ?? {}) as PublicVise),
+        id: a.id,
+        status: a.status,
+      })),
+    );
+    if (!choisie) return "aucune_sequence";
+    const automation = sequences.find((a) => a.id === choisie.id);
+    if (!automation) return "aucune_sequence";
+
+    // Le décideur d'abord : c'est lui que le message nommera.
+    const contact = contacts.find((c) => c.is_decision_maker) ?? contacts[0] ?? null;
+    const { enrolled, enrollmentId } = await enrollInSequence(
+      automation,
+      {
+        contact_id: contact?.id ?? null,
+        entreprise_id: entrepriseId,
+        opportunite_id: opportuniteId,
+        event: "attribution",
+      },
+      { createdBy: agentId },
+    );
+    if (!enrolled) return enrollmentId ? "deja_inscrit" : "injoignable";
+
+    // Une première étape MANUELLE est jouée tout de suite, pour que la tâche
+    // existe sans attendre le tick. Un e-mail, jamais : il entre dans la file du
+    // régulateur, qui décide de l'heure — sinon une attribution en lot ferait
+    // partir cinquante e-mails d'un coup.
+    const premiere = (automation.definition as { steps?: { kind?: string }[] } | null)?.steps?.[0];
+    if (enrollmentId && premiere?.kind !== "email") {
+      const { data: enr } = await sc
+        .from("sequence_enrollments")
+        .select("*")
+        .eq("id", enrollmentId)
+        .maybeSingle();
+      if (enr) {
+        try {
+          await processSequenceEnrollment(enr as SequenceEnrollment);
+        } catch {
+          // le ticker reprendra : l'inscription existe, c'est l'essentiel
+        }
+      }
+    }
+    return "inscrit";
+  } catch {
+    return "erreur";
+  }
+}
 
 /**
  * Attribue une entreprise du pool à un agent (action admin).
@@ -80,9 +211,9 @@ export type AssignResult =
  * `trg_sync_opportunity_pipeline_from_stage`, qui dérive `pipeline_id` de
  * l'étape et déplacerait l'affaire (cf. `sql/20260326_multi_pipeline_support.sql`).
  *
- * Sème la première tâche « Appel à froid » pour que le prospect apparaisse dans
- * la file Démarchage. Rejouable sans dommage : ni l'affaire ni la tâche ne sont
- * dupliquées.
+ * MET LE PROSPECT EN SÉQUENCE pour qu'il produise des tâches — plus de tâche
+ * d'appel semée à la main, cf. `mettreEnSequence`. Rejouable sans dommage : ni
+ * l'affaire ni l'inscription ne sont dupliquées.
  *
  * `pipeline` laisse une attribution en masse résoudre le pipeline agent une
  * seule fois pour tout le lot. Il n'est nécessaire QUE pour créer une affaire :
@@ -200,31 +331,9 @@ export async function assignProspectToAgent(
     return { ok: true, entrepriseId, agentId, opportuniteId };
   }
 
-  // Seed the cold-call task — the agent's manual step in the sequence. Skipped
-  // when one is already waiting on this company, so a re-attribution doesn't
-  // stack duplicate calls in the Démarchage queue.
-  const { data: pendingCall } = await sc
-    .from("prospection_tasks")
-    .select("id")
-    .eq("entreprise_id", entrepriseId)
-    .eq("kind", "call")
-    .eq("status", "pending")
-    .limit(1)
-    .maybeSingle();
+  const sequence = await mettreEnSequence(sc, entrepriseId, opportuniteId, agentId);
 
-  if (!pendingCall) {
-    await sc.from("prospection_tasks").insert({
-      kind: "call",
-      status: "pending",
-      entreprise_id: entrepriseId,
-      opportunite_id: opportuniteId,
-      assignee_id: agentId,
-      title: "Appel à froid",
-      payload: { phone: ent.telephone ?? null },
-    });
-  }
-
-  return { ok: true, entrepriseId, agentId, opportuniteId };
+  return { ok: true, entrepriseId, agentId, opportuniteId, sequence };
 }
 
 export type UnassignResult =
