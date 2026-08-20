@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Icon, Pill } from "./DemIcon";
+import { DemNotes } from "./DemNotes";
 import { demCh, isMessageKind } from "./channels";
 import { COHORTE_INFO } from "./cohortes";
 import { DEM_OBJECTIONS } from "./DemObjections";
@@ -66,6 +67,58 @@ const dateLongue = (iso: string) => {
 /** Remplace les `{{variables}}` d'un modèle et les met en évidence à l'écran. */
 function fillVars(txt: string, vars: Record<string, string>): string {
   return txt.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] ?? m);
+}
+
+/**
+ * BOUCLER LA TÂCHE — et surtout PAS le même objet que « envoyer ».
+ *
+ * LE GRIEF, MOT POUR MOT : « les boutons "fait" et "envoyer le message" se
+ * ressemblent trop ». Ils étaient tous les deux de gros blocs pleine largeur, à
+ * dix pixels l'un de l'autre, et se distinguaient par leur seule couleur. Or
+ * ils ne font pas la même chose : l'un ouvre WhatsApp, l'autre ferme la ligne
+ * et fait descendre la file. Se tromper coûte soit un message jamais envoyé
+ * marqué comme fait, soit un doublon chez le prospect.
+ *
+ * Ce bouton-ci est donc une BARRE, pas un bloc : une pastille ronde à gauche,
+ * le libellé au milieu, « suivant → » à droite — la forme dit ce qui va se
+ * passer. Il ne se remplit (`data-arme`) qu'une fois le geste réellement
+ * accompli : tant qu'on n'a pas cliqué « Envoyer », c'est le bouton d'envoi qui
+ * est plein, et celui-ci reste en retrait.
+ */
+function BoutonBoucler({
+  arme,
+  label,
+  sous,
+  disabled,
+  onClick,
+}: {
+  arme: boolean;
+  label: string;
+  sous?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="dm-fait"
+      data-arme={arme ? "1" : undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="ic">
+        <Icon name="check" className="ico-sm" />
+      </span>
+      <span className="tx">
+        <b>{label}</b>
+        {sous ? <i>{sous}</i> : null}
+      </span>
+      <span className="nx">
+        suivant
+        <Icon name="arrowRight" className="ico-xs" />
+      </span>
+    </button>
+  );
 }
 
 function ScriptLine({ text, vars }: { text: string; vars: Record<string, string> }) {
@@ -158,6 +211,17 @@ export function DemActionCard({
   // ── état partagé ────────────────────────────────────────────────────────
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<StepOutcomeId | null>(null);
+
+  /**
+   * Le geste du canal a-t-il été accompli — WhatsApp ouvert, numéro composé ?
+   *
+   * Il ARME le bouton qui boucle : tant qu'on n'a rien envoyé, c'est le bouton
+   * d'envoi qui est plein et l'autre qui est en retrait ; une fois le message
+   * parti, les rôles s'échangent. C'est ce qui rend les deux impossibles à
+   * confondre sans avoir à lire — l'écran suit ce qui s'est passé.
+   */
+  const [geste, setGeste] = useState(false);
+  useEffect(() => setGeste(false), [task.id]);
 
   // ── mise de côté ────────────────────────────────────────────────────────
   /** Le panneau est-il ouvert ? Fermé, il ne coûte rien à l'œil. */
@@ -275,6 +339,7 @@ export function DemActionCard({
           return;
         }
         window.open(url, "_blank");
+        setGeste(true);
         await logMessage("whatsapp", phone);
       } else {
         if (!linkedinUrl) {
@@ -283,6 +348,7 @@ export function DemActionCard({
         }
         await navigator.clipboard.writeText(body).catch(() => {});
         window.open(linkedinUrl, "_blank");
+        setGeste(true);
         await logMessage("linkedin", linkedinUrl);
         toast.success("Message copié dans le presse-papiers.");
       }
@@ -329,6 +395,7 @@ export function DemActionCard({
   const call = async () => {
     if (!callPhone) return;
     setCalling(true);
+    setGeste(true);
     try {
       if (tel) {
         await tel.dial({
@@ -654,20 +721,30 @@ export function DemActionCard({
               </div>
             </div>
 
-            <button className="dm-cta" disabled={sending || busy} onClick={send}>
+            {/* L'ENVOI : un bloc plein, à la couleur du canal. C'est le geste
+                du métier, et il reste le plus visible tant qu'il n'a pas eu
+                lieu. */}
+            <button
+              className="dm-cta"
+              data-fait={geste ? "1" : undefined}
+              disabled={sending || busy}
+              onClick={send}
+            >
               <Icon name="send" className="ico-sm" />
               {ch.cta}
               {firstName ? ` à ${firstName}` : ""}
             </button>
 
-            {/* Le geste qui ferme la tâche, juste sous l'envoi et impossible à
-                rater : c'est LUI qu'on cherche une fois le message parti. La
-                séquence enchaîne alors sur son attente de réponse, et c'est
-                là — pas ici — qu'on déclarera que le prospect a répondu. */}
-            <button className="dm-cta big ok" disabled={busy} onClick={markDone}>
-              <Icon name="check" className="ico-lg" />
-              Message envoyé — c&apos;est fait
-            </button>
+            {/* CE QUI FERME LA LIGNE : une barre, pas un second bloc. Les deux
+                se confondaient, et se tromper coûte soit un message jamais
+                envoyé marqué comme fait, soit un doublon chez le prospect. */}
+            <BoutonBoucler
+              arme={geste}
+              label={geste ? "C'est fait" : "Marquer comme fait"}
+              sous={geste ? undefined : "sans passer par l'envoi"}
+              disabled={busy}
+              onClick={markDone}
+            />
           </>
         )}
 
@@ -701,7 +778,12 @@ export function DemActionCard({
               </div>
             </div>
 
-            <button className="dm-cta" disabled={!callPhone || calling || busy} onClick={call}>
+            <button
+              className="dm-cta"
+              data-fait={geste ? "1" : undefined}
+              disabled={!callPhone || calling || busy}
+              onClick={call}
+            >
               <Icon name="phone" className="ico-sm" />
               Appeler{firstName ? ` ${firstName}` : ""}
             </button>
@@ -820,6 +902,19 @@ export function DemActionCard({
               <Icon name="check" className="ico-sm" />
               Le prospect a répondu
             </button>
+            {/* CE QU'IL A DIT se note ICI, avant même de déclarer la réponse :
+                c'est le moment où on l'a sous les yeux. La note part seule, la
+                séquence n'a pas à bouger pour ça. */}
+            <DemNotes
+              entrepriseId={task.entreprise_id}
+              contactId={task.contact_id}
+              opportuniteId={task.opportunite_id}
+              stepId={task.step_id}
+              valeur={note}
+              setValeur={setNote}
+              placeholder={`Ce que ${firstName || "le prospect"} a répondu…`}
+              onEnregistree={onLogged}
+            />
             <div className="dm-cta2">
               <a className="btn outline sm" href="#messages-history" style={{ justifyContent: "center" }}>
                 <Icon name="layers" className="ico-sm" />
@@ -980,6 +1075,21 @@ export function DemActionCard({
           </div>
         )}
 
+        {/* ── ce qu'il a dit, à toutes les étapes ── */}
+        {task.kind !== "wait" && (
+          <DemNotes
+            entrepriseId={task.entreprise_id}
+            contactId={task.contact_id}
+            opportuniteId={task.opportunite_id}
+            stepId={task.step_id}
+            valeur={note}
+            setValeur={setNote}
+            placeholder={`Ce que dit ${firstName || "le prospect"}, son besoin, la prochaine étape…`}
+            onEnregistree={onLogged}
+            aide="« Noter » enregistre seul — sinon ce texte part avec la tâche."
+          />
+        )}
+
         {/* ── issue : commune à l'appel et au message ── */}
         {task.kind !== "wait" && (
           <>
@@ -1011,13 +1121,6 @@ export function DemActionCard({
               />
             )}
 
-            <textarea
-              className="dm-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={`Ce que dit ${firstName || "le prospect"}, son besoin, la prochaine étape…`}
-            />
-
             {chosen && (
               <div className="dm-hint">
                 <Icon name="flow" className="ico-sm" />
@@ -1033,15 +1136,12 @@ export function DemActionCard({
                 Sur un message, « Fait » vit déjà en gros sous l'envoi : ce
                 bouton-ci n'apparaît donc que pour enregistrer une issue. */}
             {(!isMessageKind(task.kind) || outcome) && (
-              <button
-                className="dm-cta"
-                style={{ ["--k" as string]: outcome ? "var(--text)" : "var(--ok)" }}
+              <BoutonBoucler
+                arme={geste || !!outcome}
+                label={chosen ? `Enregistrer l'issue · ${chosen.label}` : "C'est fait"}
                 disabled={busy}
                 onClick={outcome ? saveOutcome : markDone}
-              >
-                <Icon name="check" className="ico-sm" />
-                {chosen ? `Enregistrer l'issue · ${chosen.label}` : "Fait"}
-              </button>
+              />
             )}
 
             <div className="dm-cta2">

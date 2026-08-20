@@ -3,17 +3,16 @@ import {
   cadenceEffective,
   countByKind,
   countBySignal,
-  dayOfTask,
   estPremierContact,
-  firstPlannedTask,
+  fileDe,
+  fileDeLaJournee,
   hasSignal,
   isLate,
   isSetAside,
-  joursReels,
   normaliseQuotas,
   ordreDePassage,
   quotaOf,
-  separerFile,
+  repartirLaJournee,
   signalOf,
   signalsOf,
 } from "../demarchage-buckets";
@@ -62,9 +61,12 @@ const deCote = (id: string, retour: string, kind = "whatsapp"): T => ({
 const lot = (kind: string, n: number, prefix = kind): T[] =>
   Array.from({ length: n }, (_, i) => t(`${prefix}-${i}`, iso("2026-08-10"), kind));
 
-const cal = (tasks: T[]) => joursReels(tasks, { now: NOW, timeZone: "UTC" });
-const jour = (days: ReturnType<typeof cal>, offset: number) =>
-  days.find((d) => d.offset === offset)?.tasks ?? [];
+/** Une attente de réponse : rien à envoyer, une réponse à déclarer. */
+const attente = (id: string, due: string | null = iso("2026-08-13")): T => ({
+  ...relance(id, due, "wait"),
+});
+
+const ranger = (tasks: T[]) => repartirLaJournee(tasks, { now: NOW, timeZone: "UTC" });
 const ids = (tasks: T[]) => tasks.map((x) => x.id);
 
 /**
@@ -99,119 +101,113 @@ describe("estPremierContact — jamais touchée par personne", () => {
   });
 });
 
-describe("separerFile — deux files, jamais un mélange", () => {
-  it("répartit chaque ligne d'un côté ou de l'autre, sans en perdre", () => {
-    const tasks = [t("neuf1", iso("2026-08-13")), relance("suivi1", iso("2026-08-13")), t("neuf2", null)];
-    const { premiers, relances } = separerFile(tasks);
-    expect(ids(premiers).sort()).toEqual(["neuf1", "neuf2"]);
-    expect(ids(relances)).toEqual(["suivi1"]);
-    expect(premiers.length + relances.length).toBe(tasks.length);
+describe("repartirLaJournee — trois files, jamais un mélange", () => {
+  it("répartit chaque ligne dans une file et une seule, sans en perdre", () => {
+    const tasks = [
+      t("neuf1", iso("2026-08-13")),
+      relance("suivi1", iso("2026-08-13")),
+      t("neuf2", null),
+      attente("attente1"),
+    ];
+    const r = ranger(tasks);
+    expect(ids(r.premiers).sort()).toEqual(["neuf1", "neuf2"]);
+    expect(ids(r.relances)).toEqual(["suivi1"]);
+    expect(ids(r.attentes)).toEqual(["attente1"]);
+    expect(r.premiers.length + r.relances.length + r.aVenir.length + r.attentes.length).toBe(
+      tasks.length,
+    );
+  });
+
+  /**
+   * LE CORRECTIF QUI JUSTIFIE LA TROISIÈME FILE.
+   *
+   * Une attente de réponse n'est pas une relance : il n'y a rien à envoyer,
+   * seulement à dire « il a répondu » pour que la séquence reparte. Mêlée aux
+   * relances et répartie sur sept jours de calendrier, elle était invisible —
+   * et c'est très exactement comme ça que des inscriptions ont dormi.
+   */
+  it("sort les attentes des relances, quelle que soit leur date", () => {
+    const r = ranger([
+      attente("attente-auj", iso("2026-08-13")),
+      attente("attente-vieille", iso("2026-07-01")),
+      attente("attente-sans-date", null),
+      relance("vraie-relance", iso("2026-08-13")),
+    ]);
+    expect(ids(r.attentes).sort()).toEqual([
+      "attente-auj",
+      "attente-sans-date",
+      "attente-vieille",
+    ]);
+    expect(ids(r.relances)).toEqual(["vraie-relance"]);
+    expect(ids(r.aVenir)).toEqual([]);
+  });
+
+  it("une attente n'est jamais un premier contact, même sur une entreprise jamais touchée", () => {
+    const r = ranger([{ id: "a", kind: "wait", due_at: iso("2026-08-13") }]);
+    expect(ids(r.attentes)).toEqual(["a"]);
+    expect(r.premiers).toEqual([]);
+  });
+
+  it("replie l'échu sur la journée et renvoie le reste dans « à venir »", () => {
+    const r = ranger([
+      relance("en-retard", iso("2026-08-10")),
+      relance("aujourdhui", iso("2026-08-13")),
+      relance("demain", iso("2026-08-14")),
+      relance("dans-trois-mois", iso("2026-11-14")),
+    ]);
+    expect(ids(r.relances).sort()).toEqual(["aujourdhui", "en-retard"]);
+    // Chronologique, et non par signal : « à venir » est un aperçu, pas une
+    // file de travail.
+    expect(ids(r.aVenir)).toEqual(["demain", "dans-trois-mois"]);
   });
 
   it("rend les premiers contacts DANS l'ordre de passage", () => {
-    const { premiers } = separerFile([
+    const r = ranger([
       t("recent", iso("2026-08-13")),
       t("vieux", iso("2026-08-01")),
       t("chaud", iso("2026-08-30"), "call", { callWhen: "maintenant", score: 90 }),
     ]);
-    expect(ids(premiers)).toEqual(["chaud", "vieux", "recent"]);
+    expect(ids(r.premiers)).toEqual(["chaud", "vieux", "recent"]);
   });
 
   it("ne plafonne rien : cent premiers contacts restent cent", () => {
     // C'est le point de la refonte. L'ancien plan en gardait vingt et poussait
     // les quatre-vingts autres au lendemain — il cachait le travail qu'on
     // venait de décider de faire.
-    const { premiers } = separerFile(lot("whatsapp", 100));
-    expect(premiers).toHaveLength(100);
+    expect(ranger(lot("whatsapp", 100)).premiers).toHaveLength(100);
+  });
+
+  it("range une mise de côté dans « à venir », pas dans la journée", () => {
+    const r = ranger([deCote("range", "2026-08-20")]);
+    expect(ids(r.aVenir)).toEqual(["range"]);
+    expect(r.relances).toEqual([]);
   });
 });
 
-/**
- * LE CALENDRIER DES RELANCES.
- *
- * Chaque ligne à la date où elle est due, l'échu replié sur aujourd'hui. Rien
- * n'est déplacé pour tenir dans un quota : c'est toute la différence avec le
- * plan qu'il remplace.
- */
-describe("joursReels — la date est la date", () => {
-  it("affiche la semaine qui vient, même sans rien à y faire", () => {
-    // Un calendrier qui n'affiche que les jours occupés n'est plus un
-    // calendrier : la semaine ne se lit plus, et une case unique « auj. »
-    // donne l'impression que la barre est cassée.
-    expect(cal([]).map((j) => j.date)).toEqual([
-      "2026-08-13",
-      "2026-08-14",
-      "2026-08-15",
-      "2026-08-16",
-      "2026-08-17",
-      "2026-08-18",
-      "2026-08-19",
-    ]);
+describe("fileDeLaJournee — ce que l'écran affiche", () => {
+  const r = ranger([
+    t("neuf", iso("2026-08-13")),
+    relance("auj", iso("2026-08-13")),
+    relance("plus-tard", iso("2026-08-19")),
+    attente("attente"),
+  ]);
+
+  it("rend la file demandée", () => {
+    expect(ids(fileDeLaJournee(r, "premiers"))).toEqual(["neuf"]);
+    expect(ids(fileDeLaJournee(r, "attentes"))).toEqual(["attente"]);
   });
 
-  it("place chaque relance à son jour", () => {
-    const d = cal([
-      relance("auj", iso("2026-08-13")),
-      relance("dem", iso("2026-08-14")),
-      relance("j7", iso("2026-08-20")),
-    ]);
-    expect(ids(jour(d, 0))).toEqual(["auj"]);
-    expect(ids(jour(d, 1))).toEqual(["dem"]);
-    expect(ids(jour(d, 7))).toEqual(["j7"]);
+  it("garde « à venir » replié tant qu'on ne le demande pas", () => {
+    expect(ids(fileDeLaJournee(r, "relances"))).toEqual(["auj"]);
+    expect(ids(fileDeLaJournee(r, "relances", true))).toEqual(["auj", "plus-tard"]);
   });
 
-  it("replie l'échu sur aujourd'hui — une relance en retard est du travail du jour", () => {
-    const d = cal([relance("vieux", iso("2026-08-01")), relance("hier", iso("2026-08-12"))]);
-    expect(ids(jour(d, 0))).toEqual(["vieux", "hier"]);
-    // Rien avant aujourd'hui : personne n'irait regarder un onglet dans le passé.
-    expect(d.every((j) => j.offset >= 0)).toBe(true);
-  });
-
-  it("garde sa case à ce qui tombe APRÈS l'horizon", () => {
-    // Une mise de côté à trois mois ne doit pas disparaître au bout de la
-    // semaine affichée : sa journée s'ajoute au calendrier.
-    const d = cal([relance("loin", iso("2026-11-12"))]);
-    expect(d[d.length - 1].date).toBe("2026-11-12");
-    expect(ids(d[d.length - 1].tasks)).toEqual(["loin"]);
-  });
-
-  it("ne déplace RIEN pour tenir un quota", () => {
-    // Quarante relances dues aujourd'hui sont quarante relances aujourd'hui :
-    // sans plafond, on répond à qui a réagi.
-    const d = cal(Array.from({ length: 40 }, (_, i) => relance(`r${i}`, iso("2026-08-13"))));
-    expect(jour(d, 0)).toHaveLength(40);
-    expect(d.filter((j) => j.tasks.length > 0)).toHaveLength(1);
-  });
-
-  it("range une mise de côté au jour de son retour", () => {
-    const d = cal([deCote("range", "2026-08-20")]);
-    expect(ids(jour(d, 0))).toEqual([]);
-    expect(ids(jour(d, 7))).toEqual(["range"]);
-  });
-
-  it("respecte l'horizon demandé", () => {
-    expect(joursReels([], { now: NOW, timeZone: "UTC", horizon: 3 })).toHaveLength(3);
-    // Un horizon absurde ne fait pas disparaître aujourd'hui.
-    expect(joursReels([], { now: NOW, timeZone: "UTC", horizon: 0 })).toHaveLength(1);
-  });
-
-  it("ouvre la journée par les signaux, dans l'ordre de priorité", () => {
-    const d = cal([
-      relance("froid", iso("2026-08-01")),
-      enDiscussion("discussion", iso("2026-08-13")),
-      { ...relance("chaud", iso("2026-08-13"), "call"), intent: { callWhen: "maintenant", score: 80 } },
-      {
-        ...relance("manque", iso("2026-08-13"), "call"),
-        intent: { callWhen: "maintenant", score: 75, missed: true },
-      },
-    ]);
-    expect(ids(jour(d, 0))).toEqual(["manque", "discussion", "chaud", "froid"]);
-    expect(firstPlannedTask(d)).toMatchObject({ id: "manque" });
-  });
-
-  it("passe une tâche sans échéance dans la journée du jour, en dernier", () => {
-    const d = cal([relance("sansdate", null), relance("date", iso("2026-08-12"))]);
-    expect(ids(jour(d, 0))).toEqual(["date", "sansdate"]);
+  it("dit dans quelle file une tâche est rangée", () => {
+    expect(fileDe(r, r.premiers[0])).toBe("premiers");
+    expect(fileDe(r, r.attentes[0])).toBe("attentes");
+    expect(fileDe(r, r.relances[0])).toBe("relances");
+    // Une relance lointaine reste une relance : c'est l'onglet où on la trouve.
+    expect(fileDe(r, r.aVenir[0])).toBe("relances");
   });
 });
 
@@ -415,14 +411,5 @@ describe("cadenceEffective / quotaOf", () => {
     expect(quotaOf("call")).toBe(DAILY_QUOTA.call);
     expect(quotaOf("call", { whatsapp: 60 })).toBe(DAILY_QUOTA.call);
     expect(quotaOf("wait", { call: 40 })).toBeNull();
-  });
-});
-
-describe("dayOfTask", () => {
-  it("retrouve la journée d'une tâche, pour que le calendrier suive la sélection", () => {
-    const d = cal([relance("auj", iso("2026-08-13")), deCote("range", "2026-08-20")]);
-    expect(dayOfTask(d, "auj")).toBe("2026-08-13");
-    expect(dayOfTask(d, "range")).toBe("2026-08-20");
-    expect(dayOfTask(d, "inconnu")).toBeNull();
   });
 });

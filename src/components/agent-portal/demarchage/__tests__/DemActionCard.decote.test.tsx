@@ -117,8 +117,12 @@ describe("DemActionCard — pas sur WhatsApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /Pas sur WhatsApp/ }));
     fireEvent.click(screen.getByRole("button", { name: /Le sortir de la séquence WhatsApp/ }));
 
-    await waitFor(() => expect(authedFetch).toHaveBeenCalled());
-    const [url, init] = authedFetch.mock.calls[0];
+    // La carte lit aussi les notes du prospect au montage : on cherche l'appel
+    // qui nous intéresse plutôt que de compter sur son rang.
+    const appel = () =>
+      authedFetch.mock.calls.find(([u]: [string]) => u === "/api/agent/demarchage/hors-canal");
+    await waitFor(() => expect(appel()).toBeDefined());
+    const [url, init] = appel()!;
     expect(url).toBe("/api/agent/demarchage/hors-canal");
     expect(JSON.parse((init as { body: string }).body)).toMatchObject({
       task_id: "t1",
@@ -135,8 +139,10 @@ describe("DemActionCard — pas sur WhatsApp", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /Le sortir de la séquence WhatsApp/ }));
 
-    await waitFor(() => expect(authedFetch).toHaveBeenCalled());
-    const [, init] = authedFetch.mock.calls[0];
+    const appel = () =>
+      authedFetch.mock.calls.find(([u]: [string]) => u === "/api/agent/demarchage/hors-canal");
+    await waitFor(() => expect(appel()).toBeDefined());
+    const [, init] = appel()!;
     expect(JSON.parse((init as { body: string }).body).basculer_appel).toBe(false);
   });
 

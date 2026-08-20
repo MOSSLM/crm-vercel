@@ -201,6 +201,7 @@
 .dm-skin .dm-tk .kc{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:5px;font-size:10px;font-weight:600;letter-spacing:-.005em}
 .dm-skin .dm-tk .st{font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);background:var(--bg-2);border-radius:4px;padding:2px 5px}
 .dm-skin .dm-tk .st.new{background:var(--magic-tint);color:var(--magic)}
+.dm-skin .dm-tk .st.plus-tard{background:var(--bg-2);color:var(--text-4)}
 .dm-skin .dm-tk[aria-selected="true"]{background:var(--accent-tint);border-left-color:var(--accent)}
 .dm-skin .dm-tk[aria-selected="true"] .bd::before{border-color:var(--accent);background:var(--accent)}
 .dm-skin .dm-tk[data-s="done"]{opacity:.5}
@@ -546,6 +547,69 @@
    la file et la séquence ne part jamais en attente. */
 .dm-skin .dm-cta.big{height:52px;font-size:15px}
 .dm-skin .dm-cta.ok{background:var(--ok)}
+/* Une fois le message parti, le bouton d'envoi RECULE : il a fait son travail,
+   et c'est la barre « c'est fait » qui doit attirer l'œil. Sans ce
+   basculement, deux blocs pleins se disputent l'attention en permanence. */
+.dm-skin .dm-cta[data-fait="1"]{background:var(--surface);color:var(--text-3);
+  box-shadow:inset 0 0 0 1px var(--border-2)}
+.dm-skin .dm-cta[data-fait="1"]:hover{filter:none;color:var(--text-2)}
+
+/* ── BOUCLER LA TÂCHE : une BARRE, jamais un second bloc ──────────────────
+   « Les boutons "fait" et "envoyer le message" se ressemblent trop » : ils
+   étaient deux blocs pleine largeur à dix pixels l'un de l'autre, distingués
+   par la seule couleur. Ils ne font pourtant pas la même chose — l'un ouvre
+   WhatsApp, l'autre ferme la ligne et fait descendre la file. La forme les
+   sépare maintenant : pastille ronde à gauche, « suivant → » à droite. */
+.dm-skin .dm-fait{appearance:none;width:100%;display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:10px;border:1px solid var(--border-2);
+  background:var(--surface);color:var(--text-2);cursor:pointer;text-align:left}
+.dm-skin .dm-fait:hover{border-color:var(--ok);background:var(--ok-tint)}
+.dm-skin .dm-fait:disabled{opacity:.5;cursor:not-allowed}
+.dm-skin .dm-fait .ic{flex-shrink:0;width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg-2);color:var(--text-3)}
+.dm-skin .dm-fait .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.dm-skin .dm-fait .tx b{font-size:13px;font-weight:600;letter-spacing:-.005em}
+.dm-skin .dm-fait .tx i{font-style:normal;font-size:10.5px;color:var(--text-4)}
+.dm-skin .dm-fait .nx{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;
+  font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--text-4)}
+/* ARMÉE : le geste a eu lieu, c'est elle qu'on cherche maintenant. */
+.dm-skin .dm-fait[data-arme="1"]{border-color:var(--ok);background:var(--ok);color:#fff}
+.dm-skin .dm-fait[data-arme="1"]:hover{filter:brightness(.94);background:var(--ok)}
+.dm-skin .dm-fait[data-arme="1"] .ic{background:rgba(255,255,255,.22);color:#fff}
+.dm-skin .dm-fait[data-arme="1"] .nx{color:rgba(255,255,255,.75)}
+
+/* ── LES NOTES, à toutes les étapes et sans prendre de place ──────────────
+   Deux dernières notes en deux lignes tronquées, le reste dépliable, et UN
+   seul champ de saisie qui sert aux deux gestes : « Noter » l'enregistre
+   seule, ou bien elle part avec la tâche quand on la boucle. Deux zones de
+   saisie auraient garanti qu'on écrive dans la mauvaise. */
+.dm-skin .dm-notes{display:flex;flex-direction:column;gap:6px;padding:9px 10px;
+  border:1px solid var(--border);border-radius:11px;background:var(--surface-2)}
+.dm-skin .dm-notes .hd{display:flex;align-items:center;gap:5px;
+  font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--text-3)}
+.dm-skin .dm-notes .hd .n{color:var(--text-4)}
+.dm-skin .dm-notes .hd .lien{margin-left:auto;appearance:none;border:0;background:transparent;
+  cursor:pointer;font-family:inherit;font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--accent)}
+.dm-skin .dm-notes .lst{display:flex;flex-direction:column;gap:4px}
+.dm-skin .dm-notes .n1{display:flex;gap:7px;align-items:baseline;font-size:11.5px;
+  line-height:1.4;padding:4px 7px;border-radius:7px;background:var(--surface)}
+.dm-skin .dm-notes .n1 .q{flex-shrink:0;font-family:var(--font-mono);font-size:9.5px;
+  color:var(--text-4);white-space:nowrap}
+.dm-skin .dm-notes .n1 .t{min-width:0;color:var(--text-2);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-notes .dm-note{background:var(--surface);min-height:52px}
+.dm-skin .dm-notes .ft{display:flex;align-items:center;gap:8px}
+.dm-skin .dm-notes .ft .ai{flex:1;min-width:0;font-size:10.5px;color:var(--text-4);line-height:1.3}
+.dm-skin .dm-noter{appearance:none;margin-left:auto;flex-shrink:0;height:28px;padding:0 11px;
+  border-radius:8px;border:1px solid var(--border-2);background:var(--surface);
+  color:var(--text-2);font-size:11.5px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:4px}
+.dm-skin .dm-noter:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.dm-skin .dm-noter:disabled{opacity:.45;cursor:not-allowed}
 
 /* ── « En discussion » dans la file ───────────────────────────────────────
    Le prospect a répondu : ces lignes ne sont pas planifiées, elles sont dues.
@@ -722,60 +786,70 @@
    Un premier contact et une relance ne se travaillent pas pareil : l'un est du
    volume qu'on abat, l'autre un rendez-vous avec quelqu'un qui a déjà réagi.
    Les mélanger obligeait à trier à l'œil dans la seule liste disponible. */
-.dm-skin .dm-files{display:grid;grid-template-columns:1fr 1fr;gap:4px;
+.dm-skin .dm-files{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;
   padding:3px;border-radius:10px;background:var(--bg-2)}
 .dm-skin .dm-file{appearance:none;border:0;background:transparent;border-radius:8px;
   padding:7px 8px;cursor:pointer;display:flex;flex-direction:column;gap:2px;text-align:left;
   color:var(--text-3);min-width:0}
-.dm-skin .dm-file .l{font-size:10.5px;font-weight:600;line-height:1.2;
-  overflow:hidden;text-overflow:ellipsis}
-.dm-skin .dm-file .n{font-family:var(--font-mono);font-size:15px;font-weight:700;line-height:1}
+.dm-skin .dm-file .l{font-size:10px;font-weight:600;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-file .n{font-family:var(--font-mono);font-size:14px;font-weight:700;line-height:1}
 .dm-skin .dm-file:hover{color:var(--text)}
 .dm-skin .dm-file[aria-selected="true"]{background:var(--surface);color:var(--text);
   box-shadow:0 1px 2px rgba(18,40,68,.08)}
 .dark .dm-skin .dm-file[aria-selected="true"]{box-shadow:0 1px 2px rgba(0,0,0,.4)}
 
-/* ── L'objectif du jour, une ligne par canal ──────────────────────────────
-   Un OBJECTIF, plus un plafond : le dépassement se voit (la barre et le chiffre
-   passent au vert) et rien ne part au lendemain. L'ancien plan déplaçait au
-   jour suivant tout ce qui dépassait — il cachait le travail qu'on venait de
-   décider de faire. */
-.dm-skin .dm-obj{display:flex;flex-direction:column;gap:5px}
-.dm-skin .dm-obj-l{display:grid;grid-template-columns:auto auto 1fr;
-  gap:2px 7px;align-items:center;padding:6px 9px;border-radius:9px;
-  border:1px solid var(--border);background:var(--surface)}
-.dm-skin .dm-obj-l .k{display:inline-flex;align-items:center;gap:4px;font-size:11px;
-  font-weight:600;color:var(--text-2)}
-.dm-skin .dm-obj-l .v{font-family:var(--font-mono);font-size:11px;color:var(--text-3)}
-.dm-skin .dm-obj-l .v b{font-size:13px;color:var(--text)}
-.dm-skin .dm-obj-l .r{text-align:right;font-family:var(--font-mono);font-size:10px;color:var(--text-4)}
-.dm-skin .dm-obj-l .bar{grid-column:1/-1;height:3px;border-radius:2px;background:var(--bg-2);overflow:hidden}
-.dm-skin .dm-obj-l .bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
-.dm-skin .dm-obj-l[data-full="1"] .bar i{background:var(--ok)}
-.dm-skin .dm-obj-l[data-full="1"] .v b{color:var(--ok)}
-.dm-skin .dm-obj .vide{font-size:11.5px;line-height:1.5;color:var(--text-3)}
+/* ── L'objectif du jour, UNE SEULE LIGNE ──────────────────────────────────
+   Trois blocs de quarante pixels sont devenus trois colonnes de trente. Ce
+   qu'on lit vingt fois par jour — « où j'en suis » — n'a pas besoin de plus, et
+   la place gagnée va à la liste, la seule chose que le rail sache faire mieux
+   que le reste de l'écran. Dépasser reste visible : la barre passe au vert. */
+.dm-skin .dm-obj1{display:flex;gap:4px}
+.dm-skin .dm-obj1 .c{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;
+  padding:5px 7px;border-radius:8px;border:1px solid var(--border);background:var(--surface)}
+.dm-skin .dm-obj1 .v{display:inline-flex;align-items:center;gap:4px;
+  font-family:var(--font-mono);font-size:10px;color:var(--text-4);white-space:nowrap}
+.dm-skin .dm-obj1 .v b{font-size:12.5px;color:var(--text)}
+.dm-skin .dm-obj1 .bar{height:2px;border-radius:2px;background:var(--bg-2);overflow:hidden}
+.dm-skin .dm-obj1 .bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.dm-skin .dm-obj1 .c[data-full="1"] .bar i{background:var(--ok)}
+.dm-skin .dm-obj1 .c[data-full="1"] .v b{color:var(--ok)}
 
-/* ── Le calendrier des relances ───────────────────────────────────────────
-   Chaque ligne à la date où elle est réellement due, l'échu replié sur
-   aujourd'hui. Rien n'est déplacé pour tenir dans un quota — c'est toute la
-   différence entre un calendrier et le plan qu'il remplace. */
-.dm-skin .dm-cal{display:flex;gap:3px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
-.dm-skin .dm-cal::-webkit-scrollbar{display:none}
-/* La semaine tient dans la largeur du rail ; ce qui va au-delà (une mise de
-   côté à trois mois) la fait défiler plutôt que d'écraser les sept jours. */
-.dm-skin .dm-cd{appearance:none;flex:1 0 32px;min-width:0;border:1px solid var(--border);
-  background:var(--surface);border-radius:9px;padding:5px 0 4px;cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--text-3)}
-.dm-skin .dm-cd .j{font-size:8.5px;text-transform:uppercase;letter-spacing:.03em}
-.dm-skin .dm-cd .d{font-size:14px;font-weight:700;line-height:1.05;color:var(--text-2)}
-.dm-skin .dm-cd .n{font-family:var(--font-mono);font-size:9px;color:var(--text-4)}
-/* Un jour vide se lit comme vide : le tiret ne doit pas peser autant qu'un compte. */
-.dm-skin .dm-cd[aria-selected="false"] .n{opacity:.85}
-.dm-skin .dm-cd:hover{border-color:var(--text-3)}
-.dm-skin .dm-cd[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
-.dm-skin .dm-cd[aria-selected="true"] .d,.dm-skin .dm-cd[aria-selected="true"] .n{color:var(--bg)}
-.dm-skin .dm-cal-ft{display:flex;align-items:flex-start;gap:5px;font-size:10.5px;
+/* La phrase qui dit ce qu'on fait dans la file des attentes : rien à envoyer. */
+.dm-skin .dm-note-l{display:flex;align-items:flex-start;gap:5px;font-size:10.5px;
   line-height:1.35;color:var(--text-4)}
+
+/* ── LA BARRE DE FILTRES, sur une ligne ───────────────────────────────────
+   Quatre barres empilées (canal, signal, cohorte, étape) faisaient quatre
+   lignes de chrome au-dessus de la liste. Le canal reste en clair — c'est le
+   seul qu'on change dix fois par jour, et il tient en icônes ; les trois autres
+   passent derrière un bouton qui dit combien il en retient. */
+.dm-skin .dm-fbar{display:flex;align-items:center;gap:4px;padding:6px 10px;
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.dm-skin .dm-chip.ic{padding:0 7px;gap:3px}
+.dm-skin .dm-chip.more{margin-left:auto}
+.dm-skin .dm-fpop{position:relative;margin-left:auto}
+.dm-skin .dm-fpop .dm-chip.more{margin-left:0}
+.dm-skin .dm-fmenu{position:absolute;z-index:30;top:calc(100% + 5px);right:0;width:232px;
+  display:flex;flex-direction:column;gap:9px;padding:10px;border-radius:12px;
+  border:1px solid var(--border);background:var(--surface);
+  box-shadow:0 10px 30px rgba(18,40,68,.14)}
+.dark .dm-skin .dm-fmenu{box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.dm-skin .dm-fmenu .g{display:flex;flex-direction:column;gap:5px}
+.dm-skin .dm-fmenu .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--text-3)}
+.dm-skin .dm-fmenu .ch{display:flex;flex-wrap:wrap;gap:4px}
+.dm-skin .dm-fclear{appearance:none;border:0;background:transparent;cursor:pointer;
+  display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3);
+  padding:2px 0}
+.dm-skin .dm-fclear:hover{color:var(--danger)}
+
+/* Le vide d'une liste, et le pied qui déplie ce qui est prévu plus tard. */
+.dm-skin .dm-fr-vide{padding:18px 14px;font-size:12px;color:var(--text-3);line-height:1.5}
+.dm-skin .dm-fr-plus{appearance:none;width:100%;border:0;border-top:1px dashed var(--border);
+  background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:5px;margin-top:8px;padding:9px 12px;font-size:11px;color:var(--text-3)}
+.dm-skin .dm-fr-plus:hover{background:var(--hover);color:var(--text-2)}
 
 /* Basculer en appel depuis la ligne, sans l'ouvrir. */
 .dm-skin .dm-tk-tel{appearance:none;flex-shrink:0;align-self:center;width:26px;height:26px;

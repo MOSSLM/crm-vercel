@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Icon, Pill } from "./DemIcon";
+import { DemNotes } from "./DemNotes";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
@@ -18,8 +20,22 @@ import type { CompanyBundle } from "./types";
  * On n'invente aucune action : ouvrir cette fiche ne crée pas de tâche et
  * n'inscrit personne dans une séquence. Le rendez-vous se prend dans le
  * panneau de droite, qui fonctionne exactement pareil ici et dans la file.
+ *
+ * UNE SEULE CHOSE S'ÉCRIT ICI : la note. Quelqu'un rappelle, il dit quelque
+ * chose — c'est précisément le moment où l'information se perd, parce qu'il n'y
+ * a aucune tâche à boucler pour l'emporter. Le bloc de notes est le même que
+ * celui des cartes de la file : ce qu'on écrit là se relit partout ailleurs.
  */
-export function DemHorsFile({ company, onRetour }: { company: CompanyBundle; onRetour: () => void }) {
+export function DemHorsFile({
+  company,
+  onRetour,
+  onNote,
+}: {
+  company: CompanyBundle;
+  onRetour: () => void;
+  /** Une note a été enregistrée : l'historique juste en dessous doit se relire. */
+  onNote?: () => void;
+}) {
   const { entreprise: e, contacts, site, upcomingBooking, opportunite } = company;
   const dec = contacts.find((c) => c.is_decision_maker) ?? contacts[0] ?? null;
 
@@ -31,6 +47,11 @@ export function DemHorsFile({ company, onRetour }: { company: CompanyBundle; onR
 
   const demoUrl = site && site.is_published ? demoShareUrl(site) : null;
   const nomDec = dec ? `${dec.first_name ?? ""} ${dec.last_name ?? ""}`.trim() : "";
+
+  // Changer d'entreprise vide le champ : ce qu'on écrivait pour l'une n'a rien
+  // à faire dans le dossier de l'autre.
+  const [note, setNote] = useState("");
+  useEffect(() => setNote(""), [e.id]);
 
   return (
     <section className="dm-card" style={{ ["--k" as string]: "var(--accent)", ["--kt" as string]: "var(--accent-tint)" }}>
@@ -125,6 +146,16 @@ export function DemHorsFile({ company, onRetour }: { company: CompanyBundle; onR
             </Pill>
           )}
         </div>
+
+        <DemNotes
+          entrepriseId={e.id}
+          contactId={dec?.id ?? null}
+          opportuniteId={opportunite?.id ?? null}
+          valeur={note}
+          setValeur={setNote}
+          placeholder={`Ce que ${nomDec.split(" ")[0] || "le prospect"} vient de dire…`}
+          onEnregistree={onNote}
+        />
 
         <div className="dm-hint">
           <Icon name="info" className="ico-sm" />

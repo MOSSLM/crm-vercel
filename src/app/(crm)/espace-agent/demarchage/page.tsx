@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { authedFetch } from "@/utils/authedFetch";
 import { useAuth } from "@/components/AuthContext";
-import { DemRail, type DemOnglet } from "@/components/agent-portal/demarchage/DemRail";
+import { one } from "@/components/agent-portal/format";
+import { DemRail } from "@/components/agent-portal/demarchage/DemRail";
 import { DemHead } from "@/components/agent-portal/demarchage/DemHead";
 import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
@@ -14,12 +15,12 @@ import { DemSearch } from "@/components/agent-portal/demarchage/DemSearch";
 import { DemHorsFile } from "@/components/agent-portal/demarchage/DemHorsFile";
 import { DemAttribution } from "@/components/agent-portal/demarchage/DemAttribution";
 import {
-  dayOfTask,
-  estPremierContact,
+  fileDe,
+  fileDeLaJournee,
   hasSignal,
-  joursReels,
-  separerFile,
+  repartirLaJournee,
   type DemarchageSignal,
+  type FileDeTravail,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
 import type {
@@ -46,12 +47,14 @@ const EMPTY_META: DemarchageQueueMeta = {
  * historique), et à droite ce dont on se sert pendant l'échange (démo, audit,
  * RDV, registre).
  *
- * LA FILE EST DOUBLE, et c'est la décision qui structure tout l'écran :
- *   · PREMIERS CONTACTS — des entreprises que personne n'a jamais abordées. Un
- *     stock, rien ne les date. L'objectif du jour s'affiche, il ne cache rien ;
- *   · RELANCES & DISCUSSIONS — des gens déjà touchés. Un calendrier : chaque
- *     ligne à la date où elle est due, l'échu replié sur aujourd'hui.
- * (cf. `separerFile` / `joursReels`).
+ * LA FILE EST TRIPLE, et c'est la décision qui structure tout l'écran :
+ *   · À CONTACTER — des entreprises que personne n'a jamais abordées. Un stock,
+ *     rien ne les date. L'objectif du jour s'affiche, il ne cache rien ;
+ *   · RELANCES — des gens déjà touchés, dus aujourd'hui ou en retard. Ce qui
+ *     est prévu plus tard est compté en pied de liste, pas déplié ;
+ *   · EN ATTENTE — rien à envoyer, une réponse à déclarer. Ces lignes étaient
+ *     mêlées aux relances, donc invisibles, et les séquences dormaient.
+ * (cf. `repartirLaJournee`).
  *
  * L'écran est piloté par une TÂCHE — sauf sur un point, et c'est volontaire :
  * une entreprise qui rappelle n'a par définition rien de prévu aujourd'hui.
@@ -65,14 +68,16 @@ export default function AgentDemarchagePage() {
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
 
-  /** Laquelle des deux files on travaille. */
-  const [onglet, setOnglet] = useState<DemOnglet>("premiers");
+  /** Laquelle des trois files on travaille. */
+  const [file, setFile] = useState<FileDeTravail>("premiers");
 
   /**
-   * Le jour affiché dans les relances, par sa date civile (YYYY-MM-DD). Les
-   * premiers contacts n'en ont pas : rien ne les date.
+   * Les relances prévues plus tard sont-elles dépliées ?
+   *
+   * Fermé par défaut : la journée d'un agent est ce qui est dû aujourd'hui. Le
+   * pied de liste dit combien il y en a, ce qui suffit à ne pas les oublier.
    */
-  const [day, setDay] = useState<string>("");
+  const [aVenirOuvert, setAVenirOuvert] = useState(false);
 
   /**
    * Les filtres, désormais INDÉPENDANTS l'un de l'autre.
@@ -142,34 +147,41 @@ export default function AgentDemarchagePage() {
    *   l'attente de réponse posée par le moteur juste après un « Fait »).
    */
   const loadQueue = useCallback(
-    async (pick?: string | null | ((rows: DemarchageTask[]) => string | null)) => {
+    async (
+      pick?: string | null | ((rows: DemarchageTask[]) => string | null),
+    ): Promise<DemarchageTask[]> => {
       setLoadingQueue(true);
+      let fraiche: DemarchageTask[] = [];
       try {
         // La cohorte est le seul filtre qui voyage jusqu'à la route : les autres
         // trient ce qui est déjà chargé.
         const res = await authedFetch(
           cohorte ? `/api/agent/tasks?cohorte=${encodeURIComponent(cohorte)}` : "/api/agent/tasks",
         );
-        if (!res.ok) return;
+        // Une file qui ne se charge pas rend un tableau vide, pas `undefined` :
+        // l'appelant enchaîne sur ce qu'elle contient, et lui faire tester deux
+        // formes d'absence est un piège pour rien.
+        if (!res.ok) return fraiche;
         const body = (await res.json()) as { tasks: DemarchageTask[]; meta: DemarchageQueueMeta };
         const next = body.tasks ?? [];
+        fraiche = next;
         setTasks(next);
         setMeta(body.meta ?? EMPTY_META);
         setSel((current) => {
           const wanted = typeof pick === "function" ? pick(next) : pick === undefined ? current : pick;
           if (wanted && next.some((t) => t.id === wanted)) return wanted;
-          // À défaut, la tête de la file la plus urgente : les relances si elles
-          // portent du travail (un prospect qui a répondu passe avant un
-          // inconnu), sinon les premiers contacts.
-          const { premiers, relances } = separerFile(next);
-          const jours = joursReels(relances);
-          return jours[0]?.tasks[0]?.id ?? premiers[0]?.id ?? null;
+          // À défaut, la tête de la file la plus urgente : les relances si
+          // elles portent du travail (un prospect qui a réagi passe avant un
+          // inconnu), sinon les premiers contacts, sinon les attentes.
+          const r = repartirLaJournee(next);
+          return r.relances[0]?.id ?? r.premiers[0]?.id ?? r.attentes[0]?.id ?? null;
         });
       } catch {
         toast.error("Impossible de charger la file de démarchage.");
       } finally {
         setLoadingQueue(false);
       }
+      return fraiche;
     },
     [cohorte],
   );
@@ -180,29 +192,28 @@ export default function AgentDemarchagePage() {
     void loadQueue();
   }, [loadQueue]);
 
-  /** Les deux files, et le calendrier des relances. */
-  const { premiers, relances } = useMemo(() => separerFile(tasks), [tasks]);
-  const jours = useMemo(() => joursReels(relances), [relances]);
+  /** La journée rangée : à contacter, relances, à venir, attentes. */
+  const rep = useMemo(() => repartirLaJournee(tasks), [tasks]);
 
   const task = useMemo(() => tasks.find((t) => t.id === sel) ?? null, [tasks, sel]);
 
-  // L'onglet et le jour SUIVENT la tâche choisie : atterrir sur une relance de
-  // jeudi en laissant l'écran sur « premiers contacts / aujourd'hui » ferait
-  // dire deux choses différentes au même écran.
+  // La file SUIT la tâche choisie : atterrir sur une attente en laissant l'écran
+  // sur « à contacter » ferait dire deux choses différentes au même écran.
   useEffect(() => {
     if (!task) return;
-    setOnglet(estPremierContact(task) ? "premiers" : "relances");
-  }, [task]);
+    setFile(fileDe(rep, task));
+  }, [task, rep]);
 
+  // Une relance dépliée depuis « plus tard » ne doit pas se replier sous les
+  // yeux : si la sélection en vient, le pied reste ouvert.
   useEffect(() => {
-    const k = task && !estPremierContact(task) ? dayOfTask(jours, task.id) : null;
-    setDay((current) => k ?? (jours.some((d) => d.date === current) ? current : jours[0]?.date ?? ""));
-  }, [task, jours]);
+    if (task && rep.aVenir.includes(task)) setAVenirOuvert(true);
+  }, [task, rep]);
 
-  /** La liste de l'onglet courant, avant filtres. */
+  /** La liste de la file courante, avant filtres. */
   const duJour = useMemo(
-    () => (onglet === "premiers" ? premiers : (jours.find((d) => d.date === day)?.tasks ?? [])),
-    [onglet, premiers, jours, day],
+    () => fileDeLaJournee(rep, file, aVenirOuvert),
+    [rep, file, aVenirOuvert],
   );
 
   // Les pastilles ne montrent que ce que la liste contient : un filtre resté
@@ -341,12 +352,32 @@ export default function AgentDemarchagePage() {
     if (next) setSel(next.id);
   }, [shown, sel]);
 
+  /**
+   * BOUCLER UNE TÂCHE, PUIS DESCENDRE — jamais remonter sur le même prospect.
+   *
+   * On suivait l'inscription : boucler un premier contact garait la séquence
+   * sur son attente de réponse, et l'écran atterrissait sur cette attente
+   * fraîchement créée. Du point de vue de l'agent, « c'est fait » ramenait donc
+   * au prospect qu'il venait de terminer, avec une carte où il n'y a rien à
+   * faire — le geste ne faisait pas avancer la file, il tournait en rond.
+   *
+   * La règle est celle de lemlist : « Terminer » ferme la ligne et passe à la
+   * SUIVANTE. La tâche suivante du même prospect reprend sa place à sa date,
+   * elle ne double personne.
+   *
+   * Ce qui reste du suivi de prospect : un lien dans le message de
+   * confirmation. Quand le geste a réellement ouvert une suite (l'attente, ou
+   * l'étape que la réponse débloque), on la propose en un clic — sans jamais
+   * l'imposer.
+   */
   const handlePatch = useCallback(
     async (body: Omit<DemarchagePatchBody, "id">) => {
       if (!task) return;
       // Retenus AVANT l'appel : une fois la tâche bouclée, elle disparaît de la
-      // file et ces deux repères avec elle.
+      // file et ces trois repères avec elle.
       const enrollmentId = task.enrollment_id;
+      const courant = task.id;
+      const nom = one(task.entreprise)?.name ?? "ce prospect";
       const suivante = shown.find((t) => t.id !== task.id)?.id ?? null;
 
       setBusy(true);
@@ -357,16 +388,22 @@ export default function AgentDemarchagePage() {
           body: JSON.stringify({ id: task.id, ...body }),
         });
         if (!res.ok) throw new Error();
-        toast.success(body.step_outcome ? "Issue enregistrée." : "C'est fait.");
         setHistoryKey((k) => k + 1);
-        await loadQueue((rows) => {
-          // On suit le prospect, pas la file : boucler un premier contact gare
-          // sa séquence sur l'attente de réponse, et c'est cette ligne-là qu'on
-          // veut sous les yeux — pas un prospect au hasard. À défaut (séquence
-          // terminée, arrêtée, ou appel à froid qui n'en a jamais eu), on
-          // enchaîne sur la tâche suivante.
-          const suite = enrollmentId ? rows.find((t) => t.enrollment_id === enrollmentId) : undefined;
-          return suite?.id ?? suivante;
+        const rows = await loadQueue(suivante);
+        const suite = enrollmentId
+          ? (rows.find((t) => t.enrollment_id === enrollmentId && t.id !== courant) ?? null)
+          : null;
+        toast.success(body.step_outcome ? "Issue enregistrée." : "C'est fait.", {
+          description: suite ? `${nom} a une suite : ${suite.sequence?.stepLabel ?? "étape suivante"}.` : undefined,
+          action: suite
+            ? {
+                label: "L'ouvrir",
+                onClick: () => {
+                  setHorsFile(null);
+                  setSel(suite.id);
+                },
+              }
+            : undefined,
         });
       } catch {
         toast.error("Action impossible.");
@@ -427,21 +464,38 @@ export default function AgentDemarchagePage() {
 
   /**
    * Le prospect a répondu : l'attente est levée et le moteur a déjà posé
-   * l'étape suivante. On atterrit dessus — c'est tout l'intérêt d'avoir déclaré
-   * la réponse, et cette étape-là est justement celle qu'il faut faire dans la
-   * foulée (typiquement : envoyer le site démo).
+   * l'étape suivante.
+   *
+   * Même règle que « c'est fait » — la file descend. L'étape que la réponse
+   * débloque (typiquement : envoyer le site démo) est réelle et souvent
+   * urgente, alors elle est PROPOSÉE dans le message de confirmation ; elle
+   * n'est pas imposée. Sans quoi déclarer trois réponses d'affilée obligeait à
+   * traiter trois prospects en entier au milieu de la file des attentes.
    */
   const onReplied = useCallback(() => {
     const enrollmentId = task?.enrollment_id ?? null;
     const courant = task?.id ?? null;
+    const nom = task ? (one(task.entreprise)?.name ?? "ce prospect") : "ce prospect";
+    const suivante = shown.find((t) => t.id !== courant)?.id ?? null;
     setHistoryKey((k) => k + 1);
-    void loadQueue((rows) => {
+    void (async () => {
+      const rows = await loadQueue(suivante);
       const suite = enrollmentId
-        ? rows.find((t) => t.enrollment_id === enrollmentId && t.id !== courant)
-        : undefined;
-      return suite?.id ?? null;
-    });
-  }, [task, loadQueue]);
+        ? (rows.find((t) => t.enrollment_id === enrollmentId && t.id !== courant) ?? null)
+        : null;
+      if (!suite) return;
+      toast.success(`Réponse enregistrée — ${nom} passe à la suite.`, {
+        description: suite.sequence?.stepLabel ?? undefined,
+        action: {
+          label: "L'ouvrir",
+          onClick: () => {
+            setHorsFile(null);
+            setSel(suite.id);
+          },
+        },
+      });
+    })();
+  }, [task, shown, loadQueue]);
 
   const companyName = enTete?.entreprise.name ?? "";
 
@@ -449,12 +503,11 @@ export default function AgentDemarchagePage() {
     <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
       <div className="dm">
         <DemRail
-          onglet={onglet}
-          setOnglet={setOnglet}
-          premiers={premiers}
-          jours={jours}
-          day={day}
-          setDay={setDay}
+          file={file}
+          setFile={setFile}
+          rep={rep}
+          aVenirOuvert={aVenirOuvert}
+          setAVenirOuvert={setAVenirOuvert}
           canal={canal}
           setCanal={setCanal}
           signal={signal}
@@ -512,7 +565,11 @@ export default function AgentDemarchagePage() {
           {horsFile != null ? (
             ficheHorsFile && (
               <>
-                <DemHorsFile company={ficheHorsFile} onRetour={() => setHorsFile(null)} />
+                <DemHorsFile
+                  company={ficheHorsFile}
+                  onRetour={() => setHorsFile(null)}
+                  onNote={onLogged}
+                />
                 <DemHisto
                   entrepriseId={horsFile}
                   companyName={companyName}

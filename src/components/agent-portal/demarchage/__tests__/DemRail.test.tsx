@@ -1,29 +1,31 @@
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { DemRail, type DemOnglet } from "../DemRail";
+import { DemRail } from "../DemRail";
 import {
+  fileDeLaJournee,
   hasSignal,
-  joursReels,
-  separerFile,
+  repartirLaJournee,
   type DemarchageSignal,
+  type FileDeTravail,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemarchageQueueMeta, DemarchageTask } from "../types";
 
 /**
- * LE RAIL, APRÈS LA REFONTE.
+ * LE RAIL, APRÈS LA SECONDE REFONTE.
  *
- * Ce que ce fichier garde, quatre décisions :
+ * Ce que ce fichier garde, cinq décisions :
  *
- * 1. DEUX FILES. Les premiers contacts sont un stock (rien ne les date), les
- *    relances un calendrier. Ils vivaient dans une seule liste, ce qui obligeait
- *    à trier à l'œil.
- * 2. DES FILTRES INDÉPENDANTS. Canal et signal partageaient une variable, donc
- *    un choix à la fois : cocher « Chauds » faisait perdre le canal. Or un lead
- *    peut être chaud ET en attente ET sur une tâche WhatsApp.
- * 3. LA BASCULE EN APPEL SUR LA LIGNE, parce que la décision de décrocher se
- *    prend en lisant la ligne — et sans qu'aucun bloc ne vienne redire, en
- *    grand, ce que le centre de l'écran affiche déjà.
- * 4. L'OBJECTIF N'EST PLUS UN PLAFOND. Rien n'est renvoyé au lendemain : cent
+ * 1. TROIS FILES. À contacter (un stock), Relances (le jour), En attente (rien
+ *    à envoyer, une réponse à déclarer). Les attentes vivaient dans les
+ *    relances, réparties sur sept cases de calendrier : personne ne les voyait,
+ *    et des séquences dormaient.
+ * 2. PLUS DE FRISE DE JOURS. Ce qui est dû plus tard est COMPTÉ en pied de
+ *    liste et dépliable, pas étalé sur sept cases dont une seule sert.
+ * 3. UNE SEULE BARRE DE FILTRES. Le canal en clair (on en change dix fois par
+ *    jour), le reste derrière un bouton qui dit combien il retient.
+ * 4. LES FILTRES RESTENT INDÉPENDANTS. Un lead peut être chaud ET en discussion
+ *    ET sur une tâche WhatsApp : choisir l'un ne relâche pas les autres.
+ * 5. L'OBJECTIF N'EST PAS UN PLAFOND. Rien n'est renvoyé au lendemain : cent
  *    premiers contacts restent cent.
  */
 
@@ -55,6 +57,10 @@ function task(over: Partial<DemarchageTask> & { id: string }): DemarchageTask {
 const relance = (over: Partial<DemarchageTask> & { id: string }) =>
   task({ premiere_touche_le: iso("2026-08-01"), ...over });
 
+/** Une attente de réponse : la séquence est garée, il n'y a rien à envoyer. */
+const attente = (over: Partial<DemarchageTask> & { id: string }) =>
+  relance({ kind: "wait", ...over });
+
 /** Une discussion ouverte : le prospect a répondu. */
 const enDiscussion = (over: Partial<DemarchageTask> & { id: string }) =>
   relance({ in_conversation: true, ...over });
@@ -80,28 +86,26 @@ const chaud = (over: Partial<DemarchageTask> & { id: string }) =>
 function renderRail(
   tasks: DemarchageTask[],
   {
-    onglet = "premiers" as DemOnglet,
+    file = "premiers" as FileDeTravail,
+    aVenirOuvert = false,
     canal = null as string | null,
     signal = null as DemarchageSignal | null,
     step = null as number | null,
     sel = null as string | null,
     doneToday = {} as Record<string, number>,
     quotas,
-    setOnglet = jest.fn(),
+    setFile = jest.fn(),
     setCanal = jest.fn(),
     setSignal = jest.fn(),
     setStep = jest.fn(),
-    setDay = jest.fn(),
+    setAVenirOuvert = jest.fn(),
     onPick = jest.fn(),
     onBasculerEnAppel = jest.fn(),
     poolDispo = null as number | null,
   } = {},
 ) {
-  const { premiers, relances } = separerFile(tasks);
-  const jours = joursReels(relances, { now: NOW, timeZone: "UTC" });
-  const journee = jours[0];
-  const duJour = onglet === "premiers" ? premiers : journee.tasks;
-  const shown = duJour.filter(
+  const rep = repartirLaJournee(tasks, { now: NOW, timeZone: "UTC" });
+  const shown = fileDeLaJournee(rep, file, aVenirOuvert).filter(
     (t) =>
       (canal == null || t.kind === canal) &&
       (signal == null || hasSignal(t, signal)) &&
@@ -117,12 +121,11 @@ function renderRail(
 
   const { container } = render(
     <DemRail
-      onglet={onglet}
-      setOnglet={setOnglet}
-      premiers={premiers}
-      jours={jours}
-      day={journee.date}
-      setDay={setDay}
+      file={file}
+      setFile={setFile}
+      rep={rep}
+      aVenirOuvert={aVenirOuvert}
+      setAVenirOuvert={setAVenirOuvert}
       canal={canal}
       setCanal={setCanal}
       signal={signal}
@@ -146,55 +149,64 @@ function renderRail(
   );
 
   const el = (s: string) => container.querySelector<HTMLElement>(s)!;
+  /** Ouvre le panneau des filtres repliés — signal, cohorte, étape. */
+  const ouvrirFiltres = () => {
+    fireEvent.click(container.querySelector<HTMLElement>(".dm-chip.more")!);
+    return el(".dm-fmenu");
+  };
   return {
     container,
-    setOnglet,
+    setFile,
     setCanal,
     setSignal,
     setStep,
-    setDay,
+    setAVenirOuvert,
     onPick,
     onBasculerEnAppel,
+    ouvrirFiltres,
     /** La liste — tout ce que le rail affiche. */
     frise: el(".dm-fr"),
     lignes: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-tk")),
     onglets: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-file")),
-    objectifs: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-obj-l")),
-    calendrier: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-cd")),
-    barre: (lb: string) =>
-      Array.from(container.querySelectorAll<HTMLElement>(".dm-filt")).find((b) =>
-        b.querySelector(".lb")?.textContent?.includes(lb),
+    objectifs: () => Array.from(container.querySelectorAll<HTMLElement>(".dm-obj1 .c")),
+    /** Un groupe du panneau des filtres, par son intitulé. */
+    groupe: (lb: string) =>
+      Array.from(container.querySelectorAll<HTMLElement>(".dm-fmenu .g")).find((g) =>
+        g.querySelector(".lb")?.textContent?.includes(lb),
       ),
   };
 }
 
-describe("DemRail — deux files, pas une", () => {
+describe("DemRail — trois files, pas deux", () => {
   const melange = [
     task({ id: "neuf1" }),
     task({ id: "neuf2" }),
     relance({ id: "suivi1", due_at: iso("2026-08-13") }),
+    attente({ id: "att1" }),
   ];
 
   it("annonce le contenu de chaque file, chiffres à l'appui", () => {
     const { onglets } = renderRail(melange);
-    const [premiers, relances] = onglets();
-    expect(within(premiers).getByText("Premiers contacts")).toBeInTheDocument();
+    const [premiers, relances, attentes] = onglets();
+    expect(within(premiers).getByText("À contacter")).toBeInTheDocument();
     expect(within(premiers).getByText("2")).toBeInTheDocument();
-    expect(within(relances).getByText("Relances & discussions")).toBeInTheDocument();
-    expect(within(relances).getByText("1")).toBeInTheDocument();
+    expect(within(relances).getByText("Relances")).toBeInTheDocument();
+    expect(within(attentes).getByText("En attente")).toBeInTheDocument();
+    expect(within(attentes).getByText("1")).toBeInTheDocument();
   });
 
   it("ne montre que la file ouverte", () => {
-    const { lignes } = renderRail(melange, { onglet: "premiers" });
+    const { lignes } = renderRail(melange, { file: "premiers" });
     const noms = lignes().map((l) => l.textContent).join(" ");
     expect(noms).toContain("Prospect neuf1");
     expect(noms).not.toContain("Prospect suivi1");
+    expect(noms).not.toContain("Prospect att1");
   });
 
   it("bascule de file au clic", () => {
-    const { onglets, setOnglet } = renderRail(melange);
-    fireEvent.click(onglets()[1]);
-    expect(setOnglet).toHaveBeenCalledWith("relances");
+    const { onglets, setFile } = renderRail(melange);
+    fireEvent.click(onglets()[2]);
+    expect(setFile).toHaveBeenCalledWith("attentes");
   });
 
   it("range une discussion ouverte dans les relances, jamais dans les premiers contacts", () => {
@@ -202,155 +214,174 @@ describe("DemRail — deux files, pas une", () => {
     expect(within(onglets()[0]).getByText("0")).toBeInTheDocument();
     expect(within(onglets()[1]).getByText("1")).toBeInTheDocument();
   });
+
+  /**
+   * LE GRIEF, MOT POUR MOT : « on ne peut pas voir les en attente ». Une
+   * attente n'est pas une relance — rien à envoyer, une réponse à déclarer —
+   * et mêlée aux relances elle était introuvable.
+   */
+  it("donne aux attentes leur propre file, et dit ce qu'on y fait", () => {
+    const { lignes } = renderRail([attente({ id: "att1" }), relance({ id: "r1" })], {
+      file: "attentes",
+    });
+    expect(lignes()).toHaveLength(1);
+    expect(screen.getByText(/dire « il a répondu » suffit/)).toBeInTheDocument();
+  });
 });
 
-describe("DemRail — l'objectif du jour, plus un plafond", () => {
-  it("affiche fait / objectif, et ce qui reste en file", () => {
+describe("DemRail — plus de frise de jours", () => {
+  const dansLeTemps = [
+    relance({ id: "auj", due_at: iso("2026-08-13") }),
+    relance({ id: "dem", due_at: iso("2026-08-14") }),
+    relance({ id: "loin", due_at: iso("2026-09-15") }),
+  ];
+
+  it("n'affiche aucune case de calendrier", () => {
+    const { container } = renderRail(dansLeTemps, { file: "relances" });
+    expect(container.querySelectorAll(".dm-cd")).toHaveLength(0);
+  });
+
+  it("ne garde dans la journée que ce qui est dû, et compte le reste en pied", () => {
+    const { lignes } = renderRail(dansLeTemps, { file: "relances" });
+    expect(lignes()).toHaveLength(1);
+    expect(screen.getByText("2 relances prévues plus tard")).toBeInTheDocument();
+  });
+
+  it("déplie ce qui est prévu plus tard à la demande", () => {
+    const { setAVenirOuvert } = renderRail(dansLeTemps, { file: "relances" });
+    fireEvent.click(screen.getByText("2 relances prévues plus tard"));
+    expect(setAVenirOuvert).toHaveBeenCalledWith(true);
+  });
+
+  it("date les lignes dépliées — sans quoi elles passeraient pour du travail du jour", () => {
+    const { lignes } = renderRail(dansLeTemps, { file: "relances", aVenirOuvert: true });
+    expect(lignes()).toHaveLength(3);
+    const dates = Array.from(
+      lignes()[1].querySelectorAll<HTMLElement>(".st.plus-tard"),
+    ).map((s) => s.textContent);
+    expect(dates).toHaveLength(1);
+  });
+
+  it("ne propose pas de pied quand rien n'est prévu plus tard", () => {
+    renderRail([relance({ id: "auj" })], { file: "relances" });
+    expect(screen.queryByText(/prévue?s? plus tard/)).toBeNull();
+  });
+});
+
+describe("DemRail — l'objectif du jour, sur une ligne", () => {
+  it("affiche fait / objectif", () => {
     const { objectifs } = renderRail(
       Array.from({ length: 30 }, (_, i) => task({ id: `w${i}` })),
       { doneToday: { whatsapp: 12 } },
     );
-    const ligne = objectifs()[0];
-    expect(within(ligne).getByText("12")).toBeInTheDocument();
-    expect(within(ligne).getByText("/20")).toBeInTheDocument();
-    // Trente en file, et les trente sont là : rien n'est parti au lendemain.
-    expect(within(ligne).getByText("30 en file")).toBeInTheDocument();
+    expect(objectifs()[0].textContent).toContain("12");
+    expect(objectifs()[0].textContent).toContain("/20");
   });
 
   it("laisse dépasser l'objectif au lieu de cacher le surplus", () => {
-    // C'est LE point de la refonte. L'ancien plan gardait vingt lignes et
-    // poussait le reste à demain : la file cachait le travail décidé.
+    // C'est LE point de la refonte d'origine. L'ancien plan gardait vingt
+    // lignes et poussait le reste à demain : la file cachait le travail décidé.
     const { objectifs, lignes } = renderRail(
       Array.from({ length: 25 }, (_, i) => task({ id: `w${i}` })),
       { doneToday: { whatsapp: 26 } },
     );
     expect(objectifs()[0].dataset.full).toBe("1");
-    expect(within(objectifs()[0]).getByText("26")).toBeInTheDocument();
     expect(lignes()).toHaveLength(25);
   });
 
   it("ne montre l'objectif que des canaux réellement en file", () => {
     const { objectifs } = renderRail([task({ id: "w1" })]);
     expect(objectifs()).toHaveLength(1);
-    expect(within(objectifs()[0]).getByText("WhatsApp")).toBeInTheDocument();
+    expect(objectifs()[0].getAttribute("title")).toContain("WhatsApp");
   });
 
   it("respecte l'objectif réglé par l'agent", () => {
     const { objectifs } = renderRail([task({ id: "w1" })], { quotas: { whatsapp: 60 } });
-    expect(within(objectifs()[0]).getByText("/60")).toBeInTheDocument();
+    expect(objectifs()[0].textContent).toContain("/60");
+  });
+
+  it("n'affiche aucun objectif hors des premiers contacts", () => {
+    const { objectifs } = renderRail([relance({ id: "r1" })], { file: "relances" });
+    expect(objectifs()).toHaveLength(0);
   });
 
   it("le dit quand la file des premiers contacts est vide", () => {
-    renderRail([relance({ id: "r1" })], { onglet: "premiers" });
+    renderRail([relance({ id: "r1" })], { file: "premiers" });
     expect(screen.getByText(/Aucun premier contact en attente/)).toBeInTheDocument();
   });
 });
 
-describe("DemRail — le calendrier des relances", () => {
-  const dansLeTemps = [
-    relance({ id: "auj", due_at: iso("2026-08-13") }),
-    relance({ id: "dem", due_at: iso("2026-08-14") }),
-    relance({ id: "sem", due_at: iso("2026-08-18") }),
-    relance({ id: "loin", due_at: iso("2026-09-15") }),
-  ];
-
-  it("affiche la semaine qui vient, même les jours vides", () => {
-    // Un calendrier qui ne montrerait que les jours occupés n'est plus un
-    // calendrier : on ne verrait pas qu'il n'y a rien lundi, et une case unique
-    // « auj. » donne l'impression que la barre est cassée.
-    const { calendrier } = renderRail(dansLeTemps, { onglet: "relances" });
-    // Sept jours d'horizon, plus la case lointaine du 15 septembre.
-    expect(calendrier()).toHaveLength(8);
-    // Dans la semaine, le jour de semaine suffit. Au-delà, c'est le mois qui
-    // situe : « mar 15 » peut être dans six jours comme dans trois mois, et une
-    // mise de côté ouvre justement des cases très lointaines.
-    expect(calendrier().map((c) => c.querySelector(".j")?.textContent)).toEqual([
-      "auj.",
-      "dem.",
-      "sam",
-      "dim",
-      "lun",
-      "mar",
-      "mer",
-      "sept",
-    ]);
-  });
-
-  it("porte le nombre de relances de chaque jour, et un tiret pour les vides", () => {
-    const { calendrier } = renderRail(dansLeTemps, { onglet: "relances" });
-    expect(calendrier().map((c) => c.querySelector(".n")?.textContent)).toEqual([
-      "1",
-      "1",
-      "—",
-      "—",
-      "—",
-      "1",
-      "—",
-      "1",
-    ]);
-  });
-
-  it("change de jour au clic", () => {
-    const { calendrier, setDay } = renderRail(dansLeTemps, { onglet: "relances" });
-    fireEvent.click(calendrier()[1]);
-    expect(setDay).toHaveBeenCalledWith("2026-08-14");
-  });
-
-  it("dit que les relances n'ont pas de plafond", () => {
-    renderRail(dansLeTemps, { onglet: "relances" });
-    expect(screen.getByText(/ne se rationne pas/)).toBeInTheDocument();
-  });
-
-  it("n'affiche aucun calendrier dans les premiers contacts — rien ne les date", () => {
-    const { calendrier } = renderRail(dansLeTemps, { onglet: "premiers" });
-    expect(calendrier()).toHaveLength(0);
-  });
-});
-
-describe("DemRail — canal et signal sont deux dimensions", () => {
+describe("DemRail — une seule barre, des dimensions toujours séparées", () => {
   // Un chaud sur WhatsApp, un chaud en discussion, un tiède : de quoi vérifier
-  // qu'aucune des deux barres n'écrase l'autre.
+  // qu'aucune des deux dimensions n'écrase l'autre.
   const melange = [
-    chaud({ id: "c1", kind: "whatsapp" }),
+    chaud({ id: "c1", kind: "whatsapp", premiere_touche_le: iso("2026-08-01") }),
     { ...enDiscussion({ id: "c2", kind: "whatsapp" }), intent: chaud({ id: "x" }).intent },
     relance({ id: "tiede", kind: "call" }),
   ];
 
-  it("a une barre pour les canaux et une autre pour les signaux", () => {
-    const { barre } = renderRail(melange, { onglet: "relances" });
-    expect(barre("Canal")).toBeDefined();
-    expect(barre("Signal")).toBeDefined();
+  it("laisse le canal en clair et replie le reste derrière un bouton", () => {
+    const { container } = renderRail(melange, { file: "relances" });
+    // Deux canaux présents, donc deux pastilles plus « tous ».
+    expect(container.querySelectorAll(".dm-fbar .dm-chip.ic")).toHaveLength(2);
+    // Et rien d'autre n'est déplié tant qu'on ne le demande pas.
+    expect(container.querySelector(".dm-fmenu")).toBeNull();
   });
 
   it("compte un prospect chaud ET en discussion dans LES DEUX pastilles", () => {
     // Le défaut d'origine : `signalOf` ne rendait qu'un signal, donc un chaud
     // qui répondait disparaissait de « Chauds » — au moment précis où il
     // devenait intéressant.
-    const { barre } = renderRail(melange, { onglet: "relances" });
-    const signaux = barre("Signal")!;
-    expect(within(signaux).getByText("Chauds").querySelector(".n")?.textContent).toBe("1");
+    const { ouvrirFiltres, groupe } = renderRail(melange, { file: "relances" });
+    ouvrirFiltres();
+    const signaux = groupe("Signal")!;
+    // Deux chauds, dont un qui a répondu : il est compté dans les DEUX
+    // pastilles, et la somme dépasse donc le nombre de lignes. C'est exact.
+    expect(within(signaux).getByText("Chauds").querySelector(".n")?.textContent).toBe("2");
     expect(within(signaux).getByText("En discussion").querySelector(".n")?.textContent).toBe("1");
   });
 
   it("garde le canal quand on choisit un signal — les deux se cumulent", () => {
-    const { barre, setCanal, setSignal } = renderRail(melange, {
-      onglet: "relances",
+    const { ouvrirFiltres, groupe, setCanal, setSignal } = renderRail(melange, {
+      file: "relances",
       canal: "whatsapp",
     });
-    fireEvent.click(within(barre("Signal")!).getByText("En discussion"));
+    ouvrirFiltres();
+    fireEvent.click(within(groupe("Signal")!).getByText("En discussion"));
     expect(setSignal).toHaveBeenCalledWith("conversation");
     // Le canal n'est pas touché : choisir un signal ne le relâche pas.
     expect(setCanal).not.toHaveBeenCalled();
   });
 
   it("relâche le filtre quand on reclique la pastille déjà cochée", () => {
-    const { barre, setSignal } = renderRail(melange, { onglet: "relances", signal: "conversation" });
-    fireEvent.click(within(barre("Signal")!).getByText("En discussion"));
+    const { ouvrirFiltres, groupe, setSignal } = renderRail(melange, {
+      file: "relances",
+      signal: "conversation",
+    });
+    ouvrirFiltres();
+    fireEvent.click(within(groupe("Signal")!).getByText("En discussion"));
+    expect(setSignal).toHaveBeenCalledWith(null);
+  });
+
+  it("annonce sur le bouton combien de filtres repliés sont actifs", () => {
+    const { container } = renderRail(melange, { file: "relances", signal: "hot" });
+    const bouton = container.querySelector<HTMLElement>(".dm-chip.more")!;
+    expect(bouton.textContent).toContain("1");
+    expect(bouton.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("relâche tout d'un geste", () => {
+    const { ouvrirFiltres, container, setSignal } = renderRail(melange, {
+      file: "relances",
+      signal: "hot",
+    });
+    ouvrirFiltres();
+    fireEvent.click(container.querySelector<HTMLElement>(".dm-fclear")!);
     expect(setSignal).toHaveBeenCalledWith(null);
   });
 
   it("écrit TOUS les signaux sur la ligne", () => {
-    const { container } = renderRail(melange, { onglet: "relances" });
+    const { container } = renderRail(melange, { file: "relances" });
     const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.sig")).map(
       (s) => s.dataset.sig,
     );
@@ -358,9 +389,9 @@ describe("DemRail — canal et signal sont deux dimensions", () => {
     expect(tags).toContain("conversation");
   });
 
-  it("ne propose pas de barre de signal quand aucune ligne n'en porte", () => {
-    const { barre } = renderRail([task({ id: "a" })]);
-    expect(barre("Signal")).toBeUndefined();
+  it("ne propose aucun bouton de filtre quand rien n'est filtrable", () => {
+    const { container } = renderRail([task({ id: "a" })]);
+    expect(container.querySelector(".dm-chip.more")).toBeNull();
   });
 });
 
@@ -398,6 +429,11 @@ describe("DemRail — la liste, et rien qu'elle", () => {
     expect(within(lignes()[0]).queryByTitle("Transformer en appel")).toBeNull();
   });
 
+  it("ne propose pas de basculer une attente : il n'y a rien à envoyer", () => {
+    const { lignes } = renderRail([attente({ id: "a" })], { file: "attentes" });
+    expect(within(lignes()[0]).queryByTitle("Transformer en appel")).toBeNull();
+  });
+
   it("ouvre la ligne au clic", () => {
     const { lignes, onPick } = renderRail(file);
     fireEvent.click(lignes()[1]);
@@ -413,13 +449,13 @@ describe("DemRail — ce que la ligne dit", () => {
 
   it("signale l'échéance dépassée", () => {
     const { frise } = renderRail([relance({ id: "vieux", due_at: iso("2026-08-05") })], {
-      onglet: "relances",
+      file: "relances",
     });
     expect(within(frise).getByText("échéance passée")).toBeInTheDocument();
   });
 
   it("marque une mise de côté au lieu de la faire passer pour un oubli", () => {
-    const { calendrier, container } = renderRail(
+    const { container } = renderRail(
       [
         relance({ id: "auj" }),
         relance({
@@ -429,13 +465,12 @@ describe("DemRail — ce que la ligne dit", () => {
           payload: { mise_de_cote: { jusquau: iso("2026-08-25"), motif: "En congés", le: iso("2026-08-13") } },
         }),
       ],
-      { onglet: "relances" },
+      { file: "relances", aVenirOuvert: true },
     );
-    // Elle vit dans SA case de calendrier, pas dans celle du jour : la liste du
-    // jour ne porte donc qu'une ligne, et aucune mention « de côté ».
-    expect(calendrier().find((c) => c.querySelector(".d")?.textContent === "25")).toBeDefined();
-    expect(container.querySelectorAll(".dm-tk")).toHaveLength(1);
-    expect(container.querySelector(".dm-tk .st.cote")).toBeNull();
+    // Elle est dépliée avec « plus tard », datée, et dit qu'elle a été rangée
+    // exprès — sinon on la relit comme un oubli et on la rappelle.
+    expect(container.querySelectorAll(".dm-tk")).toHaveLength(2);
+    expect(container.querySelector(".dm-tk .st.cote")).not.toBeNull();
   });
 
   it("écrit l'étape de séquence et permet de trier dessus", () => {
@@ -446,12 +481,13 @@ describe("DemRail — ce que la ligne dit", () => {
       totalSteps: 5,
       steps: [],
     });
-    const { barre, setStep, frise } = renderRail(
+    const { ouvrirFiltres, groupe, setStep, frise } = renderRail(
       [relance({ id: "a", sequence: seq(1) }), relance({ id: "b", sequence: seq(3) })],
-      { onglet: "relances" },
+      { file: "relances" },
     );
     expect(within(frise).getByText("étape 3/5")).toBeInTheDocument();
-    fireEvent.click(within(barre("Étape")!).getByText("3"));
+    ouvrirFiltres();
+    fireEvent.click(within(groupe("Étape")!).getByText("3"));
     expect(setStep).toHaveBeenCalledWith(3);
   });
 

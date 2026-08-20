@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DemRail } from "../DemRail";
-import { DAILY_QUOTA, joursReels, separerFile } from "@/lib/agent-portal/demarchage-buckets";
+import { DAILY_QUOTA, repartirLaJournee } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemCohorte, DemarchageQueueMeta, DemarchageTask } from "../types";
 
 /**
@@ -57,18 +57,17 @@ function renderRail(
     onRechercher?: () => void;
   } = {},
 ) {
-  // La campagne ne produit que des appels à froid : tout tombe dans les
-  // premiers contacts, et c'est cette file-là qu'on regarde ici.
-  const { premiers, relances } = separerFile(tasks);
-  const jours = joursReels(relances, { now: NOW, timeZone: "UTC" });
+  // La campagne ne produit que des premiers contacts : c'est cette file-là
+  // qu'on regarde ici.
+  const rep = repartirLaJournee(tasks, { now: NOW, timeZone: "UTC" });
+  const premiers = rep.premiers;
   const { container } = render(
     <DemRail
-      onglet="premiers"
-      setOnglet={jest.fn()}
-      premiers={premiers}
-      jours={jours}
-      day={jours[0].date}
-      setDay={jest.fn()}
+      file="premiers"
+      setFile={jest.fn()}
+      rep={rep}
+      aVenirOuvert={false}
+      setAVenirOuvert={jest.fn()}
       canal={null}
       setCanal={jest.fn()}
       signal={null}
@@ -96,20 +95,37 @@ function renderRail(
     />,
   );
   const el = (sel: string) => container.querySelector<HTMLElement>(sel)!;
+  /** Déplie le panneau des filtres repliés : signal, cohorte, étape. */
+  const ouvrirFiltres = () => {
+    const bouton = container.querySelector<HTMLElement>(".dm-chip.more");
+    if (bouton) fireEvent.click(bouton);
+  };
   return {
     container,
     setCohorte,
     onRechercher,
+    ouvrirFiltres,
     frise: el(".dm-fr"),
-    /** La barre de cohortes — `null` tant que la campagne n'est pas dans la file. */
-    barreCohorte: () => container.querySelector<HTMLElement>(".dm-filt.coh"),
-    /** Les pastilles de canal : l'AUTRE barre. */
+    /**
+     * Le groupe « Cohorte » du panneau des filtres — `null` tant que la
+     * campagne n'est pas dans la file. Déplie le panneau au passage : c'est le
+     * geste réel de l'agent.
+     */
+    barreCohorte: () => {
+      ouvrirFiltres();
+      return (
+        Array.from(container.querySelectorAll<HTMLElement>(".dm-fmenu .g")).find((g) =>
+          g.querySelector(".lb")?.textContent?.includes("Cohorte"),
+        ) ?? null
+      );
+    },
+    /** Les pastilles de canal : elles restent en clair, hors du panneau. */
     pastillesCanal: () =>
-      Array.from(container.querySelectorAll<HTMLElement>(".dm-filt:not(.coh):not(.steps) .dm-chip")),
-    /** La ligne d'objectif d'un canal, en tête de file. */
+      Array.from(container.querySelectorAll<HTMLElement>(".dm-fbar > .dm-chip")),
+    /** La colonne d'objectif d'un canal, en tête de file. */
     objectif: (lb: string) =>
-      Array.from(container.querySelectorAll<HTMLElement>(".dm-obj-l")).find((l) =>
-        l.querySelector(".k")?.textContent?.includes(lb),
+      Array.from(container.querySelectorAll<HTMLElement>(".dm-obj1 .c")).find((l) =>
+        l.getAttribute("title")?.includes(lb),
       )!,
   };
 }
@@ -140,12 +156,13 @@ describe("DemRail — la cohorte est une dimension à part", () => {
     froide("b1", "B_sans_site"),
   ];
 
-  it("a sa propre barre, avec son propre « toutes »", () => {
+  it("a son propre groupe dans le panneau des filtres", () => {
     const { barreCohorte } = renderRail(deuxCohortes);
     const barre = barreCohorte()!;
     expect(within(barre).getByText("Cohorte")).toBeInTheDocument();
+    // Plus de pastille « toutes » : le panneau a un « tout relâcher » commun,
+    // et une pastille cochée se décoche en la recliquant.
     expect(Array.from(barre.querySelectorAll(".dm-chip")).map((c) => c.textContent)).toEqual([
-      "toutes",
       "site faible2",
       "sans site1",
     ]);
@@ -245,7 +262,6 @@ describe("DemRail — l'objectif vient des réglages de l'agent", () => {
     // lignes au lendemain, tous les jours, sans que rien ne le signale.
     const cent = Array.from({ length: 100 }, (_, i) => task({ id: `c${i}` }));
     const { container, objectif } = renderRail(cent, { doneToday: { call: 24 } });
-    expect(within(objectif("Appels")).getByText("100 en file")).toBeInTheDocument();
     expect(objectif("Appels").dataset.full).toBe("1");
     expect(container.querySelectorAll(".dm-tk")).toHaveLength(100);
   });

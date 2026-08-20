@@ -94,7 +94,10 @@ describe("DemActionCard — la carte message", () => {
 });
 
 describe("DemActionCard — valider l'envoi", () => {
-  const bouton = () => screen.getByRole("button", { name: /Message envoyé — c'est fait/ });
+  // La barre qui boucle. Elle a changé de forme — c'était un second gros bloc
+  // sous l'envoi, confondu avec lui ; c'est une barre « ✓ … suivant → ». Tant
+  // que rien n'est parti, elle le dit : « Marquer comme fait ».
+  const bouton = () => screen.getByRole("button", { name: /Marquer comme fait/ });
 
   it("boucle la tâche d'un seul geste, sans exiger d'issue", () => {
     const onPatch = jest.fn();

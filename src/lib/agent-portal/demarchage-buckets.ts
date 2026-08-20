@@ -11,10 +11,11 @@
  *     journée, et l'ancien plan faisait exactement l'inverse — il DÉPLAÇAIT au
  *     lendemain tout ce qui dépassait, donc il cachait le travail qu'on venait
  *     de décider de faire ;
- *   · les RELANCES ET DISCUSSIONS — des gens qu'on a déjà touchés. C'est un
- *     CALENDRIER : une relance est due un jour précis, une mise de côté revient
- *     à une date, une réponse se traite le jour où elle arrive. Aucun plafond :
- *     répondre à quelqu'un qui écrit ne se rationne pas.
+ *   · les RELANCES ET DISCUSSIONS — des gens qu'on a déjà touchés. Aucun
+ *     plafond : répondre à quelqu'un qui a réagi ne se rationne pas. Ce qui est
+ *     dû plus tard est compté, pas déplié — cf. `repartirLaJournee` ;
+ *   · les ATTENTES DE RÉPONSE — rien à envoyer, une réponse à déclarer. Elles
+ *     avaient été rangées avec les relances, où elles étaient invisibles.
  *
  * La frontière est celle de la base et non d'une heuristique :
  * `entreprises.premiere_touche_le`, posé une seule fois par la première tâche
@@ -259,21 +260,6 @@ export function estPremierContact(task: DemarchageTaskLike): boolean {
   return !task.premiere_touche_le;
 }
 
-/**
- * Les deux files, séparées une fois pour toutes.
- *
- * `premiers` garde l'ordre de passage (signaux d'abord, puis échéance) ;
- * `relances` sort tel quel, à charge de `joursReels` de le dater.
- */
-export function separerFile<T extends DemarchageTaskLike>(
-  tasks: readonly T[],
-): { premiers: T[]; relances: T[] } {
-  const premiers: T[] = [];
-  const relances: T[] = [];
-  for (const t of tasks) (estPremierContact(t) ? premiers : relances).push(t);
-  return { premiers: ordreDePassage(premiers), relances };
-}
-
 const DAY_MS = 86_400_000;
 
 const dueMs = (t: DemarchageTaskLike): number => {
@@ -297,41 +283,15 @@ export function ordreDePassage<T extends DemarchageTaskLike>(tasks: readonly T[]
   return [...tasks].sort((a, b) => rang(a) - rang(b) || dueMs(a) - dueMs(b));
 }
 
-/* ── Le calendrier ───────────────────────────────────────────────────────── */
+/* ── La journée, en TROIS files ─────────────────────────────────────────── */
 
 /**
- * La date civile (YYYY-MM-DD, fuseau de l'agent) du jour `offset`.
+ * Le décalage en jours entre aujourd'hui et l'échéance — 0 si elle est passée.
  *
- * On vise MIDI du jour visé plutôt que minuit : aux deux changements d'heure,
- * « minuit + 24 h » tombe à 23 h la veille ou 1 h le lendemain, et la date
- * formatée serait fausse une fois par an dans chaque sens.
+ * L'échu est replié sur aujourd'hui plutôt que rendu négatif : une relance en
+ * retard est du travail du jour, pas une case dans le passé où personne n'irait
+ * regarder.
  */
-export function dayDate(
-  offset: number,
-  now: Date = new Date(),
-  timeZone: string = AGENT_TIMEZONE,
-): string {
-  const start = new Date(dayStartIso(now, timeZone)).getTime();
-  const midi = new Date(start + offset * DAY_MS + DAY_MS / 2);
-  // en-CA rend exactement YYYY-MM-DD, sans avoir à recoller des morceaux.
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(midi);
-}
-
-/** Une journée du calendrier — c'est exactement un onglet de la file. */
-export type DemarchageDay<T> = {
-  /** 0 = aujourd'hui, 1 = demain, … Négatif : jamais, l'échu est replié. */
-  offset: number;
-  /** Date civile (YYYY-MM-DD) dans le fuseau de l'agent — la clé de l'onglet. */
-  date: string;
-  tasks: T[];
-};
-
-/** Le décalage en jours entre aujourd'hui et l'échéance — 0 si elle est passée. */
 function offsetDe(task: DemarchageTaskLike, now: Date, timeZone: string): number {
   const ms = dueMs(task);
   if (!Number.isFinite(ms)) return 0;
@@ -339,68 +299,105 @@ function offsetDe(task: DemarchageTaskLike, now: Date, timeZone: string): number
   return Math.max(0, Math.floor((ms - debut) / DAY_MS));
 }
 
-/**
- * L'HORIZON du calendrier : combien de journées à venir sont montrées même
- * quand elles ne portent rien.
- *
- * Un calendrier qui n'affiche que les jours occupés n'est plus un calendrier,
- * c'est une liste : la semaine ne se lit plus, on ne voit pas qu'il n'y a rien
- * jeudi, et une case unique « auj. » donne l'impression que la barre est
- * cassée. Une semaine complète tient dans le rail (elle défile au-delà).
- */
-export const HORIZON_JOURS = 7;
+/** Laquelle des trois files on travaille. */
+export type FileDeTravail = "premiers" | "relances" | "attentes";
+
+/** Ce que porte la journée, une fois rangé. */
+export type RepartitionJournee<T> = {
+  /** Jamais abordées par personne — un stock, rien ne les date. */
+  premiers: T[];
+  /** Déjà touchées, dues aujourd'hui ou en retard — la journée elle-même. */
+  relances: T[];
+  /** Déjà touchées, dues plus tard. Hors de la journée, mais pas perdues. */
+  aVenir: T[];
+  /** Rien à envoyer : une réponse à déclarer pour que la séquence reparte. */
+  attentes: T[];
+};
 
 /**
- * Le CALENDRIER des relances : chaque tâche à la date où elle est réellement
- * due.
+ * LA JOURNÉE EN TROIS FILES — ce qui remplace le calendrier.
  *
- * Ce que ça change par rapport au plan qu'il remplace : rien n'est déplacé.
- * Une relance due jeudi est jeudi, une mise de côté revient le jour choisi, et
- * ce qui est échu est replié sur aujourd'hui — parce qu'une relance en retard
- * est du travail du jour, pas un onglet dans le passé où personne n'irait
- * regarder.
+ * Une frise de sept jours a vécu ici. Elle a été retirée, et c'est un choix
+ * assumé : personne ne travaille jeudi prochain un mardi matin. Ce que la frise
+ * apportait — savoir qu'une relance est prévue plus tard — tient dans un
+ * compteur (`aVenir`), et ce qu'elle coûtait — un clic de plus pour atteindre
+ * la seule case qui serve, un tiers de la hauteur du rail — était payé tous les
+ * jours.
  *
- * Le tableau rendu contient TOUJOURS la semaine qui vient, vide ou non
- * (`horizon`), plus toutes les journées plus lointaines qui portent une tâche —
- * une mise de côté à trois mois garde sa case, elle ne disparaît pas au bout de
- * l'horizon.
+ * LES ATTENTES SORTENT DES RELANCES, et c'est le vrai correctif. Une attente
+ * de réponse n'est pas une relance : il n'y a rien à envoyer, seulement à dire
+ * « il a répondu » pour que la séquence reparte. Mélangée aux relances et
+ * répartie sur sept jours, elle était invisible — et une séquence qui attend
+ * quelqu'un qui a déjà répondu ne repart jamais toute seule.
+ *
+ * L'ordre à l'intérieur de chaque file reste celui des signaux puis de
+ * l'échéance (`ordreDePassage`) — sauf « à venir », qui est chronologique : ce
+ * n'est pas une file de travail, c'est un aperçu.
  */
-export function joursReels<T extends DemarchageTaskLike>(
+export function repartirLaJournee<T extends DemarchageTaskLike>(
   tasks: readonly T[],
-  {
-    now = new Date(),
-    timeZone = AGENT_TIMEZONE,
-    horizon = HORIZON_JOURS,
-  }: { now?: Date; timeZone?: string; horizon?: number } = {},
-): Array<DemarchageDay<T>> {
-  const parJour = new Map<number, T[]>();
-  // La semaine qui vient existe d'abord, vide : c'est le calendrier lui-même,
-  // pas le résultat de ce qu'il contient.
-  for (let i = 0; i < Math.max(1, horizon); i += 1) parJour.set(i, []);
+  { now = new Date(), timeZone = AGENT_TIMEZONE }: { now?: Date; timeZone?: string } = {},
+): RepartitionJournee<T> {
+  const premiers: T[] = [];
+  const relances: T[] = [];
+  const aVenir: T[] = [];
+  const attentes: T[] = [];
 
   for (const t of tasks) {
-    const offset = offsetDe(t, now, timeZone);
-    const liste = parJour.get(offset);
-    if (liste) liste.push(t);
-    else parJour.set(offset, [t]);
+    if (t.kind === "wait") {
+      attentes.push(t);
+      continue;
+    }
+    if (estPremierContact(t)) {
+      premiers.push(t);
+      continue;
+    }
+    (offsetDe(t, now, timeZone) > 0 ? aVenir : relances).push(t);
   }
 
-  return [...parJour.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([offset, liste]) => ({
-      offset,
-      date: dayDate(offset, now, timeZone),
-      tasks: ordreDePassage(liste),
-    }));
+  return {
+    premiers: ordreDePassage(premiers),
+    relances: ordreDePassage(relances),
+    aVenir: [...aVenir].sort((a, b) => dueMs(a) - dueMs(b)),
+    attentes: ordreDePassage(attentes),
+  };
+}
+
+/**
+ * La liste d'une file, à partir d'une répartition — « à venir » compris quand
+ * l'agent a demandé à le voir.
+ *
+ * Vit ici et non dans l'écran parce que c'est la même question que se posent le
+ * rail (qu'est-ce que j'affiche) et la page (sur quoi j'atterris après un
+ * geste) : deux réponses différentes feraient sauter la sélection.
+ */
+export function fileDeLaJournee<T extends DemarchageTaskLike>(
+  rep: RepartitionJournee<T>,
+  file: FileDeTravail,
+  avecAVenir = false,
+): T[] {
+  if (file === "premiers") return rep.premiers;
+  if (file === "attentes") return rep.attentes;
+  return avecAVenir ? [...rep.relances, ...rep.aVenir] : rep.relances;
+}
+
+/** Dans quelle file cette tâche est-elle rangée ? */
+export function fileDe<T extends DemarchageTaskLike>(
+  rep: RepartitionJournee<T>,
+  task: T,
+): FileDeTravail {
+  if (rep.attentes.includes(task)) return "attentes";
+  if (rep.premiers.includes(task)) return "premiers";
+  return "relances";
 }
 
 /**
  * L'échéance prévue est-elle déjà passée ?
  *
- * Le calendrier replie de toute façon l'échu sur aujourd'hui, mais ça reste une
- * information : une relance due depuis six jours dit que le rythme ne suit pas.
- * L'attente de réponse est exclue, son `due_at` n'est qu'une date de mise en
- * pause.
+ * Une relance due depuis six jours dit que le rythme ne suit pas — et la file
+ * la range de toute façon dans la journée, donc c'est la ligne qui doit le
+ * dire. L'attente de réponse est exclue, son `due_at` n'est qu'une date de mise
+ * en pause.
  */
 export function isLate(
   task: DemarchageTaskLike,
@@ -432,25 +429,4 @@ export function isSetAside(
 ): boolean {
   if (task.status !== "snoozed") return false;
   return offsetDe(task, now, timeZone) > 0;
-}
-
-/** La journée qui contient cette tâche — pour faire suivre l'onglet à la sélection. */
-export function dayOfTask<T extends DemarchageTaskLike & { id: string }>(
-  days: ReadonlyArray<DemarchageDay<T>>,
-  id: string,
-): string | null {
-  for (const day of days) {
-    if (day.tasks.some((t) => t.id === id)) return day.date;
-  }
-  return null;
-}
-
-/** La première tâche du calendrier — celle sur laquelle on atterrit. */
-export function firstPlannedTask<T extends DemarchageTaskLike>(
-  days: ReadonlyArray<DemarchageDay<T>>,
-): T | null {
-  for (const day of days) {
-    if (day.tasks[0]) return day.tasks[0];
-  }
-  return null;
 }
