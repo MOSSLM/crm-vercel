@@ -17,7 +17,7 @@ suite ne peut pas être livrée honnêtement.
 
 ### 1.0 — Relire S1 / S2 / S3, puis les activer ⛔ *(nouveau le 20/08)*
 
-Les trois séquences conditionnelles sont écrites et **les 132 inscriptions
+Les trois séquences conditionnelles sont écrites et **les 656 inscriptions
 vivantes y sont déjà posées, à l'étape qui leur correspond** (voir
 `17-canvas-conditionnel.md`). Elles sont en `draft` : rien ne partira tant que
 personne ne les aura activées — une séquence qui n'est pas `on` gèle ses
@@ -25,6 +25,17 @@ inscriptions avec un motif visible au lieu de les faire avancer.
 
 **Ce qu'il faut de toi :** relire les messages et les délais dans l'éditeur, puis
 activer S1. Les six anciennes sont archivées, pas supprimées.
+
+**Le chiffre a changé le 20/08 au soir : 132 → 656.** Les 632 tâches d'« appel à
+froid » qui traînaient sans séquence sont reprises (`sql/20260820_reprise_appels_froids.sql`) :
+524 entreprises jamais inscrites entrent en S1 à l'étape 0 — aucune n'avait de
+démo, de première touche ni de message, ce sont de vrais premiers contacts — et
+les 108 autres étaient déjà couvertes par une inscription. **Activer S1 ouvre
+donc désormais 524 premiers contacts**, pas 132 relances : c'est un volume de
+travail réel, à ouvrir quand la file d'un agent peut l'absorber.
+
+**Et S1 est la « séquence d'entrée »** (`settings.entree`) : attribuer une
+entreprise l'y inscrit automatiquement. Plus aucune tâche n'est semée à la main.
 
 **Et l'e-mail dans tout ça ?** Il ne partira pas, et tu n'as rien à faire pour
 ça — voir § 1.0 bis. S1 peut être activée **maintenant**, sans attendre le
