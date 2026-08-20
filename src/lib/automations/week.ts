@@ -843,6 +843,26 @@ export function readReplies(vars: unknown): Record<string, string> {
  * devinée ? ». Un `non` mesuré et un `non` faute de données ne sont pas la
  * même chose, ici comme partout ailleurs dans ce CRM.
  */
+/**
+ * Depuis quand chaque attente de réponse court — `vars.attentes`, une date ISO
+ * par étape.
+ *
+ * Écrit une seule fois, à la pose de l'attente, et jamais recalculé : c'est ce
+ * qui permet de relire en base pourquoi telle relance est tombée tel jour.
+ * Même convention de clé que `replies` et `conditions` — l'identifiant de
+ * l'étape, le rang en repli.
+ */
+export function readAttentes(vars: unknown): Record<string, string> {
+  const raw = (vars as Record<string, unknown> | null)?.attentes
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!k || typeof v !== 'string' || !v) continue
+    out[k] = v
+  }
+  return out
+}
+
 export function readConditions(vars: unknown): Record<string, string> {
   const raw = (vars as Record<string, unknown> | null)?.conditions
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}

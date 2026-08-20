@@ -22,6 +22,7 @@ import type { MotifSortie } from '@/lib/automations/sortie-sequence'
 import {
   readConditions,
   readNonMesures,
+  readAttentes,
   readReplies,
   readSkippedSteps,
   readTours,
@@ -1945,6 +1946,60 @@ async function processTransitionStep(
   await sortirDeSequence(sb, enrollment.id, 'transfert')
 }
 
+/**
+ * DEPUIS QUAND ATTEND-ON UNE RÉPONSE ?
+ *
+ * Pas depuis l'instant où le moteur regarde l'étape : **depuis le dernier
+ * message réellement parti vers ce prospect**. La nuance ne se voit pas tant
+ * que tout tourne — le message part, l'attente commence dans la seconde — et
+ * elle saute aux yeux dès qu'une séquence a été gelée.
+ *
+ * LE CAS QUI L'A RÉVÉLÉE, le 20/08/2026 : 75 inscriptions garées sur cette
+ * attente depuis le 13 août, sur une séquence restée en brouillon. Les
+ * activer aurait fait démarrer leur délai de trois jours CE JOUR-LÀ, et
+ * relancé le 23 des prospects silencieux depuis une semaine. « Relancer au
+ * bout de trois jours » ne veut pas dire « trois jours après que j'ai pensé à
+ * allumer la séquence ».
+ *
+ * L'INSTANT EST ÉCRIT UNE FOIS, dans `vars.attentes[étape]`, à la première
+ * pose de l'attente — même convention que `vars.replies` et `vars.conditions`,
+ * et même raison : ce qui a été décidé une fois ne se recalcule pas. On peut
+ * donc relire en base pourquoi telle relance est tombée tel jour.
+ *
+ * REPLI, dans l'ordre : le dernier envoi sortant journalisé pour ce prospect,
+ * puis maintenant. Un prospect à qui rien n'est jamais parti — l'agent a
+ * bouclé la tâche sans cliquer « envoyer » — attend donc à partir de
+ * maintenant, ce qui est le choix prudent : on ne relance pas quelqu'un qu'on
+ * n'a jamais abordé.
+ */
+async function debutDeLAttente(
+  sb: SupabaseClient,
+  enrollment: SequenceEnrollment,
+  steps: SequenceStep[],
+  idx: number,
+): Promise<number> {
+  const deja = lireLeSac(readAttentes(enrollment.vars), steps, idx)
+  const dejaMs = deja ? new Date(deja).getTime() : NaN
+  if (Number.isFinite(dejaMs)) return dejaMs
+
+  if (enrollment.entreprise_id != null || enrollment.contact_id) {
+    const base = sb
+      .from('email_logs')
+      .select('sent_at')
+      .in('channel', ['email', 'whatsapp', 'linkedin', 'sms'])
+    const cible =
+      enrollment.entreprise_id != null
+        ? base.eq('entreprise_id', enrollment.entreprise_id)
+        : base.eq('contact_id', enrollment.contact_id as string)
+    const { data } = await cible.order('sent_at', { ascending: false }).limit(1)
+    const dernier = (data ?? [])[0]?.sent_at as string | undefined
+    const ms = dernier ? new Date(dernier).getTime() : NaN
+    if (Number.isFinite(ms)) return ms
+  }
+
+  return Date.now()
+}
+
 async function processWaitStep(
   sb: SupabaseClient,
   enrollment: SequenceEnrollment,
@@ -1959,10 +2014,19 @@ async function processWaitStep(
 
   const timeoutDays = Number(step.replyTimeoutDays) || 0
   const dejaRepondu = Boolean(lireLeSac(readReplies(enrollment.vars), steps, idx))
-  // Déjà garée et pourtant réveillée par le ticker : le délai de relance est
-  // échu et personne n'a répondu. On avance quand même — c'est exactement ce
-  // que « relancer au bout de n jours » veut dire.
-  const relanceEchue = enrollment.hold_reason === 'awaiting_reply' && timeoutDays > 0
+
+  const debutMs = timeoutDays > 0 ? await debutDeLAttente(sb, enrollment, steps, idx) : Date.now()
+  const echeanceMs = debutMs + timeoutDays * DAY_MS
+
+  // Deux façons pour un délai d'être écoulé, et il faut les deux :
+  //   · l'inscription était déjà garée et le ticker la réveille — le chemin
+  //     ordinaire, `next_run_at` ayant été posé à l'échéance ;
+  //   · le silence dure depuis plus longtemps que le délai, alors même qu'on
+  //     n'avait encore jamais posé l'attente. C'est le cas d'une séquence
+  //     restée en brouillon : le prospect, lui, se tait depuis une semaine.
+  const relanceEchue = timeoutDays > 0 && (
+    enrollment.hold_reason === 'awaiting_reply' || Date.now() >= echeanceMs
+  )
 
   if (dejaRepondu || relanceEchue) {
     await avancerApres(sb, enrollment, steps, idx, { reanchor: true })
@@ -1972,12 +2036,21 @@ async function processWaitStep(
   // Sans délai de relance, `next_run_at` reste nul : l'inscription sort de la
   // file du ticker au lieu d'y revenir chaque minute pour ne rien faire, ce qui
   // affamerait les inscriptions réellement envoyables.
+  const cle = steps[idx]?.id || String(idx)
   await sb
     .from('sequence_enrollments')
     .update({
       send_at: null,
       hold_reason: 'awaiting_reply',
-      next_run_at: timeoutDays > 0 ? new Date(Date.now() + timeoutDays * DAY_MS).toISOString() : null,
+      next_run_at: timeoutDays > 0 ? new Date(echeanceMs).toISOString() : null,
+      ...(timeoutDays > 0
+        ? {
+            vars: {
+              ...((enrollment.vars as Record<string, unknown> | null) ?? {}),
+              attentes: { ...readAttentes(enrollment.vars), [cle]: new Date(debutMs).toISOString() },
+            },
+          }
+        : {}),
     })
     .eq('id', enrollment.id)
 }

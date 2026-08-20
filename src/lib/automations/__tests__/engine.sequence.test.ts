@@ -763,10 +763,23 @@ describe('étape « attendre une réponse »', () => {
     settings: {},
   });
 
-  const wireWait = (automationRow: Record<string, unknown>) => {
+  /**
+   * `dernierEnvoi` est LE point de départ de l'attente : le délai ne court pas
+   * depuis l'instant où le moteur regarde l'étape, mais depuis le dernier
+   * message réellement parti. `null` = rien n'est jamais parti, l'attente
+   * démarre maintenant.
+   */
+  const wireWait = (
+    automationRow: Record<string, unknown>,
+    dernierEnvoi: string | null = null,
+  ) => {
     tables = {
       automations: tableChain({ data: automationRow, error: null }),
       sequence_enrollments: tableChain(),
+      email_logs: tableChain({
+        data: dernierEnvoi ? [{ sent_at: dernierEnvoi }] : [],
+        error: null,
+      }),
     };
     mockFrom.mockImplementation((table: string) => {
       if (!tables[table]) throw new Error(`unexpected table: ${table}`);
@@ -819,6 +832,74 @@ describe('étape « attendre une réponse »', () => {
     await processSequenceEnrollment(onWait({ hold_reason: 'awaiting_reply' }));
 
     expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  /**
+   * LE DÉLAI COURT DEPUIS LE DERNIER MESSAGE, PAS DEPUIS L'ACTIVATION.
+   *
+   * Le cas qui l'a révélé, le 20/08/2026 : 75 inscriptions garées sur cette
+   * attente depuis le 13 août, sur une séquence restée en brouillon. Les
+   * activer aurait fait démarrer leur délai de trois jours ce jour-là, et
+   * relancé le 23 des prospects silencieux depuis une semaine.
+   */
+  it('relance tout de suite quand le silence dure déjà depuis plus longtemps que le délai', async () => {
+    wireWait(
+      withWait({ waitMode: 'reply', replyTimeoutDays: 3 }),
+      new Date(Date.now() - 7 * DAY).toISOString(),
+    );
+
+    // Jamais garée : elle arrive sur l'attente pour la première fois.
+    await processSequenceEnrollment(onWait({ hold_reason: 'sequence_paused' }));
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  it('compte le reliquat quand le silence est plus court que le délai', async () => {
+    const now = Date.now();
+    wireWait(
+      withWait({ waitMode: 'reply', replyTimeoutDays: 3 }),
+      new Date(now - 1 * DAY).toISOString(),
+    );
+
+    await processSequenceEnrollment(onWait());
+
+    const update = updates()[0];
+    expect(update.current_step).toBeUndefined();
+    // Trois jours après le message, donc deux jours à partir de maintenant.
+    const runAt = Date.parse(update.next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(1.9 * DAY);
+    expect(runAt - now).toBeLessThan(2.1 * DAY);
+  });
+
+  it('écrit le départ de l’attente, pour qu’il ne se recalcule jamais', async () => {
+    const depart = new Date(Date.now() - 1 * DAY).toISOString();
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }), depart);
+
+    await processSequenceEnrollment(onWait());
+
+    expect((updates()[0] as { vars: { attentes: Record<string, string> } }).vars.attentes).toEqual({
+      s2: depart,
+    });
+  });
+
+  it('relit le départ déjà écrit plutôt que de rouvrir les journaux', async () => {
+    const depart = new Date(Date.now() - 10 * DAY).toISOString();
+    // Aucun message journalisé : sans le sac, l'attente repartirait de zéro.
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }), null);
+
+    await processSequenceEnrollment(onWait({ vars: { attentes: { s2: depart } } }));
+
+    expect(updates()[0]).toEqual(expect.objectContaining({ current_step: 2 }));
+  });
+
+  it('démarre maintenant quand rien n’est jamais parti — on ne relance pas un inconnu', async () => {
+    const now = Date.now();
+    wireWait(withWait({ waitMode: 'reply', replyTimeoutDays: 3 }), null);
+
+    await processSequenceEnrollment(onWait());
+
+    const runAt = Date.parse(updates()[0].next_run_at as string);
+    expect(runAt - now).toBeGreaterThan(2.9 * DAY);
   });
 
   it('avance dès qu’une réponse a été déclarée', async () => {
@@ -882,6 +963,9 @@ describe('branches d’une attente-réponse', () => {
     tables = {
       automations: tableChain({ data: BRANCHEE, error: null }),
       sequence_enrollments: tableChain(),
+      // Le départ de l'attente se lit dans les envois journalisés : aucun ici,
+      // donc elle démarre maintenant.
+      email_logs: tableChain({ data: [], error: null }),
     };
     mockFrom.mockImplementation((table: string) => {
       if (!tables[table]) throw new Error(`unexpected table: ${table}`);
