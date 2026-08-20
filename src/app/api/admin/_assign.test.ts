@@ -12,6 +12,17 @@ jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => ({ from: (...args: unknown[]) => mockFrom(...args) })),
 }));
 
+/**
+ * Le moteur de séquences n'a rien à faire ici : l'inscription est éprouvée chez
+ * lui, et la faire tourner pour de vrai ferait dépendre ce fichier de la moitié
+ * du domaine. Ce qu'on veut savoir, c'est QUELLE séquence l'attribution choisit.
+ */
+const mockEnroll = jest.fn(async () => ({ enrolled: true, enrollmentId: 'enr-1' }));
+jest.mock('@/lib/automations/engine', () => ({
+  enrollInSequence: (...a: unknown[]) => mockEnroll(...(a as [])),
+  processSequenceEnrollment: jest.fn(async () => undefined),
+}));
+
 import {
   assignProspectToAgent,
   assignProspectsToAgent,
@@ -296,6 +307,40 @@ describe('assignProspectToAgent', () => {
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
     expect(calls.some((c) => c.table === 'automations')).toBe(false);
+  });
+
+  /**
+   * LA SÉQUENCE D'ENTRÉE — celle où atterrit un prospect qu'aucun public ne
+   * réclame.
+   *
+   * Notre S1 n'en déclare aucun : elle commence par une condition (« a-t-il un
+   * mobile ? ») et aiguille elle-même. `sequenceSuggeree` ne peut donc pas la
+   * proposer — elle ignore exprès les séquences sans besoin de canal, sinon la
+   * première séquence sans règle s'imposerait à tout le parc. C'est
+   * `settings.entree` qui la désigne.
+   */
+  it("inscrit dans la séquence d'entrée le prospect qu'aucun public ne réclame", async () => {
+    results['entreprises.select'] = [
+      entreprise(null),
+      // Deuxième lecture : les canaux du prospect, pour `collecterCanaux`.
+      { data: { email: 'contact@artisan.fr', telephone: '0646042876', telephones: [] } },
+    ];
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: null, pipeline_id: 'p-streak', is_test: false }],
+    };
+    results['contacts.select'] = { data: [] };
+    results['automations.select'] = {
+      data: [
+        { id: 'sans-public', status: 'draft', settings: {}, definition: { steps: [{ kind: 'whatsapp' }] } },
+        { id: 's1', status: 'draft', settings: { entree: true }, definition: { steps: [{ kind: 'whatsapp' }] } },
+      ],
+    };
+
+    const res = await assignProspectToAgent(ENT, AGENT);
+
+    expect(res).toMatchObject({ ok: true, sequence: 'inscrit' });
+    // Et c'est bien CELLE-LÀ, pas la première séquence sans règle venue.
+    expect(mockEnroll.mock.calls[0][0]).toMatchObject({ id: 's1' });
   });
 
   /**

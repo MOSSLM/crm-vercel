@@ -740,6 +740,26 @@ function PublicViseSection({
           ? 'Sans public déclaré, cette séquence ne sera jamais suggérée dans le tableau — elle restera choisissable à la main.'
           : 'Le tableau proposera cette séquence aux entreprises qui correspondent. Rien n’est bloqué : on peut toujours inscrire une ligne hors public.'}
       </p>
+
+      {/* LA SÉQUENCE D'ENTRÉE — le contraire d'un public, et c'est voulu.
+          Une séquence qui commence par une condition (« a-t-il un mobile ? »)
+          et aiguille elle-même n'a pas de public à déclarer : le sien est
+          « joignable ». La suggestion ne peut donc pas la trouver — elle ignore
+          exprès les séquences sans besoin de canal, sinon la première séquence
+          sans règle s'imposerait à tout le parc. On la désigne à la main. */}
+      <Field label="Séquence d’entrée" hint="où atterrit un prospect que personne ne réclame">
+        <label className="seq-entree">
+          <input
+            className="seq-check"
+            type="checkbox"
+            checked={settings.entree === true}
+            onChange={(e) => onChange({ entree: e.target.checked })}
+          />
+          <span>
+            Attribuer une entreprise l’inscrit ici, quand aucun public ne lui correspond.
+          </span>
+        </label>
+      </Field>
     </Section>
   )
 }

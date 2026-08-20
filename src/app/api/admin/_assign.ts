@@ -3,7 +3,11 @@ import { getAgentPipeline, type AgentStage } from "@/app/api/agent/_lib";
 import { isRealDeal, pickSurvivor, type DealRecord } from "@/lib/opportunites/one-per-company";
 import { collecterCanaux, sequenceSuggeree, type PublicVise } from "@/lib/prospects/canal";
 import { enrollInSequence, processSequenceEnrollment } from "@/lib/automations/engine";
-import type { Automation, SequenceEnrollment } from "@/components/automations/types";
+import type {
+  Automation,
+  SequenceEnrollment,
+  SequenceSettings,
+} from "@/components/automations/types";
 
 type ServiceClient = ReturnType<typeof getServiceClient>;
 
@@ -104,6 +108,13 @@ export type AssignResult =
  * sans qu'on retouche cette fonction — et une séquence EN SERVICE l'emporte sur
  * un brouillon, sans quoi l'inscription partirait contre un mur.
  *
+ * À DÉFAUT, LA SÉQUENCE D'ENTRÉE (`settings.entree`). Notre S1 n'a pas de
+ * public : elle commence par une condition et aiguille elle-même vers WhatsApp,
+ * l'e-mail ou l'appel. `sequenceSuggeree` ne peut donc pas la proposer — elle
+ * ignore volontairement les séquences sans besoin de canal, sinon la première
+ * séquence sans règle s'imposerait à tout le parc. On la DÉSIGNE, on ne la
+ * devine pas.
+ *
  * QUAND RIEN NE CORRESPOND, ON NE CRÉE RIEN. Pas de tâche de repli : c'est très
  * exactement ce qu'on vient de retirer. Le prospect est attribué, il apparaît
  * dans le marketing pipeline, et le compte rendu dit « aucune séquence ».
@@ -149,8 +160,15 @@ async function mettreEnSequence(
         status: a.status,
       })),
     );
-    if (!choisie) return "aucune_sequence";
-    const automation = sequences.find((a) => a.id === choisie.id);
+    // À défaut d'un public qui réclame ce prospect, la séquence d'entrée — en
+    // service d'abord, brouillon ensuite. Un brouillon inscrit sans rien
+    // envoyer (le moteur gare l'inscription sur `sequence_paused`), ce qui est
+    // exactement ce qu'on veut tant que la séquence n'est pas relue.
+    const entrees = sequences.filter((a) => (a.settings as SequenceSettings | null)?.entree === true);
+    const automation =
+      (choisie ? sequences.find((a) => a.id === choisie.id) : undefined) ??
+      entrees.find((a) => a.status === "on") ??
+      entrees[0];
     if (!automation) return "aucune_sequence";
 
     // Le décideur d'abord : c'est lui que le message nommera.

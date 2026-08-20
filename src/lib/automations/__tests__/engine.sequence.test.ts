@@ -325,6 +325,41 @@ describe('processSequenceEnrollment', () => {
     ]);
   });
 
+  /**
+   * UNE INSCRIPTION GARÉE REPASSE ICI À CHAQUE MINUTE, INDÉFINIMENT.
+   *
+   * `next_run_at` reste posé exprès — c'est lui qui la fera repartir au premier
+   * tick suivant l'activation. Réécrire les deux mêmes valeurs à chaque passage
+   * ferait, sur les 656 inscriptions garées du 20/08/2026, deux cent mille
+   * écritures par jour, et autant de coups du trigger `updated_at` : la date du
+   * dernier VRAI changement d'état serait effacée en continu.
+   */
+  it('ne réécrit rien quand elle est déjà garée sur ce motif', async () => {
+    wire({ ...sequenceWith('email'), status: 'paused' });
+
+    await processSequenceEnrollment({
+      ...enrollment,
+      hold_reason: 'sequence_paused',
+      send_at: null,
+    });
+
+    expect(tables.sequence_enrollments.captured.updates).toEqual([]);
+  });
+
+  it('écrit quand même si un envoi était planifié — il faut l’annuler', async () => {
+    wire({ ...sequenceWith('email'), status: 'paused' });
+
+    await processSequenceEnrollment({
+      ...enrollment,
+      hold_reason: 'sequence_paused',
+      send_at: '2026-08-20T09:00:00.000Z',
+    });
+
+    expect(tables.sequence_enrollments.captured.updates).toEqual([
+      { send_at: null, hold_reason: 'sequence_paused' },
+    ]);
+  });
+
   it('crée une tâche WhatsApp attribuée au propriétaire du contact, jamais un envoi', async () => {
     wire(sequenceWith('whatsapp'));
 

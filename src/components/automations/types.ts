@@ -232,6 +232,22 @@ export interface SequenceSettings {
   /** Canaux qui DISQUALIFIENT le prospect (« pas d'adresse e-mail, sinon on écrit »). */
   excludeCanaux?: Canal[]
   /**
+   * LA SÉQUENCE D'ENTRÉE — celle où atterrit un prospect qu'aucun public ne
+   * réclame.
+   *
+   * Elle existe parce que notre S1 n'a PAS de public : elle commence par une
+   * condition (« a-t-il un mobile ? ») et aiguille elle-même vers WhatsApp,
+   * l'e-mail ou l'appel. Son public, c'est « joignable ». Or `sequenceSuggeree`
+   * ne propose que des séquences qui déclarent un besoin de canal
+   * (`precisionDuPublic > 0`) — sans quoi une séquence sans aucune règle
+   * s'imposerait par défaut à tout le parc. Le drapeau est donc l'inverse
+   * exact : on ne devine pas, on DÉSIGNE.
+   *
+   * Une seule séquence devrait le porter. Si deux le portent, la première
+   * en service l'emporte — même arbitrage que partout ailleurs.
+   */
+  entree?: boolean
+  /**
    * Qui, parmi les agents, voit cette séquence — et donc peut la lancer.
    *
    * `tous` (défaut, y compris quand la clé est absente) : elle est dans le

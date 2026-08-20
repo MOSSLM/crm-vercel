@@ -1749,6 +1749,11 @@
 }
 .au-skin .seq-check:disabled { cursor: default; opacity: .4; }
 
+/* Le drapeau « séquence d'entrée » : une case et sa phrase, alignées haut. */
+.au-skin .seq-entree { display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+  font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.au-skin .seq-entree .seq-check { margin-top: 2px; flex-shrink: 0; }
+
 /* Le « … » ne s'affiche qu'au survol de la ligne, ou quand son menu est
    ouvert : huit boutons identiques alignés attirent l'œil plus que les
    chiffres qu'on est venu lire. Il reste atteignable au clavier. */

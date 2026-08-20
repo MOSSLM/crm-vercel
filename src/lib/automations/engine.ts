@@ -1464,10 +1464,22 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   if (!automation || automation.status !== 'on') {
     // La séquence est en pause : on gèle l'inscription sans rien perdre, et on
     // dit pourquoi — la file l'affiche au lieu de la faire disparaître.
-    await sb
-      .from('sequence_enrollments')
-      .update({ send_at: null, hold_reason: automation ? 'sequence_paused' : null })
-      .eq('id', enrollment.id)
+    //
+    // `next_run_at` reste posé, VOLONTAIREMENT : c'est lui qui fera repartir
+    // l'inscription au premier tick suivant l'activation. Conséquence directe,
+    // et c'est pourquoi l'écriture est conditionnelle : une inscription garée
+    // repasse ici À CHAQUE MINUTE, indéfiniment. Réécrire les deux mêmes
+    // valeurs à chaque passage ferait, sur les 656 inscriptions garées du
+    // 20/08/2026, deux cent mille écritures par jour — et autant de coups du
+    // trigger `updated_at`, qui efface au passage la date du dernier VRAI
+    // changement d'état.
+    const motif = automation ? 'sequence_paused' : null
+    if (enrollment.hold_reason !== motif || enrollment.send_at != null) {
+      await sb
+        .from('sequence_enrollments')
+        .update({ send_at: null, hold_reason: motif })
+        .eq('id', enrollment.id)
+    }
     return
   }
   const def = (automation.definition as SequenceDefinition) || { steps: [] }
