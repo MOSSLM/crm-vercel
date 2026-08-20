@@ -95,11 +95,25 @@ const PAGE = 50;
 
 const LABEL_SOURCE: Record<string, string> = Object.fromEntries(SOURCES.map((s) => [s.valeur, s.label]));
 
-/** Un segment : une recherche enregistrée sous un nom. */
+/**
+ * Un segment : une recherche enregistrée sous un nom.
+ *
+ * ⚠️ DEUX ÉCRANS ÉCRIVENT DANS CETTE TABLE. Ici on pose `flags` et `sources` ;
+ * le marketing pipeline pose `services` (les métiers) et `filtres` (ses cases).
+ * Le seul champ commun est `q`. Un segment venu de là-bas ne se rejoue donc
+ * qu'à moitié ici — et on le DIT, plutôt que de rendre en silence une
+ * population plus large que son nom ne le promet.
+ */
 type Segment = {
   id: string;
   nom: string;
-  criteres: { q?: string | null; flags?: string[]; sources?: string[] };
+  criteres: {
+    q?: string | null;
+    flags?: string[];
+    sources?: string[];
+    services?: string[];
+    filtres?: string[];
+  };
 };
 
 export function EntreprisesExplorer() {
@@ -198,6 +212,18 @@ export function EntreprisesExplorer() {
     setFlags(new Set((s.criteres.flags ?? []) as Flag[]));
     setSources(new Set(s.criteres.sources ?? []));
     setOffset(0);
+    // Ce que cet écran ne sait PAS rejouer — les métiers et les cases du
+    // marketing pipeline. Le taire rendrait une population plus large sous un
+    // nom qui promet un tri : c'est le piège que la validation des drapeaux
+    // inconnus évite déjà, et il vaut d'un écran à l'autre.
+    const horsPortee =
+      (s.criteres.services?.length ?? 0) + (s.criteres.filtres?.length ?? 0);
+    if (horsPortee > 0) {
+      toast.warning(
+        `« ${s.nom} » vient du marketing pipeline : ${horsPortee} critère(s) ne sont pas rejoués ici.`,
+        { description: "L'explorateur montre donc une population plus large que le segment." },
+      );
+    }
   };
 
   const enregistrerSegment = async () => {

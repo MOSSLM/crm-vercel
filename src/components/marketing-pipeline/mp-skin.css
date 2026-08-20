@@ -298,6 +298,28 @@
 .mp-scope .filtres-pop .fp-pied{ grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:8px; border-top:1px solid var(--border); }
 .mp-scope .filtres-pop .fp-reste{ font-family:var(--font-mono); font-size:11px; color:var(--text-3); }
 
+/* ── Le panneau des MÉTIERS ────────────────────────────────────────────────
+   Une seule colonne, une recherche en tête, une liste qui défile : le
+   vocabulaire vient de la base et compte des centaines de libellés, on ne le
+   parcourt pas comme quatre groupes de trois cases. */
+.mp-scope .filtres-pop.fp-services{ display:block; width:min(400px, 92vw); }
+.mp-scope .fp-services .fp-recherche{ display:flex; align-items:center; gap:7px; margin:10px 0 8px; padding:0 9px; height:34px; border:1px solid var(--border-2); border-radius:9px; background:var(--surface-2); }
+.mp-scope .fp-services .fp-recherche input{ flex:1; min-width:0; border:0; background:transparent; outline:none; font-size:12.5px; color:var(--text); }
+.mp-scope .fp-services .fp-liste{ max-height:min(46vh, 340px); overflow:auto; }
+.mp-scope .fp-services .fp-sep{ height:1px; background:var(--border); margin:7px 0; }
+.mp-scope .fp-services .fp-vide{ font-size:12px; color:var(--text-3); padding:10px 2px; line-height:1.5; }
+.mp-scope .fp-services .fp-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── La barre des SEGMENTS ────────────────────────────────────────────────
+   Une requête enregistrée sous un nom, jamais une liste d'identifiants : une
+   entreprise y entre et en sort toute seule quand ses données changent. */
+.mp-scope .mp-segments{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 0 2px; }
+.mp-scope .mp-segments .lb{ display:inline-flex; align-items:center; gap:5px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-right:2px; }
+.mp-scope .mp-segments .vide{ font-size:12px; color:var(--text-3); }
+.mp-scope .mp-segments .seg{ display:inline-flex; align-items:center; }
+.mp-scope .mp-segments .seg .btn.x{ padding:3px 5px; opacity:0; transition:opacity .12s; }
+.mp-scope .mp-segments .seg:hover .btn.x, .mp-scope .mp-segments .seg .btn.x:focus-visible{ opacity:1; }
+
 /* pagination — même bandeau que la légende, au-dessus d'elle */
 .mp-scope .pager{ display:flex; align-items:center; gap:10px; padding:9px 24px; font-size:12px; color:var(--text-2); border-top:1px solid var(--border); background:var(--bg-2); flex-wrap:wrap; }
 .mp-scope .pager .pg-lb{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-3); }

@@ -12,7 +12,14 @@
  * états. « vérifié sans site » et « on ne sait pas » sont deux populations, et
  * la seconde n'a rien à faire dans une campagne « création ».
  */
-import { GROUPES, compter, passeLesFiltres, type CleFiltre } from "../filtres";
+import {
+  GROUPES,
+  compter,
+  passeLesFiltres,
+  servicesDe,
+  servicesPresents,
+  type CleFiltre,
+} from "../filtres";
 import type { BoardItem } from "../types";
 
 const ligne = (over: Partial<BoardItem>): BoardItem =>
@@ -143,5 +150,79 @@ describe("le catalogue", () => {
   it("n’a pas deux fois la même clé — sinon un groupe en volerait un autre", () => {
     const cles = GROUPES.flatMap((g) => g.options.map((o) => o.cle));
     expect(new Set(cles).size).toBe(cles.length);
+  });
+});
+
+/**
+ * LES MÉTIERS — un cinquième axe, la même grammaire.
+ *
+ * Le besoin, mot pour mot : « il y a pas mal d'entreprises qui font isolation
+ * par l'extérieur, et rénovation, mais pas clim. Je préférerais mettre dans un
+ * segment à part. » C'est-à-dire : plusieurs métiers en OU, combinés en ET avec
+ * les autres filtres.
+ */
+describe("les métiers du prospect", () => {
+  const isolant = ligne({ service_tags: ["Isolation des murs par l'extérieur", "Rénovation globale"] });
+  const clim = ligne({ service_tags: ["climatisation"] });
+  const inconnuMetier = ligne({});
+
+  const ISO = "Isolation des murs par l'extérieur";
+
+  it("ne filtre rien quand aucun métier n'est demandé", () => {
+    for (const l of [isolant, clim, inconnuMetier]) {
+      expect(passeLesFiltres(l, new Set(), new Set())).toBe(true);
+    }
+  });
+
+  it("retient une entreprise qui porte le métier demandé, parmi ses autres", () => {
+    expect(passeLesFiltres(isolant, new Set(), new Set([ISO]))).toBe(true);
+    expect(passeLesFiltres(clim, new Set(), new Set([ISO]))).toBe(false);
+  });
+
+  it("écarte une fiche sans métier — c'est une fiche à enrichir, pas un « autre »", () => {
+    expect(passeLesFiltres(inconnuMetier, new Set(), new Set([ISO]))).toBe(false);
+  });
+
+  it("plusieurs métiers se lisent en OU", () => {
+    const deux = new Set([ISO, "climatisation"]);
+    expect(passeLesFiltres(isolant, new Set(), deux)).toBe(true);
+    expect(passeLesFiltres(clim, new Set(), deux)).toBe(true);
+  });
+
+  it("se combine en ET avec les cases — c'est la question de départ", () => {
+    // « isolation par l'extérieur ET vérifié sans site »
+    const isolantSansSite = ligne({
+      service_tags: [ISO],
+      presence_site: { statut: "absent", origine: "constat", confiance: "haute" },
+    });
+    const isolantAvecSite = ligne({
+      service_tags: [ISO],
+      presence_site: { statut: "present", origine: "constat", confiance: "haute" },
+    });
+    expect(passeLesFiltres(isolantSansSite, set("site_absent"), new Set([ISO]))).toBe(true);
+    expect(passeLesFiltres(isolantAvecSite, set("site_absent"), new Set([ISO]))).toBe(false);
+  });
+
+  /**
+   * ON NE NORMALISE PAS. « climatisation » et « Installateur climatisation »
+   * sont deux étiquettes distinctes en base : les fondre inventerait une
+   * population que personne ne retrouverait en SQL.
+   */
+  it("ne rapproche pas deux libellés voisins", () => {
+    const autre = ligne({ service_tags: ["Installateur climatisation"] });
+    expect(passeLesFiltres(autre, new Set(), new Set(["climatisation"]))).toBe(false);
+  });
+
+  it("compte les métiers présents, du plus porté au moins porté", () => {
+    const presents = servicesPresents([isolant, clim, ligne({ service_tags: ["climatisation"] })]);
+    expect(presents).toEqual([
+      { service: "climatisation", n: 2 },
+      { service: ISO, n: 1 },
+      { service: "Rénovation globale", n: 1 },
+    ]);
+  });
+
+  it("rend un tableau vide pour une fiche sans métier — jamais `undefined`", () => {
+    expect(servicesDe(inconnuMetier)).toEqual([]);
   });
 });

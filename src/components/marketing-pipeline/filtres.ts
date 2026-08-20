@@ -146,14 +146,67 @@ function tient(item: BoardItem, cle: CleFiltre): boolean {
   }
 }
 
+/* ── LES SERVICES : un axe à part, et pourquoi ────────────────────────────
+ *
+ * Les quatre groupes ci-dessus sont des vocabulaires FERMÉS : trois états de
+ * site, trois niveaux de note. `entreprises.service_tags` n'en est pas un —
+ * 60 726 fiches portent des centaines de libellés distincts, dont « Isolation
+ * des murs par l'extérieur » (8 464 entreprises) et « Pompe à chaleur :
+ * chauffage » (15 303). Une liste de cases ne s'y prête pas ; il faut chercher.
+ *
+ * MÊME GRAMMAIRE POURTANT : plusieurs services cochés = OU (une entreprise qui
+ * fait l'un OU l'autre), et l'ensemble se combine en ET avec les autres
+ * groupes. C'est ce qui rend « isolation par l'extérieur ET sans site »
+ * exprimable — la question de départ.
+ *
+ * ⚠️ ON NE NORMALISE PAS LES LIBELLÉS. « climatisation » et « Installateur
+ * climatisation » sont deux étiquettes différentes en base, et les fondre ici
+ * inventerait une population que personne ne pourrait retrouver en SQL. La
+ * recherche du panneau les fait remonter toutes les deux ; c'est à l'humain de
+ * cocher ce qu'il veut.
+ */
+
+/** Les services d'une ligne, toujours un tableau. */
+export const servicesDe = (item: BoardItem): string[] => item.service_tags ?? [];
+
+/** Cette ligne porte-t-elle au moins un des services demandés ? */
+const tientService = (item: BoardItem, services: ReadonlySet<string>): boolean => {
+  if (services.size === 0) return true;
+  return servicesDe(item).some((s) => services.has(s));
+};
+
+/**
+ * Tous les services présents dans le tableau, du plus porté au moins porté.
+ *
+ * Comptés sur les lignes RÉELLEMENT chargées : un service annoncé à 300 alors
+ * que la page n'en montre que 40 ferait un compte qu'aucun clic ne retrouve.
+ */
+export function servicesPresents(
+  items: readonly BoardItem[],
+): { service: string; n: number }[] {
+  const par = new Map<string, number>();
+  for (const item of items) {
+    for (const s of servicesDe(item)) par.set(s, (par.get(s) ?? 0) + 1);
+  }
+  return [...par.entries()]
+    .map(([service, n]) => ({ service, n }))
+    .sort((a, b) => b.n - a.n || a.service.localeCompare(b.service, "fr"));
+}
+
 /**
  * La ligne passe-t-elle les cases cochées ?
  *
  * Aucune case cochée = tout passe. Un groupe sans case cochée ne filtre RIEN :
  * c'est ce qui permet de cocher « sans site » sans devoir aussi se prononcer
- * sur la démo, l'audit et la note.
+ * sur la démo, l'audit et la note. Les services sont un cinquième groupe, servi
+ * par un panneau de recherche plutôt que par des cases — cf. ci-dessus.
  */
-export function passeLesFiltres(item: BoardItem, coches: ReadonlySet<CleFiltre>): boolean {
+export function passeLesFiltres(
+  item: BoardItem,
+  coches: ReadonlySet<CleFiltre>,
+  services: ReadonlySet<string> = new Set(),
+): boolean {
+  if (!tientService(item, services)) return false;
   if (coches.size === 0) return true;
   const parGroupe = new Map<string, CleFiltre[]>();
   for (const cle of coches) {

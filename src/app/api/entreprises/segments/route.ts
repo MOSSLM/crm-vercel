@@ -4,6 +4,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { FLAGS_CONNUS, SOURCES_CONNUES } from "../explorer/criteres";
+import { GROUPES } from "@/components/marketing-pipeline/filtres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,23 @@ export const OPTIONS = (req: Request) => preflight(req);
  *
  * Réservé aux admins, comme l'explorateur qu'il rejoue : `chercher_entreprises`
  * cherche sur tout le corpus, sans filtre de propriétaire.
+ *
+ * DEUX ÉCRANS ÉCRIVENT ICI, ET ILS NE PARLENT PAS LA MÊME LANGUE.
+ * L'explorateur pose `q`, `flags`, `sources` — le vocabulaire de
+ * `/api/entreprises/explorer`. Le marketing pipeline pose `q`, `services`
+ * (les métiers, `entreprises.service_tags`) et `filtres` (ses cases à cocher).
+ * Le seul champ commun est `q`.
+ *
+ * On stocke les DEUX vocabulaires dans le même jsonb plutôt que d'inventer une
+ * seconde table : un segment reste une requête enregistrée, et `origine` dit
+ * d'où elle vient. Ce qui compte, c'est qu'un écran qui rouvre un segment
+ * écrit par l'autre le DISE, au lieu de rendre une population plus large en
+ * silence — c'est le piège que ce fichier a déjà nommé pour les drapeaux
+ * inconnus, et il vaut d'un écran à l'autre.
  */
+
+/** Les cases du marketing pipeline, telles que son module pur les déclare. */
+const CLES_FILTRES = GROUPES.flatMap((g) => g.options.map((o) => o.cle));
 
 const criteresSchema = z.object({
   q: z.string().trim().min(1).max(200).nullable().optional(),
@@ -30,6 +47,15 @@ const criteresSchema = z.object({
   // rendrait une population plus large que son nom ne le promet.
   flags: z.array(z.string()).max(20).optional(),
   sources: z.array(z.string()).max(10).optional(),
+  /**
+   * Les MÉTIERS — `entreprises.service_tags`, libellés bruts. Volontairement
+   * non normalisés : « climatisation » et « Installateur climatisation » sont
+   * deux étiquettes distinctes en base, et les fondre inventerait une
+   * population que personne ne retrouverait en SQL.
+   */
+  services: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  /** Les cases du marketing pipeline, mêmes clés que son module pur. */
+  filtres: z.array(z.string()).max(20).optional(),
 });
 
 const postSchema = z.object({
@@ -41,7 +67,13 @@ type PostBody = z.infer<typeof postSchema>;
 type LigneSegment = {
   id: string;
   nom: string;
-  criteres: { q?: string | null; flags?: string[]; sources?: string[] };
+  criteres: {
+    q?: string | null;
+    flags?: string[];
+    sources?: string[];
+    services?: string[];
+    filtres?: string[];
+  };
   cree_le: string;
   utilise_le: string | null;
 };
@@ -77,8 +109,16 @@ export const POST = withAuth<PostBody>(
     const flags = (body.criteres.flags ?? []).filter((f) => FLAGS_CONNUS.has(f));
     const sources = (body.criteres.sources ?? []).filter((s) => SOURCES_CONNUES.has(s));
     const q = body.criteres.q?.trim() || null;
+    // Les services ne se valident contre AUCUNE liste : le vocabulaire vient de
+    // la base et grandit tout seul. Ils se dédoublonnent seulement — deux fois
+    // la même étiquette ne trie pas deux fois.
+    const services = [...new Set((body.criteres.services ?? []).map((s) => s.trim()).filter(Boolean))];
+    // Les cases, elles, sont un vocabulaire fermé : même règle que les drapeaux.
+    const filtres = (body.criteres.filtres ?? []).filter((f) =>
+      (CLES_FILTRES as string[]).includes(f),
+    );
 
-    if (!q && flags.length === 0 && sources.length === 0) {
+    if (!q && flags.length === 0 && sources.length === 0 && services.length === 0 && filtres.length === 0) {
       // Un segment sans aucun critère, c'est « toutes les entreprises » sous un
       // nom qui promet un tri. Le refuser vaut mieux que de le laisser tromper.
       return jsonError("Un segment sans critère ne trie rien", 400, {}, cors);
@@ -87,7 +127,11 @@ export const POST = withAuth<PostBody>(
     const sc = getServiceClient();
     const { data, error } = await sc
       .from("segments_entreprises")
-      .insert({ nom: body.nom.trim(), criteres: { q, flags, sources }, cree_par: user.id })
+      .insert({
+        nom: body.nom.trim(),
+        criteres: { q, flags, sources, services, filtres },
+        cree_par: user.id,
+      })
       .select("id, nom, criteres, cree_le, utilise_le")
       .single();
 

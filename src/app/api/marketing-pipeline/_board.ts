@@ -949,6 +949,18 @@ export async function buildBoard(
       company_url: ent?.canonical_url ?? ent?.site_web_canonique ?? null,
       logo_url: ent?.logo_url ?? null,
       ville: ent?.ville ?? null,
+      // LES SERVICES DU PROSPECT, tels qu'ils sont en base. `service_tags` est
+      // un jsonb qui porte tantôt un tableau, tantôt une chaîne : on le
+      // NORMALISE ici plutôt que dans chaque écran, sinon « isolation par
+      // l'extérieur » se filtrerait à deux endroits avec deux résultats.
+      // C'est la même lecture que celle des champs requis, cf. `manquants`.
+      service_tags: Array.isArray(ent?.service_tags)
+        ? (ent.service_tags as unknown[]).filter(
+            (t): t is string => typeof t === "string" && t.trim().length > 0,
+          )
+        : typeof ent?.service_tags === "string" && ent.service_tags.trim()
+          ? [ent.service_tags.trim()]
+          : [],
       google_url: ent?.google_url ?? null,
       google_maps_url: ent?.google_maps_url ?? null,
       priorite: o.priorite ?? null,

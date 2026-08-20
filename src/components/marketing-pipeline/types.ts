@@ -14,6 +14,17 @@ export interface BoardItem {
   company_url: string | null;
   logo_url: string | null;
   ville: string | null;
+  /**
+   * LES MÉTIERS DU PROSPECT — `entreprises.service_tags`, normalisé en tableau
+   * par l'API (le jsonb porte tantôt un tableau, tantôt une chaîne).
+   *
+   * C'est la donnée qui manquait pour dire « ceux-là font de l'isolation par
+   * l'extérieur, je n'ai pas encore d'offre pour eux » : 8 464 entreprises la
+   * portent, et aucun écran ne la lisait.
+   *
+   * Optionnel : une réponse d'API antérieure au 20/08/2026 ne le porte pas.
+   */
+  service_tags?: string[];
   /** Fiche Google Business du prospect, quand l'enrichissement Maps l'a trouvée. */
   google_url: string | null;
   google_maps_url: string | null;

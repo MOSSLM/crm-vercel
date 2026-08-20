@@ -65,7 +65,9 @@ import type {
   BulkHandlers,
   NoteSubject,
 } from "./types";
-import { GROUPES, compter, passeLesFiltres, type CleFiltre } from "./filtres";
+import { GROUPES, compter, passeLesFiltres, servicesDe, type CleFiltre } from "./filtres";
+import { FiltreServices } from "./FiltreServices";
+import { SegmentsBarre, type CriteresSegment } from "./SegmentsBarre";
 import "./mp-skin.css";
 
 /* ── Stage model ──────────────────────────────────────────────────────────
@@ -1751,7 +1753,8 @@ type SortMode =
   | "missing-desc"
   | "missing-asc"
   | "notes"
-  | "name";
+  | "name"
+  | "service";
 /** Complétude des variables requises pour créer le site. */
 type DataFilter = "all" | "incomplete" | "complete";
 /**
@@ -1820,6 +1823,9 @@ const SORT_LABELS: Array<[SortMode, string]> = [
   ["missing-asc", "Trier : moins de champs manquants"],
   ["notes", "Trier : tickets en cours d'abord"],
   ["name", "Trier : nom (A→Z)"],
+  // Regrouper par métier : « montre-moi d'abord tous les isolants ». Sans lui,
+  // filtrer sur trois métiers rend une liste où ils sont mêlés.
+  ["service", "Trier : métier (A→Z)"],
 ];
 
 interface PipelineMatrixProps {
@@ -1921,6 +1927,8 @@ export function PipelineMatrix({
   const [page, setPage] = React.useState(1);
   /** Les cases cochées du panneau de filtres — « OU dans un groupe, ET entre eux ». */
   const [coches, setCoches] = React.useState<Set<CleFiltre>>(new Set());
+  /** Les métiers cochés — `entreprises.service_tags`, un axe à part. */
+  const [services, setServices] = React.useState<Set<string>>(new Set());
   const [panneauFiltres, setPanneauFiltres] = React.useState(false);
   const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
   const [menu, setMenu] = React.useState<MenuState>(null);
@@ -1968,14 +1976,14 @@ export function PipelineMatrix({
       }
       if (ticketFilter === "open" && openNotes(it) === 0) return false;
       if (ticketFilter === "none" && openNotes(it) > 0) return false;
-      if (!passeLesFiltres(it, coches)) return false;
+      if (!passeLesFiltres(it, coches, services)) return false;
       if (nq) {
         const hay = [displayName(it), it.ville ?? "", it.company_url ?? "", it.tags ?? ""].join(" ").toLowerCase();
         if (!hay.includes(nq)) return false;
       }
       return true;
     });
-  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden, coches]);
+  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, hidden, coches, services]);
 
   const visibleRows = React.useMemo(() => {
     const rows =
@@ -2007,6 +2015,13 @@ export function PipelineMatrix({
     };
     if (sort === "name") {
       return [...rows].sort((a, b) => displayName(a).localeCompare(displayName(b), "fr"));
+    }
+    if (sort === "service") {
+      // Le PREMIER métier de la fiche fait la clé — une entreprise en porte
+      // souvent quatre, et trier sur « tous » n'a pas de sens. Sans métier, en
+      // fin de liste : ce sont les fiches à enrichir, pas un groupe à part.
+      const cle = (it: BoardItem) => servicesDe(it)[0] ?? "\uffff";
+      return [...rows].sort((a, b) => cle(a).localeCompare(cle(b), "fr"));
     }
     return [...rows].sort((a, b) => key(a) - key(b));
   }, [baseRows, stageFilter, sort, stages]);
@@ -2051,6 +2066,7 @@ export function PipelineMatrix({
    */
   const toutReinitialiser = () => {
     setCoches(new Set());
+    setServices(new Set());
     setQ("");
     setStageFilter("all");
     setDataFilter("all");
@@ -2068,6 +2084,7 @@ export function PipelineMatrix({
   /** Y a-t-il quoi que ce soit à réinitialiser ? Sinon le bouton ne sert à rien. */
   const filtreActif =
     nbCoches > 0 ||
+    services.size > 0 ||
     q.trim() !== "" ||
     stageFilter !== "all" ||
     dataFilter !== "all" ||
@@ -2100,7 +2117,7 @@ export function PipelineMatrix({
   // depuis la page 7 ne montrerait rien alors que le résultat existe.
   React.useEffect(() => {
     setPage(1);
-  }, [q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, stageFilter, sort, parPage, coches]);
+  }, [q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, canalFilter, sequenceFilter, ticketFilter, stageFilter, sort, parPage, coches, services]);
 
   // On n'agit jamais sur une ligne que les filtres excluent — mais on agit
   // volontiers sur une ligne d'une AUTRE PAGE. C'est la sélection qui traverse
@@ -2427,6 +2444,13 @@ export function PipelineMatrix({
         )}
 
         <div className="tb-div" />
+        {/* ── Les métiers du prospect ─────────────────────────────────────
+            `entreprises.service_tags` : la donnée que 60 726 fiches portent et
+            qu'aucun écran ne lisait. Son propre panneau, parce que c'est un
+            vocabulaire OUVERT — on le cherche, on ne le coche pas dans une
+            liste de trois cents lignes. */}
+        <FiltreServices items={items} choisis={services} setChoisis={setServices} />
+
         {/* ── Le panneau de filtres à cocher ──────────────────────────────
             Un seul bouton plutôt qu'une rangée de menus supplémentaires : la
             barre était déjà le grief n° 1 (« trop chargée, trop rigide »).
@@ -2565,6 +2589,23 @@ export function PipelineMatrix({
           )}
         </div>
       </div>
+
+      {/* ── LES SEGMENTS ────────────────────────────────────────────────
+          Sous la barre d'outils, parce qu'un segment EST le tri courant sous un
+          nom : on le lit juste après avoir réglé les filtres, et jamais avant.
+          Un segment est une REQUÊTE, pas une liste — une entreprise y entre et
+          en sort toute seule quand ses données changent. */}
+      <SegmentsBarre
+        q={q}
+        services={services}
+        filtres={coches}
+        onRejouer={(c: CriteresSegment) => {
+          setQ(c.q ?? "");
+          setServices(new Set(c.services ?? []));
+          setCoches(new Set((c.filtres ?? []) as CleFiltre[]));
+          setPage(1);
+        }}
+      />
 
       {selectedRows.length > 0 && (
         <BulkBar
