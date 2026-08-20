@@ -666,6 +666,79 @@ export function readSequenceSettings(settings: unknown): SequenceRegulatorSettin
 }
 
 /** Libellé français du motif de report, partagé par la file et le pipeline. */
+/**
+ * QUI VA DÉBLOQUER CETTE INSCRIPTION ?
+ *
+ * Les dix-neuf motifs de retenue s'affichaient tous pareil, et ils ne se
+ * valent pas du tout. « Plafond du jour atteint » repart dans l'heure sans que
+ * personne ne fasse rien ; « le message promet l'audit » ne repartira JAMAIS
+ * seul. Les confondre, c'est ce qui a laissé cinquante-neuf inscriptions dormir
+ * des semaines dans la même colonne que celles qui avançaient normalement.
+ *
+ *   - `debit`   — le robinet. Le régulateur, la chauffe, l'horloge : ça repart
+ *                 tout seul, au rythme autorisé. Rien à faire, et surtout rien
+ *                 à corriger.
+ *   - `reglage` — un interrupteur qu'on a mis là exprès. Ça repart au clic qui
+ *                 le lève, pas avant.
+ *   - `humain`  — il MANQUE quelque chose : une adresse, un audit, un message.
+ *                 Aucun quota ne le fournira. C'est la seule famille qui doit
+ *                 alerter.
+ */
+export type NatureDuBlocage = 'debit' | 'reglage' | 'humain'
+
+export const NATURE_LABEL: Record<NatureDuBlocage, string> = {
+  debit: 'repart toute seule',
+  reglage: 'attend un réglage',
+  humain: 'attend un geste',
+}
+
+export function natureDuBlocage(reason: HoldReason | null, at?: number | null): NatureDuBlocage {
+  switch (reason) {
+    // Le robinet : plages, écarts, plafonds, quotas.
+    case 'out_of_window':
+    case 'next_day':
+    case 'company_gap':
+    case 'daily_cap':
+    case 'one_per_day':
+    case 'risky_cap':
+    case 'domain_probe':
+    // La vérification d'adresse se lève seule elle aussi — pas par un quota,
+    // mais par son propre tick, en général en quelques minutes.
+    case 'email_pending':
+      return 'debit'
+
+    // Des interrupteurs. Chacun a son écran, chacun se lève au clic.
+    case 'global_pause':
+    case 'sequence_paused':
+    case 'test_hold':
+    case 'canal_suspendu':
+      return 'reglage'
+
+    // Il manque quelque chose, et rien d'automatique ne le fournira.
+    case 'no_email':
+    case 'email_invalid':
+    case 'lien_manquant':
+    case 'demo_manquante':
+    case 'message_vide':
+    case 'tache_annulee':
+      return 'humain'
+
+    // ── LE CAS QUI A COÛTÉ 59 INSCRIPTIONS ────────────────────────────────
+    //
+    // « En attente de réponse » est les DEUX, selon qu'une date de relance
+    // existe ou non. Avec une date, l'horloge la libère — c'est du débit. Sans
+    // date (`replyTimeoutDays: 0`), `next_run_at` vaut null : l'inscription a
+    // quitté la file et AUCUN TICK NE LA REPRENDRA. Seul un humain qui clique
+    // « il a répondu » la ranime. C'est un blocage humain, et il doit se
+    // compter comme tel.
+    case 'awaiting_reply':
+      return at != null ? 'debit' : 'humain'
+
+    default:
+      return 'debit'
+  }
+}
+
 export function holdReasonLabel(reason: HoldReason | null, at?: number | null, timezone?: string): string {
   switch (reason) {
     case 'out_of_window':

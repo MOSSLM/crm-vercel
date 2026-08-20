@@ -18,6 +18,8 @@ import {
   formatHM,
   holdReasonLabel,
   localClock,
+  natureDuBlocage,
+  NATURE_LABEL,
   normalizeWindows,
   overlappingWindows,
   windowsUnion,
@@ -927,13 +929,30 @@ export function QueueRows({
     )
   })
 
+  // Combien, parmi les retenues, n'ont AUCUN quota qui les libérera : il leur
+  // manque une adresse, un audit, un message. C'est le seul chiffre de cet
+  // écran qui appelle une action.
+  const aGeste = blocked.filter(
+    (r) => natureDuBlocage(r.reason, r.sendAt ? Date.parse(r.sendAt) : null) === 'humain',
+  ).length
+
   if (blocked.length > 0) {
     out.push(
       <div className="rg-sep" key="blk">
         <XI name="lock" className="ico-xs" />
         en attente d’une reprise
         <span className="rule" />
+        {/* LE CHIFFRE QUI MANQUAIT. « En attente » recouvrait deux situations
+            qui n'ont rien à voir : celle qui repart au prochain créneau, et
+            celle qui n'a jamais reparti parce qu'il manque une adresse ou un
+            audit. Les compter ensemble, c'est ce qui a laissé 59 inscriptions
+            dormir dans la même colonne que les autres. */}
         {blocked.length} contacts
+        {aGeste > 0 && (
+          <span className="rg-gap hot" style={{ marginLeft: 8 }}>
+            dont {aGeste} qui n’repartira{aGeste > 1 ? 'ont' : ''} pas seule{aGeste > 1 ? 's' : ''}
+          </span>
+        )}
       </div>,
     )
     blocked.forEach((row) => {
@@ -949,6 +968,17 @@ export function QueueRows({
             <span className="rg-why">
               <XI name="warning" className="ico-xs" />
               {holdReasonLabel(row.reason)}
+              {/* Qui débloque : le robinet, un interrupteur, ou toi. Sans ça,
+                  « plafond du jour atteint » et « audit à faire » se lisent
+                  pareil — et le second attend indéfiniment. */}
+              <span
+                className={
+                  'rg-gap' + (natureDuBlocage(row.reason, row.sendAt ? Date.parse(row.sendAt) : null) === 'humain' ? ' hot' : '')
+                }
+                style={{ marginLeft: 6 }}
+              >
+                {NATURE_LABEL[natureDuBlocage(row.reason, row.sendAt ? Date.parse(row.sendAt) : null)]}
+              </span>
             </span>
           </span>
           <span className="rg-seqn">
