@@ -78,11 +78,11 @@ export const MODES_OPERATOIRES: readonly ModeOperatoire[] = [
     creation: 'libre',
     etapes: [
       'Créer l’adresse sur outlook.com — c’est libre et immédiat.',
-      'Sécurité du compte Microsoft → activer la vérification en deux étapes, puis créer un mot de passe d’application s’il est encore proposé.',
-      'Si la connexion échoue malgré ce mot de passe : enregistrer quand même la boîte, mais SANS mot de passe. Elle recevra — ce qui construit déjà l’historique — et l’écran affichera « envoi à l’aveugle » au lieu de mentir sur une mesure qu’on n’a pas.',
+      'Ne PAS chercher de mot de passe d’application : il n’y en a pas. Microsoft écrit sur sa propre page de réglages que l’IMAP d’Outlook.com exige « OAuth2 / Modern authentication », et rien d’autre. Aucun mot de passe, d’application ou non, ne sera accepté.',
+      'Enregistrer la boîte SANS mot de passe. Elle recevra — c’est ce qui construit l’historique chez Microsoft, et c’est l’essentiel — et l’écran affichera « envoi à l’aveugle » plutôt que de promettre une mesure qu’on n’a pas.',
     ],
     piege:
-      'Microsoft retire l’authentification par simple mot de passe sur IMAP au profit d’OAuth. C’est la seule famille où « branché » n’est pas garanti : tant que le connecteur Graph n’est pas porté, le placement chez Microsoft peut rester non mesuré.',
+      'Microsoft est la seule famille qu’on ne peut PAS brancher : son IMAP n’accepte que OAuth2. Le placement y restera non mesuré tant que le connecteur Graph — écrit dans le réchauffeur d’origine, pas encore porté — ne l’est pas. Ces messages-là sont comptés « non mesurés », jamais comme des rejets : ils ne font pas baisser le score.',
   },
   {
     famille: 'yahoo',

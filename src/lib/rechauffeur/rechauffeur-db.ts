@@ -570,26 +570,65 @@ export async function marquerSortiDuSpam(
 }
 
 /**
- * Un message envoyé depuis plus de `seuilHeures` et jamais retrouvé est perdu
- * — ni boîte, ni spam. C'est le pire des trois cas : on ne sait même pas quoi
- * corriger. Rejoué à chaque tick, sans effet sur ce qui est déjà mesuré.
+ * Solder les messages qu'aucun scan ne retrouvera plus — et les répartir en
+ * DEUX cas, qui ne veulent pas dire la même chose.
+ *
+ * `introuvable` : le témoin est lisible, on est allé voir, le message n'y est
+ * ni en boîte ni en spam. C'est le pire des trois cas — un rejet silencieux —
+ * et il doit peser sur le score.
+ *
+ * `non_mesure` : le témoin n'a pas d'identifiants, personne n'est allé voir.
+ * Le message est peut-être parfaitement arrivé. Le compter comme un rejet
+ * serait la faute que ce CRM refuse partout ailleurs : un zéro et une absence
+ * de mesure ne sont pas la même chose.
+ *
+ * LE CAS N'EST PAS THÉORIQUE. Outlook.com n'accepte plus que OAuth2 sur IMAP :
+ * une boîte témoin Microsoft ne PEUT pas être branchée par mot de passe. Sans
+ * cette distinction, la seule façon de couvrir Microsoft — l'enregistrer à
+ * l'aveugle — ferait chuter le score d'un expéditeur qui va peut-être très
+ * bien.
+ *
+ * Rejoué à chaque tick, sans effet sur ce qui est déjà mesuré.
  */
 export async function marquerIntrouvables(
   sb: SupabaseClient,
   seuilHeures = 6,
   maintenant: Date = new Date(),
-): Promise<number> {
+): Promise<{ introuvables: number; nonMesures: number }> {
   const borne = new Date(maintenant.getTime() - seuilHeures * 3_600_000).toISOString()
-  const { data, error } = await sb
-    .from('rechauffe_messages')
-    .update({ placement: 'introuvable', placement_le: maintenant.toISOString() })
-    .eq('sens', 'sortant')
-    .eq('placement', 'attente')
-    .not('envoye_le', 'is', null)
-    .lt('envoye_le', borne)
+  const quand = maintenant.toISOString()
+
+  // Les témoins qu'on ne sait pas lire. La liste tient dans une poignée de
+  // lignes : le maillage se compte en dizaines, jamais en milliers.
+  const { data: aveugles, error: erreurTemoins } = await sb
+    .from('rechauffe_temoins')
     .select('id')
-  if (error) throw new Error(`marquerIntrouvables: ${error.message}`)
-  return (data ?? []).length
+    .not('peut_lire', 'is', true)
+  if (erreurTemoins) throw new Error(`marquerIntrouvables: ${erreurTemoins.message}`)
+  const idsAveugles = (aveugles ?? []).map((t) => String(t.id))
+
+  const solder = async (placement: 'non_mesure' | 'introuvable', temoins?: string[]) => {
+    let q = sb
+      .from('rechauffe_messages')
+      .update({ placement, placement_le: quand })
+      .eq('sens', 'sortant')
+      .eq('placement', 'attente')
+      .not('envoye_le', 'is', null)
+      .lt('envoye_le', borne)
+    if (temoins) q = q.in('temoin_id', temoins)
+    const { data, error } = await q.select('id')
+    if (error) throw new Error(`marquerIntrouvables (${placement}): ${error.message}`)
+    return (data ?? []).length
+  }
+
+  const nonMesures = idsAveugles.length > 0 ? await solder('non_mesure', idsAveugles) : 0
+
+  // ON N'EXCLUT PAS LES AVEUGLES DE LA SECONDE PASSE : la première les a déjà
+  // sortis d'`attente`, donc ils ne sont plus candidats. Un `not in` de plus
+  // ne ferait que redire la règle à un endroit où elle pourrait diverger.
+  const introuvables = await solder('introuvable')
+
+  return { introuvables, nonMesures }
 }
 
 export interface MessageARepondre {

@@ -68,6 +68,13 @@ export interface ResultatTick {
   enSpam: number
   sortisDuSpam: number
   introuvables: number
+  /**
+   * Messages soldés sans avoir été regardés : leur témoin n'a pas
+   * d'identifiants. Ils sont partis — ils construisent de l'historique — et
+   * ils n'apprennent rien. Comptés à part pour qu'ils ne se déguisent jamais
+   * en rejets silencieux.
+   */
+  nonMesures: number
   reponses: number
   /** Ce que l'humain doit lire — jamais un compteur muet. */
   alertes: string[]
@@ -311,7 +318,7 @@ export async function tickRechauffeur(
   const maxEnvois = options.maxEnvois ?? MAX_ENVOIS_PAR_TICK
   const resultat: ResultatTick = {
     expediteurs: 0, planifies: 0, envoyes: 0, echecs: 0, doubles: 0,
-    enBoite: 0, enSpam: 0, sortisDuSpam: 0, introuvables: 0, reponses: 0,
+    enBoite: 0, enSpam: 0, sortisDuSpam: 0, introuvables: 0, nonMesures: 0, reponses: 0,
     alertes: [],
   }
 
@@ -386,11 +393,20 @@ export async function tickRechauffeur(
 
   await faireRepondre(sb, parTemoin, parExpediteur, resultat, maintenant)
 
-  // Ni boîte ni spam au bout de six heures : perdu. C'est le pire des trois
-  // cas — on ne saura même pas quoi corriger — et il faut qu'il se compte,
-  // sans quoi ces messages resteraient « en attente » pour toujours et
-  // fausseraient le taux de placement en le laissant artificiellement haut.
-  resultat.introuvables = await marquerIntrouvables(sb, 6, maintenant)
+  // Ni boîte ni spam au bout de six heures : il faut solder, sans quoi ces
+  // messages resteraient « en attente » pour toujours et fausseraient le taux
+  // de placement en le laissant artificiellement haut.
+  //
+  // MAIS EN DEUX TAS. Chez un témoin lisible, c'est un rejet silencieux — le
+  // pire des trois cas, on ne saura même pas quoi corriger. Chez un témoin
+  // sans identifiants, personne n'est allé voir : le message est peut-être
+  // parfaitement arrivé, et le compter comme un rejet ferait chuter le score
+  // d'un expéditeur qui va bien. C'est le cas d'Outlook.com, qui n'accepte
+  // plus que OAuth2 sur IMAP et ne peut donc pas être branché par mot de
+  // passe.
+  const soldes = await marquerIntrouvables(sb, 6, maintenant)
+  resultat.introuvables = soldes.introuvables
+  resultat.nonMesures = soldes.nonMesures
 
   // L'agrégat se RECOMPTE depuis les messages plutôt que de s'incrémenter :
   // un compteur qu'on incrémente diverge au premier tick interrompu, et plus
