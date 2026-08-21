@@ -128,7 +128,13 @@ a.lnk:hover{border-bottom-color:var(--azur)}
 .skel .kform .b{flex:none;width:58px;height:13px;background:var(--azur)}
 .skel .kfoot{flex:none;height:12px;background:var(--nuit)}
 /* pastilles numérotées, posées sur la capture */
-.pin{position:absolute;z-index:3;width:23px;height:23px;margin:-11.5px 0 0 -11.5px;border-radius:50%;background:var(--azur);color:var(--casse);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;line-height:1;box-shadow:0 0 0 2.5px rgba(232,243,255,.85),0 3px 9px rgba(7,20,39,.45)}
+/* PLUS DE PASTILLE SUR LA CAPTURE, et il ne faut pas la remettre. La maquette
+   posait 1-2-3 sur l'image, à des coordonnées fixes : elles tombaient donc au
+   hasard du site de chaque prospect, sur un bouton chez l'un, sur le ciel d'une
+   photo de chantier chez l'autre. Un repère qui ne désigne pas ce qu'il annonce
+   dit au lecteur que le document n'a pas été fait pour lui. Les trois légendes
+   restent à droite, et les filets partent du BORD du cadre — jamais de son
+   intérieur. */
 /* paragraphes reliés */
 .note{position:absolute;left:470px;width:216px;z-index:3}
 .note .t{display:flex;align-items:baseline;gap:7px;font-size:11px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--casse)}
@@ -238,7 +244,7 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
       <div class="s">Voici le site que nous vous préparons. Trois repères, faites-en le tour.</div>
     </div>
 
-    <!-- zone annotée 686 × 286 : capture + trois pastilles + trois filets -->
+    <!-- zone annotée 686 × 286 : capture, trois filets, trois légendes -->
     <div class="cvzone">
       <div class="win">
         <div class="wbar"><span class="wdots"><i></i><i></i><i></i></span><span class="wurl">{{DEMO_URL}}</span></div>
@@ -257,15 +263,12 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
       </div>
       <svg class="filets" viewBox="0 0 686 286" width="686" height="286" aria-hidden="true">
         <g fill="none" stroke="#B5D0F0" stroke-opacity=".55" stroke-width="1">
-          <polyline points="375,90 430,90 430,17 462,17"></polyline>
-          <polyline points="377,196 444,196 444,127 462,127"></polyline>
-          <polyline points="375,240 452,240 452,231 462,231"></polyline>
+          <polyline points="410,90 430,90 430,17 462,17"></polyline>
+          <polyline points="410,196 444,196 444,127 462,127"></polyline>
+          <polyline points="410,240 452,240 452,231 462,231"></polyline>
         </g>
-        <g fill="#B5D0F0" fill-opacity=".8"><circle cx="462" cy="17" r="2"></circle><circle cx="462" cy="127" r="2"></circle><circle cx="462" cy="231" r="2"></circle></g>
+        <g fill="#B5D0F0" fill-opacity=".8"><circle cx="410" cy="90" r="2"></circle><circle cx="410" cy="196" r="2"></circle><circle cx="410" cy="240" r="2"></circle><circle cx="462" cy="17" r="2"></circle><circle cx="462" cy="127" r="2"></circle><circle cx="462" cy="231" r="2"></circle></g>
       </svg>
-      <span class="pin" style="left:362px;top:90px">1</span>
-      <span class="pin" style="left:364px;top:196px">2</span>
-      <span class="pin" style="left:362px;top:240px">3</span>
       <div class="note" style="top:8px"><div class="t">Crédibilité <s>on vous croit</s></div><p><b>Vos chantiers en photo</b>, vos avis et vos certifications dès l'accueil.</p></div>
       <div class="note" style="top:118px"><div class="t">Référencement <s>on vous trouve</s></div><p><b>Une page par métier</b> et par commune que vous couvrez.</p></div>
       <div class="note" style="top:222px"><div class="t">Conversion <s>on vous appelle</s></div><p>« Appeler » sur chaque écran, <b>formulaire intelligent</b>.</p></div>
