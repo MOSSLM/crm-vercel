@@ -31,6 +31,7 @@ import {
   AppWindow,
   Magnet,
   PenLine,
+  Layers,
   Sparkles,
   Palette,
   BookOpen,
@@ -125,6 +126,10 @@ export const SPACES: Space[] = [
       // On ne le DÉPLACE pas — il reste dans Acquisition, où il sert aussi.
       { title: "Leads", href: "/entreprises/explorateur", icon: Building2 },
       { title: "Rapports", href: "/prospection/rapports", icon: BarChart3 },
+      // Les LOTS : le pipeline des populations, au-dessus de celui des fiches.
+      // Il se range juste avant le lissage parce que c'est lui qui dit combien
+      // il reste à lisser, et sur quel lot.
+      { title: "Lots", href: "/prospection/lots", icon: Layers },
       { title: "Lissage", href: "/prospection/lissage", icon: Sparkles },
       { title: "Choix du SIRET", href: "/prospection/identite", icon: Fingerprint },
       { title: "Modèles", href: "/automations/modeles", icon: LayoutTemplate },
