@@ -367,6 +367,10 @@ function ModeEmploi({
               sont celles de nos prospects. Cent messages tous chez Gmail ne disent rien de ce que
               fait Orange. Mieux vaut huit boîtes à 5 messages/jour que trois boîtes à 15 : une
               adresse qui reçoit quinze fois par jour du même expéditeur est elle-même un motif.
+              <br />
+              <strong>Deux ou trois boîtes par famille, pas davantage</strong> — au-delà, on
+              achète de la capacité qu’on a déjà et un signal qu’on n’aura pas : une quatrième
+              adresse Gmail ne dit rien qu’une troisième n’ait déjà dit.
             </span>
           </div>
 

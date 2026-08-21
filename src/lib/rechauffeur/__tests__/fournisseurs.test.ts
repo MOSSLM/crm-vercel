@@ -1,7 +1,9 @@
 import { HOTES_CONNUS } from '../hotes-connus'
 import { FAMILLES } from '../sante'
 import {
+  cleBoite,
   HOTE_LWS,
+  memeBoite,
   MODES_OPERATOIRES,
   modeOperatoire,
   suggestionHote,
@@ -69,5 +71,37 @@ describe('suggestionHote', () => {
     // suggérer pour une boîte Gmail.
     expect(suggestionHote('contact@samadigitalstudio.fr')).toBeNull()
     expect(suggestionHote('pas-une-adresse')).toBeNull()
+  })
+})
+
+describe('cleBoite', () => {
+  it('confond les alias Google : points, plus, et googlemail', () => {
+    const attendu = 'msallami@gmail.com'
+    expect(cleBoite('m.sallami@gmail.com')).toBe(attendu)
+    expect(cleBoite('m.s.allami+crm@gmail.com')).toBe(attendu)
+    expect(cleBoite('MSallami@googlemail.com')).toBe(attendu)
+    expect(memeBoite('m.sallami@gmail.com', 'msallami+chauffe@googlemail.com')).toBe(true)
+  })
+
+  it('ne touche pas aux points ailleurs que chez Google', () => {
+    // Chez tous les autres, `jean.dupont@` et `jeandupont@` sont DEUX boîtes.
+    // Les confondre refuserait un témoin parfaitement légitime.
+    expect(memeBoite('jean.dupont@orange.fr', 'jeandupont@orange.fr')).toBe(false)
+    expect(memeBoite('a.b@free.fr', 'ab@free.fr')).toBe(false)
+  })
+
+  it('coupe le sous-adressage là où il est garanti', () => {
+    expect(memeBoite('matteo+un@outlook.fr', 'matteo+deux@outlook.fr')).toBe(true)
+    expect(memeBoite('matteo@outlook.fr', 'matteo+chauffe@outlook.fr')).toBe(true)
+  })
+
+  it('laisse les autres adresses valoir pour elles-mêmes', () => {
+    expect(memeBoite('claire@yahoo.fr', 'claire@yahoo.com')).toBe(false)
+    expect(memeBoite('contact@samadigitalstudio.com', 'matteo@samadigitalstudio.com')).toBe(false)
+  })
+
+  it('ne s’étrangle pas sur une adresse mal formée', () => {
+    expect(cleBoite('pas-une-adresse')).toBe('pas-une-adresse')
+    expect(cleBoite('@gmail.com')).toBe('@gmail.com')
   })
 })

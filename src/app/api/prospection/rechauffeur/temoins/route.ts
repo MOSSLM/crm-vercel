@@ -17,7 +17,7 @@ import { withAuth } from '@/app/api/_lib/with-auth'
 import { preflight } from '@/app/api/_lib/cors'
 import { disponible, sceller } from '@/lib/rechauffeur/coffre'
 import { familleDuDomaine } from '@/lib/rechauffeur/appariement'
-import { suggestionHote } from '@/lib/rechauffeur/fournisseurs'
+import { cleBoite, suggestionHote } from '@/lib/rechauffeur/fournisseurs'
 import { FAMILLES } from '@/lib/rechauffeur/sante'
 
 export const runtime = 'nodejs'
@@ -70,6 +70,31 @@ export const POST = withAuth({ role: 'admin', body: Temoin }, async ({ body: t, 
     )
   }
 
+  const sb = getServiceClient()
+
+  // DEUX ALIAS DE LA MÊME BOÎTE NE FONT PAS DEUX TÉMOINS. L'upsert dédoublonne
+  // sur la chaîne exacte : `m.sallami@gmail.com` et `msallami@gmail.com`
+  // passeraient pour deux lignes alors que Google n'y voit qu'une seule boîte.
+  // Le maillage se croirait deux fois plus large, doublerait le plafond de
+  // réception d'une adresse unique, et la « diversité de fournisseur » — le
+  // seul signal qui vaut quelque chose — serait mesurée sur un effectif faux.
+  const { data: dejaLa } = await sb.from('rechauffe_temoins').select('email')
+  const jumelle = (dejaLa ?? []).find(
+    (r) =>
+      cleBoite(String(r.email)) === cleBoite(t.email) &&
+      String(r.email).toLowerCase() !== t.email.toLowerCase(),
+  )
+  if (jumelle) {
+    return jsonError(
+      `C’est la même boîte que ${jumelle.email} : chez ce fournisseur, les points et ` +
+        'le sous-adressage sont ignorés. Deux alias ne font pas deux témoins — ' +
+        'il vaut mieux une adresse chez un autre fournisseur.',
+      409,
+      {},
+      cors,
+    )
+  }
+
   const ligne: Record<string, unknown> = {
     email: t.email.toLowerCase(),
     nom: t.nom,
@@ -85,7 +110,6 @@ export const POST = withAuth({ role: 'admin', body: Temoin }, async ({ body: t, 
     ligne.peut_lire = true
   }
 
-  const sb = getServiceClient()
   const { error } = await sb.from('rechauffe_temoins').upsert(ligne, { onConflict: 'email' })
   if (error) {
     if (/rechauffe_temoins/.test(error.message) && /does not exist|relation/i.test(error.message)) {

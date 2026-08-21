@@ -66,9 +66,10 @@ export const MODES_OPERATOIRES: readonly ModeOperatoire[] = [
       'Compte Google → Sécurité → activer la validation en deux étapes. Sans elle, l’écran des mots de passe d’application n’existe pas.',
       'Aller sur myaccount.google.com/apppasswords, nommer l’application « CRM Sama », copier les 16 lettres proposées.',
       'Dans le formulaire ci-dessus : l’adresse complète, et ces 16 lettres — jamais le mot de passe du compte.',
+      'Deux ou trois comptes Google suffisent, et ce doivent être de VRAIS comptes distincts : Google ignore les points et tout ce qui suit un « + », donc m.sallami@ et msallami+crm@ sont la même boîte. Le formulaire les refuse désormais, mais mieux vaut le savoir avant de les fabriquer.',
     ],
     piege:
-      'Le mot de passe du compte est refusé par IMAP avec la même erreur qu’un mot de passe faux : rien ne dit qu’il fallait un mot de passe d’application.',
+      'Deux pièges. Le mot de passe du compte est refusé par IMAP avec la même erreur qu’un mot de passe faux — rien ne dit qu’il fallait un mot de passe d’application. Et l’écran des mots de passe d’application n’existe pas du tout si le compte appartient à une organisation (Workspace), si la validation en deux étapes ne passe que par clé de sécurité, ou si la Protection Avancée est active : dans ces trois cas, la boîte s’enregistre à l’aveugle, comme Outlook.',
   },
   {
     famille: 'microsoft',
@@ -168,4 +169,49 @@ export function suggestionHote(
     port: reglages.imapPort,
     libelle: modeOperatoire(familleDuDomaine(email)).libelle,
   }
+}
+
+/**
+ * La clé d'identité RÉELLE d'une boîte — pour ne pas en compter trois quand il
+ * n'y en a qu'une.
+ *
+ * POURQUOI ÇA COMPTE ICI PLUS QU'AILLEURS. Google ignore les points et tout ce
+ * qui suit un `+` : `m.sallami@gmail.com`, `msallami+crm@gmail.com` et
+ * `msallami@googlemail.com` sont LA MÊME boîte, chez le même filtre, derrière
+ * le même mot de passe. Enregistrées comme trois témoins, elles donneraient
+ * trois plafonds de huit — vingt-quatre messages par jour dans une seule boîte
+ * — et un maillage qui se croit trois fois plus large qu'il ne l'est. La
+ * diversité de fournisseur est le SEUL signal qui vaut quelque chose ; un
+ * maillage qui se trompe sur son propre effectif ment sur ce signal.
+ *
+ * ON NE NORMALISE QUE CE QUI EST DOCUMENTÉ. Les points ne s'effacent que chez
+ * Google — chez tous les autres, `jean.dupont@` et `jeandupont@` sont deux
+ * boîtes différentes, et les confondre refuserait un témoin légitime. Le `+`
+ * se coupe là où le sous-adressage est garanti. Partout ailleurs, l'adresse
+ * vaut pour elle-même.
+ *
+ * L'adresse d'origine est CONSERVÉE telle quelle : cette clé sert à comparer,
+ * jamais à décider où le courrier part.
+ */
+export function cleBoite(email: string): string {
+  const brut = email.trim().toLowerCase()
+  const at = brut.lastIndexOf('@')
+  if (at <= 0) return brut
+
+  let local = brut.slice(0, at)
+  const domaine = brut.slice(at + 1)
+
+  const chezGoogle = domaine === 'gmail.com' || domaine === 'googlemail.com'
+  const sousAdressageSur =
+    chezGoogle || ['outlook.com', 'outlook.fr', 'hotmail.com', 'hotmail.fr'].includes(domaine)
+
+  if (sousAdressageSur) local = local.split('+')[0]
+  if (chezGoogle) local = local.replace(/\./g, '')
+
+  return `${local}@${chezGoogle ? 'gmail.com' : domaine}`
+}
+
+/** Deux adresses qui désignent la même boîte réelle. */
+export function memeBoite(a: string, b: string): boolean {
+  return cleBoite(a) === cleBoite(b)
 }
