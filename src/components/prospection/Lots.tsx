@@ -18,8 +18,9 @@
 // décide, cf. `prochainGeste`.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Layers, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, Layers, RefreshCw } from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
+import { piecesManquantes, type Blocage, type LigneContenu } from '@/lib/lots/contenu'
 import {
   AXES,
   avancement,
@@ -57,10 +58,154 @@ function Cellule({ lot, cle }: { lot: Couverture; cle: (typeof AXES)[number]['cl
   )
 }
 
+/** Une entreprise du lot, telle que la route la rend — blocage déjà calculé. */
+type LigneDetail = LigneContenu & { blocage: Blocage }
+
+/** Les marches, avec la couleur qui dit s'il y a un geste à faire. */
+const MARCHES: { cle: Blocage['marche']; label: string }[] = [
+  { cle: 'a_faire', label: 'à faire aujourd\'hui' },
+  { cle: 'bloquee', label: 'bloquées' },
+  { cle: 'garee', label: 'garées' },
+  { cle: 'attente', label: 'en attente de réponse' },
+  { cle: 'hors_sequence', label: 'hors séquence' },
+  { cle: 'en_file', label: 'en file' },
+]
+
+/**
+ * Le contenu d'un lot, déplié sous sa ligne.
+ *
+ * CHARGÉ AU CLIC, jamais à l'ouverture de l'écran : le détail d'un lot de cinq
+ * cents lignes n'intéresse que celui qui l'a demandé, et le charger pour tous
+ * les lots ferait payer l'inventaire à chaque affichage du tableau.
+ */
+function Detail({ lotId }: { lotId: number }) {
+  const [lignes, setLignes] = useState<LigneDetail[] | null>(null)
+  const [tronque, setTronque] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  useEffect(() => {
+    let vivant = true
+    void (async () => {
+      const res = await authedFetch(`/api/entreprises/lots/${lotId}`)
+      const corps = (await res.json().catch(() => ({}))) as {
+        entreprises?: LigneDetail[]
+        tronque?: boolean
+        error?: string
+        message?: string
+      }
+      if (!vivant) return
+      if (!res.ok) {
+        setErreur(corps?.message || corps?.error || 'Lecture impossible.')
+        setLignes([])
+        return
+      }
+      setLignes(corps.entreprises ?? [])
+      setTronque(!!corps.tronque)
+    })()
+    return () => {
+      vivant = false
+    }
+  }, [lotId])
+
+  const comptes = useMemo(() => {
+    const par = new Map<Blocage['marche'], number>()
+    for (const l of lignes ?? []) par.set(l.blocage.marche, (par.get(l.blocage.marche) ?? 0) + 1)
+    return par
+  }, [lignes])
+
+  if (erreur) return <div className="lem-alerte">{erreur}</div>
+  if (lignes === null) return <div className="lem-vide">Lecture du lot…</div>
+  if (lignes.length === 0) return <div className="lem-vide">Ce lot ne porte aucune entreprise.</div>
+
+  return (
+    <div className="lots-detail">
+      <div className="lots-marches">
+        {MARCHES.filter((m) => (comptes.get(m.cle) ?? 0) > 0).map((m) => (
+          <span key={m.cle} className="lots-marche" data-marche={m.cle}>
+            <b>{nombre(comptes.get(m.cle) ?? 0)}</b> {m.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="lem-table lots-enveloppe">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Entreprise</th>
+              <th scope="col">Séquence · étape</th>
+              <th scope="col">Ce qui se passe</th>
+              <th scope="col">Le geste qui débloque</th>
+              <th scope="col">Il manque</th>
+              <th scope="col" aria-label="Fiche" />
+            </tr>
+          </thead>
+          <tbody>
+            {lignes.map((l) => {
+              const manquantes = piecesManquantes(l)
+              return (
+                <tr key={l.entreprise_id}>
+                  <th scope="row" className="lots-nom">
+                    <span className="lots-titre">{l.nom ?? `#${l.entreprise_id}`}</span>
+                    {l.ville && <span className="lots-note">{l.ville}</span>}
+                  </th>
+                  <td className="lots-etape">
+                    {l.sequence ? (
+                      <>
+                        <span className="lots-geste-quoi">{l.sequence}</span>
+                        <span className="lots-geste-ou">
+                          étape {(l.rang ?? 0) + 1} · {l.etape ?? '—'}
+                          {l.etape_genre ? ` (${l.etape_genre})` : ''}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="lots-geste-ou">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className="lots-marche" data-marche={l.blocage.marche}>
+                      {l.blocage.libelle}
+                    </span>
+                  </td>
+                  <td className="lots-geste-ou">{l.blocage.quoiFaire || '—'}</td>
+                  <td className="lots-manques">
+                    {manquantes.length === 0
+                      ? '—'
+                      : manquantes
+                          .map((c) => AXES.find((a) => a.cle === c)?.colonne ?? c)
+                          .join(' · ')}
+                  </td>
+                  <td>
+                    <a
+                      className="lem-btn"
+                      href={`/entreprises/${l.entreprise_id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink size={13} aria-hidden="true" /> Fiche
+                    </a>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {tronque && (
+        <p className="lem-legende">
+          Les 500 premières lignes seulement — celles qui demandent un geste sont en tête. Le compte
+          exact du lot reste celui de la ligne au-dessus.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function Lots() {
   const [lots, setLots] = useState<Couverture[] | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [chargement, setChargement] = useState(false)
+  const [ouvert, setOuvert] = useState<number | null>(null)
 
   const charger = useCallback(async () => {
     setChargement(true)
@@ -150,10 +295,20 @@ export function Lots() {
               {classes.map((lot) => {
                 const geste = prochainGeste(lot)
                 const pret = pretADemarcher(lot)
+                const deplie = ouvert === lot.lotId
                 return (
-                  <tr key={lot.lotId}>
+                  <React.Fragment key={lot.lotId}>
+                  <tr className="lots-ligne" data-deplie={deplie ? '1' : undefined}>
                     <th scope="row" className="lots-nom">
-                      <span className="lots-titre">{lot.nom}</span>
+                      <button
+                        type="button"
+                        className="lots-deplier"
+                        aria-expanded={deplie}
+                        onClick={() => setOuvert(deplie ? null : lot.lotId)}
+                      >
+                        {deplie ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        <span className="lots-titre">{lot.nom}</span>
+                      </button>
                       {lot.note && <span className="lots-note">{lot.note}</span>}
                       <span className="lots-avancement">
                         préparé à {pourcent(avancement(lot))}
@@ -177,6 +332,14 @@ export function Lots() {
                       {!geste && !pret && <span className="lots-geste-ou">Lot vide</span>}
                     </td>
                   </tr>
+                  {deplie && (
+                    <tr className="lots-tiroir">
+                      <td colSpan={AXES.length + 3}>
+                        <Detail lotId={lot.lotId} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 )
               })}
             </tbody>

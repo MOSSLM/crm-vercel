@@ -81,3 +81,69 @@ as $$
 $$;
 
 grant execute on function couverture_des_lots() to authenticated, service_role;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Le CONTENU d'un lot : une ligne par entreprise, avec son étape de séquence.
+--
+-- POURQUOI UNE SECONDE FONCTION PLUTÔT QU'UNE JOINTURE DEPUIS L'APPEL. La
+-- couverture agrège, celle-ci détaille : elles n'ont ni la même cardinalité ni
+-- la même fréquence d'appel. L'écran des lots charge la première à l'ouverture ;
+-- la seconde ne part QUE quand on déplie une ligne. Les fondre ferait payer le
+-- détail de tous les lots à chaque affichage.
+--
+-- L'INSCRIPTION RETENUE EST LA PLUS RÉCEMMENT TOUCHÉE. Une entreprise peut en
+-- porter plusieurs — S1 close, S2 en cours. Prendre la première venue
+-- afficherait l'étape d'une séquence terminée, donc une position fausse.
+--
+-- `garee` est DÉRIVÉ, jamais stocké : active, sans échéance. C'est exactement
+-- ce que le régulateur ignore (`.lte('next_run_at', ...)` ne retient jamais un
+-- NULL), et le dire ici évite d'inventer une colonne d'état de plus.
+--
+-- Contrôles à relire après application :
+--   select count(*) from contenu_du_lot(<id>, 20000, 0);
+--   -- doit égaler le `total` que `couverture_des_lots()` annonce pour ce lot.
+
+create or replace function contenu_du_lot(p_lot_id bigint, p_limite int default 500, p_decalage int default 0)
+returns table (
+  entreprise_id bigint, nom text, ville text,
+  a_siret boolean, a_donnees boolean, a_constat boolean, a_demo boolean, a_audit boolean,
+  proprietaire text,
+  sequence text, etape text, etape_genre text, rang int,
+  inscription_statut text, hold_reason text, next_run_at timestamptz, garee boolean,
+  tache_genre text, tache_echeance timestamptz
+)
+language sql stable security definer set search_path = public as $$
+  select
+    e.id, e.name, e.ville,
+    e.siret is not null,
+    dp.x is not null, cp.x is not null, si.x is not null, au.x is not null,
+    coalesce(up.full_name, up.email),
+    a.name,
+    a.definition->'steps'->en.current_step->>'id',
+    a.definition->'steps'->en.current_step->>'kind',
+    en.current_step,
+    en.status, en.hold_reason, en.next_run_at,
+    en.id is not null and en.next_run_at is null and en.status = 'active',
+    t.kind, t.due_at
+  from lots_entreprises le
+  join entreprises e on e.id = le.entreprise_id
+  left join user_profiles up on up.id = e.owner_id
+  left join lateral (select 1 as x from entreprises_donnees_publiques y where y.entreprise_id = e.id limit 1) dp on true
+  left join lateral (select 1 as x from constats_presence y where y.entreprise_id = e.id limit 1) cp on true
+  left join lateral (select 1 as x from sites y where y.enterprise_id = e.id and y.is_published
+                       and coalesce(y.is_template,false) = false limit 1) si on true
+  left join lateral (select 1 as x from audits y join opportunites o on o.id::text = y.opportunite_id
+                      where o.entreprise_id = e.id and y.statut = 'ready' limit 1) au on true
+  left join lateral (select * from sequence_enrollments y
+                      where y.entreprise_id = e.id and y.status in ('active','paused')
+                      order by y.updated_at desc limit 1) en on true
+  left join automations a on a.id = en.automation_id
+  left join lateral (select * from prospection_tasks y
+                      where y.entreprise_id = e.id and y.status in ('pending','snoozed')
+                      order by y.due_at asc limit 1) t on true
+  where le.lot_id = p_lot_id
+  order by e.name
+  limit p_limite offset p_decalage;
+$$;
+
+grant execute on function contenu_du_lot(bigint,int,int) to authenticated, service_role;

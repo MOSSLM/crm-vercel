@@ -482,3 +482,32 @@
   .lots-cell[data-etat="moitie"] .lots-jauge i{background:#FBBF24}
   .lots-cell[data-etat="vide"] .lots-jauge i{background:#F87171}
 }
+
+/* ── Lots : le tiroir de détail ─────────────────────────────────────────────
+   Les marches sont colorées par ce qu'elles DEMANDENT, pas par leur gravité :
+   « à faire » et « bloquée » appellent tous deux un geste et se ressemblent
+   donc ; « en attente » et « en file » n'en appellent aucun et s'effacent. */
+.lots-deplier{display:flex;align-items:center;gap:7px;background:none;border:0;padding:0;cursor:pointer;color:inherit;text-align:left;font:inherit}
+.lots-deplier:focus-visible{outline:2px solid var(--lem-action,#316BFF);outline-offset:2px}
+.lots-ligne[data-deplie="1"]{background:var(--lem-selection,#E9F3FF)}
+.lots-tiroir>td{padding:0!important;background:var(--lem-fond,#FBFBFB)}
+.lots-detail{padding:14px 16px 18px}
+.lots-marches{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.lots-marche{display:inline-block;font-size:11.5px;line-height:1.3;padding:3px 8px;border:1px solid currentColor;white-space:nowrap}
+.lots-marche b{font-weight:600;font-variant-numeric:tabular-nums}
+.lots-marche[data-marche="a_faire"]{color:#15803D}
+.lots-marche[data-marche="bloquee"]{color:#B91C1C}
+.lots-marche[data-marche="garee"]{color:#B45309}
+.lots-marche[data-marche="attente"],
+.lots-marche[data-marche="hors_sequence"]{color:#6B7280}
+.lots-marche[data-marche="en_file"]{color:#316BFF}
+.lots-etape{min-width:190px}
+.lots-manques{font-size:11.5px;color:var(--lem-second,#566F8F);max-width:220px}
+@media (prefers-color-scheme:dark){
+  .lots-marche[data-marche="a_faire"]{color:#4ADE80}
+  .lots-marche[data-marche="bloquee"]{color:#F87171}
+  .lots-marche[data-marche="garee"]{color:#FBBF24}
+  .lots-marche[data-marche="attente"],
+  .lots-marche[data-marche="hors_sequence"]{color:#9CA3AF}
+  .lots-marche[data-marche="en_file"]{color:#8AB4FF}
+}
