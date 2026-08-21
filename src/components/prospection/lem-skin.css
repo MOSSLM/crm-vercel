@@ -441,73 +441,82 @@
 .lem-skin .lem-legende b { font-variant-numeric: tabular-nums; }
 .lem-skin .lem-legende .pc { color: var(--lem-gris-2); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ── Lots : le tableau des populations ──────────────────────────────────────
-   Sept axes côte à côte : chaque cellule doit se lire d'un coup d'œil, sans
-   comparer des chiffres entre eux. D'où la jauge — l'œil compare des longueurs
-   bien mieux que des pourcentages — doublée du manque en clair, parce qu'une
-   longueur ne dit pas combien de travail c'est. */
-.lots-enveloppe{overflow-x:auto}
-.lots-enveloppe table{min-width:1040px}
-.lots-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.lots-nom{text-align:left;min-width:220px;max-width:280px}
-.lots-titre{display:block;font-weight:600}
-.lots-note{display:block;margin-top:2px;font-size:11.5px;line-height:1.4;color:var(--lem-second,#566F8F)}
-.lots-avancement{display:block;margin-top:4px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--lem-tertiaire,#98A1AC)}
+/* ── Lots : les populations, dans la grammaire lemlist ──────────────────────
+ *
+ * TOUT PASSE PAR LES JETONS `--lem-*`. La première version de cet écran posait
+ * ses verts et ses rouges en hexadécimal : le tableau était juste, et hors
+ * charte — un vert légèrement différent de celui du reste de la prospection,
+ * sur un écran qu'on regarde tous les jours. Les états ont leurs jetons depuis
+ * le début (`--lem-ok`, `--lem-attention`, `--lem-danger`), et le voile qui va
+ * avec ; aucun hexadécimal ne doit réapparaître ici.
+ *
+ * LA GRAMMAIRE : surface blanche posée sur le fond, rayon de 12 px, filtres en
+ * pastilles cliquables portant leur compte. C'est la façon dont lemlist range
+ * un tableau, et c'est ce qui fait qu'on reconnaît l'écran sans lire le titre.
+ */
+.lem-skin .lots-carte{background:var(--lem-surface);border:1px solid var(--lem-bord);border-radius:var(--lem-rayon);overflow:hidden}
+.lem-skin .lots-enveloppe{overflow-x:auto}
+.lem-skin .lots-enveloppe table{min-width:1040px;width:100%;border-collapse:collapse}
+.lem-skin .lots-enveloppe th,
+.lem-skin .lots-enveloppe td{padding:11px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--lem-bord)}
+.lem-skin .lots-enveloppe thead th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--lem-gris-2);font-weight:500;background:var(--lem-fond);white-space:nowrap}
+.lem-skin .lots-enveloppe tbody tr:last-child th,
+.lem-skin .lots-enveloppe tbody tr:last-child td{border-bottom:0}
+.lem-skin .lots-enveloppe tbody tr:hover{background:var(--lem-survol)}
 
-.lots-cell{white-space:nowrap;min-width:96px}
-.lots-part{display:block;font-variant-numeric:tabular-nums;font-size:13px;font-weight:500}
-/* Trois états et pas un dégradé continu : « complet », « entamé », « à faire »
-   sont trois décisions différentes, pas trois nuances de la même. */
-.lots-cell[data-etat="plein"] .lots-part{color:#15803D}
-.lots-cell[data-etat="moitie"] .lots-part{color:#B45309}
-.lots-cell[data-etat="vide"] .lots-part{color:#B91C1C}
-.lots-jauge{display:block;height:3px;margin:4px 0 3px;background:rgba(10,27,51,.12);overflow:hidden}
-.lots-jauge i{display:block;height:100%;background:currentColor}
-.lots-cell[data-etat="plein"] .lots-jauge i{background:#15803D}
-.lots-cell[data-etat="moitie"] .lots-jauge i{background:#B45309}
-.lots-cell[data-etat="vide"] .lots-jauge i{background:#B91C1C}
-.lots-reste{display:block;font-size:10.5px;color:var(--lem-tertiaire,#98A1AC);font-variant-numeric:tabular-nums}
+.lem-skin .lots-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:14px}
+.lem-skin .lots-nom{min-width:230px;max-width:300px;font-weight:400}
+.lem-skin .lots-titre{display:block;font-weight:600;font-size:14px;color:var(--lem-encre)}
+.lem-skin .lots-note{display:block;margin-top:2px;font-size:11.5px;line-height:1.45;color:var(--lem-gris-2)}
+.lem-skin .lots-avancement{display:inline-block;margin-top:6px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--lem-gris-2);background:var(--lem-bleu-pale);border-radius:999px;padding:2px 8px}
 
-.lots-geste{min-width:180px}
-.lots-geste-quoi{display:block;font-weight:600;font-size:13px}
-.lots-geste-ou{display:block;margin-top:2px;font-size:11px;color:var(--lem-second,#566F8F)}
-.lots-geste-combien{display:block;margin-top:2px;font-size:11px;font-variant-numeric:tabular-nums;color:var(--lem-tertiaire,#98A1AC)}
+/* Trois états, pas un dégradé : « complet », « entamé » et « à faire » sont
+   trois décisions différentes, pas trois nuances de la même. */
+.lem-skin .lots-cell{white-space:nowrap;min-width:98px}
+.lem-skin .lots-part{display:block;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600}
+.lem-skin .lots-cell[data-etat="plein"]{--lots-teinte:var(--lem-ok)}
+.lem-skin .lots-cell[data-etat="moitie"]{--lots-teinte:var(--lem-attention)}
+.lem-skin .lots-cell[data-etat="vide"]{--lots-teinte:var(--lem-danger)}
+.lem-skin .lots-cell .lots-part{color:var(--lots-teinte)}
+.lem-skin .lots-jauge{display:block;height:4px;margin:5px 0 4px;background:var(--lem-bord);border-radius:999px;overflow:hidden}
+.lem-skin .lots-jauge i{display:block;height:100%;border-radius:999px;background:var(--lots-teinte)}
+.lem-skin .lots-reste{display:block;font-size:10.5px;color:var(--lem-gris-2);font-variant-numeric:tabular-nums}
 
-@media (prefers-color-scheme:dark){
-  .lots-jauge{background:rgba(232,243,255,.16)}
-  .lots-cell[data-etat="plein"] .lots-part{color:#4ADE80}
-  .lots-cell[data-etat="moitie"] .lots-part{color:#FBBF24}
-  .lots-cell[data-etat="vide"] .lots-part{color:#F87171}
-  .lots-cell[data-etat="plein"] .lots-jauge i{background:#4ADE80}
-  .lots-cell[data-etat="moitie"] .lots-jauge i{background:#FBBF24}
-  .lots-cell[data-etat="vide"] .lots-jauge i{background:#F87171}
-}
+.lem-skin .lots-geste{min-width:190px}
+.lem-skin .lots-geste-quoi{display:block;font-weight:600;font-size:13px;color:var(--lem-encre)}
+.lem-skin .lots-geste-ou{display:block;margin-top:2px;font-size:11.5px;color:var(--lem-gris-2)}
+.lem-skin .lots-geste-combien{display:block;margin-top:2px;font-size:11px;font-variant-numeric:tabular-nums;color:var(--lem-gris-2)}
+.lem-skin .lots-lien{display:flex;align-items:center;gap:8px;color:inherit;text-decoration:none}
+.lem-skin .lots-lien:hover .lots-titre{color:var(--lem-bleu)}
+.lem-skin .lots-lien:focus-visible{outline:2px solid var(--lem-bleu);outline-offset:3px;border-radius:var(--lem-rayon-2)}
 
-/* ── Lots : le tiroir de détail ─────────────────────────────────────────────
-   Les marches sont colorées par ce qu'elles DEMANDENT, pas par leur gravité :
-   « à faire » et « bloquée » appellent tous deux un geste et se ressemblent
-   donc ; « en attente » et « en file » n'en appellent aucun et s'effacent. */
-.lots-deplier{display:flex;align-items:center;gap:7px;background:none;border:0;padding:0;cursor:pointer;color:inherit;text-align:left;font:inherit}
-.lots-deplier:focus-visible{outline:2px solid var(--lem-action,#316BFF);outline-offset:2px}
-.lots-ligne[data-deplie="1"]{background:var(--lem-selection,#E9F3FF)}
-.lots-tiroir>td{padding:0!important;background:var(--lem-fond,#FBFBFB)}
-.lots-detail{padding:14px 16px 18px}
-.lots-marches{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.lots-marche{display:inline-block;font-size:11.5px;line-height:1.3;padding:3px 8px;border:1px solid currentColor;white-space:nowrap}
-.lots-marche b{font-weight:600;font-variant-numeric:tabular-nums}
-.lots-marche[data-marche="a_faire"]{color:#15803D}
-.lots-marche[data-marche="bloquee"]{color:#B91C1C}
-.lots-marche[data-marche="garee"]{color:#B45309}
-.lots-marche[data-marche="attente"],
-.lots-marche[data-marche="hors_sequence"]{color:#6B7280}
-.lots-marche[data-marche="en_file"]{color:#316BFF}
-.lots-etape{min-width:190px}
-.lots-manques{font-size:11.5px;color:var(--lem-second,#566F8F);max-width:220px}
-@media (prefers-color-scheme:dark){
-  .lots-marche[data-marche="a_faire"]{color:#4ADE80}
-  .lots-marche[data-marche="bloquee"]{color:#F87171}
-  .lots-marche[data-marche="garee"]{color:#FBBF24}
-  .lots-marche[data-marche="attente"],
-  .lots-marche[data-marche="hors_sequence"]{color:#9CA3AF}
-  .lots-marche[data-marche="en_file"]{color:#8AB4FF}
-}
+/* ── Le détail d'un lot ─────────────────────────────────────────────────── */
+.lem-skin .lots-fil{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--lem-gris-2);margin-bottom:10px}
+.lem-skin .lots-fil a{color:var(--lem-gris-2);text-decoration:none}
+.lem-skin .lots-fil a:hover{color:var(--lem-bleu)}
+
+/* Les filtres sont des PASTILLES QUI COMPTENT. Une pastille à zéro ne
+   s'affiche pas : proposer un filtre qui ne rendrait rien fait douter du
+   tableau, pas du filtre. */
+.lem-skin .lots-filtres{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.lem-skin .lots-pastille{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;line-height:1;padding:7px 12px;border:1px solid var(--lem-bord-2);border-radius:999px;background:var(--lem-surface);color:var(--lem-encre);cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
+.lem-skin .lots-pastille:hover{background:var(--lem-survol)}
+.lem-skin .lots-pastille b{font-variant-numeric:tabular-nums;font-weight:600}
+.lem-skin .lots-pastille[aria-pressed="true"]{background:var(--lem-bleu-pale);border-color:var(--lem-bleu);color:var(--lem-bleu-2)}
+.lem-skin .lots-pastille:focus-visible{outline:2px solid var(--lem-bleu);outline-offset:2px}
+.lem-skin .lots-pastille .puce{width:7px;height:7px;border-radius:999px;background:var(--lots-teinte,var(--lem-gris-3))}
+.lem-skin .lots-pastille[data-marche="a_faire"]{--lots-teinte:var(--lem-ok)}
+.lem-skin .lots-pastille[data-marche="bloquee"]{--lots-teinte:var(--lem-danger)}
+.lem-skin .lots-pastille[data-marche="garee"]{--lots-teinte:var(--lem-attention)}
+.lem-skin .lots-pastille[data-marche="en_file"]{--lots-teinte:var(--lem-bleu)}
+
+.lem-skin .lots-recherche{flex:1;min-width:180px;max-width:280px;padding:8px 12px;border:1px solid var(--lem-bord-2);border-radius:999px;background:var(--lem-surface);color:var(--lem-encre);font:inherit;font-size:12.5px}
+.lem-skin .lots-recherche:focus{outline:none;border-color:var(--lem-bleu);box-shadow:var(--lem-anneau)}
+
+.lem-skin .lots-etat{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:1.3;padding:4px 10px;border-radius:999px;white-space:nowrap;background:var(--lots-voile,var(--lem-survol));color:var(--lots-teinte,var(--lem-gris-2))}
+.lem-skin .lots-etat[data-marche="a_faire"]{--lots-teinte:var(--lem-ok);--lots-voile:var(--lem-ok-voile)}
+.lem-skin .lots-etat[data-marche="bloquee"]{--lots-teinte:var(--lem-danger);--lots-voile:var(--lem-danger-voile)}
+.lem-skin .lots-etat[data-marche="garee"]{--lots-teinte:var(--lem-attention);--lots-voile:var(--lem-attention-voile)}
+.lem-skin .lots-etat[data-marche="en_file"]{--lots-teinte:var(--lem-bleu);--lots-voile:var(--lem-bleu-voile)}
+.lem-skin .lots-etape{min-width:190px}
+.lem-skin .lots-manques{font-size:11.5px;color:var(--lem-gris-2);max-width:210px}
