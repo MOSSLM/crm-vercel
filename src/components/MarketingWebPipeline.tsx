@@ -1846,7 +1846,44 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   /* ── Actions de masse (barre de sélection) ────────────────────────────── */
   // Mêmes fonctions que les cartes : elles ont toujours travaillé sur des
   // tableaux, seule la sélection multiple avait disparu de l'écran.
+  /**
+   * Figer la sélection en lot.
+   *
+   * LE NOM EST DEMANDÉ, JAMAIS DEVINÉ. Un lot sans nom est un lot que personne
+   * ne retrouve la semaine suivante, et l'écran des lots en compare plusieurs :
+   * « Sélection du 21 août » n'y distingue rien. `prompt` est rudimentaire et
+   * assumé — le geste dure trois secondes et ne mérite pas une boîte de
+   * dialogue de plus à maintenir.
+   *
+   * Réservé aux admins, comme la route : un lot porte n'importe quelle
+   * entreprise du corpus, sans filtre de propriétaire.
+   */
+  const figerEnLot = async (items: BoardItem[]) => {
+    const ids = [...new Set(items.map((i) => i.entreprise_id).filter((v): v is number => v != null))];
+    if (ids.length === 0) {
+      toast.error("Aucune entreprise dans la sélection.");
+      return;
+    }
+    const nom = window.prompt(`Nom du lot (${ids.length} entreprises)`)?.trim();
+    if (!nom) return;
+    const res = await authedFetch("/api/entreprises/lots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom, entrepriseIds: ids }),
+    });
+    const corps = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    if (!res.ok) {
+      toast.error(corps?.message || corps?.error || "Lot non créé.");
+      return;
+    }
+    toast.success(`Lot « ${nom} » figé`, {
+      description: `${ids.length} entreprises. Sa couverture se lit dans Prospection → Lots.`,
+      action: { label: "L'ouvrir", onClick: () => window.open("/prospection/lots", "_blank") },
+    });
+  };
+
   const bulkHandlers: BulkHandlers = {
+    onFigerLot: isAgent ? undefined : (items) => void figerEnLot(items),
     onEnrich: (items, overwrite) => runEnrich(items, overwrite),
     onComplete: (items) => setCompleting(items),
     onValidateEnrich: (items) => validateEnrichment(items),

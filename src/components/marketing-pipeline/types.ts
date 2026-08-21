@@ -384,6 +384,20 @@ export interface BoardData {
  * fonctions batch que les actions par carte — elles ont toujours pris un tableau.
  */
 export interface BulkHandlers {
+  /**
+   * Fige la sélection en LOT, sous un nom.
+   *
+   * ICI ET PAS SUR L'ÉCRAN DES LOTS, et c'est le point. Les filtres — les
+   * métiers, les sept groupes de cases, la recherche — vivent déjà sur cet
+   * écran-ci ; les redessiner ailleurs ferait deux vocabulaires à tenir
+   * d'accord. Un lot n'est rien d'autre que « ce que je regarde, figé », donc
+   * le geste appartient à l'endroit où l'on regarde.
+   *
+   * On fige la SÉLECTION, jamais les critères : c'est ce que l'humain a vu
+   * défiler. Rejouer la requête au moment du figeage rendrait un lot différent
+   * de l'écran, sans que rien ne le signale.
+   */
+  onFigerLot?: (items: BoardItem[]) => void;
   onEnrich: (items: BoardItem[], overwrite: boolean) => void;
   /**
    * Ouvre la grille de complétion sur ces lignes. Sert aussi bien la barre de

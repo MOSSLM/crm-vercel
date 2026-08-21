@@ -30,6 +30,7 @@ import {
   Target,
   ChevronRight,
   ChevronLeft,
+  Layers,
   ScanSearch,
   CalendarClock,
   SlidersHorizontal,
@@ -1422,6 +1423,9 @@ function BulkBar({
   // Le lissage travaille sur des ENTREPRISES, pas sur des opportunités : une
   // ligne sans fiche n'a rien à mettre en file, et la route la refuserait.
   const toLisser = rows.filter((r) => r.entreprise_id != null);
+  // Un lot ne porte que des ENTREPRISES : `lots_entreprises` a sa clé sur
+  // l'entreprise, et une opportunité sans fiche n'a rien à y mettre.
+  const aFiger = rows.filter((r) => r.entreprise_id != null);
   // Les chiffres clés vivent sur le dossier lead magnet : sans dossier, il n'y a
   // nulle part où les écrire.
   //
@@ -1450,6 +1454,26 @@ function BulkBar({
         d'abord revient à enrichir du vide, et c'est ce qui laissait des lignes
         sans ancienneté après un enrichissement qui avait pourtant « marché ».
       */}
+      {bulk.onFigerLot && (
+        <>
+          <button
+            className="btn sm"
+            disabled={busy || aFiger.length === 0}
+            title={
+              aFiger.length === 0
+                ? "Aucune entreprise dans la sélection"
+                : `Figer ces ${aFiger.length} entreprise(s) en lot, sous un nom. Le lot ne bougera plus : c'est ce qui rend un traitement lancé dessus rejouable, et une campagne mesurable.`
+            }
+            onClick={() => bulk.onFigerLot!(aFiger)}
+          >
+            <Layers className="ico-sm" />
+            Figer en lot
+            {ct(aFiger.length)}
+          </button>
+          <div className="tb-div" />
+        </>
+      )}
+
       {bulk.onLisser && (
         <>
           <button
