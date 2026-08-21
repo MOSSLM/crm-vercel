@@ -57,11 +57,10 @@ a{color:inherit;text-decoration:none}
 .page{background:var(--creme);display:flex;flex-direction:column;overflow:hidden}
 .page.dark{position:relative;background:radial-gradient(120% 60% at 20% 4%,rgba(47,122,224,.32),rgba(47,122,224,0) 58%),linear-gradient(168deg,rgba(47,122,224,.24) 0%,rgba(47,122,224,0) 46%,rgba(10,27,51,.6) 100%),var(--nuit);color:var(--casse)}
 .page>*{position:relative;z-index:2}
-/* NE PAS ÉTIRER LA FENÊTRE POUR COMBLER LE BLANC sous la capture. Il vient
-   du margin-top:auto de .cvcta : la maquette ancre l'appel à l'action en bas
-   d'écran, et c'est délibéré. Agrandir la fenêtre recadrerait une image de
-   1200×750 dans un cadre haut, donc PAR LES CÔTÉS — le titre du site du
-   prospect sortirait par la gauche. Le blanc est le moindre mal. */
+/* NE PAS ÉTIRER LA FENÊTRE POUR COMBLER LE BLANC sous la capture : elle
+   recadrerait une image de 1200×750 dans un cadre haut, donc PAR LES CÔTÉS,
+   et le titre du site du prospect sortirait par la gauche. Le blanc se règle
+   par l'ancrage du bloc du bas — cf. la regle .cvcta — pas par la capture. */
 .pbody{flex:1;display:flex;flex-direction:column;padding:26px var(--pad) 0;min-height:0}
 .pgfoot{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin:0 var(--pad);padding:13px 0 20px;border-top:1px solid var(--line);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 .dark .pgfoot{border-top-color:rgba(181,208,240,.24);color:rgba(181,208,240,.62)}
@@ -132,7 +131,14 @@ a{color:inherit;text-decoration:none}
 .rbtn svg{position:absolute;inset:0;width:100%;height:100%}
 .rbtn text{font-family:'DM Sans','Helvetica Neue',Arial,sans-serif;font-size:7px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;fill:var(--brume);text-anchor:middle}
 .rbtn .core{position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:var(--azur);color:var(--casse);display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1;padding-bottom:2px}
-.cvcta{display:flex;flex-direction:row-reverse;align-items:center;gap:18px;margin-top:auto;padding:22px 0 6px;border-top:1px solid rgba(181,208,240,.2)}
+/* LE BLOC DU BAS SUIT LA CAPTURE, il ne colle plus au pied d'écran. Avec
+   margin-top:auto il était plaqué en bas, et les 140 px que la capture ne
+   peut pas occuper — elle est en 1200×750, elle a une hauteur imposée —
+   s'ouvraient EN PLEIN MILIEU de la couverture, entre le site du prospect et
+   l'invitation à le visiter. Les deux se lisent ensemble : « voici votre
+   site » puis « ouvrez-le ». Le vide tombe désormais sous l'invitation, où
+   il ne sépare plus rien. */
+.cvcta{display:flex;flex-direction:row-reverse;align-items:center;gap:18px;margin-top:26px;padding:22px 0 6px;border-top:1px solid rgba(181,208,240,.2)}
 .cvcta p{font-size:15.5px;line-height:1.38;color:rgba(181,208,240,.88)}
 .cvcta p b{font-weight:400;color:var(--casse)}
 /* ── page 2 : les trois repères ───────────────────── */
