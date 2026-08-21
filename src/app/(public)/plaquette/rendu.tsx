@@ -6,9 +6,11 @@ import {
   chargerOffresPlaquette,
   construirePlaquette,
   rendrePlaquetteMobile,
-  type ProspectPlaquette,
+  type ProspectPlaquetteChiffre,
 } from "@/lib/audit/plaquette";
-import { corpsPlaquette, corpsPlaquetteNominative } from "@/utils/audit/htmlCompact";
+import { rendrePlaquette } from "@/lib/audit/plaquette-rendu";
+import { prixPlaquette } from "@/lib/audit/prix-site";
+import { corpsPlaquette } from "@/utils/audit/htmlCompact";
 import { CSS_COMPACT } from "@/utils/audit/compactCss";
 import { AUDIT_MOBILE_CSS } from "@/utils/audit/mobileCss";
 
@@ -97,14 +99,30 @@ export async function metadonneesPlaquette(): Promise<Metadata> {
  * rendu. Sans cette consigne, le téléphone applique `width=device-width` et la
  * feuille sort du cadre par la droite au lieu d'être réduite.
  */
-export const viewportPlaquette = (sp: SearchParamsPlaquette | undefined): Viewport =>
-  estA4(sp) ? { width: 794 } : { width: "device-width", initialScale: 1 };
+export const viewportPlaquette = (
+  sp: SearchParamsPlaquette | undefined,
+  nominatif = false,
+): Viewport => {
+  if (estA4(sp)) return { width: 794 };
+  // Le mobile NOMINATIF est une suite d'écrans de 430 px — la largeur d'un
+  // grand téléphone, choisie pour que le PDF ait des pages franches. Laissé en
+  // `device-width`, il déborderait par la droite sur tout écran plus étroit,
+  // et le prospect lirait la plaquette en la faisant glisser. Le dépliant
+  // collectif, lui, est fluide : il garde `device-width`.
+  return nominatif ? { width: 430 } : { width: "device-width", initialScale: 1 };
+};
 
 /**
  * Le rendu lui-même. Les prix sont relus du catalogue à CHAQUE ouverture — la
  * plaquette n'est stockée nulle part, c'est ce qui l'empêche d'annoncer un tarif
  * périmé comme le font quatre audits en base.
  */
+const DATE_LONGUE = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
 export async function RenduPlaquette({
   a4,
   imprimer = false,
@@ -112,9 +130,37 @@ export async function RenduPlaquette({
 }: {
   a4: boolean;
   imprimer?: boolean;
-  prospect?: ProspectPlaquette | null;
+  prospect?: ProspectPlaquetteChiffre | null;
 }) {
   const offres = await chargerOffresPlaquette(getServiceClient());
+
+  // ── LE DOCUMENT NOMINATIF ────────────────────────────────────────────────
+  // Il ne partage plus rien avec le dépliant collectif : sa maquette est à lui,
+  // dans les deux formats, et son prix est celui de CE prospect — le catalogue
+  // donne le socle, ses étiquettes de service donnent les pages.
+  if (prospect) {
+    const { css, html } = rendrePlaquette(a4 ? "a4" : "mobile", {
+      nom: prospect.nom,
+      meta: prospect.meta,
+      demoUrl: prospect.demoUrl,
+      captureDemo: prospect.captureDemo,
+      prix: prixPlaquette(offres, prospect.serviceTags)?.texte ?? null,
+      date: DATE_LONGUE.format(new Date()),
+    });
+    return (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="stylesheet" href={POLICES} />
+        <style dangerouslySetInnerHTML={{ __html: css }} />
+        {/* Tout ce qui vient du prospect passe par `esc()` ou par une liste
+            blanche dans `rendrePlaquette` ; le reste est un gabarit fixe. */}
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+        {imprimer && <script dangerouslySetInnerHTML={{ __html: SCRIPT_IMPRESSION_PLAQUETTE }} />}
+      </>
+    );
+  }
+
   const contenu = construirePlaquette(offres);
 
   // Le rendu mobile est le cas NORMAL : la plaquette s'ouvre au pouce, depuis un
@@ -127,11 +173,7 @@ export async function RenduPlaquette({
   // maintenir pour le même document. Le mobile reste donc le dépliant neutre,
   // celui qu'on colle dans un WhatsApp — et c'est aussi le plus prudent des
   // deux, puisqu'un message se transfère.
-  const html = a4
-    ? prospect
-      ? corpsPlaquetteNominative(contenu, prospect)
-      : corpsPlaquette(contenu)
-    : rendrePlaquetteMobile(contenu);
+  const html = a4 ? corpsPlaquette(contenu) : rendrePlaquetteMobile(contenu);
 
   return (
     <>

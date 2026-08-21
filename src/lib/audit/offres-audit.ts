@@ -37,6 +37,13 @@ export interface OffreAudit {
   aPartirDe: boolean;
   /** Hébergement mensuel vendu avec le socle, s'il y en a un. */
   hebergementMensuel: number | null;
+  /**
+   * Le pas du socle : ce que coûte UNE page de service en plus de celle qui
+   * est comprise. Vit dans le catalogue et pas dans le code pour la même
+   * raison que le prix lui-même — un tarif écrit en dur se retrouve figé dans
+   * des documents qu'on ne relit jamais. `null` ⇒ l'appelant prend son repli.
+   */
+  prixPageService: number | null;
 }
 
 /** Lit une ligne de `offres` telle que Supabase la rend. Ignore ce qui n'a pas de rôle. */
@@ -67,6 +74,8 @@ export function versOffreAudit(row: Record<string, unknown>): OffreAudit | null 
     aPartirDe: meta.from === true,
     hebergementMensuel:
       typeof meta.hosting_price_monthly === "number" ? meta.hosting_price_monthly : null,
+    prixPageService:
+      typeof meta.prix_page_service === "number" ? meta.prix_page_service : null,
   };
 }
 

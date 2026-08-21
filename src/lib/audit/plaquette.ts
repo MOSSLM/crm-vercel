@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AuditContent } from "@/types";
 import { FORME_JETON } from "@/lib/audit/plaquette-lien";
+import { isServiceTagKnownToTemplate } from "@/utils/serviceTags";
 import { getDefaultAuditContent } from "@/lib/audit/default-content";
 import { construirePage5, versOffreAudit, type OffreAudit } from "@/lib/audit/offres-audit";
 import { contenuImpersonnel, type ProspectPlaquette } from "@/utils/audit/htmlCompact";
@@ -333,7 +334,7 @@ export function rendrePlaquetteMobile(c: AuditContent): string {
 export async function chargerProspectPlaquette(
   sb: SupabaseClient,
   jeton: string,
-): Promise<ProspectPlaquette | null> {
+): Promise<ProspectPlaquetteChiffre | null> {
   if (!FORME_JETON.test(jeton)) return null;
 
   try {
@@ -353,23 +354,46 @@ export async function chargerProspectPlaquette(
     const e = ent as LigneEntreprisePlaquette | null;
     if (!e?.name) return null;
 
+    // PLUS DE REPLI ANONYME QUAND LA DÉMO MANQUE. Le gabarit porte DEUX
+    // couvertures : celle qui montre la démo, et celle qui annonce « votre
+    // aperçu est en préparation ». La seconde nomme le prospect sans rien lui
+    // promettre — c'est mieux qu'un dépliant collectif, et c'est surtout ce qui
+    // permet d'envoyer la plaquette avant que la démo existe.
     const site = await lireSiteMontrable(sb, entrepriseId);
-    if (!site) return null;
 
     return {
       nom: e.name,
       meta: metaProspect(e),
-      demoUrl: urlPubliqueDuSite(site),
+      // Les étiquettes brutes, jamais un compte déjà fait : c'est
+      // `pagesServiceFacturables` qui sait lesquelles le gabarit sait rendre,
+      // et il doit rester le seul à le savoir.
+      serviceTags: Array.isArray(e.service_tags)
+        ? e.service_tags.filter((t): t is string => typeof t === "string")
+        : [],
+      demoUrl: site ? urlPubliqueDuSite(site) : "",
       // `og_shot_url` est la capture ORDINATEUR (1200×750), celle qui remplit un
       // cadre de navigateur. La capture mobile est haute et étroite : dans le
       // mockup de la couverture, elle sortirait rognée par le haut.
-      captureDemo: site.og_shot_url ?? null,
+      captureDemo: site?.og_shot_url ?? null,
     };
   } catch {
     // Configuration manquante, base injoignable : le document collectif reste
     // servi. Une plaquette neutre vaut infiniment mieux qu'une page d'erreur.
     return null;
   }
+}
+
+/**
+ * Ce que la lecture du jeton rend, en plus des quatre champs du document.
+ *
+ * `ProspectPlaquette` porte volontairement quatre champs et pas un de plus —
+ * c'est ce qui rend son verrou vérifiable (cf. `htmlCompact.ts`). Les
+ * étiquettes de service n'entrent pas dans le document : elles servent à
+ * CALCULER le prix, en amont. D'où un type distinct plutôt qu'un cinquième
+ * champ qui affaiblirait la garantie de l'autre.
+ */
+export interface ProspectPlaquetteChiffre extends ProspectPlaquette {
+  serviceTags: string[];
 }
 
 type LigneEntreprisePlaquette = {
@@ -409,8 +433,17 @@ async function lireSiteMontrable(
  * plus, la ligne disparaît — le gabarit s'en accommode.
  */
 function metaProspect(e: LigneEntreprisePlaquette): string {
-  const tags = Array.isArray(e.service_tags) ? e.service_tags : [];
-  const secteur = typeof tags[0] === "string" ? tags[0].trim() : "";
+  const tags = (Array.isArray(e.service_tags) ? e.service_tags : []).filter(
+    (t): t is string => typeof t === "string" && t.trim() !== "",
+  );
+  // LE PREMIER TAG N'EST PAS LE BON SECTEUR. `service_tags` mêle nos neuf
+  // services et les catégories Google Business, dans l'ordre où
+  // l'enrichissement les a posées : AMI ELEC sortait « Chauffe-Eau
+  // Thermodynamique » alors qu'elle fait de l'électricité. On prend donc le
+  // premier tag QUE LE GABARIT SAIT RENDRE — c'est un métier qu'on couvre,
+  // donc une ligne qu'on peut assumer sous le nom du prospect. Sans aucun,
+  // le premier tag quel qu'il soit : mieux vaut approximatif que vide.
+  const secteur = (tags.find(isServiceTagKnownToTemplate) ?? tags[0] ?? "").trim();
   const ville = (e.ville ?? "").trim();
   return [secteur, ville].filter(Boolean).join(" · ");
 }

@@ -14,16 +14,24 @@ import {
 /**
  * La plaquette d'un prospect : `/plaquette/{jeton}`.
  *
- * LE JETON NOMME, DÉSORMAIS — ET SEULEMENT EN A4. Il a d'abord servi à une seule
- * chose, savoir QUI a ouvert. Mais il désigne UNE entreprise et une seule, ce
- * qui est exactement la garantie qui manquait pour montrer à quelqu'un la
- * capture de SA démo sans risquer de l'envoyer à la cohorte entière. Le rendu
- * mobile — celui qui part par WhatsApp, donc celui qui se transfère — reste le
- * dépliant neutre.
+ * LE JETON NOMME, DÉSORMAIS — ET DANS LES DEUX FORMATS. Il a d'abord servi à une
+ * seule chose, savoir QUI a ouvert. Mais il désigne UNE entreprise et une seule,
+ * ce qui est exactement la garantie qui manquait pour montrer à quelqu'un la
+ * capture de SA démo sans risquer de l'envoyer à la cohorte entière.
  *
- * TROIS REPLIS VERS LE DOCUMENT COLLECTIF, jamais vers une erreur : jeton
- * inconnu, entreprise sans démo montrable, base injoignable. Le prospect a
- * cliqué ; il doit voir un document.
+ * LE MOBILE A CESSÉ D'ÊTRE NEUTRE, ET C'EST UNE DÉCISION. Il l'était parce
+ * qu'un message WhatsApp se transfère, et qu'un document nominatif transféré
+ * devient un document nominatif chez un tiers. Deux choses ont changé : la
+ * maquette porte la capture de sa démo dans les deux formats — c'est ce qui met
+ * notre travail en avant, et c'est la demande — et ce qui part n'est plus un
+ * lien mais un PDF, que l'agent joint lui-même. Ce qu'on accepte en échange :
+ * un prospect qui transfère la plaquette transfère son nom et son aperçu. Rien
+ * d'autre n'y figure — ni note, ni relevé, ni donnée client.
+ *
+ * DEUX REPLIS VERS LE DOCUMENT COLLECTIF, jamais vers une erreur : jeton inconnu
+ * et base injoignable. L'entreprise SANS démo montrable n'en est plus un — le
+ * gabarit a une couverture pour elle (« votre aperçu est en préparation »), et
+ * la nommer vaut mieux que lui servir un dépliant anonyme.
  *
  * UN JETON MORT, RÉVOQUÉ OU INCONNU REND LE DOCUMENT QUAND MÊME, et c'est une
  * décision, pas un oubli :
@@ -53,7 +61,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export async function generateViewport({ searchParams }: PlaquetteJetonProps): Promise<Viewport> {
-  return viewportPlaquette(await searchParams);
+  return viewportPlaquette(await searchParams, true);
 }
 
 export default async function PlaquetteJetonPage({ params, searchParams }: PlaquetteJetonProps) {
@@ -76,10 +84,10 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
   const sp = await searchParams;
   const a4 = estA4(sp);
 
-  // La lecture du prospect n'est TENTÉE qu'en A4 : c'est le seul rendu qui sache
-  // quoi en faire, et deux requêtes de plus sur chaque ouverture WhatsApp se
-  // paieraient trois cents fois pour rien.
-  const prospect = a4 ? await chargerProspectPlaquette(getServiceClient(), jeton) : null;
+  // Lue pour les DEUX formats depuis que le mobile est nominatif lui aussi. Les
+  // deux requêtes qu'elle coûte sont le prix du nom et de la capture — c'est
+  // tout l'intérêt du document.
+  const prospect = await chargerProspectPlaquette(getServiceClient(), jeton);
 
   return <RenduPlaquette a4={a4} imprimer={veutImprimer(sp)} prospect={prospect} />;
 }

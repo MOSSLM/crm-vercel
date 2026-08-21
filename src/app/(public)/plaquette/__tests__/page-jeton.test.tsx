@@ -64,6 +64,7 @@ const JETON = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
 const PROSPECT = {
   nom: "Clim Ouest",
   meta: "Climatisation · Rennes",
+  serviceTags: ["climatisation", "plomberie"],
   demoUrl: "https://clim-ouest.exemple.fr",
   captureDemo: "https://cdn.exemple/shot.jpg",
 };
@@ -74,21 +75,27 @@ beforeEach(() => {
   mockCharger.mockResolvedValue(null);
 });
 
-describe("le rendu mobile ne change pas d'un prospect à l'autre", () => {
-  it("rend exactement ce que rend `/plaquette` sans jeton", async () => {
+describe("le rendu mobile est nominatif lui aussi", () => {
+  // IL NE L'ÉTAIT PAS, et le renversement est daté du 21/08/2026. Le mobile
+  // restait le dépliant neutre parce qu'un message WhatsApp se transfère. La
+  // maquette porte désormais la capture de la démo dans LES DEUX formats —
+  // c'est ce qui met notre travail en avant — et ce qui part n'est plus un lien
+  // mais un PDF que l'agent joint lui-même. Ce que le prospect peut transférer
+  // se limite à son propre nom et à son propre aperçu.
+  it("passe le prospect au rendu, sans attendre le A4", async () => {
     mockCharger.mockResolvedValue(PROSPECT);
+    const el = await ouvrir(JETON);
+
+    expect(mockCharger).toHaveBeenCalledTimes(1);
+    expect(el.props).toMatchObject({ a4: false, prospect: PROSPECT });
+  });
+
+  it("retombe sur le dépliant collectif quand le jeton ne nomme personne", async () => {
     const attendu = await collective();
     const el = await ouvrir(JETON);
 
     expect(el.type).toBe(attendu.type);
     expect(el.props).toEqual(attendu.props);
-  });
-
-  it("ne va même pas chercher le prospect quand le rendu est mobile", async () => {
-    // Deux requêtes de plus sur chaque ouverture WhatsApp se paieraient trois
-    // cents fois pour un rendu qui n'en ferait rien.
-    await ouvrir(JETON);
-    expect(mockCharger).not.toHaveBeenCalled();
   });
 });
 
