@@ -17,6 +17,7 @@ import { withAuth } from '@/app/api/_lib/with-auth'
 import { preflight } from '@/app/api/_lib/cors'
 import { disponible, sceller } from '@/lib/rechauffeur/coffre'
 import { familleDuDomaine } from '@/lib/rechauffeur/appariement'
+import { suggestionHote } from '@/lib/rechauffeur/fournisseurs'
 import { FAMILLES } from '@/lib/rechauffeur/sante'
 
 export const runtime = 'nodejs'
@@ -51,8 +52,22 @@ export const POST = withAuth({ role: 'admin', body: Temoin }, async ({ body: t, 
   // Le mot de passe suppose un hôte : lire une boîte sans savoir où se
   // connecter n'a pas de sens, et laisser la valeur vide se verrait au premier
   // tick, pas ici.
-  if (t.motDePasse && !t.hote) {
-    return jsonError('Le serveur IMAP est requis avec un mot de passe.', 400, {}, cors)
+  //
+  // MAIS ON NE LE RÉCLAME QUE QUAND ON NE SAIT PAS LE DEVINER. Pour les
+  // fournisseurs du catalogue, l'hôte est connu d'avance — et `secretDuTemoin`
+  // le préfère de toute façon à ce qui est stocké. Exiger la saisie d'une
+  // valeur qu'on va ignorer, c'est inviter à en taper une fausse.
+  const devine = suggestionHote(t.email)
+  const hote = t.hote ?? devine?.hote
+  const port = t.hote ? t.port : (devine?.port ?? t.port)
+  if (t.motDePasse && !hote) {
+    return jsonError(
+      'Le serveur IMAP est requis : ce domaine n’est d’aucun fournisseur connu. ' +
+        'Pour une boîte hébergée chez LWS, c’est mail84.lwspanel.com, port 993.',
+      400,
+      {},
+      cors,
+    )
   }
 
   const ligne: Record<string, unknown> = {
@@ -66,7 +81,7 @@ export const POST = withAuth({ role: 'admin', body: Temoin }, async ({ body: t, 
   }
   if (t.motDePasse) {
     ligne.secret_enc = sceller({ motDePasse: t.motDePasse })
-    ligne.config = { hote: t.hote, port: t.port }
+    ligne.config = { hote, port }
     ligne.peut_lire = true
   }
 

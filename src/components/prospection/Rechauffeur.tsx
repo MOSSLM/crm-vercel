@@ -15,8 +15,12 @@
 // chiffre voulait dire « on n'en sait rien ».
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertTriangle, Flame, Inbox, Info, Plus, Power, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle, BookOpen, ChevronDown, ChevronRight,
+  Flame, Inbox, Info, Plus, Power, Trash2,
+} from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
+import { HOTE_LWS, MODES_OPERATOIRES, suggestionHote } from '@/lib/rechauffeur/fournisseurs'
 import type { Sante } from '@/lib/rechauffeur/sante'
 import './lem-skin.css'
 
@@ -158,8 +162,21 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
   const [ouvert, setOuvert] = useState(false)
   const [envoi, setEnvoi] = useState(false)
   const [f, setF] = useState({
-    email: '', nom: '', hote: 'mail84.lwspanel.com', port: 993, motDePasse: '', plafondJour: 8,
+    email: '', nom: '', hote: '', port: 993, motDePasse: '', plafondJour: 8,
   })
+
+  // L'HÔTE NE SE TAPE PLUS, IL SE DÉDUIT. Le formulaire proposait
+  // `mail84.lwspanel.com` en dur — le serveur de NOTRE hébergeur, pour une
+  // boîte Gmail : faux neuf fois sur dix, dans un champ que personne ne peut
+  // vérifier de tête. `hotes-connus.ts` savait déjà répondre ; il n'était
+  // simplement jamais consulté ici.
+  const devine = suggestionHote(f.email)
+  const estDeduit = !!devine && f.hote === devine.hote
+
+  const saisirEmail = (email: string) => {
+    const s = suggestionHote(email)
+    setF((p) => (s ? { ...p, email, hote: s.hote, port: s.port } : { ...p, email }))
+  }
 
   const soumettre = async () => {
     if (!f.email.trim() || !f.nom.trim()) {
@@ -173,7 +190,8 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
       }
       if (f.motDePasse) {
         corps.motDePasse = f.motDePasse
-        corps.hote = f.hote.trim()
+        // Vide, la route redéduit : mieux vaut son catalogue que notre champ.
+        if (f.hote.trim()) corps.hote = f.hote.trim()
         corps.port = Number(f.port)
       }
       const res = await authedFetch('/api/prospection/rechauffeur/temoins', {
@@ -212,7 +230,7 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
         <label>
           <div className="lem-second" style={{ fontSize: 12 }}>Adresse</div>
           <input className="lem-champ" value={f.email} placeholder="prenom@orange.fr"
-            onChange={(e) => setF({ ...f, email: e.target.value })} />
+            onChange={(e) => saisirEmail(e.target.value)} />
         </label>
         <label>
           <div className="lem-second" style={{ fontSize: 12 }}>Nom affiché</div>
@@ -227,14 +245,21 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
       </div>
 
       <div className="lem-second" style={{ fontSize: 12, margin: '14px 0 8px' }}>
-        La famille (Gmail, Orange, Free…) se déduit toute seule de l’adresse.
+        La famille (Gmail, Orange, Free…) se déduit toute seule de l’adresse — et le serveur
+        IMAP avec elle. Il n’y a qu’une boîte de notre hébergeur à saisir à la main :
+        <code> {HOTE_LWS}</code>, port 993.
       </div>
 
       {coffrePret ? (
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
           <label>
-            <div className="lem-second" style={{ fontSize: 12 }}>Serveur IMAP</div>
-            <input className="lem-champ" value={f.hote}
+            <div className="lem-second" style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+              Serveur IMAP
+              {estDeduit && (
+                <span className="lem-pill" data-ton="ok">déduit · {devine.libelle}</span>
+              )}
+            </div>
+            <input className="lem-champ" value={f.hote} placeholder={HOTE_LWS}
               onChange={(e) => setF({ ...f, hote: e.target.value })} />
           </label>
           <label>
@@ -274,6 +299,169 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
           Annuler
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Le mode d'emploi du maillage — ce que Matteo doit faire, fournisseur par
+ * fournisseur.
+ *
+ * POURQUOI IL EST SUR CETTE PAGE ET PAS DANS `docs/`. Le geste se fait ici :
+ * c'est ici qu'on découvre qu'il faut un mot de passe d'application, et ici
+ * qu'on abandonne quand on ne le sait pas. Une documentation qu'il faut aller
+ * chercher ailleurs est une documentation qu'on ne lit qu'après avoir échoué.
+ *
+ * IL EST REPLIÉ PAR DÉFAUT. Six fournisseurs détaillés au-dessus du formulaire
+ * repousseraient hors de l'écran la seule chose qu'on vient y faire. Il
+ * s'ouvre tout seul quand le maillage est vide — c'est exactement le moment où
+ * personne ne sait par où commencer.
+ */
+function ModeEmploi({
+  famillesManquantes,
+  capaciteMaillage,
+  cible,
+}: {
+  famillesManquantes: string[]
+  capaciteMaillage: number
+  cible: number
+}) {
+  const [ouvert, setOuvert] = useState(capaciteMaillage === 0)
+  const Chevron = ouvert ? ChevronDown : ChevronRight
+
+  return (
+    <div className="lem-carte" style={{ padding: 18, marginTop: 16 }}>
+      <button
+        className="lem-btn discret"
+        onClick={() => setOuvert((o) => !o)}
+        style={{ padding: 0, gap: 8, fontSize: 14, fontWeight: 600, color: 'var(--lem-encre)' }}
+      >
+        <Chevron size={15} />
+        <BookOpen size={15} />
+        Ajouter des boîtes témoins — le mode d’emploi, fournisseur par fournisseur
+      </button>
+
+      {/* LE DIMENSIONNEMENT SE DIT MÊME REPLIÉ. C'est le seul chiffre qui
+          répond à « combien de boîtes faut-il ? », et il change tout seul. */}
+      <p className="lem-second" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
+        Le maillage porte <strong>{capaciteMaillage} message(s) par jour</strong>
+        {cible > 0 ? (
+          <>
+            {' '}; la courbe en vise jusqu’à <strong>{cible}</strong> au régime de croisière.{' '}
+            {capaciteMaillage < cible
+              ? 'C’est donc le maillage qui plafonne la chauffe, pas la courbe : il faut des boîtes en plus, ou un plafond par boîte plus haut.'
+              : 'Le maillage suit la courbe : il n’est pas le facteur limitant.'}
+          </>
+        ) : (
+          '. Aucun expéditeur n’est enregistré : il n’y a pas encore de courbe à suivre.'
+        )}
+      </p>
+
+      {ouvert && (
+        <div style={{ marginTop: 14, display: 'grid', gap: 14 }}>
+          <div className="lem-alerte" data-gravite="info">
+            <Info size={14} />
+            <span>
+              <strong>Ce qu’on cherche, c’est la diversité avant le volume.</strong> Cinq familles
+              comptent — Google, Microsoft, Yahoo, <strong>Orange et Free</strong> — parce que ce
+              sont celles de nos prospects. Cent messages tous chez Gmail ne disent rien de ce que
+              fait Orange. Mieux vaut huit boîtes à 5 messages/jour que trois boîtes à 15 : une
+              adresse qui reçoit quinze fois par jour du même expéditeur est elle-même un motif.
+            </span>
+          </div>
+
+          {MODES_OPERATOIRES.map((m) => {
+            const manquante = famillesManquantes.includes(m.famille)
+            return (
+              <div
+                key={m.famille}
+                style={{
+                  border: '1px solid var(--lem-bord)',
+                  borderRadius: 'var(--lem-rayon)',
+                  padding: '12px 14px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 14 }}>{m.libelle}</strong>
+                  {m.famille !== 'autre' && (
+                    <span className="lem-pill" data-ton={manquante ? 'attention' : 'ok'}>
+                      {manquante ? 'famille absente du maillage' : 'famille couverte'}
+                    </span>
+                  )}
+                  <span className="lem-pill" data-ton="neutre">
+                    {m.creation === 'libre'
+                      ? 'se crée en cinq minutes'
+                      : m.creation === 'abonnement'
+                        ? 'abonnement requis — la boîte s’emprunte'
+                        : 'dans le panneau de l’hébergeur'}
+                  </span>
+                </div>
+
+                <div className="lem-second" style={{ fontSize: 12, marginTop: 6 }}>
+                  IMAP <code>{m.imap}</code> · port 993 ·{' '}
+                  {m.famille === 'autre'
+                    ? 'à taper, il ne se devine pas depuis l’adresse'
+                    : 'rempli tout seul dès que l’adresse est saisie'}
+                </div>
+
+                <ol style={{ fontSize: 13, margin: '10px 0 0', paddingLeft: 20, lineHeight: 1.55 }}>
+                  {m.etapes.map((etape, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>{etape}</li>
+                  ))}
+                </ol>
+
+                {m.piege && (
+                  <div className="lem-alerte" style={{ marginTop: 10 }}>
+                    <AlertTriangle size={14} />
+                    <span>{m.piege}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* ── Les deux questions qui reviennent, tranchées ici ─────────── */}
+          <div style={{ border: '1px solid var(--lem-bord)', borderRadius: 'var(--lem-rayon)', padding: '12px 14px' }}>
+            <strong style={{ fontSize: 14 }}>Créer un domaine, créer des adresses</strong>
+            <ul style={{ fontSize: 13, margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
+              <li>
+                <strong>Un domaine Vercel ne porte pas de courrier.</strong> Ni un{' '}
+                <code>*.vercel.app</code>, ni un domaine dont Vercel tient le DNS : Vercel héberge
+                des sites, pas des boîtes. Il n’y a aucune adresse à créer là-bas — au mieux on y
+                pose un enregistrement MX qui désigne un vrai hébergeur de messagerie.
+              </li>
+              <li>
+                <strong>Les boîtes se créent chez LWS</strong>, dans le panneau de l’hébergement du
+                domaine, onglet Emails. Elles sont comprises dans l’hébergement : c’est la façon la
+                moins chère d’ajouter de la <em>capacité</em>. Serveur <code>{HOTE_LWS}</code>,
+                port 993, identifiant = l’adresse complète.
+              </li>
+              <li>
+                <strong>Un domaine neuf n’a pas besoin de vieillir pour recevoir.</strong>{' '}
+                L’âge d’un domaine compte pour ce qu’il ENVOIE, pas pour ce qu’il reçoit : une
+                boîte témoin créée aujourd’hui est utilisable aujourd’hui. C’est l’inverse d’un
+                domaine expéditeur, qui lui demande un mois avant de servir.
+              </li>
+              <li>
+                <strong>Jamais une boîte sur le domaine qui envoie.</strong>{' '}
+                <code>contact@samadigitalstudio.fr</code> écrivant à une adresse du même domaine ne
+                mesure rien : la réputation se construit chez le fournisseur du destinataire, et
+                là le destinataire c’est nous. Ces boîtes-là ne remplacent aucune des cinq familles.
+              </li>
+            </ul>
+          </div>
+
+          <div className="lem-alerte" data-gravite="info">
+            <Info size={14} />
+            <span>
+              <strong>Le mot de passe se tape ici, jamais ailleurs.</strong> Il est chiffré à
+              l’arrivée (AES-256-GCM) et n’est jamais renvoyé au navigateur — pas même à toi. Il ne
+              se colle donc ni dans un fichier, ni dans une conversation : le formulaire est le
+              seul endroit qui sait quoi en faire.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -447,6 +635,12 @@ export function Rechauffeur() {
 
               <Formulaire coffrePret={etat.coffrePret} apres={() => void recharger()} />
             </div>
+
+            <ModeEmploi
+              famillesManquantes={etat.famillesManquantes}
+              capaciteMaillage={etat.capaciteMaillage}
+              cible={Math.max(0, ...etat.expediteurs.map((e) => e.cibleJour))}
+            />
 
             <div className="lem-alerte" data-gravite="info" style={{ marginTop: 16 }}>
               <Flame size={14} />

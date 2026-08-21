@@ -182,3 +182,37 @@ pas. Le réchauffeur a besoin de **sa route, son cron `*/10`, son
    donc son propre journal (`rechauffe_messages`), et le plafond partagé se dit
    dans l'autre sens : le réchauffeur **retranche son volume** de la capacité de
    prospection qu'il rend (`capacite()` dans `sante.ts`).
+
+---
+
+## 7. Remplir le maillage — où est écrit le mode d'emploi
+
+**Il n'est pas ici.** Il est dans l'écran, replié sous le formulaire d'ajout :
+**Prospection › Délivrabilité › Réchauffeur**. C'est là qu'on découvre qu'il
+faut un mot de passe d'application, et là qu'on abandonne faute de le savoir ;
+une consigne qu'il faut aller chercher dans `docs/` ne se lit qu'après avoir
+échoué.
+
+La matière vit dans `src/lib/rechauffeur/fournisseurs.ts` — module pur, testé,
+qui lit ses hôtes IMAP dans `hotes-connus.ts` plutôt que de les recopier. Trois
+choses qu'il fallait écrire une fois pour toutes :
+
+1. **Orange et Free ne se créent pas.** Elles viennent avec une Livebox ou une
+   Freebox. Les deux familles les plus répandues chez nos artisans s'empruntent
+   à quelqu'un, avec son accord — Gmail, Outlook et Yahoo se créent en cinq
+   minutes.
+2. **Microsoft est la seule famille où « branché » n'est pas garanti** :
+   l'authentification IMAP par simple mot de passe y est en retrait au profit
+   d'OAuth. Le repli est d'enregistrer la boîte sans mot de passe — elle reçoit,
+   l'écran dit « envoi à l'aveugle », et personne ne croit à une mesure qui
+   n'existe pas.
+3. **Un domaine neuf n'a pas besoin de vieillir pour RECEVOIR.** L'âge compte
+   pour ce qu'un domaine envoie. Une boîte témoin créée aujourd'hui sert
+   aujourd'hui — l'exact inverse d'un domaine expéditeur, qui demande un mois.
+
+**Le défaut corrigé au passage** : le champ « Serveur IMAP » proposait
+`mail84.lwspanel.com` — le serveur de notre hébergeur — pour *toutes* les
+adresses, Gmail comprise. `hotes-connus.ts` savait répondre depuis le premier
+jour, il n'était simplement jamais consulté par le formulaire. L'hôte se déduit
+désormais de l'adresse, et la route le redéduit de son côté plutôt que de
+réclamer une valeur qu'elle allait ignorer.
