@@ -57,6 +57,11 @@ a{color:inherit;text-decoration:none}
 .page{background:var(--creme);display:flex;flex-direction:column;overflow:hidden}
 .page.dark{position:relative;background:radial-gradient(120% 60% at 20% 4%,rgba(47,122,224,.32),rgba(47,122,224,0) 58%),linear-gradient(168deg,rgba(47,122,224,.24) 0%,rgba(47,122,224,0) 46%,rgba(10,27,51,.6) 100%),var(--nuit);color:var(--casse)}
 .page>*{position:relative;z-index:2}
+/* NE PAS ÉTIRER LA FENÊTRE POUR COMBLER LE BLANC sous la capture. Il vient
+   du margin-top:auto de .cvcta : la maquette ancre l'appel à l'action en bas
+   d'écran, et c'est délibéré. Agrandir la fenêtre recadrerait une image de
+   1200×750 dans un cadre haut, donc PAR LES CÔTÉS — le titre du site du
+   prospect sortirait par la gauche. Le blanc est le moindre mal. */
 .pbody{flex:1;display:flex;flex-direction:column;padding:26px var(--pad) 0;min-height:0}
 .pgfoot{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin:0 var(--pad);padding:13px 0 20px;border-top:1px solid var(--line);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 .dark .pgfoot{border-top-color:rgba(181,208,240,.24);color:rgba(181,208,240,.62)}

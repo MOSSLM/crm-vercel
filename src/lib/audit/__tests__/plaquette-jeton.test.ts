@@ -5,6 +5,7 @@ import {
   marquerPlaquetteVue,
   urlPlaquette,
 } from "../plaquette";
+import { jetonDansLeTexte } from "../plaquette-lien";
 
 /**
  * Le jeton de plaquette — ce qui doit rester vrai le 20 août.
@@ -151,5 +152,41 @@ describe("marquerPlaquetteVue", () => {
     await expect(
       marquerPlaquetteVue(clientAvecRpc(rpc), "a1b2c3d4e5f60718293a4b5c6d7e8f90"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("jetonDansLeTexte", () => {
+  it("retrouve le jeton d'un message rendu par le moteur", () => {
+    const corps =
+      "Voici ce que ça coûte, en une page :\n\n" +
+      "https://crm.samadigitalstudio.fr/plaquette/2283512e590c691c7434be2bb149b97f\n\nMatteo";
+    expect(jetonDansLeTexte(corps)).toBe("2283512e590c691c7434be2bb149b97f");
+  });
+
+  it("ignore le lien collectif — il ne désigne personne", () => {
+    expect(jetonDansLeTexte("https://crm.samadigitalstudio.fr/plaquette")).toBeNull();
+    expect(jetonDansLeTexte("https://crm.samadigitalstudio.fr/plaquette/")).toBeNull();
+  });
+
+  it("accepte un ancien domaine : de vieux messages en base en portent", () => {
+    expect(jetonDansLeTexte("http://ancien.exemple/plaquette/a1b2c3d4e5f60718")).toBe(
+      "a1b2c3d4e5f60718",
+    );
+  });
+
+  it("ignore le lien du rapport d'audit, qui n'est pas une plaquette", () => {
+    expect(
+      jetonDansLeTexte("https://rapport.samadigitalstudio.fr/81700d3b175ad23b5a49c3273ff5d578"),
+    ).toBeNull();
+  });
+
+  it("ne rend rien sur un message sans lien", () => {
+    expect(jetonDansLeTexte("Bonjour, je suis bien avec AthermiK ?")).toBeNull();
+    expect(jetonDansLeTexte(null)).toBeNull();
+    expect(jetonDansLeTexte("")).toBeNull();
+  });
+
+  it("normalise la casse, comme la base l'écrit", () => {
+    expect(jetonDansLeTexte("/plaquette/A1B2C3D4E5F60718")).toBe("a1b2c3d4e5f60718");
   });
 });

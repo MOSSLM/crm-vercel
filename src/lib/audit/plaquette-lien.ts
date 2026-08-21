@@ -58,3 +58,36 @@ export const fonctionPlaquetteAbsente = (
 /** Le message qui dit quoi faire, plutôt que ce qui a cassé. */
 export const MESSAGE_MIGRATION_PLAQUETTE =
   "sql/20260816_plaquettes_par_prospect.sql n'est pas appliquée";
+
+/**
+ * Le jeton de plaquette contenu dans un message, ou `null`.
+ *
+ * POURQUOI ON LE RELIT DU TEXTE PLUTÔT QUE DE LE PASSER EN CHAMP. Le message
+ * d'une tâche est rendu par le moteur, qui y a déjà résolu
+ * `{{company.plaquette_url}}` en une URL à jeton. La présence de ce lien dans
+ * le corps EST le fait qu'une plaquette part — pas un drapeau à poser en plus,
+ * qui pourrait dire le contraire du message qu'il accompagne. Une étape dont on
+ * retire le lien cesse donc d'emporter le PDF, sans qu'on ait à y penser.
+ *
+ * Le lien COLLECTIF (`/plaquette` sans jeton) rend `null`, et c'est voulu : il
+ * ne désigne personne, donc il n'y a pas de document nominatif à fabriquer.
+ *
+ * On accepte n'importe quel hôte. Le CRM a déjà changé de domaine une fois, et
+ * de vieux messages en base portent l'ancien : n'accepter que l'hôte courant
+ * ferait échouer la relecture sur exactement les tâches les plus anciennes.
+ */
+export function jetonDansLeTexte(texte: string | null | undefined): string | null {
+  const m = /\/plaquette\/([a-f0-9]{16,64})\b/i.exec(texte ?? "");
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * L'adresse du PDF de la plaquette d'un prospect.
+ *
+ * Relatif, jamais absolu : il est demandé depuis le CRM par un agent connecté,
+ * et un lien absolu vers la production téléchargerait le document de PROD
+ * pendant une recette. Le nom du fichier est décidé côté serveur — c'est lui
+ * qui connaît le nom de l'entreprise.
+ */
+export const urlPdfPlaquette = (jeton: string): string =>
+  `/api/agent/plaquette/${encodeURIComponent(jeton)}/pdf`;
