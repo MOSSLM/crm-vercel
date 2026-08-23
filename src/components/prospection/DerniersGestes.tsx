@@ -15,38 +15,14 @@
 // affichée avec sa raison en clair. Un bouton grisé sans motif est exactement
 // ce qu'on remplace — la phrase dit quoi faire, le plus souvent « annule
 // l'autre d'abord ».
-import React, { useCallback, useEffect, useState } from 'react'
-import { toast } from 'sonner'
+//
+// La mécanique (lecture, annulation, refus) vit dans `useGestes` : le même
+// bloc existe dans « Ma journée » sous la charte de la maquette — voir
+// `DemRetour`. Ici, il ne reste que l'habillage lemlist.
+import React from 'react'
 import { AlertTriangle, Undo2 } from 'lucide-react'
-import { authedFetch } from '@/utils/authedFetch'
+import { LIBELLE_GESTE, depuis, useGestes } from '@/hooks/useGestes'
 import './lem-skin.css'
-
-interface Geste {
-  id: string
-  geste: 'terminer' | 'ignorer' | 'reporter'
-  faitLe: string
-  entreprise: string | null
-  titre: string | null
-  resume: string
-  verdict: { possible: boolean; motif: string }
-}
-
-const LIBELLE: Record<Geste['geste'], string> = {
-  terminer: 'Terminée',
-  ignorer: 'Ignorée',
-  reporter: 'Reportée',
-}
-
-/** « il y a 4 min », « il y a 2 h », « le 21/08 » — jamais un horodatage brut. */
-function depuis(iso: string): string {
-  const quand = new Date(iso).getTime()
-  if (Number.isNaN(quand)) return ''
-  const minutes = Math.floor((Date.now() - quand) / 60000)
-  if (minutes < 1) return 'à l’instant'
-  if (minutes < 60) return `il y a ${minutes} min`
-  if (minutes < 60 * 24) return `il y a ${Math.floor(minutes / 60)} h`
-  return `le ${new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`
-}
 
 export function DerniersGestes({
   endpoint = '/api/prospection/gestes',
@@ -56,43 +32,7 @@ export function DerniersGestes({
   /** Rappelé après une annulation réussie : l'écran d'à côté doit se relire. */
   apres?: () => void
 }) {
-  const [gestes, setGestes] = useState<Geste[]>([])
-  const [enCours, setEnCours] = useState<string | null>(null)
-
-  const recharger = useCallback(async () => {
-    try {
-      const res = await authedFetch(`${endpoint}?limite=8`)
-      if (!res.ok) return // migration absente ou droits : on ne montre rien
-      const data = await res.json()
-      setGestes(Array.isArray(data?.gestes) ? data.gestes : [])
-    } catch {
-      // silencieux : ce bloc est un confort, il ne doit jamais casser la page
-    }
-  }, [endpoint])
-
-  useEffect(() => {
-    void recharger()
-  }, [recharger])
-
-  const annuler = async (g: Geste) => {
-    setEnCours(g.id)
-    try {
-      const res = await authedFetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: g.id }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error ?? 'Annulation impossible')
-      toast.success(`C’est revenu en arrière : ${data.motif}`)
-      await recharger()
-      apres?.()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Annulation impossible')
-    } finally {
-      setEnCours(null)
-    }
-  }
+  const { gestes, enCours, annuler } = useGestes({ endpoint, apres })
 
   // RIEN À MONTRER, RIEN À AFFICHER. Un bloc vide « aucun geste récent » n'aide
   // personne et occupe le haut d'un écran qui sert à autre chose.
@@ -117,7 +57,7 @@ export function DerniersGestes({
             <tr key={g.id}>
               <td style={{ width: 92 }}>
                 <span className="lem-pill" data-ton={g.geste === 'ignorer' ? 'attention' : 'neutre'}>
-                  {LIBELLE[g.geste]}
+                  {LIBELLE_GESTE[g.geste]}
                 </span>
               </td>
               <td>

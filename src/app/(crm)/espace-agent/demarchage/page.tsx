@@ -10,6 +10,7 @@ import { DemHead } from "@/components/agent-portal/demarchage/DemHead";
 import { DemSeqStrip } from "@/components/agent-portal/demarchage/DemSeqStrip";
 import { DemActionCard } from "@/components/agent-portal/demarchage/DemActionCard";
 import { DemHisto } from "@/components/agent-portal/demarchage/DemHisto";
+import { DemRetour } from "@/components/agent-portal/demarchage/DemRetour";
 import { DemSide } from "@/components/agent-portal/demarchage/DemSide";
 import { DemSearch } from "@/components/agent-portal/demarchage/DemSearch";
 import { DemHorsFile } from "@/components/agent-portal/demarchage/DemHorsFile";
@@ -607,6 +608,17 @@ export default function AgentDemarchagePage() {
         )}
 
         <main className="dm-main">
+          {/* LE RATTRAPAGE AVANT LE TRAVAIL. Il ne dépend pas de la tâche
+              affichée — ce sont les derniers gestes de l'agent, quel que soit
+              le prospect ouvert au centre — et il s'efface tout seul quand il
+              n'y a plus rien à annuler. Le toast, lui, ne sert qu'aux cinq
+              secondes qui suivent le clic. */}
+          <DemRetour
+            apres={() => {
+              setHistoryKey((k) => k + 1);
+              void loadQueue();
+            }}
+          />
           {horsFile != null ? (
             ficheHorsFile && (
               <>
