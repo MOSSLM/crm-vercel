@@ -370,6 +370,38 @@ export default function AgentDemarchagePage() {
    * l'étape que la réponse débloque), on la propose en un clic — sans jamais
    * l'imposer.
    */
+  /**
+   * Le retour en arrière — la photo d'avant, reposée.
+   *
+   * Le serveur a photographié la tâche et son inscription JUSTE AVANT
+   * d'écrire ; annuler consiste à reposer cette photo, pas à recalculer un état
+   * inverse. Il refuse de lui-même quand quelque chose s'est passé depuis — un
+   * geste plus récent sur le même prospect, ou un message réellement parti — et
+   * il dit alors laquelle des deux raisons, en clair.
+   *
+   * CE QUE ÇA NE FAIT PAS : rappeler un message. Un WhatsApp ouvert dans
+   * `wa.me` est parti pour de bon. Ce qui revient, c'est notre comptabilité.
+   */
+  const annulerLeGeste = useCallback(
+    async (gesteId: string) => {
+      try {
+        const res = await authedFetch("/api/agent/gestes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: gesteId }),
+        });
+        const data = (await res.json()) as { motif?: string; error?: string };
+        if (!res.ok) throw new Error(data?.error ?? "Annulation impossible");
+        toast.success(`C'est revenu en arrière : ${data.motif ?? "l'état précédent est reposé"}.`);
+        setHistoryKey((k) => k + 1);
+        await loadQueue(null);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Annulation impossible");
+      }
+    },
+    [loadQueue],
+  );
+
   const handlePatch = useCallback(
     async (body: Omit<DemarchagePatchBody, "id">) => {
       if (!task) return;
@@ -388,6 +420,11 @@ export default function AgentDemarchagePage() {
           body: JSON.stringify({ id: task.id, ...body }),
         });
         if (!res.ok) throw new Error();
+        // `geste_id` est la photo prise juste avant l'écriture : c'est elle qui
+        // rend le geste réversible. `null` quand rien n'a pu être photographié
+        // — le bouton ne s'affiche alors pas, plutôt que d'échouer au clic.
+        const gesteId = ((await res.json().catch(() => ({}))) as { geste_id?: string | null })
+          .geste_id;
         setHistoryKey((k) => k + 1);
         const rows = await loadQueue(suivante);
         const suite = enrollmentId
@@ -404,6 +441,14 @@ export default function AgentDemarchagePage() {
                 },
               }
             : undefined,
+          // L'ANNULATION TOUJOURS AU MÊME ENDROIT, quelle que soit l'autre
+          // action proposée : on ne cherche pas un bouton de rattrapage.
+          // Et ce n'est pas la seule porte — le tableau des tâches garde la
+          // liste des derniers gestes, pour ceux qu'on regrette une heure plus
+          // tard plutôt que dans les cinq secondes.
+          cancel: gesteId
+            ? { label: "Annuler ce geste", onClick: () => void annulerLeGeste(gesteId) }
+            : undefined,
         });
       } catch {
         toast.error("Action impossible.");
@@ -411,7 +456,7 @@ export default function AgentDemarchagePage() {
         setBusy(false);
       }
     },
-    [task, shown, loadQueue],
+    [task, shown, loadQueue, annulerLeGeste],
   );
 
   const onLogged = useCallback(() => setHistoryKey((k) => k + 1), []);

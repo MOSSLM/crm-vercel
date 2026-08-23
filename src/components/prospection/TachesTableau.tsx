@@ -37,6 +37,7 @@ import {
   type Champ, type Colonne, type CriteresVue, type Filtre, type LigneTache,
   type Operateur, type SeauEcheance,
 } from '@/lib/prospection/vue-taches'
+import { DerniersGestes } from './DerniersGestes'
 import './lem-skin.css'
 
 interface VueEnregistree {
@@ -361,6 +362,16 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
             <Bookmark size={15} /> Enregistrer la vue
           </button>
         </header>
+
+        {/* ── Le retour en arrière ────────────────────────────────────────
+            Placé SOUS L'EN-TÊTE et au-dessus des filtres : on cherche « ce que
+            je viens de faire » avant de replonger dans la file, pas après
+            l'avoir parcourue. Le bloc ne s'affiche pas quand il n'y a rien à
+            annuler. */}
+        <DerniersGestes
+          endpoint={estAgent ? '/api/agent/gestes' : '/api/prospection/gestes'}
+          apres={() => void charger()}
+        />
 
         {tronque && (
           <div className="lem-alerte" data-gravite="bloquant" style={{ marginBottom: 14 }}>

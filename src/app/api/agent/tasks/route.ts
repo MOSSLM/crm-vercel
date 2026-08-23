@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { advanceEnrollmentAfterTask, garerTacheAnnulee, sortirDeSequence } from "@/lib/automations/engine";
+import { journaliserGeste } from "@/lib/prospection/gestes-db";
 import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
 import { dayStartIso } from "@/lib/agent-progress";
 import { intentByEnterprise } from "@/lib/analytics-radar/site-intent";
@@ -603,6 +604,25 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
       },
     };
   }
+  // ── LA PHOTO D'AVANT, PRISE ICI ET PAS AILLEURS ────────────────────────
+  //
+  // Avant la première écriture, pendant que l'état d'origine existe encore.
+  // C'est ce qui rend « revenir à la tâche précédente » exact plutôt que
+  // reconstitué : l'avancement qui suit incrémente des compteurs de tours,
+  // réancre les délais et réécrit les sacs de variables — personne ne saurait
+  // défaire ça à l'envers.
+  //
+  // La mise de côté n'est pas journalisée : elle ne fait rien avancer, et
+  // « annuler un report » c'est simplement reporter à nouveau.
+  const gesteId =
+    status === "snoozed"
+      ? null
+      : await journaliserGeste(sc, {
+          geste: status === "done" ? "terminer" : "ignorer",
+          tacheId: id,
+          faitPar: user.id,
+        });
+
   const { data, error } = await sc
     .from("prospection_tasks")
     .update(patch)
@@ -738,5 +758,8 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     }
   }
 
-  return json(data, { headers: cors });
+  // `geste_id` permet à l'écran de proposer « Annuler » tout de suite, sans
+  // relire le journal. `null` quand rien n'a été photographié : le bouton ne
+  // s'affiche alors pas, plutôt que d'échouer au clic.
+  return json({ ...data, geste_id: gesteId }, { headers: cors });
 });

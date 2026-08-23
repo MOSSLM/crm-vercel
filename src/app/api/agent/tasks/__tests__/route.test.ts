@@ -361,7 +361,11 @@ describe("PATCH /api/agent/tasks — la première touche", () => {
     const ops = brancher({ garde: GARDE });
     return patch({ id: "t1", status: "done" }).then((res) => {
       expect(res.status).toBe(200);
-      const ecriture = (ops.entreprises ?? [])[0] ?? [];
+      // DEUX CHAÎNES TOUCHENT `entreprises` DEPUIS LE 23/08 : le journal des
+      // gestes lit d'abord `premiere_touche_le` pour savoir s'il devra la
+      // retirer en cas d'annulation, puis vient l'écriture. On cherche donc
+      // celle qui écrit, au lieu de supposer que c'est la première.
+      const ecriture = (ops.entreprises ?? []).find((c) => c.some((o) => o.m === "update")) ?? [];
       const update = ecriture.find((o) => o.m === "update");
       expect((update?.args[0] as Record<string, unknown>)?.premiere_touche_le).toEqual(expect.any(String));
       expect(ecriture).toContainEqual({ m: "eq", args: ["id", 42] });
