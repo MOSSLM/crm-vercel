@@ -743,6 +743,13 @@ export interface SiteSection {
   animation?: SectionAnimation;
 }
 
+/** Une ligne du plan de redirection. Défini dans site-builder/redirections.ts. */
+export interface RegleRedirection {
+  de: string;
+  vers: string;
+  temporaire?: boolean;
+}
+
 export interface SiteConfigPage {
   id: string;
   slug: string;
@@ -757,6 +764,13 @@ export interface SiteConfig {
   settings: ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
   pages: SiteConfigPage[];
   sections?: SiteSection[]; // deprecated — migrated to pages on load
+  /**
+   * Plan de redirection des URLs de l'ancien site du client
+   * (`src/lib/site-builder/redirections.ts`). Vit ici pour être figé dans
+   * `published_site_config` à la publication, comme les menus et le SEO :
+   * un site publié ne doit jamais lire la table de routage d'un brouillon.
+   */
+  redirections?: RegleRedirection[];
 }
 
 // Extended site record with publishing fields

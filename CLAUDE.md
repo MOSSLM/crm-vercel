@@ -58,6 +58,20 @@ il ne fait que masquer la barre : la page reste tirable au doigt. Il faut la
 règle sur `html` **et** sur `body`, et en `clip` — `hidden` ferait du `body` un
 conteneur de défilement et décollerait tous les en-têtes `sticky`.
 
+**Mettre un site sur le domaine d'un client** a sa procédure :
+`docs/site-builder/mise-en-ligne-domaine-client.md`. Un seul point ne se
+rattrape pas — **le plan de redirection se construit AVANT la bascule du DNS** :
+une fois le domaine pointé chez nous, `client.fr/sitemap.xml` rend le NÔTRE, et
+le plan se bâtit sur les URLs du nouveau site sans que rien ne le signale. Tout
+le reste (domaine, DNS, `noindex` de la démo, SEO par page) se corrige après
+coup ; l'ancienneté des vieilles URLs, non.
+
+Deux documents voisins portent ce qui a été **mesuré** autour de ces sites :
+`docs/site-builder/securite-et-exploitation.md` (dont les 21 routes
+`site-builder/[siteId]` ouvertes à tout compte authentifié) et
+`docs/site-builder/performance-des-sites-publies.md` (d'où viennent les 5 à 8 s
+d'affichage, et ce qui se gagne sans toucher au rendu).
+
 **Les images d'un artisan sont à lui seul.** Jamais versées dans le fonds
 commun — `entreprise_id` est un mur, pas un tri.
 

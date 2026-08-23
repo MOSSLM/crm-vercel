@@ -7,11 +7,11 @@ import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
   Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive, Images, History as HistoryIcon,
-  Stethoscope,
+  Stethoscope, Search,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
-import type { SitemapPage } from "@/types";
+import type { SitemapPage, SeoMeta } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { tweakEnabled } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
@@ -20,6 +20,7 @@ import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport"
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { normalizePublishedSubdomainInput } from "@/lib/site-builder/publish-subdomain";
+import { hostCanoniqueDuSite } from "@/lib/site-builder/host-canonique";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
 import { buildHydrationReport, mergeHydrationReports } from "@/lib/site-builder/claude-design/hydration-report";
@@ -38,6 +39,8 @@ import { AutoImagesPanel } from "./AutoImagesPanel";
 import { UpdateTemplatePagesDialog } from "./UpdateTemplatePagesDialog";
 import { CopyImagesDialog } from "./CopyImagesDialog";
 import { RestoreImagesDialog } from "./RestoreImagesDialog";
+import { MiseEnLigneDialog } from "./MiseEnLigneDialog";
+import { SeoPagesPanel } from "./SeoPagesPanel";
 
 interface PageData {
   slug: string;
@@ -62,11 +65,14 @@ interface BoardData {
   /** Projet lead magnet du site — transmis tel quel au résolveur de variables. */
   leadMagnetProjectId?: string | null;
   publishedSubdomain: string | null;
+  publishedDomain: string | null;
+  /** Défauts SEO du site (`site_config.seo`). Les surcharges sont sur `sitemap`. */
+  seo: SeoMeta;
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
 
 
-type LeftTab = "theme" | "tags";
+type LeftTab = "theme" | "tags" | "seo";
 type Viewport = "desktop" | "mobile";
 type SaveState = "saved" | "pending";
 
@@ -94,6 +100,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [importPagesOpen, setImportPagesOpen] = React.useState(false);
   const [copyImagesOpen, setCopyImagesOpen] = React.useState(false);
   const [restoreOpen, setRestoreOpen] = React.useState(false);
+  const [miseEnLigneOpen, setMiseEnLigneOpen] = React.useState(false);
   const [companies, setCompanies] = React.useState<Company[]>([]);
   const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
@@ -233,6 +240,33 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     debounce("sitemap", async () => {
       await authedFetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sitemap }),
+      });
+    });
+  };
+
+  // Le SEO par page vit sur le plan du site, comme le tag de service : même
+  // écriture, même debounce, même route. Les défauts du site, eux, passent par
+  // une route dédiée qui FUSIONNE côté serveur — `site_config` porte aussi le
+  // plan de redirection, et le réécrire entier depuis une copie partielle
+  // l'effacerait sans bruit.
+  const handleSeoPage = (slug: string, patch: Partial<SitemapPage>) => {
+    if (!data) return;
+    const sitemap = data.sitemap.map((p) => (p.slug === slug ? { ...p, ...patch } : p));
+    setData({ ...data, sitemap });
+    debounce("sitemap", async () => {
+      await authedFetch(`/api/site-builder/sites/${siteId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sitemap }),
+      });
+    });
+  };
+
+  const handleSeoSite = (patch: SeoMeta) => {
+    if (!data) return;
+    const seo = { ...data.seo, ...patch };
+    setData({ ...data, seo });
+    debounce("seo", async () => {
+      await authedFetch(`/api/site-builder/sites/${siteId}/seo`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seo }),
       });
     });
   };
@@ -444,14 +478,18 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           >
             <Eye className="ico-sm" />Aperçu
           </a>
-          {!data.isTemplate && data.publishedSubdomain ? (
+          {/* L'adresse OFFICIELLE, pas celle qu'on a sous la main : dès qu'un
+              domaine client est rattaché, c'est lui qu'on ouvre — c'est ce que
+              le client a acheté, et c'est ce que Google retient. */}
+          {!data.isTemplate && (data.publishedDomain || data.publishedSubdomain) ? (
             <a
-              href={`https://${data.publishedSubdomain}.${SITE_DOMAIN}`}
+              href={hostCanoniqueDuSite({ publishedDomain: data.publishedDomain, publishedSubdomain: data.publishedSubdomain }) ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "var(--info)" }}
             >
-              <Globe className="ico-xs" />{data.publishedSubdomain}.{SITE_DOMAIN}
+              <Globe className="ico-xs" />
+              {data.publishedDomain || `${data.publishedSubdomain}.${SITE_DOMAIN}`}
             </a>
           ) : null}
           <button
@@ -473,9 +511,18 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           {data.isTemplate ? (
             <button className="cd-btn accent" onClick={handleCreateTemplate}><CopyPlus className="ico-sm" />Créer un template</button>
           ) : (
-            <button className="cd-btn accent" onClick={handlePublish} disabled={publishing}>
-              <Rocket className="ico-sm" />{data.publishedSubdomain ? "Republier" : "Publier"}
-            </button>
+            <>
+              <button
+                className="cd-btn outline"
+                onClick={() => setMiseEnLigneOpen(true)}
+                title="Rattacher le domaine du client et poser le plan de redirection de son ancien site"
+              >
+                <Globe className="ico-sm" />Mise en ligne
+              </button>
+              <button className="cd-btn accent" onClick={handlePublish} disabled={publishing}>
+                <Rocket className="ico-sm" />{data.publishedSubdomain ? "Republier" : "Publier"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -506,11 +553,22 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <div className="cd-left-tabs">
             <button className={"cd-left-tab" + (leftTab === "theme" ? " on" : "")} onClick={() => setLeftTab("theme")}><Sparkles className="ico-sm" />Thème</button>
             <button className={"cd-left-tab" + (leftTab === "tags" ? " on" : "")} onClick={() => setLeftTab("tags")}><Tags className="ico-sm" />Tags</button>
+            <button className={"cd-left-tab" + (leftTab === "seo" ? " on" : "")} onClick={() => setLeftTab("seo")} title="Titre et description de CETTE page — un moteur lit huit titres identiques comme huit pages interchangeables."><Search className="ico-sm" />SEO</button>
           </div>
           <div className="cd-left-body">
-            {leftTab === "theme"
-              ? <DesignTweaks controls={themeControls} tweaks={data.tweaks} onChange={handleTweak} />
-              : <PageTags sitemap={data.sitemap} company={company} companyVars={companyVars} onChange={handleTag} />}
+            {leftTab === "theme" ? (
+              <DesignTweaks controls={themeControls} tweaks={data.tweaks} onChange={handleTweak} />
+            ) : leftTab === "tags" ? (
+              <PageTags sitemap={data.sitemap} company={company} companyVars={companyVars} onChange={handleTag} />
+            ) : (
+              <SeoPagesPanel
+                page={data.sitemap.find((p) => p.slug === activeSlug) ?? null}
+                seoSite={data.seo ?? {}}
+                variables={previewVars ?? {}}
+                onChangePage={handleSeoPage}
+                onChangeSite={handleSeoSite}
+              />
+            )}
           </div>
         </aside>
 
@@ -608,6 +666,12 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
         siteId={siteId}
         onClose={() => setRestoreOpen(false)}
         onDone={load}
+      />
+
+      <MiseEnLigneDialog
+        open={miseEnLigneOpen}
+        siteId={siteId}
+        onClose={() => { setMiseEnLigneOpen(false); load(); }}
       />
     </div>
   );

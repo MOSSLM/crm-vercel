@@ -520,3 +520,57 @@
 .lem-skin .lots-etat[data-marche="en_file"]{--lots-teinte:var(--lem-bleu);--lots-voile:var(--lem-bleu-voile)}
 .lem-skin .lots-etape{min-width:190px}
 .lem-skin .lots-manques{font-size:11.5px;color:var(--lem-gris-2);max-width:210px}
+
+/* ── La frise des blocs ──────────────────────────────────────────────── */
+/* « Ce qui manque c'est vraiment une vue concrète sur ce qu'il se passe dans
+ * les séquences, où on en est. » Un tableau aurait répondu à la lettre et raté
+ * l'essentiel : une séquence se lit dans son ORDRE, et un empilement de lignes
+ * ne dit pas qu'entre l'étape 2 et l'étape 6 il n'y a plus personne.
+ *
+ * LARGEUR FIXE ET DÉFILEMENT ASSUMÉ. Les séquences font ici jusqu'à 22 blocs :
+ * les répartir sur la largeur donnerait des colonnes de 40 px illisibles. On
+ * fixe donc la colonne et on laisse la frise défiler — c'est la carte des
+ * occupants qui compte, pas de tout voir sans bouger.
+ *
+ * LE VIDE SE VOIT SANS S'EFFACER : un bloc sans personne garde sa place et son
+ * numéro (`opacity`, pas `display:none`), sinon la frise mentirait sur la
+ * forme de la séquence. */
+
+.lem-skin .lem-frise {
+  display: flex; overflow-x: auto;
+  border-top: 1px solid var(--lem-bord);
+}
+.lem-skin .lem-bloc {
+  flex: 0 0 128px; min-width: 128px;
+  padding: 10px 12px 12px;
+  border-right: 1px solid var(--lem-bord);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.lem-skin .lem-bloc:last-child { border-right: 0; }
+.lem-skin .lem-bloc[data-vide="oui"] { opacity: .48; }
+/* Un bloc où quelqu'un est garé porte un liseré : c'est le seul état qu'on
+   veut repérer en balayant la frise des yeux, sans lire les chiffres. */
+.lem-skin .lem-bloc[data-garees="oui"] { background: var(--lem-danger-voile); }
+.lem-skin .lem-bloc .rang {
+  display: flex; align-items: center; gap: 6px;
+  font: 500 10.5px/1.4 var(--lem-police); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--lem-gris-2);
+}
+.lem-skin .lem-bloc .rang .n {
+  width: 17px; height: 17px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--lem-survol); color: var(--lem-gris-2);
+  font-size: 9.5px; font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.lem-skin .lem-bloc .titre {
+  font-size: 12px; line-height: 1.3; color: var(--lem-encre);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lem-skin .lem-bloc .compte {
+  font: 700 21px/1 var(--lem-police); font-variant-numeric: tabular-nums;
+  color: var(--lem-encre); margin-top: auto;
+}
+.lem-skin .lem-bloc .compte small {
+  font: 500 11px/1 var(--lem-police); color: var(--lem-gris-2); margin-left: 5px;
+}
+.lem-skin .lem-bloc .etats { display: flex; flex-wrap: wrap; gap: 4px; }

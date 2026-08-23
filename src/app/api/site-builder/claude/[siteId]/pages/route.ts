@@ -20,7 +20,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
 
   const [{ data: site, error: sErr }, { data: instances, error: iErr }] = await Promise.all([
-    supabase.from("sites").select("sitemap, shared_assets, tweaks, name, is_template, enterprise_id, lead_magnet_project_id, published_subdomain").eq("id", params.siteId).single(),
+    supabase.from("sites").select("sitemap, shared_assets, tweaks, name, is_template, enterprise_id, lead_magnet_project_id, published_subdomain, published_domain, site_config").eq("id", params.siteId).single(),
     supabase
       .from("site_section_instances")
       .select("id, page_slug, content")
@@ -109,6 +109,10 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     leadMagnetProjectId:
       (site as { lead_magnet_project_id?: string | null } | null)?.lead_magnet_project_id ?? null,
     publishedSubdomain: (site as { published_subdomain?: string | null } | null)?.published_subdomain ?? null,
+    publishedDomain: (site as { published_domain?: string | null } | null)?.published_domain ?? null,
+    // Valeurs SEO par défaut du site. Les surcharges par page vivent, elles,
+    // sur chaque entrée du plan du site (`sitemap`), qui est déjà renvoyé.
+    seo: ((site as { site_config?: { seo?: Record<string, string> } | null } | null)?.site_config?.seo ?? {}),
   });
 });
 

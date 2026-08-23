@@ -719,6 +719,30 @@ export const BOTS: Bot[] = [
     ],
   },
 
+  {
+    id: "plan-redirections",
+    nom: "Plan de redirection depuis l'ancien site",
+    phase: "fabrication",
+    execution: "route-api",
+    statut: "actif",
+    chemin:
+      "src/app/api/site-builder/sites/[siteId]/redirections/plan/route.ts · src/lib/site-builder/plan-redirections.ts",
+    resume:
+      "Lit le sitemap de l'ancien site du client et propose, URL par URL, vers quelle page du nouveau site rediriger.",
+    entree: "Le domaine de l'ancien site + le plan de pages du nouveau",
+    sortie: "Des propositions notées et une liste d'orphelins — rien n'est écrit",
+    ecrit: false,
+    externes: ["Le site du client (lecture HTTP)"],
+    cout: "Gratuit. Quelques requêtes HTTP, plafonnées à 6 sitemaps et 1500 URLs.",
+    commande: "Éditeur du design → « Mise en ligne » → « Proposer depuis l'ancien site »",
+    regles: [
+      "À LANCER AVANT LA BASCULE DU DNS. Une fois le domaine pointé chez nous, son sitemap.xml est le NÔTRE : le plan se bâtirait sur les URLs du nouveau site. La route refuse un domaine déjà rattaché, mais elle ne peut rien contre un DNS basculé sans rattachement.",
+      "Il propose, il n'écrit pas. L'enregistrement est un second geste (PUT /redirections), après relecture — un rapprochement par mots se trompe, et une redirection fausse est pire qu'une redirection absente.",
+      "Sans sitemap, le repli lit les liens de l'accueil : la couverture est partielle par construction. Les pages qu'aucun lien ne pointe plus n'existent que dans la Search Console du client.",
+      "Le score n'est pas une garantie : au-dessous de 0,5, relire une par une.",
+    ],
+  },
+
   /* ──────────────────────── Contrôle et rattrapage ────────────────────────── */
   {
     id: "preparer-audit",

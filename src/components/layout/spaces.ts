@@ -115,6 +115,11 @@ export const SPACES: Space[] = [
       { title: "Campagnes", href: "/prospection/campagnes", icon: Send },
       { title: "Conversations", href: "/prospection/conversations", icon: MessagesSquare },
       { title: "Séquences", href: "/automations/sequences", icon: Workflow },
+      // JUSTE APRÈS LES SÉQUENCES, PARCE QUE C'EST LA QUESTION QU'ON SE POSE
+      // EN SORTANT DE L'ÉDITEUR. « Séquences » dit ce que la séquence FERA ;
+      // « Où on en est » dit qui est dedans, arrêté sur quel bloc, et qui n'y
+      // avance plus. Les statistiques, elles, ne parlent que du passé.
+      { title: "Où on en est", href: "/prospection/etat-sequences", icon: GitBranch },
       { title: "Semaine", href: "/automations/semaine", icon: CalendarDays },
       { title: "Tâches", href: "/prospection/taches", icon: ListTodo },
       { title: "Signaux", href: "/prospection/signaux", icon: Bell },

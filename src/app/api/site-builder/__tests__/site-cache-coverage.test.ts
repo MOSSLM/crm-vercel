@@ -33,6 +33,8 @@ const EXEMPT: Record<string, string> = {
     "moves an opportunité to another pipeline stage; touches no column the site renders",
   "sites/[siteId]/versions/route.ts":
     "appends a site_versions snapshot row; restoring one is what changes the site, and that route does invalidate",
+  "sites/[siteId]/redirections/plan/route.ts":
+    "POST parce qu'il prend un corps, mais il n'écrit RIEN : il lit l'ancien site du client et rend une proposition. L'enregistrement est un second geste, sur PUT /redirections, qui invalide",
   "sites/[siteId]/brief/route.ts":
     "writes only site_briefs — an internal sales document; nothing it stores is read by the renderer",
 };

@@ -173,6 +173,30 @@ describe("deciderDestination", () => {
     }
   });
 
+  it("laisse atteindre le site les URLs de page d'un ancien site", () => {
+    // Ce sont les URLs que Google connaît, et elles portent un point : la garde
+    // « contient un point = statique » les traitait comme des fichiers, donc
+    // elles ne parvenaient jamais à la route du site et aucune redirection ne
+    // pouvait les rattraper.
+    for (const p of ["/nos-services.html", "/contact.php", "/Default.aspx", "/index.htm"]) {
+      expect(deciderDestination("plomberie-dupont.fr", p, DOMAIN)).toEqual({
+        kind: "site",
+        segment: "plomberie-dupont.fr",
+      });
+      expect(deciderDestination(`ecotherme.${DOMAIN}`, p, DOMAIN)).toEqual({
+        kind: "site",
+        segment: "ecotherme",
+      });
+    }
+    // Les vrais statiques restent des statiques.
+    for (const p of ["/logo.png", "/style.css", "/doc.pdf"]) {
+      expect(deciderDestination("plomberie-dupont.fr", p, DOMAIN)).toEqual({ kind: "next" });
+    }
+    // Et sur les hôtes du CRM, rien ne bouge.
+    expect(deciderDestination(`app.${DOMAIN}`, "/vieux.php", DOMAIN)).toEqual({ kind: "next" });
+    expect(deciderDestination(DOMAIN, "/vieux.php", DOMAIN)).toEqual({ kind: "next" });
+  });
+
   it("renvoie le portail de gestion sur l'hôte du CRM", () => {
     // Il s'affichait jusqu'ici sous la marque du client. Redirection et non 404 :
     // un lien de portail déjà partagé continue de fonctionner.

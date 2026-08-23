@@ -2,6 +2,7 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage, SeoMeta } from "@/types";
+import { parseRegles, type RegleRedirection } from "@/lib/site-builder/redirections";
 import {
   deriveLayoutFieldsFromVariables,
   resolveEnterpriseVariables,
@@ -166,6 +167,13 @@ export interface ResolvedSite {
   publishedSitemap?: SitemapPage[] | null;
   /** Site-level SEO/social defaults from the published site_config snapshot. */
   seo?: SeoMeta | null;
+  /**
+   * Plan de redirection des URLs de l'ANCIEN site du client, figé au moment de
+   * la publication comme le reste du snapshot. Lu par les routes publiques
+   * avant de rendre un 404 — c'est ce qui garde l'ancienneté acquise par les
+   * vieilles URLs le jour où le domaine bascule.
+   */
+  redirections?: RegleRedirection[];
   /** Carte OpenGraph pré-générée (URL storage). null ⇒ à fabriquer.
    *  Toujours lue avec `?? null` : la colonne peut manquer en base — c'est la
    *  règle de `schema-drift.ts`, et c'est ce qui empêche une migration non
@@ -336,6 +344,10 @@ async function resolveSiteUncached(
   const menus = publishedSiteConfig?.menus ?? null;
   const faviconUrl = publishedSiteConfig?.faviconUrl ?? null;
   const seo = publishedSiteConfig?.seo ?? null;
+  // Lu par `parseRegles` et pas tel quel : le plan dort en JSONB, donc une
+  // ligne abîmée par une écriture ancienne ne doit pas priver le site de
+  // TOUTES ses redirections.
+  const redirections = parseRegles(publishedSiteConfig?.redirections);
 
   // Claude Design render data: prefer the published snapshot, fall back to live
   // (consistent with the rest of the resolver). Only set for is_claude_design.
@@ -373,6 +385,7 @@ async function resolveSiteUncached(
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
     seo,
+    redirections,
     ogImageUrl: siteRow.og_image_url ?? null,
     ogShotUrl: siteRow.og_shot_url ?? null,
     ogLogoUrl: siteRow.og_logo_url ?? null,

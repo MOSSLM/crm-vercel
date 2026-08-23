@@ -871,3 +871,26 @@
 /* Les barres de filtres perdent leur bordure basse quand elles s'enchaînent :
    quatre traits pleins d'affilée hachaient le rail en tranches. */
 .dm-skin .dm-filt+.dm-filt{border-top:0;padding-top:0}
+
+/* ── La mini-carte de la frise ───────────────────────────────────────── */
+/* LA FRISE MENTAIT PAR CADRAGE. `.dm-steps` défile, et ses colonnes font
+ * 104 px minimum : une séquence de 22 blocs (S1, mesurée le 23/08/2026) tient
+ * sur 2 288 px dans une colonne qui en fait 600. L'étape en cours était donc
+ * hors champ la plupart du temps — on ouvrait un prospect sans voir où il en
+ * était, ce qui était exactement le grief.
+ *
+ * DEUX CORRECTIFS, ET LES DEUX SONT NÉCESSAIRES : la frise se recadre sur
+ * l'étape en cours (code), et cette barre montre la séquence ENTIÈRE, toujours,
+ * quelle que soit sa longueur. Elle ne remplace pas la frise — on n'y lit aucun
+ * libellé — elle dit la POSITION, et sert de barre de navigation. */
+
+.dm-skin .dm-mini{display:flex;align-items:flex-end;gap:2px;padding:7px 13px 8px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.dm-skin .dm-mini button{appearance:none;border:0;padding:0;flex:1;min-width:3px;height:7px;border-radius:2px;background:var(--bg-3);cursor:pointer;transition:height .12s ease,background .12s ease}
+.dm-skin .dm-mini button:hover{background:var(--border-strong)}
+.dm-skin .dm-mini button[data-s="done"]{background:var(--ok);opacity:.55}
+.dm-skin .dm-mini button[data-s="cur"]{background:var(--accent);height:13px}
+/* Les blocs de structure (condition, aiguillage) ne sont pas des étapes qu'on
+   franchit : ils se voient à mi-hauteur pour que la barre reste une carte de
+   la séquence et non un compteur de gestes. */
+.dm-skin .dm-mini button[data-struct]{height:4px}
+.dm-skin .dm-mini button[data-struct][data-s="cur"]{height:13px}

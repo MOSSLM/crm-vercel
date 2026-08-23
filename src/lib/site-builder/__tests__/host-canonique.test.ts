@@ -72,6 +72,27 @@ describe("buildPageMetadata — l'invariant des deux espaces d'URL", () => {
     expect(String(depuisDomaine.metadataBase)).toBe("https://plomberie-dupont.fr/");
   });
 
+  it("désindexe l'hôte qui n'est pas l'adresse officielle, et lui seul", () => {
+    // Le sous-domaine démo reste servi après le rattachement du domaine — c'est
+    // voulu, des liens déjà envoyés pointent dessus. Mais il rend les MÊMES
+    // pages : sans `noindex`, le client peut se retrouver indexé sous notre
+    // marque, ce que le canonical seul ne garantit pas (c'est un conseil).
+    const depuisSousDomaine = buildPageMetadata(site, undefined, "dupont", `https://dupont.${DOMAIN}`, "/");
+    const depuisDomaine = buildPageMetadata(site, undefined, "plomberie-dupont.fr", "https://plomberie-dupont.fr", "/");
+
+    expect(depuisSousDomaine.robots).toEqual({ index: false, follow: true });
+    expect(depuisDomaine.robots).toBeUndefined();
+  });
+
+  it("n'indexe pas moins une démo qui n'a pas encore de domaine", () => {
+    // Sans domaine client, le sous-domaine EST l'adresse officielle : le
+    // désindexer éteindrait les 36 démos publiées.
+    const demo = { ...site, publishedDomain: null } as unknown as ResolvedSite;
+    const meta = buildPageMetadata(demo, undefined, "dupont", `https://dupont.${DOMAIN}`, "/");
+    expect(meta.robots).toBeUndefined();
+    expect(meta.alternates?.canonical).toBe(`https://dupont.${DOMAIN}/`);
+  });
+
   it("ne titre jamais une page avec l'hôte brut", () => {
     // Le 3e argument reçoit le segment de route, qui porte un hôte complet sur
     // l'espace /site/{host}. Un site sans companyName titrait donc

@@ -4,10 +4,17 @@ import { resolveSite } from "@/lib/site-resolver";
 import { SitePageView } from "@/components/site-builder/SitePageView";
 import { buildPageMetadata } from "@/lib/site-builder/build-page-metadata";
 import { origineRequete } from "@/lib/site-builder/origine-requete";
+import { appliquerRedirection } from "@/lib/site-builder/appliquer-redirection";
 import type { Metadata } from "next";
 
 interface SitePageProps {
   params: Promise<{ subdomain: string }>;
+  /**
+   * L'accueil est toujours servi : seule une règle EXIGEANT une query peut s'y
+   * appliquer. C'est le cas des permaliens WordPress hérités (`/?page_id=12`),
+   * qui sans ça seraient inatteignables par construction.
+   */
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: SitePageProps): Promise<Metadata> {
@@ -25,10 +32,12 @@ export async function generateMetadata({ params }: SitePageProps): Promise<Metad
   return buildPageMetadata(site, page, subdomain, await origineRequete(), "/");
 }
 
-export default async function SitePage({ params }: SitePageProps) {
+export default async function SitePage({ params, searchParams }: SitePageProps) {
   const { subdomain } = await params;
   const headersList = await headers();
   const host = headersList.get("host") ?? "";
+
+  await appliquerRedirection(subdomain, host, "/", (await searchParams) ?? null);
 
   return <SitePageView subdomain={subdomain} host={host} pageSlug="/" />;
 }

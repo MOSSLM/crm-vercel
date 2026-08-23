@@ -104,6 +104,11 @@ export const AGENT_SPACES: AgentSpace[] = [
       { title: "Ma journée", href: "/espace-agent/demarchage", icon: Target },
       { title: "Inbox", href: "/espace-agent/inbox", icon: Inbox },
       { title: "Tâches", href: "/espace-agent/taches", icon: ListTodo },
+      // « Où on en est » répond à la question que « Ma journée » ne pose pas :
+      // la file du jour montre ce qu'il y a À FAIRE, jamais qui est arrêté sur
+      // quel bloc — ni combien n'avancent plus du tout. Périmètre restreint aux
+      // inscriptions lancées par l'agent (cf. `/api/agent/sequences/etat`).
+      { title: "Où on en est", href: "/espace-agent/etat-sequences", icon: GitBranch },
       { title: "Mes campagnes", href: "/espace-agent/campagnes", icon: Send },
     ],
   },

@@ -4,16 +4,22 @@ import { hostCanoniqueDuSite } from "@/lib/site-builder/host-canonique";
 /**
  * Le robots.txt d'un site publié.
  *
- * Deux choses, et la seconde est celle qui compte : il annonce le sitemap, et
- * il DÉSINDEXE l'hôte qui n'est pas l'adresse officielle du site.
+ * Deux choses : il annonce le sitemap, et il ne l'annonce QUE depuis l'adresse
+ * officielle du site.
  *
  * Une fois un domaine client attaché, le sous-domaine `{label}.{SITE_DOMAIN}`
- * reste servi — rien ne le dépublie — et rend exactement les mêmes pages. Le
- * canonical dit à Google laquelle retenir, mais c'est une recommandation. Sur
- * l'hôte non canonique on ajoute donc `noindex` par en-tête, ce qui ne dépend
- * d'aucune interprétation. On ne redirige PAS : un 308 est permanent, mis en
- * cache sans expiration fiable, et une bonne part des liens de démo déjà
- * envoyés pointent ce sous-domaine (cf. l'en-tête de demo-share-url.ts).
+ * reste servi — rien ne le dépublie — et rend exactement les mêmes pages. La
+ * désindexation de cet hôte-là ne se joue PAS ici : elle est portée page par
+ * page par `noindex` (buildPageMetadata), et c'est délibéré. Un `Disallow: /`
+ * aurait l'air plus ferme et ferait l'inverse de ce qu'on veut : interdire
+ * l'exploration empêche le robot de lire le `noindex` ET le canonical, alors
+ * qu'une URL partagée à l'extérieur (WhatsApp, mail) reste indexable par son
+ * seul lien. On laisse donc explorer, et chaque page dit elle-même qu'elle ne
+ * doit pas être indexée.
+ *
+ * On ne redirige PAS non plus : un 308 est permanent, mis en cache sans
+ * expiration fiable, et une bonne part des liens de démo déjà envoyés pointent
+ * ce sous-domaine (cf. l'en-tête de demo-share-url.ts).
  *
  * Ce fichier est un Route Handler et pas la convention `robots.ts` : voir la
  * note de sitemap.xml/route.ts.
@@ -43,14 +49,13 @@ export async function GET(
     : canonique;
   const estCanonique = !canonique || !demande || demande === canonique;
 
-  const lignes = estCanonique
-    ? ["User-agent: *", "Allow: /", ...(canonique ? [`Sitemap: ${canonique}/sitemap.xml`] : [])]
-    : ["User-agent: *", "Disallow: /"];
+  // Le sitemap n'est annoncé que depuis l'adresse officielle : servi depuis le
+  // sous-domaine, il ferait indexer notre marque à la place du domaine client.
+  const lignes = ["User-agent: *", "Allow: /", ...(estCanonique && canonique ? [`Sitemap: ${canonique}/sitemap.xml`] : [])];
 
   return new Response(lignes.join("\n") + "\n", {
     headers: {
       "content-type": "text/plain; charset=utf-8",
-      ...(estCanonique ? {} : { "x-robots-tag": "noindex" }),
       "cache-control": "public, max-age=0, s-maxage=3600",
     },
   });

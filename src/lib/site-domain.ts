@@ -76,6 +76,25 @@ const INFRA_HOST_SUFFIXES = [".vercel.app"] as const;
 const CHEMINS_SEO = new Set(["/robots.txt", "/sitemap.xml"]);
 
 /**
+ * Extensions qui désignent une PAGE d'un ancien site, jamais un fichier de chez
+ * nous : `.html`, `.php`, `.aspx`…
+ *
+ * Elles échappent elles aussi à la garde « contient un point = statique », et
+ * c'est ce qui rend un plan de redirection atteignable. Sans cette sortie, les
+ * URLs les plus précieuses de l'ancien site — celles que Google connaît, avec
+ * dix ans d'ancienneté — étaient traitées comme des fichiers statiques : le
+ * middleware ne les réécrivait pas vers le site, elles tombaient sur l'arbre du
+ * CRM et rendaient son 404. Aucune redirection, où qu'elle soit posée, ne
+ * pouvait les rattraper.
+ *
+ * Ne change RIEN pour les hôtes du CRM et de l'infrastructure : ils sortent
+ * plus bas par leurs propres branches. Seuls les hôtes de site sont concernés,
+ * et aucun ne sert de fichier portant ces extensions — le contenu est rendu par
+ * Next, les médias sont sur le CDN Supabase.
+ */
+const EXTENSIONS_PAGE_HERITEE = /\.(?:html?|php\d?|phtml|aspx?|jsp|jspx|cfm|shtml)$/i;
+
+/**
  * L'hôte, réduit à sa forme comparable : minuscules, sans port, sans point
  * racine final.
  *
@@ -205,10 +224,17 @@ export function deciderDestination(
   // passer. Sans cette exception, un sitemap par tenant est inatteignable par
   // construction — et le second verrou est le matcher, qui les exclut lui aussi.
   const estSeo = CHEMINS_SEO.has(pathname);
+  // Une page héritée (« /nos-services.html ») doit atteindre la route du site
+  // pour que le plan de redirection puisse la rattraper — voir la constante.
+  const estPageHeritee = EXTENSIONS_PAGE_HERITEE.test(pathname);
   // Chemins servis à l'identique quel que soit l'hôte. `/api` reste ouvert :
   // les formulaires de contact des sites publiés en dépendent, et la carte
   // OpenGraph pose `og:image` sur `{origine}/api/og/...`.
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || (pathname.includes(".") && !estSeo)) {
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    (pathname.includes(".") && !estSeo && !estPageHeritee)
+  ) {
     return { kind: "next" };
   }
 

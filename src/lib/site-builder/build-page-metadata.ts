@@ -51,6 +51,15 @@ export function versionDepuisUrl(url: string | null | undefined): string | null 
   return /-([0-9a-f]{8,32})\.[a-z0-9]+$/i.exec(nom)?.[1] ?? null;
 }
 
+/** L'hôte d'une URL, ou null si elle est illisible. Comparaison seulement. */
+function hoteDe(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Builds the Next.js Metadata for a published site page.
  *
@@ -117,6 +126,24 @@ export function buildPageMetadata(
   // espace d'URL, donc aucune déduplication (voir host-canonique.ts).
   const canonical = urlCanonique(site, pageSlug ?? "/");
 
+  // NOINDEX SUR L'HÔTE QUI N'EST PAS L'ADRESSE OFFICIELLE.
+  //
+  // Une fois un domaine client attaché, le sous-domaine `{label}.{SITE_DOMAIN}`
+  // continue de servir les MÊMES pages : rien ne le dépublie, et c'est voulu —
+  // des liens de démo déjà envoyés pointent dessus. Le canonical dit à Google
+  // laquelle des deux retenir, mais ce n'est qu'une recommandation.
+  //
+  // Le `Disallow: /` du robots.txt par tenant ne suffit PAS à fermer le trou, et
+  // le referme même à moitié : interdire l'exploration empêche le robot de LIRE
+  // le canonical, alors qu'une URL partagée à l'extérieur (WhatsApp, mail) reste
+  // indexable par son seul lien. La paire correcte est l'inverse : on laisse
+  // explorer, et chaque page de l'hôte non canonique porte `noindex`, qui ne
+  // s'interprète pas. `follow` reste vrai pour que le canonical et les liens
+  // internes soient tout de même suivis.
+  const hoteDemande = origine ? hoteDe(origine) : null;
+  const hoteOfficiel = canonical ? hoteDe(canonical) : null;
+  const horsAdresseOfficielle = Boolean(hoteDemande && hoteOfficiel && hoteDemande !== hoteOfficiel);
+
   return {
     title,
     description,
@@ -125,6 +152,7 @@ export function buildPageMetadata(
     // laisse tomber la balise sans rien dire.
     metadataBase: new URL(origine ?? getAppUrl()),
     ...(canonical ? { alternates: { canonical } } : {}),
+    ...(horsAdresseOfficielle ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       title: ogTitle,
       description: ogDescription,

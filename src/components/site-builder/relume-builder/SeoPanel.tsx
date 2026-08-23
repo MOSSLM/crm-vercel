@@ -6,16 +6,13 @@ import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { VariableTextarea } from "./VariableTextarea";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
+import { LONGUEURS_SEO, type ChampSeo } from "@/lib/site-builder/seo-longueurs";
 
-type SeoFieldKey = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage";
+type SeoFieldKey = ChampSeo;
 
-const RECO: Record<SeoFieldKey, { min: number; max: number } | null> = {
-  metaTitle: { min: 50, max: 60 },
-  metaDescription: { min: 150, max: 160 },
-  ogTitle: { min: 0, max: 60 },
-  ogDescription: { min: 0, max: 110 },
-  ogImage: null,
-};
+// Les bornes vivent dans `seo-longueurs.ts` : l'éditeur des designs Claude les
+// applique aussi, et deux tables recopiées auraient divergé.
+const RECO = LONGUEURS_SEO;
 
 /** Char counter, coloured by recommended range. Counts the INTERPOLATED length
  *  (what visitors actually see) so {{ variables }} are reflected. */
