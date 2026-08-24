@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Funnel,
   GitBranch,
+  FileText,
   Target,
   Inbox,
   Workflow,
@@ -109,6 +110,11 @@ export const AGENT_SPACES: AgentSpace[] = [
       // quel bloc — ni combien n'avancent plus du tout. Périmètre restreint aux
       // inscriptions lancées par l'agent (cf. `/api/agent/sequences/etat`).
       { title: "Où on en est", href: "/espace-agent/etat-sequences", icon: GitBranch },
+      // La chaîne d'envoi des plaquettes. Séparée de « Ma journée » parce que
+      // ce n'est pas le même geste : la file du jour se traite un prospect à la
+      // fois, en lisant sa fiche ; les plaquettes se passent en série, sans rien
+      // relire — c'est un travail de vague, pas de dossier.
+      { title: "Plaquettes du jour", href: "/espace-agent/plaquettes", icon: FileText },
       { title: "Mes campagnes", href: "/espace-agent/campagnes", icon: Send },
     ],
   },
