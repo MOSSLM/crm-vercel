@@ -77,6 +77,20 @@ export interface SequenceStep {
   /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
   attachAudit?: boolean
   /**
+   * Message manuel : cette étape envoie la PLAQUETTE, en document joint.
+   *
+   * Pourquoi un drapeau et pas la présence du lien dans le texte. Le message ne
+   * porte plus d'URL — c'est la demande : « je ne veux pas que la plaquette soit
+   * envoyée en lien, je veux qu'elle soit envoyée en PDF ». Sans variable dans
+   * le gabarit, plus rien dans le texte ne dit de quel document il s'agit ; le
+   * drapeau le dit, et c'est lui qui fait voyager `plaquette_url` dans la tâche
+   * pour que la carte d'action ouvre la bonne feuille au clic sur « Envoyer ».
+   *
+   * Miroir volontaire d'`attachAudit` : même intention (« joins ce document »),
+   * même endroit, un canal différent.
+   */
+  attachPlaquette?: boolean
+  /**
    * Étape `wait` : ce qu'on attend.
    *
    * `days` (défaut) — le J+n de l'étape suivante, comme avant.
@@ -395,6 +409,15 @@ export interface ProspectionTaskPayload {
    * sur la carte, pas à retrouver en déroulant tous les échanges.
    */
   mise_de_cote?: { jusquau: string; motif: string | null; le: string } | null
+  /**
+   * La plaquette de CE prospect, quand l'étape la joint (`attachPlaquette`).
+   *
+   * Le message ne porte plus l'adresse — la plaquette part en PDF, pas en lien —
+   * donc rien dans le texte ne dit plus quel document ouvrir. C'est ce champ que
+   * la carte d'action ouvre au clic sur « Envoyer », en feuille A4 avec la boîte
+   * d'impression du navigateur.
+   */
+  plaquette_url?: string | null
   [k: string]: unknown
 }
 

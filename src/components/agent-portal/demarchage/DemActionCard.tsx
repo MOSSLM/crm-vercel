@@ -17,6 +17,7 @@ import { one } from "@/components/agent-portal/format";
 import { useTelephonyOptional } from "@/components/telephony/CallProvider";
 import { placeCallback } from "@/lib/telephony/client";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { urlPlaquetteImprimable } from "@/lib/audit/plaquette-lien";
 import type { CompanyBundle, DemarchagePatchBody, DemarchageTask, DemAudit } from "./types";
 
 /** Effet de chaque issue sur l'étape de l'affaire. */
@@ -306,6 +307,38 @@ export function DemActionCard({
 
   const [sending, setSending] = useState(false);
 
+  /**
+   * La plaquette de CE prospect, quand l'étape la joint.
+   *
+   * ELLE NE PART PLUS EN LIEN, ET C'EST LA DEMANDE : « je ne veux pas que la
+   * plaquette soit envoyée en lien, je veux qu'elle soit envoyée en PDF ». Le
+   * message ne porte donc plus d'URL — c'est l'agent qui joint le fichier dans
+   * WhatsApp, après l'avoir enregistré.
+   *
+   * CE QUE LE CLIC PEUT ET NE PEUT PAS FAIRE. Aucun PDF n'est fabriqué ici : le
+   * CRM n'embarque pas de moteur de PDF et Chromium ne tient pas dans une
+   * fonction Vercel (cf. `src/app/(public)/plaquette/rendu.tsx`). On ouvre la
+   * feuille A4 avec la boîte d'impression du navigateur, d'où « Enregistrer en
+   * PDF » — exactement ce que fait « Exporter PDF » de l'éditeur d'audit depuis
+   * toujours. Il reste donc UN clic à l'agent, et il vaut mieux le dire que
+   * promettre un téléchargement qui n'existe pas.
+   */
+  const plaquetteUrl =
+    typeof task.payload?.plaquette_url === "string" && task.payload.plaquette_url
+      ? task.payload.plaquette_url
+      : null;
+
+  /**
+   * L'ORDRE COMPTE. La feuille part EN PREMIER : la boîte d'impression s'ouvre
+   * dans son onglet, et WhatsApp arrive ensuite au premier plan. Ouverts dans
+   * l'autre sens, l'impression volerait le focus à la conversation au moment
+   * précis où l'agent va coller son message.
+   */
+  const ouvrirPlaquette = () => {
+    if (!plaquetteUrl) return;
+    window.open(urlPlaquetteImprimable(plaquetteUrl), "_blank", "noopener,noreferrer");
+  };
+
   const logMessage = async (channel: "whatsapp" | "linkedin", to: string) => {
     try {
       const res = await authedFetch("/api/messages/log", {
@@ -338,6 +371,9 @@ export function DemActionCard({
           toast.error("Ce numéro n'est pas exploitable sur WhatsApp.");
           return;
         }
+        // La plaquette d'abord : elle doit être enregistrée avant d'être jointe,
+        // et l'agent finit sur WhatsApp, pas sur une boîte d'impression.
+        ouvrirPlaquette();
         window.open(url, "_blank");
         setGeste(true);
         await logMessage("whatsapp", phone);
@@ -724,6 +760,21 @@ export function DemActionCard({
             {/* L'ENVOI : un bloc plein, à la couleur du canal. C'est le geste
                 du métier, et il reste le plus visible tant qu'il n'a pas eu
                 lieu. */}
+            {/* CE QUI PART AVEC LE MESSAGE. Le texte annonce un document joint :
+                si l'agent ne voyait pas ce document avant de cliquer, il
+                enverrait une promesse sans la pièce. Le rappel est donc au-dessus
+                du bouton, pas en dessous. */}
+            {plaquetteUrl && (
+              <div className="dm-hint">
+                <Icon name="doc" className="ico-sm" />
+                <span>
+                  La plaquette s&apos;ouvre en A4 avec la boîte d&apos;impression au clic sur
+                  «&nbsp;{ch.cta}&nbsp;» — «&nbsp;Enregistrer en PDF&nbsp;», puis on la joint dans
+                  la conversation. Le message, lui, ne contient aucun lien.
+                </span>
+              </div>
+            )}
+
             <button
               className="dm-cta"
               data-fait={geste ? "1" : undefined}
@@ -734,6 +785,22 @@ export function DemActionCard({
               {ch.cta}
               {firstName ? ` à ${firstName}` : ""}
             </button>
+
+            {/* ROUVRIR SANS RENVOYER. Une boîte d'impression fermée par erreur,
+                un PDF perdu dans les téléchargements : sans cette porte, il
+                faudrait recliquer « Envoyer » et rouvrir une conversation
+                WhatsApp pour récupérer un fichier. */}
+            {plaquetteUrl && (
+              <button
+                type="button"
+                className="btn sm outline"
+                style={{ alignSelf: "flex-start" }}
+                onClick={ouvrirPlaquette}
+              >
+                <Icon name="doc" className="ico-sm" />
+                Rouvrir la plaquette seule
+              </button>
+            )}
 
             {/* CE QUI FERME LA LIGNE : une barre, pas un second bloc. Les deux
                 se confondaient, et se tromper coûte soit un message jamais

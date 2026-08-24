@@ -146,6 +146,22 @@ describe("l'ouverture est comptée", () => {
     expect(mockMarquer).toHaveBeenCalledWith(CLIENT, JETON);
     expect(el.props.a4).toBe(false);
   });
+
+  /**
+   * L'A4 EST NOTRE FEUILLE, PAS CELLE DU PROSPECT — et depuis que la plaquette
+   * part en PDF, l'agent l'ouvre à CHAQUE envoi pour l'enregistrer. La compter
+   * attribuerait au prospect une ouverture faite par nous, et `vueQ` (S2)
+   * aiguille précisément sur « a vu la plaquette » : chaque envoi aurait
+   * basculé le prospect vers l'appel chaud sans qu'il ait rien lu.
+   */
+  it("ne compte pas la feuille A4, ni sa version imprimable", async () => {
+    for (const sp of [{ a4: "" }, { a4: "", imprimer: "" }]) {
+      mockMarquer.mockReset();
+      const el = await ouvrir(JETON, sp);
+      expect(mockMarquer).not.toHaveBeenCalled();
+      expect(el.props.a4).toBe(true);
+    }
+  });
 });
 
 describe("un jeton mort, révoqué ou inconnu", () => {

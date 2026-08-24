@@ -67,6 +67,9 @@ export async function generateViewport({ searchParams }: PlaquetteJetonProps): P
 export default async function PlaquetteJetonPage({ params, searchParams }: PlaquetteJetonProps) {
   const { jeton } = await params;
 
+  const sp = await searchParams;
+  const a4 = estA4(sp);
+
   // Best-effort et non attendu, comme sur le rapport : le compteur est un signal
   // commercial — « il l'a ouverte trois fois » vaut une relance — jamais une
   // raison de retarder l'affichage du document.
@@ -75,14 +78,21 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
   // déjà toute panne de la base, mais `getServiceClient()` lève, lui, quand la
   // configuration manque. Un prospect qui a cliqué doit voir la plaquette,
   // jamais une page d'erreur produite par le compteur d'ouvertures.
-  try {
-    void marquerPlaquetteVue(getServiceClient(), jeton);
-  } catch {
-    /* mesure perdue, document servi */
+  //
+  // L'A4 NE COMPTE PAS, ET C'EST DEVENU CRITIQUE. Cette feuille est la NÔTRE :
+  // on l'ouvre pour relire le document, et depuis que la plaquette part en PDF,
+  // l'agent l'ouvre à CHAQUE envoi pour l'enregistrer. La compter attribuerait
+  // au prospect une ouverture faite par nous — et `vueQ`, dans S2, aiguille sur
+  // « a vu la plaquette » : chaque envoi aurait basculé le prospect vers l'appel
+  // chaud sans qu'il ait rien lu. Le format mobile reste compté, lui : c'est
+  // celui qu'un prospect reçoit quand un ancien lien circule encore.
+  if (!a4) {
+    try {
+      void marquerPlaquetteVue(getServiceClient(), jeton);
+    } catch {
+      /* mesure perdue, document servi */
+    }
   }
-
-  const sp = await searchParams;
-  const a4 = estA4(sp);
 
   // Lue pour les DEUX formats depuis que le mobile est nominatif lui aussi. Les
   // deux requêtes qu'elle coûte sont le prix du nom et de la capture — c'est

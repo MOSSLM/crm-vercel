@@ -36,6 +36,25 @@ export function urlPlaquette(jeton?: string | null): string {
 }
 
 /**
+ * La même plaquette, en feuille A4 avec la boîte d'impression qui s'ouvre —
+ * d'où l'on choisit « Enregistrer en PDF ».
+ *
+ * POURQUOI CE N'EST PAS UN FICHIER QU'ON FABRIQUE. Le CRM ne produit aucun PDF :
+ * aucune librairie n'est installée, et Chromium ne tient pas dans une fonction
+ * Vercel (cf. l'en-tête de `src/app/(public)/plaquette/rendu.tsx`). Le bouton
+ * « Exporter PDF » de l'éditeur d'audit fait exactement pareil depuis toujours —
+ * une fenêtre, le document, `window.print()`. On reprend cette mécanique plutôt
+ * que d'en inventer une seconde qui rendrait un autre document.
+ *
+ * CONSÉQUENCE À CONNAÎTRE : il reste UN clic à l'agent, « Enregistrer », dans la
+ * boîte du navigateur. C'est le prix d'une plaquette dont les tarifs sont relus
+ * à chaque ouverture plutôt que figés dans un fichier stocké.
+ */
+export function urlPlaquetteImprimable(url: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}a4&imprimer`;
+}
+
+/**
  * La migration `sql/20260816_plaquettes_par_prospect.sql` manque-t-elle ?
  *
  * Une migration non jouée se corrige en jouant un fichier, une panne se

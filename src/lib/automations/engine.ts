@@ -1715,6 +1715,20 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
         linkedin: ent.contactLinkedin,
         audit_url: ent.auditUrl,
         demo_url: ent.demoUrl,
+        // LE DOCUMENT VOYAGE AVEC LA TÂCHE, PAS DANS LE TEXTE. La plaquette ne
+        // part plus en lien mais en PDF joint : le message n'en dit donc plus
+        // l'adresse, et la carte d'action n'a plus rien à y lire. C'est ce
+        // champ qu'elle ouvre au clic sur « Envoyer », en feuille A4 avec la
+        // boîte d'impression (`urlPlaquetteImprimable`).
+        //
+        // Posé SEULEMENT quand l'étape le demande : sans ce garde, les six
+        // autres messages manuels de S1 et S2 porteraient un bouton « ouvrir la
+        // plaquette » qui n'a rien à faire sur une accroche ou une relance.
+        plaquette_url: step.attachPlaquette
+          ? (typeof ent.vars['company.plaquette_url'] === 'string'
+              ? (ent.vars['company.plaquette_url'] as string) || null
+              : null)
+          : null,
         // Les DEUX versions voyagent avec la tâche : la carte du pipeline
         // propose de basculer de l'une à l'autre juste avant d'ouvrir WhatsApp,
         // et c'est le seul moment où quelqu'un regarde. Les recalculer au clic
