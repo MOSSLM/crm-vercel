@@ -65,6 +65,21 @@ a.lnk:hover{border-bottom-color:var(--azur)}
 .ic{flex:none;width:22px;height:22px;color:var(--azur)}
 /* grain partagé — couverture et carte tarif */
 .tex::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;background-image:var(--grain);mix-blend-mode:soft-light}
+/* PAS DE GRAIN A L'IMPRESSION, ET C'EST 81 % DU FICHIER.
+   Ce bruit est un feTurbulence SVG pose en pleine page avec un mode de fusion :
+   le navigateur ne sait pas l'exprimer en vectoriel dans un PDF, il rasterise
+   donc les zones couvertes en SANS-PERTE et en haute definition. Mesure le
+   24/08/2026 sur la plaquette d'un prospect : 4,66 Mo avec, 0,88 Mo sans - cinq
+   fois plus leger pour un calque a 0,5 d'opacite que personne ne distingue sur
+   un telephone. Depuis que la plaquette part en piece jointe WhatsApp, ce poids
+   se paie en donnees mobiles chez l'artisan, et un document qui met dix secondes
+   a arriver ne s'ouvre pas.
+   MEME DECISION QUE LE DOCUMENT D'AUDIT, qui l'avait deja prise pour la meme
+   raison - voir l'option forPdf de generateCSS, dans htmlShared.ts. La lecon
+   n'avait simplement pas traverse jusqu'ici.
+   La regle est en media print et non dans le script de fabrication : elle
+   couvre AUSSI l'Enregistrer en PDF fait a la main depuis ?a4&imprimer. */
+@media print{.tex::after{display:none}}
 /* ── bouton rond « visiter le site » ───────────────── */
 .rbtn{position:relative;flex:none;width:88px;height:88px;border-radius:50%;background:var(--nuit);box-shadow:0 5px 16px rgba(10,27,51,.34);display:block}
 .rbtn svg{position:absolute;inset:0;width:100%;height:100%}
