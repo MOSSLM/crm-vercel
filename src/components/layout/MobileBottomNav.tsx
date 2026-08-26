@@ -17,8 +17,14 @@ import { MobileTabBar, type EntreeOnglet } from "./MobileTabBar";
  * Tout le reste est à un tap, dans « Plus » — voir `MobileTabBar`.
  */
 
-/** Les quatre destinations du terrain, dans l'ordre où on y va. */
-const ORDRE_MOBILE = ["actions", "crm", "messagerie", "dashboard"] as const;
+/**
+ * Les quatre destinations du terrain, dans l'ordre où on y va.
+ *
+ * L'atelier passe en tête : c'est le seul écran conçu POUR le téléphone, celui
+ * qui fait avancer un lot pendant qu'on est ailleurs. Le tableau de bord sort
+ * des quatre — on le consulte, on n'y travaille pas — et reste sous « Plus ».
+ */
+const ORDRE_MOBILE = ["atelier", "actions", "crm", "messagerie"] as const;
 
 const rang = (cle: string) => {
   const i = (ORDRE_MOBILE as readonly string[]).indexOf(cle);

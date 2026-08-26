@@ -27,10 +27,13 @@ import {
   Palette,
   Phone,
   UserCheck,
+  Hammer,
+  Package,
 } from "lucide-react";
 
 export type TopCategoryKey =
   | "dashboard"
+  | "atelier"
   | "calendar"
   | "crm"
   | "production"
@@ -47,6 +50,11 @@ export type NavItem = {
 
 export const TOP_CATEGORIES: Array<NavItem & { key: TopCategoryKey }> = [
   { key: "dashboard", title: "Dashboard", href: "/dashboard", icon: BarChart3 },
+  // L'atelier : le poste de commande des traitements de masse (lots, lissage).
+  // Il a sa propre entrée plutôt que d'être rangé sous « Actions » parce qu'il
+  // est le seul écran taillé pour être utilisé HORS du bureau — c'est un usage,
+  // pas une famille d'outils.
+  { key: "atelier", title: "Atelier", href: "/atelier", icon: Hammer },
   { key: "calendar", title: "Calendrier", href: "/calendar", icon: CalendarDays },
   { key: "crm", title: "CRM", href: "/companies", icon: Building2 },
   { key: "production", title: "Production", href: "/production/projets", icon: FolderKanban },
@@ -98,9 +106,17 @@ export const DASHBOARD_ITEMS: NavItem[] = [
 
 export const CALENDAR_ITEMS: NavItem[] = [{ title: "Calendrier", icon: CalendarDays, href: "/calendar" }];
 
+export const ATELIER_ITEMS: NavItem[] = [
+  { title: "Atelier", icon: Hammer, href: "/atelier" },
+  { title: "Lots", icon: Package, href: "/entreprises/lots" },
+  { title: "Explorateur", icon: Search, href: "/entreprises/explorateur" },
+  { title: "Lissage", icon: Zap, href: "/prospection/lissage" },
+];
+
 export const MESSAGERIE_ITEMS: NavItem[] = [];
 
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
+  if (pathname.startsWith("/atelier")) return "atelier";
   if (pathname.startsWith("/automations")) return "automations";
   if (pathname.startsWith("/calendar")) return "calendar";
   if (pathname.startsWith("/production") || pathname.startsWith("/site-builder")) return "production";
@@ -147,6 +163,8 @@ export function getTopTabsForCategory(category: TopCategoryKey): NavItem[] {
       return CALENDAR_ITEMS;
     case "messagerie":
       return MESSAGERIE_ITEMS;
+    case "atelier":
+      return ATELIER_ITEMS;
     default:
       return DASHBOARD_ITEMS;
   }

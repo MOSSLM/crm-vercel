@@ -79,6 +79,57 @@ export async function populationDesCriteres(
 }
 
 /**
+ * La TROISIÈME porte : la population d'un lot.
+ *
+ * POURQUOI ELLE MANQUAIT. Les deux portes existantes demandent soit des filtres,
+ * soit une liste d'identifiants venue du navigateur. Un lot est déjà une
+ * population figée, écrite ligne par ligne dans `lots_entreprises` — la faire
+ * remonter dans le navigateur pour la redescendre aussitôt n'ajoute rien, et
+ * rend l'opération impossible depuis un téléphone dès quelques milliers de
+ * fiches.
+ *
+ * ELLE EST LA SEULE DES TROIS QUI SOIT PLEINEMENT REJOUABLE. Une passe née de
+ * filtres se rejoue sur une population qui a pu bouger ; une passe née d'une
+ * sélection ne se rejoue pas du tout (`criteres.origine`, cf. le registre des
+ * bots). Une passe née d'un lot désigne une population dont la composition est
+ * écrite : elle se rejoue à l'identique, et c'est exactement ce qu'on veut d'un
+ * traitement lancé depuis l'extérieur.
+ *
+ * Le plafond de `MAX_POPULATION` s'applique comme ailleurs, et l'appelant reçoit
+ * le total du lot à côté du nombre pris : un lot de 5 000 fiches donne une passe
+ * de 2 000, et il faut que ça se voie.
+ */
+export async function populationDuLot(
+  sb: SupabaseClient,
+  lotId: number,
+  taille: number,
+): Promise<{ ids: number[]; total: number }> {
+  const voulu = Math.max(1, Math.min(taille, MAX_POPULATION))
+
+  const { count, error: erreurCompte } = await sb
+    .from('lots_entreprises')
+    .select('entreprise_id', { count: 'exact', head: true })
+    .eq('lot_id', lotId)
+  if (erreurCompte) throw Object.assign(new Error(erreurCompte.message), { code: erreurCompte.code })
+
+  // Trié par identifiant : sans ordre explicite, deux lectures du même lot
+  // pourraient prendre deux moitiés différentes, et « rejouer » ne voudrait
+  // plus rien dire.
+  const { data, error } = await sb
+    .from('lots_entreprises')
+    .select('entreprise_id')
+    .eq('lot_id', lotId)
+    .order('entreprise_id', { ascending: true })
+    .limit(voulu)
+  if (error) throw Object.assign(new Error(error.message), { code: error.code })
+
+  return {
+    ids: ((data ?? []) as { entreprise_id: number }[]).map((r) => Number(r.entreprise_id)),
+    total: count ?? 0,
+  }
+}
+
+/**
  * Une population choisie À LA MAIN, et non par des filtres.
  *
  * C'est l'autre porte d'entrée du lissage : on coche des lignes dans le

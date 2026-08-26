@@ -22,6 +22,7 @@ import {
   planDepuisLeCorps,
   populationDeLaSelection,
   populationDesCriteres,
+  populationDuLot,
 } from '../_lissage'
 
 export const runtime = 'nodejs'
@@ -138,6 +139,15 @@ const corpsCreation = z.object({
    * servent plus — la liste EST la population.
    */
   entrepriseIds: z.array(z.coerce.number()).optional(),
+  /**
+   * La TROISIÈME porte : un lot déjà figé. Elle prime sur les deux autres —
+   * c'est la plus explicite, et la seule pleinement rejouable, puisque la
+   * composition du lot est écrite ligne par ligne.
+   *
+   * Elle existe pour que lancer une passe depuis un téléphone ne demande pas
+   * de faire remonter puis redescendre des milliers d'identifiants.
+   */
+  lotId: z.coerce.number().int().positive().optional(),
   /** D'où vient la sélection, pour composer le nom. Libellé, jamais un filtre. */
   origine: z.string().optional(),
 })
@@ -155,17 +165,41 @@ export const POST = withAuth({ role: 'admin', body: corpsCreation }, async ({ bo
   const plan = planDepuisLeCorps(body?.plan)
   const sc = getServiceClient()
   const choisies = body?.entrepriseIds ?? []
-  // UNE SÉLECTION, OU DES FILTRES — jamais les deux. La liste cochée gagne :
-  // c'est le geste le plus explicite des deux, et l'envoyer avec des critères
-  // n'a de sens que si un écran fait les deux, ce qu'aucun ne fait.
-  const parSelection = choisies.length > 0
+  // UN LOT, UNE SÉLECTION, OU DES FILTRES — jamais deux à la fois. L'ordre de
+  // priorité va du plus explicite au moins explicite : un lot désigne une
+  // population déjà nommée et figée, une sélection un geste de l'écran, des
+  // filtres une description.
+  const parLot = typeof body?.lotId === 'number'
+  const parSelection = !parLot && choisies.length > 0
 
   let population: { ids: number[]; total: number }
   let criteres: Record<string, unknown>
   let nom: string
   let ecartees = 0
 
-  if (parSelection) {
+  if (parLot) {
+    const lotId = body!.lotId as number
+    const { data: lot, error: erreurLot } = await sc
+      .from('lots')
+      .select('id, nom')
+      .eq('id', lotId)
+      .maybeSingle()
+    if (erreurLot) return jsonError(erreurLot.message, 500, {}, cors)
+    if (!lot) return jsonError('lot_introuvable', 404, {}, cors)
+
+    const taille = Math.max(1, Math.min(Number(body?.taille) || MAX_POPULATION, MAX_POPULATION))
+    try {
+      population = await populationDuLot(sc, lotId, taille)
+    } catch (e) {
+      const err = e as { code?: string; message?: string }
+      return jsonError(err.message ?? 'erreur', 500, {}, cors)
+    }
+
+    // Ces critères DÉCRIVENT bien la population, contrairement à ceux d'une
+    // sélection : un lot est une liste écrite, donc rejouable à l'identique.
+    criteres = { origine: 'lot', lot: lotId, lot_nom: (lot as { nom: string }).nom }
+    nom = (body?.nom ?? '').trim() || `Lot « ${(lot as { nom: string }).nom} » — ${population.ids.length} fiches`
+  } else if (parSelection) {
     let selection
     try {
       selection = await populationDeLaSelection(sc, choisies)
@@ -217,9 +251,11 @@ export const POST = withAuth({ role: 'admin', body: corpsCreation }, async ({ bo
       'population_vide',
       400,
       {
-        message: parSelection
-          ? 'Aucune des fiches cochées n’est lissable : elles sont archivées ou fusionnées.'
-          : 'Ces filtres ne désignent aucune entreprise.',
+        message: parLot
+          ? 'Ce lot est vide.'
+          : parSelection
+            ? 'Aucune des fiches cochées n’est lissable : elles sont archivées ou fusionnées.'
+            : 'Ces filtres ne désignent aucune entreprise.',
         total: population.total,
       },
       cors,
