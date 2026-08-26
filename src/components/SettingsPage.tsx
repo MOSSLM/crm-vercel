@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { BoutonsExport } from './settings/BoutonsExport';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
@@ -760,20 +761,12 @@ export const SettingsPage: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Exporter les recherches (CSV)
-                </Button>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Exporter les entreprises (Excel)
-                </Button>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Exporter le pipeline (JSON)
-                </Button>
-              </div>
+              {/* Ces trois boutons n'avaient AUCUN `onClick` : ils avaient
+                  l'air de marcher depuis le début et ne faisaient rien. Le
+                  libellé « Excel » a suivi la réalité — on rend un CSV, en
+                  point-virgule et avec BOM, donc lisible par Excel français du
+                  premier coup, ce qu'un vrai .xlsx ne rendrait pas plus vrai. */}
+              <BoutonsExport />
 
               <Separator />
 
