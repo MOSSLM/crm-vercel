@@ -25,6 +25,12 @@ import {
 } from '../_lissage'
 
 export const runtime = 'nodejs'
+// Créer une passe résout la population par `chercher_entreprises`, qui plafonne
+// à 200 par appel : une passe de 2 000 fait dix allers-retours. Depuis l'index
+// partiel `entreprises_sans_site_idx` chacun tient en ~350 ms au lieu de
+// ~1 700, mais le nombre d'appels, lui, n'a pas changé. On déclare donc le
+// budget plutôt que de dépendre du défaut de la plateforme.
+export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 export const OPTIONS = (req: Request) => preflight(req)
 
