@@ -37,6 +37,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   History,
+  Linkedin,
   Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -59,6 +60,7 @@ const ICONE_CANAL: Record<CanalFil, LucideIcon> = {
   email: Mail,
   sms: MessageSquare,
   whatsapp: MessageCircle,
+  linkedin: Linkedin,
   rdv: CalendarCheck,
   note: StickyNote,
   etape: GitBranch,
@@ -73,6 +75,7 @@ const TON_CANAL: Record<CanalFil, string> = {
   email: "text-blue-600 dark:text-blue-400",
   sms: "text-violet-600 dark:text-violet-400",
   whatsapp: "text-green-600 dark:text-green-400",
+  linkedin: "text-sky-700 dark:text-sky-400",
   rdv: "text-amber-600 dark:text-amber-400",
   note: "text-slate-600 dark:text-slate-300",
   formulaire: "text-cyan-600 dark:text-cyan-400",
@@ -159,7 +162,19 @@ function LigneFil({ ev }: { ev: EvenementFil }) {
   );
 }
 
-export function FilActivite({ entrepriseId }: { entrepriseId: number }) {
+export function FilActivite({
+  entrepriseId,
+  /**
+   * Incrémenté par l'appelant après un geste, pour que le fil le montre sans
+   * attendre. Une simple `key` remontée ferait aussi recharger — mais en
+   * réinitialisant le filtre et la position de lecture, ce qui est exactement
+   * ce qu'on ne veut pas juste après avoir agi.
+   */
+  version = 0,
+}: {
+  entrepriseId: number;
+  version?: number;
+}) {
   const [filtre, setFiltre] = useState<FiltreFil>("echanges");
   const [evenements, setEvenements] = useState<EvenementFil[]>([]);
   const [suite, setSuite] = useState<string | null>(null);
@@ -199,7 +214,7 @@ export function FilActivite({ entrepriseId }: { entrepriseId: number }) {
     return () => {
       abandonne = true;
     };
-  }, [charger, filtre]);
+  }, [charger, filtre, version]);
 
   const encorePlus = useCallback(async () => {
     if (!suite || chargePlus) return;

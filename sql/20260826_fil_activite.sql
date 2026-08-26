@@ -116,14 +116,38 @@ select
   a.opportunite_id                   as opportunite_id,
   a.occurred_at                      as survenu_le,
   'activity_log'                     as source,
-  case a.activity_type::text
-    when 'appel' then 'appel'
-    when 'email' then 'email'
-    when 'sms'   then 'sms'
-    when 'rdv'   then 'rdv'
-    when 'note'  then 'note'
-    else 'systeme'
-  end                                as canal,
+  -- LE CANAL RÉEL VIT DANS `metadata`, PAS DANS `activity_type`.
+  -- `activity_type` est un enum de NATURE d'événement (appel, devis, signature,
+  -- encaissement, note…) : il répond à « qu'est-ce qui s'est passé », pas à
+  -- « par quel moyen ». Le moyen est écrit à côté depuis toujours, par
+  -- `enregistrerJournal` (`api/make-server-5c06d9e7`), sur le vocabulaire
+  -- `contact_channel` — qui, lui, connaît WhatsApp et LinkedIn.
+  --
+  -- Sans cette lecture, un WhatsApp envoyé depuis une fiche s'afficherait en
+  -- « note » : le canal le plus utilisé du démarchage deviendrait invisible
+  -- alors qu'il est enregistré.
+  --
+  -- `pas_defini` et `autre` ne comptent pas comme un canal — ce sont les
+  -- valeurs par défaut (33 des 104 lignes existantes). Les accepter effacerait
+  -- la nature de l'événement au profit d'un « non renseigné ».
+  coalesce(
+    case a.metadata->>'channel'
+      when 'telephone' then 'appel'
+      when 'email'     then 'email'
+      when 'sms'       then 'sms'
+      when 'whatsapp'  then 'whatsapp'
+      when 'linkedin'  then 'linkedin'
+      else null
+    end,
+    case a.activity_type::text
+      when 'appel' then 'appel'
+      when 'email' then 'email'
+      when 'sms'   then 'sms'
+      when 'rdv'   then 'rdv'
+      when 'note'  then 'note'
+      else 'systeme'
+    end
+  )                                  as canal,
   null::text                         as sens,
   coalesce(nullif(a.title, ''), a.activity_type::text) as titre,
   left(a.description, 500)           as detail,

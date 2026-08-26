@@ -47,6 +47,7 @@ import { formatServiceTag, normalizeServiceTags } from '../utils/serviceTags';
 import DossierEntreprise from './donnees-publiques/DossierEntreprise';
 import BoutonDonneesPubliques from './donnees-publiques/BoutonDonneesPubliques';
 import FilActivite from './fil/FilActivite';
+import ActionsRapides from './fil/ActionsRapides';
 interface CompanyDetailPageProps {
   companyId: number;
   onBack: () => void;
@@ -120,6 +121,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
   } = useAppData();
   const [company, setCompany] = useState<Company | null>(null);
   const [detailedCompany, setDetailedCompany] = useState<Company | null>(null);
+  // Incrémenté à chaque geste rapide : le fil se relit sans être remonté.
+  const [gesteVersion, setGesteVersion] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -479,7 +482,22 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               dit OÙ ON EN EST — les deux questions qu'on se pose avant de
               décrocher. Les champs éditables restent en dessous : on lit cette
               fiche cent fois pour une fois qu'on la corrige. */}
-          <FilActivite entrepriseId={companyId} />
+          {/* Les actions AU-DESSUS du fil : on lit où on en est, puis on agit.
+              Chaque geste journalise et fait relire le fil dans la foulée, donc
+              la ligne qu'on vient d'écrire apparaît juste en dessous. */}
+          <div className="rounded-lg border bg-card p-3">
+            <ActionsRapides
+              entrepriseId={companyId}
+              opportuniteId={getCompanyOpportunities()[0]?.id}
+              nom={displayName}
+              telephone={(detailedCompany ?? company)?.telephone}
+              email={(detailedCompany ?? company)?.email}
+              adresse={(detailedCompany ?? company)?.adresse}
+              onGesteEnregistre={() => setGesteVersion((v) => v + 1)}
+            />
+          </div>
+
+          <FilActivite entrepriseId={companyId} version={gesteVersion} />
 
           <Card>
             <CardHeader className="pb-3">
@@ -1097,14 +1115,11 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                 </Button>
               )}
 
-              {detailedCompany?.telephone && (
-                <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                  <a href={`tel:${detailedCompany.telephone}`}>
-                    <Phone className="h-4 w-4 mr-2" />
-                    Appeler
-                  </a>
-                </Button>
-              )}
+              {/* Le bouton « Appeler » vivait ici, seul et sans trace : il
+                  composait le numéro sans rien écrire dans le fil. Il est
+                  remonté avec les autres gestes au-dessus du fil, où il
+                  journalise. Cette carte garde ce qui n'est pas un contact —
+                  ouvrir le site, LinkedIn, la carte. */}
 
             </CardContent>
           </Card>
