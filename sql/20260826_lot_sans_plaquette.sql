@@ -29,6 +29,10 @@ create or replace function public.entreprises_sans_plaquette(
 returns table(entreprise_id bigint, restantes bigint)
 language sql
 stable
+-- `search_path` ÉPINGLÉ : sans lui le chemin de recherche est celui de
+-- l'APPELANT, et un schéma posé devant `public` ferait résoudre les tables
+-- citées ici vers d'autres objets. Même motif qu'`assurer_jetons_plaquette`.
+set search_path to 'public', 'extensions'
 as $function$
   with manquantes as (
     select le.entreprise_id

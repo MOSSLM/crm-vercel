@@ -78,6 +78,10 @@ create or replace function public.figer_lot_depuis_criteres(
 -- bien — donc un contrôle qui ne testerait que les refus la manquerait.
 returns table(statut text, lot bigint, membres integer, total_trouve integer)
 language plpgsql
+-- `search_path` ÉPINGLÉ : sans lui le chemin de recherche est celui de
+-- l'APPELANT, et un schéma posé devant `public` ferait résoudre les tables
+-- citées ici vers d'autres objets. Même motif qu'`assurer_jetons_plaquette`.
+set search_path to 'public', 'extensions'
 as $$
 declare
   v_ids   bigint[];
