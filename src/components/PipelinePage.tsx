@@ -78,6 +78,29 @@ const normalizeWebsiteUrl = (url?: string | null) => {
   return `https://${sanitized}`;
 };
 
+/**
+ * Le suivi promis est-il déjà passé ?
+ *
+ * Comparaison sur la CHAÎNE `yyyy-mm-dd` et non sur des objets `Date` :
+ * `date_prochain_suivi` est une colonne `date` sans fuseau, et la passer par
+ * `new Date()` la lit comme minuit UTC — ce qui, à l'ouest de Greenwich, fait
+ * passer le suivi du jour pour un suivi de la veille. Le tri lexicographique
+ * d'une date ISO est exact et ne dépend d'aucun fuseau.
+ *
+ * Au niveau module parce que ce fichier porte DEUX composants de carte
+ * identiques : la définir dans l'un d'eux garantirait qu'ils divergent.
+ */
+const enRetard = (dateString?: string) => {
+  if (!dateString) return false;
+  const maintenant = new Date();
+  const aujourdhui = [
+    maintenant.getFullYear(),
+    String(maintenant.getMonth() + 1).padStart(2, '0'),
+    String(maintenant.getDate()).padStart(2, '0'),
+  ].join('-');
+  return dateString.slice(0, 10) < aujourdhui;
+};
+
 const ItemType = 'OPPORTUNITY';
 
 
@@ -352,11 +375,16 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
         </div>
       )}
 
-      {opportunity.date_prochain_suivi && (
+      {/* La carte porte les DEUX, et l'intitulé d'abord : c'est lui qui permet
+          de décider sans ouvrir la fiche. La date passe en rouge quand elle est
+          dépassée — jusqu'ici elle restait orange indéfiniment, donc un suivi
+          promis pour la semaine dernière avait exactement l'air d'un suivi
+          prévu pour demain. */}
+      {(opportunity.prochaine_action || opportunity.date_prochain_suivi) && (
         <div
           style={{
             fontSize: 10.5,
-            color: 'var(--warn)',
+            color: enRetard(opportunity.date_prochain_suivi) ? 'var(--danger, #dc2626)' : 'var(--warn)',
             display: 'flex',
             alignItems: 'center',
             gap: 4,
@@ -364,7 +392,10 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
           }}
         >
           <AlertCircle className="ico-xs" />
-          Suivi : {formatDate(opportunity.date_prochain_suivi)}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {opportunity.prochaine_action || 'Suivi'}
+            {opportunity.date_prochain_suivi && ` · ${formatDate(opportunity.date_prochain_suivi)}`}
+          </span>
         </div>
       )}
 
@@ -2237,8 +2268,26 @@ export const PipelinePage: React.FC = () => {
                       />
                     </div>
 
+                    {/* LES DEUX CHAMPS VONT ENSEMBLE, et l'intitulé passe en
+                        premier. La date existait seule depuis toujours : elle
+                        était renseignée sur ZÉRO des 882 opportunités. Une date
+                        nue n'est pas une décision — « le 3 septembre » ne dit
+                        pas quoi faire, donc personne ne la remplissait. */}
                     <div>
-                      <Label htmlFor="nextFollowUp">Prochain suivi (optionnel)</Label>
+                      <Label htmlFor="prochaineAction">Prochaine action</Label>
+                      <Input
+                        id="prochaineAction"
+                        value={editingOpportunity.prochaine_action || ''}
+                        placeholder="Rappeler pour le devis toiture"
+                        onChange={(e) => setEditingOpportunity({
+                          ...editingOpportunity,
+                          prochaine_action: e.target.value || null
+                        })}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="nextFollowUp">Pour quand</Label>
                       <Input
                         id="nextFollowUp"
                         type="date"

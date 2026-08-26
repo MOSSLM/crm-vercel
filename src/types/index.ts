@@ -149,6 +149,8 @@ export interface Opportunity extends ArchiveFields {
   tags?: string;
   flags?: string[];
   date_prochain_suivi?: string;
+  /** Ce qu'on a décidé de faire ensuite, en clair. Se lit avec la date. */
+  prochaine_action?: string | null;
   created_at: string;
   updated_at: string;
   name?: string;

@@ -12,6 +12,7 @@ import { calculateDashboardMetrics } from "./dashboard/calculations";
 
 import { KpiActivityCard } from "./dashboard/KpiActivityCard";
 import { ColdCallProjectionCard } from "./dashboard/ColdCallProjectionCard";
+import { ARelancer } from "./opportunites/ARelancer";
 import { FinancialMetricCards } from "./dashboard/FinancialMetricCards";
 import { PerformanceTrendCard } from "./dashboard/PerformanceTrendCard";
 import { MainStatsCards } from "./dashboard/MainStatsCards";
@@ -344,6 +345,12 @@ export const DashboardPage: React.FC = () => {
       {/* ── Overview ─────────────────────────── */}
       {viewMode === "overview" && (
         <div className="space-y-6">
+          {/* En tête, et avant tous les compteurs : le reste de cet écran
+              MESURE ce qui s'est passé, cette carte dit ce qu'il faut faire
+              maintenant. Un chiffre qu'on regarde après avoir perdu l'affaire
+              ne sert à rien. */}
+          <ARelancer />
+
           <KpiActivityCard
             journalKpis={journalKpis}
             selectedPeriod={selectedPeriod}
