@@ -647,6 +647,31 @@ export const BOTS: Bot[] = [
     ],
   },
   {
+    id: "plaquettes-jetons",
+    nom: "Jetons de plaquette",
+    phase: "fabrication",
+    execution: "route-api",
+    statut: "actif",
+    chemin:
+      "src/lib/audit/plaquette.ts (assurerJetonsPlaquette) · src/app/api/agent/marketing-pipeline/plaquette/route.ts · src/app/api/atelier/plaquettes/route.ts",
+    resume:
+      "Pose un jeton de plaquette par entreprise, et le lien qui va avec. Le document est le même pour tous — c'est l'URL qui change, pour qu'une ouverture s'attribue à quelqu'un.",
+    entree: "Une sélection d'entreprises (route agent) ou un lot (route atelier)",
+    sortie: "entreprises_rapport_public.plaquette_token, et l'URL /plaquette/{jeton}",
+    ecrit: true,
+    externes: [],
+    cout: "Nul. Un aller-retour SQL, quelle que soit la taille de la sélection.",
+    commande:
+      "Pipeline marketing → « Plaquette » (agent) · Atelier → un lot → « Préparer les plaquettes » (admin)",
+    regles: [
+      "IDEMPOTENTE PAR CONSTRUCTION : `on conflict` + `coalesce` gardent le jeton existant. C'est ce qui fait que les liens déjà partis par WhatsApp continuent d'ouvrir — ne jamais « régénérer » un jeton pour rafraîchir une plaquette, le contenu se relit tout seul.",
+      "CONSÉQUENCE À NE PAS RATER : puisque relancer sur une entreprise déjà pourvue ne fait rien, une sélection prise « dans l'ordre » retomberait sur les mêmes à chaque appel. La route atelier demande donc `entreprises_sans_plaquette(lot)` — les manquantes, pas les premières. Sans ça, le deuxième clic ne prépare RIEN et le lot n'avance jamais au-delà de ses 300 premières fiches.",
+      "DEUX ROUTES, ET CE N'EST PAS UN DOUBLON : celle de l'agent est `role: \'freelance\'`, et `requireRole` teste l'ÉGALITÉ du rôle — un admin y reçoit 403 malgré le principe « un admin a toutes les capacités », parce que le contrôle de rôle passe avant celui de capacité. La route atelier est la porte admin ; le TRAVAIL, lui, reste `assurerJetonsPlaquette`, appelée par les deux.",
+      "Ça prépare le LIEN, pas le PDF. Le PDF est `plaquette-pdf`, local et seulement local. Pour un envoi WhatsApp le lien vaut mieux : il relit les prix du jour, le fichier est une photo qui se périme.",
+      "Plafond de 300 par appel dans les deux routes. Au-delà c'est une vague, et une vague se prépare avec de quoi la relire.",
+    ],
+  },
+  {
     id: "plaquette-pdf",
     nom: "PDF des plaquettes",
     phase: "fabrication",
@@ -918,6 +943,8 @@ export const BOTS: Bot[] = [
       "Un constat explicite l'emporte sur une colonne. Mesuré le 20/08 : 67 fiches ont une URL en colonne ET un constat « absent » — NXDOMAIN, ou le site de quelqu'un d'autre. Le constat avait raison à chaque fois.",
       "Elle ne se substitue pas au poste local : une étape Playwright est posée puis relâchée, et attend `scripts/lissage/runner.mjs`.",
       "Deux portes d'entrée, et une seule file : des filtres (écran Lissage) ou des cases cochées (bouton « Lisser » du pipeline marketing). Une passe née d'une sélection porte `criteres.origine` et NE SE REJOUE PAS — sa population est une liste figée, pas une requête.",
+      "TROISIÈME PORTE depuis le 26/08 : un LOT (`lotId`, écran Atelier). C'est la seule des trois qui soit pleinement rejouable — la composition d'un lot est écrite ligne par ligne, là où des filtres désignent une population qui a pu bouger. Aucun identifiant ne circule : la route lit `lots_entreprises` elle-même, ce qui rend le geste possible en 4G quelle que soit la taille du lot.",
+      "LE COÛT DE CRÉATION ÉTAIT UN INDEX ABSENT, pas une limite de nature. `populationDesCriteres` pagine par 200 (plafond de la RPC), donc une passe de 2 000 faisait DIX appels — et chacun refaisait le balayage complet des 60 726 fiches : ~1,7 s pièce, une vingtaine de secondes en tout. `entreprises_sans_site_idx` (26/08) ramène chaque appel à ~350 ms. Si le prédicat de `chercher_entreprises` change de forme, vérifier au EXPLAIN que l'index est encore reconnu — il décroche en silence.",
     ],
   },
   {

@@ -33,6 +33,7 @@ import {
   ChevronUp,
   Laptop,
   Loader2,
+  FileText,
   PackagePlus,
   Play,
   RefreshCw,
@@ -86,6 +87,7 @@ function CarteLot({
 }) {
   const [ouvert, setOuvert] = useState(false);
   const [lancement, setLancement] = useState(false);
+  const [plaquettes, setPlaquettes] = useState(false);
   const geste = prochainGeste(lot);
   const part = avancement(lot);
 
@@ -119,6 +121,39 @@ function CarteLot({
       toast.error(e instanceof Error ? e.message : "Passe impossible");
     } finally {
       setLancement(false);
+    }
+  };
+
+  /**
+   * Prépare les plaquettes du lot — le LIEN, pas le PDF. Le PDF passe par
+   * Puppeteer et reste au bureau ; le lien, lui, relit les prix du jour à
+   * chaque ouverture, ce qu'un fichier ne fait pas.
+   */
+  const preparerPlaquettes = async () => {
+    setPlaquettes(true);
+    try {
+      const r = await authedFetch("/api/atelier/plaquettes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lotId: lot.lotId }),
+      });
+      const corps = (await r.json()) as Record<string, unknown>;
+      if (!r.ok) throw new Error(String(corps.error ?? `Échec (${r.status})`));
+
+      const preparees = Number(corps.preparees ?? 0);
+      const restantes = Number(corps.restantes ?? 0);
+      if (preparees === 0 && restantes === 0) {
+        toast.info("Toutes les plaquettes de ce lot sont déjà prêtes");
+      } else {
+        toast.success(`${nb(preparees)} plaquette${preparees > 1 ? "s" : ""} préparée${preparees > 1 ? "s" : ""}`, {
+          description: restantes > 0 ? `${nb(restantes)} restent à préparer.` : undefined,
+        });
+      }
+      onLance();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Préparation impossible");
+    } finally {
+      setPlaquettes(false);
     }
   };
 
@@ -179,9 +214,25 @@ function CarteLot({
             Mettre ce lot en file de lissage
           </Button>
 
+          <Button
+            className="min-h-11 w-full"
+            variant="outline"
+            onClick={() => void preparerPlaquettes()}
+            disabled={plaquettes || lot.total === 0}
+          >
+            {plaquettes ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="mr-2 h-4 w-4" />
+            )}
+            Préparer les plaquettes
+          </Button>
+
           <p className="text-[11px] text-muted-foreground">
             Le lissage cherche le SIRET, les données publiques et le constat de présence web. Les
-            démos et les audits se font fiche par fiche, depuis le pipeline.
+            plaquettes préparées ici sont des LIENS — ils relisent les prix du jour à chaque
+            ouverture ; le PDF, lui, se fabrique au bureau. Les démos et les audits se font fiche
+            par fiche, depuis le pipeline.
           </p>
         </div>
       )}

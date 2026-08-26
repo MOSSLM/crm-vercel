@@ -106,6 +106,34 @@ tests : `jours_sans_echange` **nul n'est pas zéro** (nul = jamais aucun
 n'est **pas** un échange — sinon ranger son pipeline rajeunirait tout le
 portefeuille.
 
+**Un filtre coûteux sans index se paie dix fois.** `chercher_entreprises`
+plafonne à 200 lignes par appel, donc tout traitement de masse le rappelle en
+boucle — et chaque appel refaisait le balayage des 60 726 fiches. Une passe de
+lissage de 2 000 coûtait une vingtaine de secondes avant
+`entreprises_sans_site_idx`. **Le prédicat de l'index recopie celui de la
+fonction mot pour mot** : le planificateur inline `host_est_generique`, et la
+moindre variation d'écriture lui fait cesser de prouver l'implication — sans
+rien signaler. Contrôle en une ligne dans `sql/20260826_index_sans_site.sql`.
+
+**Un lot se fige depuis des critères, mais jamais en silence.** La règle
+d'origine (« depuis une liste d'identifiants, jamais depuis des critères »)
+visait le silence d'une divergence, pas la résolution côté serveur — et à
+34 633 lignes, ce que l'humain voit est un NOMBRE, pas une liste.
+`figer_lot_depuis_criteres` compare donc ce nombre et **refuse de créer quoi que
+ce soit** s'il a bougé. Deux pièges y sont écrits : un paramètre de SORTIE
+plpgsql nommé comme une colonne rend la clause `on conflict` ambiguë (et seul le
+chemin de création échoue, pas les refus) ; et un segment né du pipeline
+marketing porte `services`/`filtres`, que `chercher_entreprises` ne sait pas
+trancher — le matérialiser rendrait une population bien plus large.
+
+**Ce qui exige le poste local n'est pas une dette.** Onze bots sur trente-trois
+sont des scripts locaux, et c'est la raison pour laquelle ils marchent :
+Playwright, un profil Chrome persistant, des CAPTCHA, Chromium qui ne tient pas
+dans une fonction Vercel. L'atelier (`/atelier`) ne cherche pas à les déplacer —
+il les COMPTE par `lissage_leads.lieu` (`serveur` / `local` / `humain`) pour que
+l'absence soit productive. Corollaire côté plaquettes : la préparation du LIEN
+est une route API (donc mobile), seul le PDF reste au bureau.
+
 ## Où vivent les données qui trompent
 
 | Ce qu'on cherche | Où c'est vraiment |
@@ -114,6 +142,8 @@ portefeuille.
 | Site présent / absent / inconnu | `constats_presence` — « absent » et « inconnu » ne s'écrivent pas comme le même `NULL` |
 | Technologie, ancienneté du site | `entreprises_audit_site` |
 | Ce qui s'est passé avec une boîte | `vue_fil_activite` — neuf tables unifiées, **jamais sans filtre `entreprise_id`** |
+| Ce qui reste à faire sur un lot | `couverture_des_lots()` (les sept axes) et `vue_opportunites_suivi` (le pipeline) |
+| Ce qui attend le poste local | `lissage_leads.lieu = 'local'` avec `statut = 'a_faire'` |
 | Le canal d'un geste journalisé | `activity_log.metadata->>'channel'`, pas `activity_type` (qui dit la NATURE, pas le moyen) |
 
 ## Conventions
