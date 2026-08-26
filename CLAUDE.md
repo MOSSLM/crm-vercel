@@ -75,6 +75,37 @@ d'affichage, et ce qui se gagne sans toucher au rendu).
 **Les images d'un artisan sont à lui seul.** Jamais versées dans le fonds
 commun — `entreprise_id` est un mur, pas un tri.
 
+**Le fil d'activité est une vue, et elle ne se lit qu'entreprise par
+entreprise.** `vue_fil_activite` unifie neuf tables en UNION ALL. Interrogée
+sans `entreprise_id`, chaque branche parcourt sa table entière. La route
+`/api/entreprises/:id/fil` est le seul appelant, et le filtre y est posé.
+Corollaire déjà payé : quatre de ces tables portent `entreprise_id` en
+`integer` quand `entreprises.id` est `bigint`, la vue caste pour unifier le
+type, et **un cast rend le filtre non-sargable** — d'où les index d'expression
+`((entreprise_id)::bigint)` de `sql/20260826_fil_activite.sql`. Sans eux, Seq
+Scan sur les quatre, y compris `email_logs`.
+
+**Le service worker ne peut pas atteindre les sites publiés, et c'est
+structurel.** Le CRM vit sur `app.{SITE_DOMAIN}`, les sites clients sur
+d'autres hôtes : la portée d'un service worker s'arrête à son origine.
+`public/sw.js` est bien servi partout (le middleware laisse passer tout chemin
+contenant un point) mais **un fichier n'est un service worker que si une page
+l'enregistre** — et seul `(crm)/providers` l'enregistre. Ne jamais monter
+`ServiceWorkerBridge` ni déclarer le manifeste dans `(public)`. Et ne jamais
+ajouter de `respondWith` dans le gestionnaire `fetch` : il est vide exprès,
+un service worker qui met les navigations en cache sert des écrans périmés
+qu'on cherche ensuite dans le mauvais code.
+
+**Le seuil de « pourrissement » d'une affaire vit dans le code, pas en base.**
+`vue_opportunites_suivi` rend des durées (`jours_sans_echange`,
+`jours_de_retard`) et jamais de verdict ; le classement est dans
+`src/lib/opportunites/suivi.ts`, parce qu'un seuil commercial change et qu'il
+ne doit pas coûter une migration. Deux pièges y sont verrouillés par des
+tests : `jours_sans_echange` **nul n'est pas zéro** (nul = jamais aucun
+échange, le cas de la grande majorité du fichier), et un déplacement de carte
+n'est **pas** un échange — sinon ranger son pipeline rajeunirait tout le
+portefeuille.
+
 ## Où vivent les données qui trompent
 
 | Ce qu'on cherche | Où c'est vraiment |
@@ -82,6 +113,8 @@ commun — `entreprise_id` est un mur, pas un tri.
 | CA, effectif | `entreprises_donnees_publiques` (les colonnes `*_band` d'`entreprises` sont de la prose libre, presque toujours nulles) |
 | Site présent / absent / inconnu | `constats_presence` — « absent » et « inconnu » ne s'écrivent pas comme le même `NULL` |
 | Technologie, ancienneté du site | `entreprises_audit_site` |
+| Ce qui s'est passé avec une boîte | `vue_fil_activite` — neuf tables unifiées, **jamais sans filtre `entreprise_id`** |
+| Le canal d'un geste journalisé | `activity_log.metadata->>'channel'`, pas `activity_type` (qui dit la NATURE, pas le moyen) |
 
 ## Conventions
 
@@ -101,6 +134,12 @@ commun — `entreprise_id` est un mur, pas un tri.
   tourner.
 - `edge function enrich/enrich-lead-magnet(1).zip` ressemble à un export
   ponctuel oublié — à confirmer avant suppression.
+- `DemRail.test.tsx` échoue sur `main` depuis avant le 26/08 (la mise de côté
+  ne pose plus `.st.cote`). Un seul test sur 4 257 ; à reprendre avec le
+  contexte du démarchage.
+- Les notifications poussées ne partent que si `VAPID_*` est posé en
+  production (`node scripts/pwa/vapid.mjs` fabrique la paire). Sans les clés,
+  tout fonctionne à l'identique, sans push et sans erreur.
 - **ProÉco** figure dans le schéma des sources et dans les libellés de
   l'explorateur, mais aucun bot du dépôt ne l'interroge : les fiches portant
   cette source viennent d'un versement antérieur.
