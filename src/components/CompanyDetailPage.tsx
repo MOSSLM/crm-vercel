@@ -46,6 +46,7 @@ import logger from '../utils/logger';
 import { formatServiceTag, normalizeServiceTags } from '../utils/serviceTags';
 import DossierEntreprise from './donnees-publiques/DossierEntreprise';
 import BoutonDonneesPubliques from './donnees-publiques/BoutonDonneesPubliques';
+import FilActivite from './fil/FilActivite';
 interface CompanyDetailPageProps {
   companyId: number;
   onBack: () => void;
@@ -473,6 +474,12 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               vérifiable à la source, et celle qu'on lit avant d'appeler. Les
               champs éditables restent en dessous — l'ordre dit lequel fait foi. */}
           <DossierEntreprise entrepriseId={companyId} />
+
+          {/* Puis ce qu'on a fait d'elle. Le dossier dit QUI ils sont, le fil
+              dit OÙ ON EN EST — les deux questions qu'on se pose avant de
+              décrocher. Les champs éditables restent en dessous : on lit cette
+              fiche cent fois pour une fois qu'on la corrige. */}
+          <FilActivite entrepriseId={companyId} />
 
           <Card>
             <CardHeader className="pb-3">
