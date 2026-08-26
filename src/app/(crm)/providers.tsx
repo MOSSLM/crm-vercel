@@ -3,6 +3,7 @@ import { ThemeProvider } from "@/components/ThemeContext";
 import { AuthProvider } from "@/components/AuthContext";
 import { AppDataProvider } from "@/components/AppDataContext";
 import { CelebrationJournee } from "@/components/agent-portal/CelebrationJournee";
+import { ServiceWorkerBridge } from "@/components/pwa/ServiceWorkerBridge";
 import { Toaster } from "sonner";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
               entre le pipeline, une fiche et la médiathèque. Un compteur
               enterré dans un seul onglet n'existe pas. */}
           <CelebrationJournee />
+          {/* Même raison de vivre ici : l'enregistrement du service worker doit
+              se faire depuis la coque CRM et depuis elle seule — jamais depuis
+              `(public)`, qui sert les sites des clients. */}
+          <ServiceWorkerBridge />
           <Toaster richColors closeButton />
         </AppDataProvider>
       </AuthProvider>
