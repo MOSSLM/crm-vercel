@@ -2,14 +2,19 @@
  * POST /api/atelier/plaquettes — préparer les plaquettes d'un lot.
  *
  * ── POURQUOI CETTE ROUTE EXISTE ALORS QUE L'AGENT A LA SIENNE ────────────
- * `/api/agent/marketing-pipeline/plaquette` fait déjà ce travail, mais elle est
- * déclarée `role: "freelance"` — et `requireRole` teste l'ÉGALITÉ stricte du
- * rôle, pas une hiérarchie. Un admin y reçoit donc 403, malgré le principe posé
- * dans `require-capability` selon lequel « un admin les a toutes, toujours » :
- * le contrôle de rôle passe avant celui de capacité, et le refuse d'abord.
+ * À sa naissance, pour une raison qui n'a plus cours : `requireRole` testait
+ * l'ÉGALITÉ stricte du rôle, si bien qu'un admin recevait 403 sur
+ * `/api/agent/marketing-pipeline/plaquette`, déclarée `role: "freelance"`.
+ * Préparer des plaquettes en lot était inaccessible au propriétaire du CRM.
+ * Ce défaut-là est corrigé à la source (cf. l'en-tête de `require-role`), et
+ * l'admin passe désormais les portes `freelance`.
  *
- * Préparer des plaquettes en lot était donc, en pratique, inaccessible au
- * propriétaire du CRM.
+ * ELLE RESTE, POUR L'AUTRE RAISON — la seule qui vaille : la route agent
+ * attend une LISTE d'identifiants, celle-ci attend un NUMÉRO DE LOT et résout
+ * la population côté serveur. Sur un lot de plusieurs centaines de fiches,
+ * c'est la différence entre un geste possible en 4G et un corps de requête
+ * qu'on ne veut pas faire voyager. Le plafond et le travail, eux, sont les
+ * mêmes.
  *
  * ── ON NE DUPLIQUE RIEN ──────────────────────────────────────────────────
  * Le travail lui-même reste `assurerJetonsPlaquette`, la MÊME fonction que la

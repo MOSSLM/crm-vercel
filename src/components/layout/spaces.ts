@@ -52,6 +52,7 @@ import {
   Send,
   ShieldCheck,
   Hammer,
+  Headset,
 } from "lucide-react";
 
 /**
@@ -123,6 +124,12 @@ export const SPACES: Space[] = [
       { title: "Où on en est", href: "/prospection/etat-sequences", icon: GitBranch },
       { title: "Semaine", href: "/automations/semaine", icon: CalendarDays },
       { title: "Tâches", href: "/prospection/taches", icon: ListTodo },
+      // LE TERRAIN — l'écran de démarchage de l'espace agent, monté ici pour
+      // l'admin. Il porte sa propre file du jour, pas celle d'un agent.
+      // Il ne s'appelle pas « Démarchage » parce que ce nom est déjà pris,
+      // dans Acquisition, par `/qualification` — qui trie des fiches là où
+      // celui-ci contacte des gens.
+      { title: "Terrain", href: "/terrain", icon: Headset },
       { title: "Signaux", href: "/prospection/signaux", icon: Bell },
       // LES LEADS DE LA REFONTE, ET ILS EXISTENT DÉJÀ. L'explorateur porte les
       // 25 familles de filtres, les segments enregistrés et le figeage en lot —
@@ -324,6 +331,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
 
   ["/prospection", "prospection"],
   ["/atelier", "prospection"],
+  ["/terrain", "prospection"],
 
   ["/dashboard", "hub"],
 ];
