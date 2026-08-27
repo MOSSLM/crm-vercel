@@ -258,6 +258,14 @@ export const SPACES: Space[] = [
       { title: "Dashboard", href: "/dashboard-2", icon: LayoutDashboard },
       { title: "Sales", href: "/prospection/dashboard", icon: Phone },
       { title: "Qualification", href: "/qualification/dashboard", icon: CheckCircle },
+      // L'ÉQUIPE — et pourquoi elle est ici plutôt que dans Relation, à côté
+      // d'« Agents ». Les deux écrans parlent des mêmes personnes, mais pas
+      // au même moment : Relation › Agents est là où l'on AGIT sur un agent
+      // (attribuer, accorder une capacité, valider une demande) ; ceci est un
+      // écran de LECTURE — qui avance, qui a décroché. Les ranger ensemble
+      // ferait un troisième endroit où l'on attribue des prospects, et plus
+      // personne ne saurait lequel fait foi.
+      { title: "L'équipe", href: "/equipe", icon: Users },
       { title: "Objectifs", href: "/objectifs", icon: Target },
       { title: "Calendrier", href: "/calendar", icon: CalendarDays },
       { title: "Architecture", href: "/docs/architecture", icon: Network },
@@ -289,6 +297,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/prospection/dashboard", "pilotage"],
   ["/qualification/dashboard", "pilotage"],
   ["/objectifs", "pilotage"],
+  ["/equipe", "pilotage"],
   ["/calendar", "pilotage"],
   ["/docs", "pilotage"],
   ["/settings", "pilotage"],
