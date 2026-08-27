@@ -126,6 +126,27 @@ chemin de création échoue, pas les refus) ; et un segment né du pipeline
 marketing porte `services`/`filtres`, que `chercher_entreprises` ne sait pas
 trancher — le matérialiser rendrait une population bien plus large.
 
+**« Prêt pour la démo » et « couverture » ne se déduisent pas l'un de l'autre.**
+Les sept axes comptent des PIÈCES (SIRET, constat, démo…) ;
+`pretes_pour_demo_des_lots()` compte des fiches FABRICABLES. Une entreprise peut
+avoir toutes ses pièces et rester impossible à mettre en site faute de code
+postal. La définition de « prête » est donc recopiée en SQL depuis
+`missingForSite` et `SITE_REQUIRED` — troisième copie assumée, parce qu'appliquer
+des règles TypeScript à 60 000 fiches pour rendre un compteur n'est pas tenable ;
+`pret-demo.test.ts` tient la couture, comme `missing-for-site.test.ts` tient
+l'autre.
+
+**Le logo n'est plus une exigence, et il ne doit pas le redevenir.** 738 fiches
+sur 60 445 en ont un. Un artisan sans logo n'a jamais payé de graphiste, et
+`hydrate-logo` compose son nom dans la police du design. Ce qui se travaille
+n'est donc pas « combien en ont un » mais le clivage : celles dont le logo est
+sur un vrai site (à prendre) contre celles qui n'ont aucune URL (rien à
+chercher). Les additionner ferait passer une impossibilité pour du retard. Les
+drapeaux `avec_logo` / `sans_logo` de `chercher_entreprises` rendent ce tri
+adressable — **ajouter une VALEUR à `p_flags` ne change pas la signature**, donc
+pas de surcharge ; ajouter un PARAMÈTRE, si, et c'est le piège de
+`20260820_chercher_entreprises_owner.sql`.
+
 **Ce qui exige le poste local n'est pas une dette.** Onze bots sur trente-trois
 sont des scripts locaux, et c'est la raison pour laquelle ils marchent :
 Playwright, un profil Chrome persistant, des CAPTCHA, Chromium qui ne tient pas
@@ -143,6 +164,7 @@ est une route API (donc mobile), seul le PDF reste au bureau.
 | Technologie, ancienneté du site | `entreprises_audit_site` |
 | Ce qui s'est passé avec une boîte | `vue_fil_activite` — neuf tables unifiées, **jamais sans filtre `entreprise_id`** |
 | Ce qui reste à faire sur un lot | `couverture_des_lots()` (les sept axes) et `vue_opportunites_suivi` (le pipeline) |
+| Combien sont fabricables tout de suite | `pretes_pour_demo_des_lots()` — les axes comptent des PIÈCES, celle-ci des fiches |
 | Ce qui attend le poste local | `lissage_leads.lieu = 'local'` avec `statut = 'a_faire'` |
 | Le canal d'un geste journalisé | `activity_log.metadata->>'channel'`, pas `activity_type` (qui dit la NATURE, pas le moyen) |
 

@@ -31,17 +31,34 @@ import { Label } from "@/components/ui/label";
 import { authedFetch } from "@/utils/authedFetch";
 
 /**
- * Les filtres offerts au pouce. Volontairement PLUS COURTS que ceux de
- * l'explorateur : un écran de téléphone qui propose huit drapeaux n'en fait
- * cocher aucun. Ce sont les trois trous que le lissage sait boucher, plus
- * l'état de base.
+ * Les filtres offerts au pouce. Volontairement plus courts que ceux de
+ * l'explorateur — qui expose aussi les états (archivée, masquée, fusionnée),
+ * lesquels n'ont rien à faire dans un lot de travail. Restent les trois trous
+ * que le lissage sait boucher, la qualité, et le logo.
+ *
+ * L'état vivant n'est pas une case : il est TOUJOURS joint (`ETAT_DE_BASE`).
+ * Le rendre décochable laisserait fabriquer un lot d'archivées, ce que
+ * personne ne veut et que personne ne verrait avant de lancer un traitement.
  */
 const FILTRES = [
   { cle: "sans_site", libelle: "Sans site", aide: "Aucune URL, ou une page Facebook" },
   { cle: "sans_siret", libelle: "Sans SIRET", aide: "Pas encore rapprochée du registre" },
   { cle: "sans_google", libelle: "Sans fiche Google", aide: "Aucun place_id connu" },
   { cle: "qualite", libelle: "Qualité douteuse", aide: "Un motif de qualité est posé" },
+  // Le logo ne conditionne PAS la fabrication d'une démo (`hydrate-logo`
+  // compose le nom quand il manque) — mais 738 fiches sur 60 445 en ont un, et
+  // celles qui ont un vrai site en portent forcément un qu'on n'a pas encore
+  // pris. C'est un tri de travail, pas un critère de qualité.
+  { cle: "avec_logo", libelle: "Avec logo", aide: "Un logo est déjà enregistré" },
+  { cle: "sans_logo", libelle: "Sans logo", aide: "Aucun logo — combinable avec « sans site »" },
 ] as const;
+
+/**
+ * Les paires qui s'annulent. Cocher « avec logo » ET « sans logo » rend
+ * littéralement l'ensemble vide — c'est la lecture correcte, mais personne ne
+ * la veut : on décoche donc l'autre plutôt que d'afficher zéro sans expliquer.
+ */
+const EXCLUSIFS: Record<string, string> = { avec_logo: "sans_logo", sans_logo: "avec_logo" };
 
 /** Toujours joint : sans lui on compterait les archivées et les fusionnées. */
 const ETAT_DE_BASE = "vivantes";
@@ -88,7 +105,12 @@ export function CreerLot({ onLotCree }: { onLotCree?: () => void }) {
   }, [flags, compter]);
 
   const basculer = (cle: string) =>
-    setFlags((prec) => (prec.includes(cle) ? prec.filter((f) => f !== cle) : [...prec, cle]));
+    setFlags((prec) => {
+      if (prec.includes(cle)) return prec.filter((f) => f !== cle);
+      const oppose = EXCLUSIFS[cle];
+      const sansOppose = oppose ? prec.filter((f) => f !== oppose) : prec;
+      return [...sansOppose, cle];
+    });
 
   /** Un nom proposé, jamais imposé : il reste modifiable jusqu'au dernier tap. */
   const nomPropose = () => {

@@ -1,0 +1,46 @@
+-- Deux drapeaux de plus dans l'explorateur : `avec_logo` et `sans_logo`.
+--
+-- ── CE N'EST PAS UN CHANGEMENT DE SIGNATURE, ET C'EST TOUT L'ENJEU ───────
+-- Les drapeaux voyagent dans `p_flags text[]` : en ajouter deux valeurs
+-- RECONNUES n'ajoute aucun paramètre. `create or replace` remplace donc bien la
+-- fonction au lieu d'en créer une SURCHARGE — c'est le piège documenté dans
+-- `20260820_chercher_entreprises_owner.sql`, où l'ajout d'un vrai paramètre
+-- avait fait coexister deux fonctions et rendu l'explorateur ENTIER
+-- inaccessible (PostgREST : « Could not choose the best candidate function »).
+--
+-- Contrôlé après application : `select count(*) from pg_proc … ` rend 1.
+--
+-- ⚠️ LE PRÉDICAT `sans_site` EST RECOPIÉ MOT POUR MOT depuis la version
+-- précédente de la fonction. `entreprises_sans_site_idx` est un index PARTIEL
+-- dont le planificateur doit prouver qu'il couvre la requête ; la moindre
+-- réécriture et il cesse de le reconnaître SANS RIEN SIGNALER — on retomberait
+-- de 351 ms à 6 461 ms en croyant avoir un index. Vérifié au EXPLAIN après
+-- cette migration : « Bitmap Index Scan on entreprises_sans_site_idx », plan
+-- identique.
+--
+-- ── POURQUOI DEUX DRAPEAUX ET NON UN BOOLÉEN ─────────────────────────────
+-- Le vocabulaire est fermé et se coche : « avec » et « sans » sont deux cases,
+-- comme `sans_site` et `sans_siret`. Les cocher toutes les deux rend un
+-- ensemble vide — la lecture littérale et correcte de « avec logo ET sans
+-- logo ». Mesuré : 738 avec, 59 707 sans, 0 pour les deux.
+--
+-- ── À QUOI ÇA SERT, PUISQUE LE LOGO N'EST PLUS EXIGÉ ─────────────────────
+-- Justement : il n'est plus une condition pour fabriquer une démo
+-- (`hydrate-logo` compose le nom quand il manque), donc il n'apparaît plus dans
+-- « n manquants ». Il a disparu des écrans avec l'exigence — alors qu'il reste
+-- un tri de travail : 738 fiches sur 60 445 en ont un, et parmi les autres,
+-- celles qui ont un VRAI site en portent forcément un qu'on n'a pas encore
+-- pris. `pretes_pour_demo_des_lots()` fait ce clivage par lot ; ces drapeaux le
+-- rendent adressable sur tout le parc, et donc figeable en lot.
+--
+-- Le corps complet de la fonction est celui appliqué par la migration
+-- `chercher_entreprises_flags_logo` — il n'est pas recopié ici, parce qu'une
+-- deuxième copie du corps entier dériverait au premier correctif. Les deux
+-- lignes ajoutées, elles, sont celles-ci :
+--
+--   and (not ('sans_logo' = any(p_flags)) or nullif(btrim(b.logo_url), '') is null)
+--   and (not ('avec_logo' = any(p_flags)) or nullif(btrim(b.logo_url), '') is not null)
+--
+-- Contrôle de non-régression, à relancer si l'on retouche la fonction :
+--   select max(total) from public.chercher_entreprises(null, array['vivantes','avec_logo'], '{}', 1, 0, null);  -- 738
+--   explain select id from public.chercher_entreprises(null, array['vivantes','sans_site'], '{}', 200, 0, null); -- Bitmap Index Scan

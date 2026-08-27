@@ -28,6 +28,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { lireCouverture, type LigneCouverture } from "@/lib/lots/couverture";
+import { lirePretDemo, type LignePretDemo } from "@/lib/lots/pret-demo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,8 +89,9 @@ async function attenteDuLissage(
 export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
   const sc = getServiceClient();
 
-  const [couverture, lissage] = await Promise.all([
+  const [couverture, pret, lissage] = await Promise.all([
     sc.rpc("couverture_des_lots"),
+    sc.rpc("pretes_pour_demo_des_lots"),
     attenteDuLissage(sc),
   ]);
 
@@ -102,5 +104,15 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
 
   const lots = ((couverture.data ?? []) as LigneCouverture[]).map(lireCouverture);
 
-  return json({ lots, lissage }, { headers: cors });
+  // La préparation est SÉPARÉE de la couverture, et jointe par lot côté client.
+  // Deux fonctions parce qu'elles répondent à deux questions : la couverture dit
+  // ce qui manque au lot (SIRET, constat, démo…), la préparation dit combien
+  // sont fabricables MAINTENANT. Une fiche peut avoir toutes ses pièces et
+  // rester impossible à mettre en site faute de code postal.
+  //
+  // Si sa migration n'est pas appliquée, on rend une liste vide plutôt qu'une
+  // erreur : l'atelier doit s'ouvrir sans ce bloc.
+  const pretDemo = pret.error ? [] : ((pret.data ?? []) as LignePretDemo[]).map(lirePretDemo);
+
+  return json({ lots, pretDemo, lissage }, { headers: cors });
 });

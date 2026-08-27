@@ -31,6 +31,7 @@ import Link from "next/link";
 import {
   ChevronDown,
   ChevronUp,
+  Image as ImageIcon,
   Laptop,
   Loader2,
   FileText,
@@ -54,6 +55,12 @@ import {
   prochainGeste,
   type Couverture,
 } from "@/lib/lots/couverture";
+import {
+  MANQUES,
+  logosAPrendre,
+  partPrete,
+  type PretDemo,
+} from "@/lib/lots/pret-demo";
 
 type AttenteLissage = {
   serveur: number;
@@ -62,7 +69,7 @@ type AttenteLissage = {
   passesOuvertes: number;
 };
 
-type Reponse = { lots: Couverture[]; lissage: AttenteLissage | null };
+type Reponse = { lots: Couverture[]; pretDemo: PretDemo[]; lissage: AttenteLissage | null };
 
 const nb = (n: number) => n.toLocaleString("fr-FR");
 
@@ -78,11 +85,85 @@ function Jauge({ part }: { part: number }) {
   );
 }
 
+/**
+ * « Prêtes pour la démo » — le bloc qui répond à « combien puis-je lancer en
+ * fabrication maintenant ».
+ *
+ * IL EST DISTINCT DES SEPT AXES, et ce n'est pas une redite. Les axes comptent
+ * des PIÈCES (SIRET, constat, démo…) ; celui-ci compte des fiches FABRICABLES.
+ * Une entreprise peut avoir toutes ses pièces et rester impossible à mettre en
+ * site faute de code postal — les deux blocs ne se déduisent pas l'un de l'autre.
+ *
+ * LE LOGO EST SOUS UNE LIGNE DE SÉPARATION, exprès : il ne conditionne rien
+ * (`hydrate-logo` compose le nom quand il manque). Le mêler aux causes de
+ * blocage ferait croire qu'il en est une.
+ */
+function BlocPretDemo({ pret }: { pret: PretDemo }) {
+  const aPrendre = logosAPrendre(pret);
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/30 p-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium">
+          {nb(pret.pretes)} <span className="font-normal text-muted-foreground">prêtes pour la démo</span>
+        </span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {Math.round(partPrete(pret) * 100)} %
+        </span>
+      </div>
+
+      {/* Les causes, par effort croissant. Une cause à zéro ne se rend pas. */}
+      {pret.manques.length > 0 && (
+        <ul className="space-y-0.5">
+          {pret.manques.map((m) => (
+            <li key={m.cle} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="text-muted-foreground" title={MANQUES[m.cle].geste}>
+                {MANQUES[m.cle].libelle}
+              </span>
+              <span className="tabular-nums">{nb(m.nombre)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="border-t pt-2">
+        <div className="flex items-baseline justify-between gap-2 text-xs">
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <ImageIcon className="h-3 w-3" />
+            Logo
+          </span>
+          <span className="tabular-nums">
+            {nb(pret.logo.avec)} sur {nb(pret.pretes)}
+          </span>
+        </div>
+
+        {/* LA DISTINCTION QUI COMPTE : un logo qu'on peut aller chercher n'est
+            pas un logo qui n'existe pas. Les additionner ferait passer une
+            impossibilité pour du retard. */}
+        {aPrendre > 0 && (
+          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+            {nb(aPrendre)} sans logo en ont pourtant un{" "}
+            {pret.logo.surReseau > 0 ? "sur leur site ou leur page" : "sur leur site"} — à prendre.
+          </p>
+        )}
+        {pret.logo.introuvable > 0 && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {nb(pret.logo.introuvable)} n&apos;ont aucune URL : rien à aller chercher, l&apos;en-tête
+            composera leur nom.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CarteLot({
   lot,
+  pret,
   onLance,
 }: {
   lot: Couverture;
+  pret: PretDemo | undefined;
   onLance: () => void;
 }) {
   const [ouvert, setOuvert] = useState(false);
@@ -184,6 +265,8 @@ function CarteLot({
 
       {ouvert && (
         <div className="space-y-3 border-t px-3 py-3">
+          {pret && <BlocPretDemo pret={pret} />}
+
           {/* Les sept axes, dans l'ordre du plan — c'est cet ordre qui permet de
               désigner LE prochain geste plutôt que d'afficher sept trous. */}
           <ul className="space-y-1">
@@ -314,6 +397,10 @@ export function Atelier() {
 
   const lissage = donnees?.lissage ?? null;
   const lots = donnees?.lots ?? [];
+  // Joint par lot ici plutôt qu'en base : les deux fonctions répondent à deux
+  // questions et n'ont pas forcément les mêmes lignes (un lot dont toutes les
+  // fiches sont archivées sort de la préparation, pas de la couverture).
+  const parLot = new Map((donnees?.pretDemo ?? []).map((p) => [p.lotId, p]));
 
   return (
     <div className="mobile-safe-pb space-y-4 px-3 py-4 md:px-6">
@@ -456,7 +543,12 @@ export function Atelier() {
           ) : (
             <div className="space-y-2">
               {lots.map((lot) => (
-                <CarteLot key={lot.lotId} lot={lot} onLance={() => void charger()} />
+                <CarteLot
+                  key={lot.lotId}
+                  lot={lot}
+                  pret={parLot.get(lot.lotId)}
+                  onLance={() => void charger()}
+                />
               ))}
             </div>
           )}
