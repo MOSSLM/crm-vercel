@@ -9,6 +9,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { cn } from './ui/utils';
 import { getNotifications, type NotificationRecord } from '../utils/notificationsApi';
+import { BasculePush } from './pwa/BasculePush';
 import type { EnrichmentLogEntry } from './EnrichmentProgressModal';
 
 function StatusBadge({ status }: { status: NotificationRecord['status'] }) {
@@ -67,6 +68,16 @@ function NotificationItem({ notification }: { notification: NotificationRecord }
     hour: '2-digit', minute: '2-digit',
   });
 
+  // Ce panneau ne savait rendre qu'un résumé d'enrichissement — quatre
+  // compteurs. Les notifications venues d'ailleurs (réservation, rebond
+  // d'e-mail, et maintenant tout ce qui passe par `notifier()`) portent un
+  // résumé d'une autre forme, et se rendaient donc en ligne vide. On lit le
+  // texte quand les compteurs sont absents, plutôt que d'afficher du silence.
+  const compteurs = typeof s?.total === 'number' || typeof s?.success === 'number';
+  const texte = !compteurs
+    ? (s as unknown as { corps?: string } | null)?.corps ?? null
+    : null;
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-start justify-between gap-2">
@@ -76,6 +87,10 @@ function NotificationItem({ notification }: { notification: NotificationRecord }
             <span className="text-xs text-muted-foreground">{date}</span>
           </div>
           <p className="text-sm font-medium leading-tight truncate">{notification.title}</p>
+          {!compteurs && texte && (
+            <p className="text-xs text-muted-foreground line-clamp-2">{texte}</p>
+          )}
+          {compteurs && (
           <p className="text-xs text-muted-foreground">
             {s.success > 0 && <span className="text-green-600 dark:text-green-400">{s.success} enrichi{s.success > 1 ? 's' : ''}</span>}
             {s.success > 0 && (s.errors > 0 || s.noWebsite > 0 || s.skipped > 0) && <span> · </span>}
@@ -85,6 +100,7 @@ function NotificationItem({ notification }: { notification: NotificationRecord }
             {s.errors > 0 && s.skipped > 0 && <span> · </span>}
             {s.skipped > 0 && <span className="text-muted-foreground">{s.skipped} ignoré{s.skipped > 1 ? 's' : ''}</span>}
           </p>
+          )}
         </div>
         <Button
           variant="ghost"
@@ -96,7 +112,7 @@ function NotificationItem({ notification }: { notification: NotificationRecord }
         </Button>
       </div>
 
-      {expanded && notification.logs.length > 0 && (
+      {expanded && (notification.logs?.length ?? 0) > 0 && (
         <div className="ml-1 rounded-md border border-border/50 bg-muted/30 px-3 py-2 space-y-0.5">
           {notification.logs.map((entry) => (
             <LogEntryRow key={entry.project_id} entry={entry} />
@@ -146,6 +162,11 @@ export function NotificationCenter() {
             <Bell className="h-4 w-4" />
             Centre de notifications
           </SheetTitle>
+          {/* La bascule vit ICI et pas dans les Paramètres : c'est en ouvrant ce
+              panneau qu'on se demande pourquoi on n'a rien reçu. */}
+          <div className="pt-2">
+            <BasculePush />
+          </div>
         </SheetHeader>
 
         <ScrollArea className="flex-1">

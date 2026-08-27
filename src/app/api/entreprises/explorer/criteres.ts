@@ -28,6 +28,15 @@ export const FLAGS_CONNUS = new Set([
   "fusionnee",
   "archivee",
   "masquee",
+  // Le logo. Il n'est PLUS une exigence pour fabriquer une démo — `hydrate-logo`
+  // compose le nom quand il manque — donc il a disparu des écrans en même temps
+  // que l'exigence. Il reste pourtant un tri de travail : 738 fiches sur 60 445
+  // en ont un, et celles qui ont un vrai site en portent forcément un qu'on n'a
+  // pas encore pris. Deux cases plutôt qu'un booléen, comme le reste du
+  // vocabulaire ; les cocher toutes les deux rend un ensemble vide, ce qui est
+  // la lecture littérale de « avec logo ET sans logo ».
+  "avec_logo",
+  "sans_logo",
 ]);
 
 /** Les provenances réellement présentes en base, mesurées le 16/08. */

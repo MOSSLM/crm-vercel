@@ -47,8 +47,10 @@ export function AgentTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <span className="max-w-[120px] truncate text-xs font-medium">{user?.name ?? "Espace agent"}</span>
       </div>
 
-      {/* Breadcrumbs */}
-      <nav className="flex min-w-0 items-center gap-1.5 text-sm" aria-label="Fil d'Ariane">
+      {/* Breadcrumbs — masqués au téléphone, comme côté admin : la place va à la
+          recherche, seul chemin vers les écrans que la barre du bas ne propose
+          pas. Voir `StudioTopbar`. */}
+      <nav className="hidden min-w-0 items-center gap-1.5 text-sm md:flex" aria-label="Fil d'Ariane">
         <Home className="h-3.5 w-3.5 shrink-0 text-[var(--text-4)]" />
         <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-4)]" />
         <span className="hidden shrink-0 text-[var(--text-3)] lg:inline">{space.label}</span>
@@ -60,10 +62,14 @@ export function AgentTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <button
         type="button"
         onClick={onOpenSearch}
+        aria-label="Rechercher dans tout l'espace agent"
         className="ml-auto flex h-9 max-w-md flex-1 items-center gap-2 rounded-lg border border-border/60 bg-[var(--surface)] px-3 text-sm text-[var(--text-3)] transition-colors hover:border-border hover:bg-[var(--bg-2)] md:ml-4"
       >
         <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate text-left">Rechercher un outil, une action…</span>
+        <span className="truncate text-left md:hidden">Rechercher — tout l&apos;espace</span>
+        <span className="hidden truncate text-left md:inline">
+          Rechercher un outil, une action…
+        </span>
         <kbd className="ml-auto hidden shrink-0 items-center gap-0.5 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-3)] sm:inline-flex">
           ⌘K
         </kbd>

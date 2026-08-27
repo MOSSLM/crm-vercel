@@ -51,6 +51,8 @@ import {
   Bot,
   Send,
   ShieldCheck,
+  Hammer,
+  Headset,
 } from "lucide-react";
 
 /**
@@ -122,6 +124,12 @@ export const SPACES: Space[] = [
       { title: "Où on en est", href: "/prospection/etat-sequences", icon: GitBranch },
       { title: "Semaine", href: "/automations/semaine", icon: CalendarDays },
       { title: "Tâches", href: "/prospection/taches", icon: ListTodo },
+      // LE TERRAIN — l'écran de démarchage de l'espace agent, monté ici pour
+      // l'admin. Il porte sa propre file du jour, pas celle d'un agent.
+      // Il ne s'appelle pas « Démarchage » parce que ce nom est déjà pris,
+      // dans Acquisition, par `/qualification` — qui trie des fiches là où
+      // celui-ci contacte des gens.
+      { title: "Terrain", href: "/terrain", icon: Headset },
       { title: "Signaux", href: "/prospection/signaux", icon: Bell },
       // LES LEADS DE LA REFONTE, ET ILS EXISTENT DÉJÀ. L'explorateur porte les
       // 25 familles de filtres, les segments enregistrés et le figeage en lot —
@@ -131,6 +139,18 @@ export const SPACES: Space[] = [
       // On ne le DÉPLACE pas — il reste dans Acquisition, où il sert aussi.
       { title: "Leads", href: "/entreprises/explorateur", icon: Building2 },
       { title: "Rapports", href: "/prospection/rapports", icon: BarChart3 },
+      // L'ATELIER, ET POURQUOI IL EST ICI PLUTÔT QU'AILLEURS. C'est le seul
+      // écran du CRM conçu POUR le téléphone : figer un lot, lancer la file,
+      // voir combien de fiches sont fabricables. Il vit donc à côté des Lots et
+      // du Lissage, qu'il commande — et non dans un espace à lui, qui aurait
+      // fait un neuvième bouton de rail pour un seul écran.
+      //
+      // ⚠️ IL N'ÉTAIT INSCRIT NULLE PART. Le rail, le sous-menu ET la palette
+      // Cmd+K lisent tous `SPACES` (`getAllTools`) : un écran absent d'ici
+      // n'existe pour aucun des trois, même quand sa route répond. Il ne se
+      // trouvait que par la barre du bas, qui lit encore l'ancien
+      // `navigation.ts`. Toute route ajoutée au CRM se déclare ICI.
+      { title: "Atelier", href: "/atelier", icon: Hammer },
       // Les LOTS : le pipeline des populations, au-dessus de celui des fiches.
       // Il se range juste avant le lissage parce que c'est lui qui dit combien
       // il reste à lisser, et sur quel lot.
@@ -238,6 +258,14 @@ export const SPACES: Space[] = [
       { title: "Dashboard", href: "/dashboard-2", icon: LayoutDashboard },
       { title: "Sales", href: "/prospection/dashboard", icon: Phone },
       { title: "Qualification", href: "/qualification/dashboard", icon: CheckCircle },
+      // L'ÉQUIPE — et pourquoi elle est ici plutôt que dans Relation, à côté
+      // d'« Agents ». Les deux écrans parlent des mêmes personnes, mais pas
+      // au même moment : Relation › Agents est là où l'on AGIT sur un agent
+      // (attribuer, accorder une capacité, valider une demande) ; ceci est un
+      // écran de LECTURE — qui avance, qui a décroché. Les ranger ensemble
+      // ferait un troisième endroit où l'on attribue des prospects, et plus
+      // personne ne saurait lequel fait foi.
+      { title: "L'équipe", href: "/equipe", icon: Users },
       { title: "Objectifs", href: "/objectifs", icon: Target },
       { title: "Calendrier", href: "/calendar", icon: CalendarDays },
       { title: "Architecture", href: "/docs/architecture", icon: Network },
@@ -269,6 +297,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/prospection/dashboard", "pilotage"],
   ["/qualification/dashboard", "pilotage"],
   ["/objectifs", "pilotage"],
+  ["/equipe", "pilotage"],
   ["/calendar", "pilotage"],
   ["/docs", "pilotage"],
   ["/settings", "pilotage"],
@@ -310,6 +339,8 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/media-library", "web"],
 
   ["/prospection", "prospection"],
+  ["/atelier", "prospection"],
+  ["/terrain", "prospection"],
 
   ["/dashboard", "hub"],
 ];

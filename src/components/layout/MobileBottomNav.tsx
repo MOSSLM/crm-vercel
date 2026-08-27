@@ -1,38 +1,31 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { TOP_CATEGORIES, getCategoryFromPath } from "./navigation";
+import { DESTINATIONS_ADMIN, destinationActive } from "./mobile";
+import { MobileTabBar, type EntreeOnglet } from "./MobileTabBar";
 
+/**
+ * La barre du bas, côté admin.
+ *
+ * Elle ne lit plus `TOP_CATEGORIES` — l'ancien modèle de menu, que plus aucune
+ * surface de bureau n'utilise depuis le passage aux espaces (`spaces.ts`).
+ * C'était le dernier endroit d'où il pilotait quelque chose, et il pilotait le
+ * téléphone : la seule surface où se tromper coûte le plus cher.
+ *
+ * La liste et son ordre vivent dans `mobile.ts`, avec la raison de chaque
+ * entrée. Ce fichier ne fait que la brancher sur le chemin courant.
+ */
 export function MobileBottomNav() {
-  const pathname = usePathname();
-  const activeCategory = getCategoryFromPath(pathname);
+  const chemin = usePathname() ?? "";
 
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-background/95 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-1 backdrop-blur md:hidden">
-      <ul className="grid grid-cols-5 gap-1">
-        {TOP_CATEGORIES.map((item) => {
-          const active = activeCategory === item.key;
-          return (
-            <li key={item.key}>
-              <Link
-                href={item.href}
-                className={`flex min-h-14 flex-col items-center justify-center rounded-lg px-1 py-1 text-[11px] font-medium transition-colors ${
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-                }`}
-                aria-current={active ? "page" : undefined}
-              >
-                <item.icon className="mb-0.5 h-4 w-4" />
-                <span className="truncate">{item.title}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
+  const entrees: EntreeOnglet[] = DESTINATIONS_ADMIN.map((d) => ({
+    cle: d.cle,
+    titre: d.titre,
+    href: d.href,
+    icone: d.icone,
+  }));
+
+  return <MobileTabBar entrees={entrees} actif={destinationActive(chemin, DESTINATIONS_ADMIN)} />;
 }
 
 export default MobileBottomNav;

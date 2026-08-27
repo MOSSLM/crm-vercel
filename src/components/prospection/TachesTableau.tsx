@@ -38,6 +38,7 @@ import {
   type Operateur, type SeauEcheance,
 } from '@/lib/prospection/vue-taches'
 import { DerniersGestes } from './DerniersGestes'
+import { useIsMobile } from '@/components/ui/use-mobile'
 import './lem-skin.css'
 
 interface VueEnregistree {
@@ -119,6 +120,19 @@ function useFermetureAuClicDehors(ouvert: boolean, fermer: () => void) {
  */
 export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | 'agent' } = {}) {
   const estAgent = perimetre === 'agent'
+  /**
+   * SOUS 768 px, LE TABLEAU DEVIENT DES CARTES.
+   *
+   * On bascule en JavaScript et non en CSS : rendre les deux arbres et n'en
+   * cacher qu'un ferait construire 659 lignes de tableau ET 659 cartes à chaque
+   * frappe dans un filtre. Le prix est un rendu de départ en tableau, corrigé au
+   * premier effet — invisible ici, l'écran attend de toute façon sa requête.
+   *
+   * 768 px est le `md:` de Tailwind, donc EXACTEMENT le seuil où la barre
+   * d'onglets du bas apparaît. Deux seuils différents feraient une bande de
+   * largeurs où la barre recouvre un tableau.
+   */
+  const enCartes = useIsMobile()
   const apiTaches = estAgent ? '/api/agent/taches' : '/api/prospection/taches'
   const apiVues = estAgent ? '/api/agent/vues' : '/api/prospection/vues'
 
@@ -540,6 +554,49 @@ export function TachesTableau({ perimetre = 'admin' }: { perimetre?: 'admin' | '
                 Voir toute la file
               </button>
             </div>
+          ) : enCartes ? (
+            /*
+             * LA MÊME VUE, EMPILÉE. `colonnes` est celle de la vue enregistrée :
+             * la carte ne choisit rien de son côté, sinon « ce qu'on montre »
+             * existerait en deux versions qui divergeraient à la première
+             * colonne ajoutée.
+             */
+            <ul className="lem-cartes">
+              {vues_.map((l) => (
+                <li key={l.id} data-choisie={selection.has(l.id) ? 'oui' : undefined}>
+                  <label className="tete">
+                    <input
+                      type="checkbox"
+                      checked={selection.has(l.id)}
+                      onChange={() =>
+                        setSelection((s) => {
+                          const n = new Set(s)
+                          if (n.has(l.id)) n.delete(l.id)
+                          else n.add(l.id)
+                          return n
+                        })
+                      }
+                      aria-label={`Sélectionner ${l.entreprise}`}
+                    />
+                    {/* Le nom en tête, qu'il soit ou non dans les colonnes
+                        choisies : une carte sans titre n'est pas une carte. */}
+                    <Cellule ligne={l} colonne="entreprise" ctx={ctx} />
+                  </label>
+                  <dl>
+                    {colonnes
+                      .filter((c) => c !== 'entreprise')
+                      .map((c) => (
+                        <React.Fragment key={c}>
+                          <dt>{COLONNE_LABEL[c]}</dt>
+                          <dd>
+                            <Cellule ligne={l} colonne={c} ctx={ctx} />
+                          </dd>
+                        </React.Fragment>
+                      ))}
+                  </dl>
+                </li>
+              ))}
+            </ul>
           ) : (
             <table className="lem-table">
               <thead>

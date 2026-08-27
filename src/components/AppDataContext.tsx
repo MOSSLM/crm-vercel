@@ -80,6 +80,11 @@ export const VALID_OPPORTUNITY_COLUMNS = [
   'tags',
   'flags',
   'date_prochain_suivi',
+  // Se lit avec la date, jamais seule : une date sans intitulé ne dit pas quoi
+  // faire, un intitulé sans date ne se rappelle jamais. C'est l'absence de cet
+  // intitulé qui expliquait que `date_prochain_suivi` soit restée vide sur les
+  // 882 opportunités.
+  'prochaine_action',
   'name',
   'type',
   'mrr',

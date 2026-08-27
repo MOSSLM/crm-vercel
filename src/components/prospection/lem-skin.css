@@ -574,3 +574,129 @@
   font: 500 11px/1 var(--lem-police); color: var(--lem-gris-2); margin-left: 5px;
 }
 .lem-skin .lem-bloc .etats { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ── LE TÉLÉPHONE ─────────────────────────────────────────────────────────
+ * Ce bloc est arrivé après coup, et il est VOLONTAIREMENT à la fin du fichier :
+ * il ne redéfinit rien, il resserre. La grammaire lemlist a été relevée sur un
+ * site de bureau — 26 px de marge latérale, des cibles de 30 px de haut — et
+ * rien de tout cela ne se tient au pouce.
+ *
+ * LA RÈGLE : on ne rétrécit PAS le texte, on rétrécit les marges. Un écran de
+ * travail dont on ne lit plus les chiffres ne sert à rien ; un écran de travail
+ * sans gouttière se lit très bien.
+ *
+ * 767 px, ET PAS UNE AUTRE VALEUR : c'est exactement le complément du `md:` de
+ * Tailwind (≥ 768 px), donc le seuil auquel la barre d'onglets du bas apparaît
+ * (`md:hidden`). Prendre 640 px ferait une bande de 128 px où la barre recouvre
+ * la dernière carte sans que la marge du bas soit posée — le genre de défaut
+ * qu'on ne voit que sur l'appareil de quelqu'un d'autre. */
+@media (max-width: 767px) {
+  /* Le dégagement sous la barre d'onglets N'EST PAS ICI : les deux coques
+     (`StudioShell`, `AgentPortalLayout`) posent déjà `pb-24 md:pb-0` sur leur
+     `main`. Le redoubler ferait 192 px de vide sous la dernière carte — et le
+     jour où la hauteur de la barre change, il faudrait s'en souvenir à deux
+     endroits. */
+  .lem-skin .lem-page { padding: 14px 12px 24px; }
+  .lem-skin .lem-titre { font-size: 21px; }
+  .lem-skin .lem-sous { font-size: 13px; }
+  .lem-skin .lem-entete { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  /* 44 px : la cible tactile confortable. En dessous, on vise. */
+  .lem-skin .lem-btn { min-height: 44px; padding: 10px 16px; }
+  .lem-skin .lem-onglet { min-height: 40px; }
+}
+
+/* ── Les chiffres d'une carte ────────────────────────────────────────────
+ * Trois à cinq nombres alignés, chacun sous son intitulé. `auto-fit` plutôt
+ * qu'un nombre de colonnes fixe : la même grille sert à trois nombres sur un
+ * téléphone et à cinq sur un écran, sans deux écritures à tenir d'accord.
+ *
+ * Le nombre est en `tabular-nums` — sans quoi une colonne de compteurs qui se
+ * rafraîchit tremble à chaque changement de chiffre. */
+.lem-skin .lem-chiffres {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 1px; background: var(--lem-bord);
+  border-top: 1px solid var(--lem-bord); border-bottom: 1px solid var(--lem-bord);
+}
+.lem-skin .lem-chiffres > div { background: var(--lem-surface); padding: 9px 11px; min-width: 0; }
+.lem-skin .lem-chiffres .n {
+  font: 700 19px/1.1 var(--lem-police); font-variant-numeric: tabular-nums;
+  color: var(--lem-encre); display: block;
+}
+.lem-skin .lem-chiffres .n[data-ton="danger"] { color: var(--lem-danger); }
+.lem-skin .lem-chiffres .n[data-ton="ok"] { color: var(--lem-ok); }
+.lem-skin .lem-chiffres .l {
+  font-size: 11px; line-height: 1.35; color: var(--lem-gris-2);
+  display: block; margin-top: 2px;
+}
+
+/* ── Le tableau, quand il n'y a plus de place pour un tableau ────────────
+ * `TachesTableau` rend NEUF colonnes. Sur 360 px, un défilement horizontal ne
+ * sauve rien : on lit une colonne à la fois sans jamais voir la ligne entière,
+ * et cocher une case du bord droit demande de faire défiler pour retrouver de
+ * quelle entreprise il s'agissait.
+ *
+ * La carte rend les MÊMES colonnes, empilées — donc la vue enregistrée continue
+ * de commander ce qui s'affiche. C'est la seule façon de ne pas se retrouver
+ * avec deux définitions de « ce qu'on montre », l'une pour le bureau, l'autre
+ * pour le téléphone, qui divergeraient à la première colonne ajoutée. */
+.lem-skin .lem-cartes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lem-skin .lem-cartes > li {
+  background: var(--lem-surface); border: 1px solid var(--lem-bord);
+  border-radius: var(--lem-rayon); padding: 11px 12px;
+}
+.lem-skin .lem-cartes > li[data-choisie="oui"] {
+  border-color: var(--lem-bleu); background: var(--lem-bleu-pale);
+}
+/* L'INTITULÉ EST LA CIBLE, pas la case. Une case de 18 px se rate une fois sur
+   trois ; le libellé qui l'enveloppe fait toute la largeur de la carte. */
+.lem-skin .lem-cartes .tete {
+  display: flex; align-items: flex-start; gap: 10px;
+  min-height: 36px; font-size: 14px; cursor: pointer;
+}
+.lem-skin .lem-cartes .tete input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+.lem-skin .lem-cartes dl {
+  margin: 8px 0 0; display: grid; grid-template-columns: minmax(84px, auto) 1fr;
+  gap: 3px 10px; font-size: 12.5px; align-items: baseline;
+}
+.lem-skin .lem-cartes dt { color: var(--lem-gris-2); }
+.lem-skin .lem-cartes dd { margin: 0; min-width: 0; }
+
+/* ── Ce que l'atelier a ajouté ───────────────────────────────────────────
+ * Trois formes qui n'existaient pas dans la maquette relevée, parce que
+ * lemlist n'a pas d'écran de traitement de masse : une barre d'avancement, un
+ * bouton pleine largeur, et un en-tête qui se replie.
+ *
+ * Elles sont posées ICI plutôt que dans un douzième skin : ce sont des formes
+ * de la MÊME grammaire (mêmes jetons, mêmes rayons, même police), et un skin de
+ * plus pour trois règles serait un skin de plus à faire converger le jour du
+ * re-skin global. */
+
+/* Le bouton pleine largeur. Au pouce, un bouton de 120 px au milieu d'un écran
+   de 390 px se rate ; c'est la largeur entière qui fait la cible. */
+.lem-skin .lem-btn.large { width: 100%; justify-content: center; }
+
+/* La jauge — sept axes résumés en une longueur. Pas de transition sur la
+   couleur, seulement sur la largeur : un changement de teinte pendant qu'on
+   lit un chiffre attire l'œil sur le mauvais élément. */
+.lem-skin .lem-jauge {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--lem-survol); border: 1px solid var(--lem-bord);
+}
+.lem-skin .lem-jauge > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--lem-bleu); transition: width .18s ease;
+}
+
+/* L'en-tête qui se replie. `min-height: 48px` sur toute la largeur : c'est la
+   cible, et elle doit rester confortable même quand le titre est court. */
+.lem-skin .lem-repli {
+  display: flex; width: 100%; gap: 12px; align-items: center;
+  min-height: 48px; padding: 10px 12px; text-align: left;
+  background: transparent; border: 0; cursor: pointer;
+  font: inherit; color: var(--lem-encre);
+}
+.lem-skin .lem-repli:hover { background: var(--lem-survol); }
+.lem-skin .lem-repli .corps { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.lem-skin .lem-repli .nom { font-weight: 600; font-size: 14px; }
+.lem-skin .lem-repli .chevron { flex-shrink: 0; color: var(--lem-gris-2); }
+.lem-skin .lem-replie { border-top: 1px solid var(--lem-bord); padding: 12px; display: grid; gap: 12px; }
