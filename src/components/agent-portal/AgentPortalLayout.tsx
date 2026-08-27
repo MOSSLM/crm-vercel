@@ -39,7 +39,21 @@ export default function AgentPortalLayout({ children }: Props) {
           <AgentSubNav />
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <AgentTopbar onOpenSearch={() => setCmdkOpen(true)} />
-            <main className="flex flex-1 flex-col overflow-auto pb-24 md:pb-0">{children}</main>
+            {/*
+              LE DÉGAGEMENT SOUS LA BARRE D'ONGLETS EST POSÉ ICI, ET NULLE PART
+              AILLEURS. La barre est en `fixed` : sans marge basse, elle recouvre
+              la dernière ligne de chaque écran. `pb-24` ne suffisait pas sur un
+              iPhone à indicateur d'accueil — la barre porte elle-même
+              `env(safe-area-inset-bottom)` et dépasse donc les 6 rem prévus.
+
+              Le calcul reprend le même `env()`, si bien que les deux grandissent
+              ensemble. Le poser par écran (l'ancien `.mobile-safe-pb`) obligeait
+              à s'en souvenir à chaque nouvelle page, et à le corriger partout le
+              jour où la hauteur de la barre change.
+            */}
+            <main className="flex flex-1 flex-col overflow-auto pb-[calc(env(safe-area-inset-bottom)+5rem)] md:pb-0">
+              {children}
+            </main>
             <AgentStatusBar />
           </div>
         </div>

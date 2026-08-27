@@ -165,6 +165,49 @@ il les COMPTE par `lissage_leads.lieu` (`serveur` / `local` / `humain`) pour que
 l'absence soit productive. Corollaire côté plaquettes : la préparation du LIEN
 est une route API (donc mobile), seul le PDF reste au bureau.
 
+**Un écran absent de `spaces.ts` n'existe pour personne.** Le rail, le
+sous-menu ET la palette ⌘K lisent tous ce fichier (`getAllTools`) : une route
+qui répond parfaitement mais n'y est pas déclarée n'a AUCUN chemin, et rien ne
+le signale — un menu incomplet ne casse jamais rien, il perd juste des écrans.
+L'atelier a vécu ainsi plusieurs jours. `navigation-mobile.test.ts` tient
+désormais les deux sens : pas de lien mort, et pas de destination mobile
+absente des espaces.
+
+**La barre du bas ne montre que ce qui a été vérifié au pouce.** Elle versait
+tout le menu de bureau dans un téléphone, feuille « Plus » comprise : trois taps
+menaient au Site builder. `src/components/layout/mobile.ts` porte la liste, et
+chaque entrée porte la RAISON de sa présence — sans ce critère écrit, la liste
+regonfle jusqu'à redevenir le menu. Une ligne, cinq places, aucun débordement :
+ce qui n'y est pas passe par la recherche du haut. **Le dégagement sous la barre
+est posé dans les deux coques** (`StudioShell`, `AgentPortalLayout`), avec le
+même `env(safe-area-inset-bottom)` que la barre — jamais par écran, sinon il
+faut s'en souvenir à chaque nouvelle page.
+
+**Un admin satisfait une porte `freelance`, jamais l'inverse.** `requireRole`
+testait l'égalité stricte : le propriétaire du CRM recevait 403 sur ses propres
+écrans de travail. Ce qui rend le passage sûr, et qu'il faut vérifier avant
+d'ajouter une route : **aucune route `/api/agent/*` ne lit d'identifiant d'agent
+dans ses paramètres**, toutes se cadrent sur `user.id`. Une route qui accepterait
+un `agent_id` exigerait `role: "admin"` et un contrôle explicite. Le pendant
+existe pour l'autre besoin : `requireStaff` quand les données couvrent tout le
+parc plutôt que le périmètre du caller.
+
+**`prospection_tasks.status = 'skipped'` ne dit pas QUI a écarté.** Quatre
+chemins l'écrivent et deux sont des machines (réattribution dans
+`api/admin/_assign.ts`, canal impossible dans `demarchage/hors-canal`). Aucune
+colonne ne les distingue — ni `done_at`, ni `routing_reason`. Sur les 722 lignes
+écartées au 27/08, **706 sont des tâches d'appel abandonnées en masse** quand le
+canal téléphone a été laissé de côté : les compter comme du travail d'agent
+mentirait de 70 %. `/equipe` les rend à part, sous une séparation, « toutes
+causes ».
+
+**La DA lemlist ne se réinvente pas : `lem-skin.css` existe.** Palette relevée
+le 19/08/2026 sur lemlist.com en lisant les styles CALCULÉS, jetons préfixés
+`--lem-` (hors skin, `--accent` est une surface de survol, pas une couleur de
+marque — une collision repeindrait des boutons ailleurs), thème sombre inclus.
+Une forme qui manque s'ajoute DANS ce fichier avec ses jetons ; un douzième skin
+serait un skin de plus à faire converger le jour du re-skin global.
+
 ## Où vivent les données qui trompent
 
 | Ce qu'on cherche | Où c'est vraiment |
@@ -177,6 +220,8 @@ est une route API (donc mobile), seul le PDF reste au bureau.
 | Combien sont fabricables tout de suite | `pretes_pour_demo_des_lots()` — les axes comptent des PIÈCES, celle-ci des fiches |
 | Ce qui attend le poste local | `lissage_leads.lieu = 'local'` avec `statut = 'a_faire'` |
 | Le canal d'un geste journalisé | `activity_log.metadata->>'channel'`, pas `activity_type` (qui dit la NATURE, pas le moyen) |
+| Ce que fait l'équipe | `activite_des_agents()` — file, terminées, gestes par nature sur 30 j. Les verdicts sont dans `src/lib/equipe/activite.ts` |
+| Un geste à coup sûr humain | `agent_activity_events` — seules les routes agent y écrivent. `prospection_tasks.status` ne dit pas l'auteur |
 
 ## Conventions
 

@@ -660,3 +660,43 @@
 }
 .lem-skin .lem-cartes dt { color: var(--lem-gris-2); }
 .lem-skin .lem-cartes dd { margin: 0; min-width: 0; }
+
+/* ── Ce que l'atelier a ajouté ───────────────────────────────────────────
+ * Trois formes qui n'existaient pas dans la maquette relevée, parce que
+ * lemlist n'a pas d'écran de traitement de masse : une barre d'avancement, un
+ * bouton pleine largeur, et un en-tête qui se replie.
+ *
+ * Elles sont posées ICI plutôt que dans un douzième skin : ce sont des formes
+ * de la MÊME grammaire (mêmes jetons, mêmes rayons, même police), et un skin de
+ * plus pour trois règles serait un skin de plus à faire converger le jour du
+ * re-skin global. */
+
+/* Le bouton pleine largeur. Au pouce, un bouton de 120 px au milieu d'un écran
+   de 390 px se rate ; c'est la largeur entière qui fait la cible. */
+.lem-skin .lem-btn.large { width: 100%; justify-content: center; }
+
+/* La jauge — sept axes résumés en une longueur. Pas de transition sur la
+   couleur, seulement sur la largeur : un changement de teinte pendant qu'on
+   lit un chiffre attire l'œil sur le mauvais élément. */
+.lem-skin .lem-jauge {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--lem-survol); border: 1px solid var(--lem-bord);
+}
+.lem-skin .lem-jauge > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--lem-bleu); transition: width .18s ease;
+}
+
+/* L'en-tête qui se replie. `min-height: 48px` sur toute la largeur : c'est la
+   cible, et elle doit rester confortable même quand le titre est court. */
+.lem-skin .lem-repli {
+  display: flex; width: 100%; gap: 12px; align-items: center;
+  min-height: 48px; padding: 10px 12px; text-align: left;
+  background: transparent; border: 0; cursor: pointer;
+  font: inherit; color: var(--lem-encre);
+}
+.lem-skin .lem-repli:hover { background: var(--lem-survol); }
+.lem-skin .lem-repli .corps { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.lem-skin .lem-repli .nom { font-weight: 600; font-size: 14px; }
+.lem-skin .lem-repli .chevron { flex-shrink: 0; color: var(--lem-gris-2); }
+.lem-skin .lem-replie { border-top: 1px solid var(--lem-bord); padding: 12px; display: grid; gap: 12px; }

@@ -24,6 +24,18 @@
  * Aucun tableau : des cartes. Toutes les cibles font au moins 44 px. La page
  * ouvre sur « créer un lot » replié, parce que l'usage le plus fréquent est de
  * regarder où en sont les lots, pas d'en créer un de plus.
+ *
+ * ── LA DA EST CELLE DE LEMLIST, ET ELLE N'EST PAS RÉINVENTÉE ICI ─────────
+ * L'écran portait les composants génériques du CRM (`Card`, `Button`,
+ * `Badge`). Il porte maintenant `lem-skin` — la charte relevée le 19/08/2026
+ * sur lemlist.com en lisant les styles CALCULÉS, pas à l'œil, et déjà en place
+ * sur tout l'espace Prospection dont l'atelier commande les lots.
+ *
+ * ON N'A DONC PAS FABRIQUÉ UN DOUZIÈME SKIN. Trois formes manquaient — une
+ * jauge, un bouton pleine largeur, un en-tête qui se replie — parce que lemlist
+ * n'a pas d'écran de traitement de masse : elles ont été ajoutées à `lem-skin`
+ * avec ses jetons, pas à côté. Un skin de plus serait un skin de plus à faire
+ * converger le jour du re-skin global.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -42,9 +54,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authedFetch } from "@/utils/authedFetch";
 import type { BilanTick } from "@/lib/lissage/moteur";
 import { CreerLot } from "./CreerLot";
@@ -61,6 +70,7 @@ import {
   partPrete,
   type PretDemo,
 } from "@/lib/lots/pret-demo";
+import "@/components/prospection/lem-skin.css";
 
 type AttenteLissage = {
   serveur: number;
@@ -76,11 +86,8 @@ const nb = (n: number) => n.toLocaleString("fr-FR");
 /** La barre d'avancement d'un lot. Sept axes résumés en une longueur. */
 function Jauge({ part }: { part: number }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full rounded-full bg-primary transition-[width]"
-        style={{ width: `${Math.round(part * 100)}%` }}
-      />
+    <div className="lem-jauge">
+      <i style={{ width: `${Math.round(part * 100)}%` }} />
     </div>
   );
 }
@@ -102,37 +109,40 @@ function BlocPretDemo({ pret }: { pret: PretDemo }) {
   const aPrendre = logosAPrendre(pret);
 
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/30 p-2.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium">
-          {nb(pret.pretes)} <span className="font-normal text-muted-foreground">prêtes pour la démo</span>
+    <div
+      className="lem-carte"
+      style={{ background: "var(--lem-bleu-pale)", borderColor: "transparent", padding: "10px 12px" }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 14 }}>
+          <b>{nb(pret.pretes)}</b> <span className="lem-second">prêtes pour la démo</span>
         </span>
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span className="lem-second" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
           {Math.round(partPrete(pret) * 100)} %
         </span>
       </div>
 
       {/* Les causes, par effort croissant. Une cause à zéro ne se rend pas. */}
       {pret.manques.length > 0 && (
-        <ul className="space-y-0.5">
+        <ul className="lem-legende">
           {pret.manques.map((m) => (
-            <li key={m.cle} className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="text-muted-foreground" title={MANQUES[m.cle].geste}>
-                {MANQUES[m.cle].libelle}
-              </span>
-              <span className="tabular-nums">{nb(m.nombre)}</span>
+            <li key={m.cle} title={MANQUES[m.cle].geste}>
+              <span className="l">{MANQUES[m.cle].libelle}</span>
+              <b>{nb(m.nombre)}</b>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="border-t pt-2">
-        <div className="flex items-baseline justify-between gap-2 text-xs">
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <ImageIcon className="h-3 w-3" />
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--lem-bord)" }}>
+        <div
+          style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, fontSize: 12.5 }}
+        >
+          <span className="lem-second" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <ImageIcon size={13} />
             Logo
           </span>
-          <span className="tabular-nums">
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
             {nb(pret.logo.avec)} sur {nb(pret.pretes)}
           </span>
         </div>
@@ -141,13 +151,13 @@ function BlocPretDemo({ pret }: { pret: PretDemo }) {
             pas un logo qui n'existe pas. Les additionner ferait passer une
             impossibilité pour du retard. */}
         {aPrendre > 0 && (
-          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          <p style={{ margin: "5px 0 0", fontSize: 11.5, color: "var(--lem-attention)" }}>
             {nb(aPrendre)} sans logo en ont pourtant un{" "}
             {pret.logo.surReseau > 0 ? "sur leur site ou leur page" : "sur leur site"} — à prendre.
           </p>
         )}
         {pret.logo.introuvable > 0 && (
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="lem-second" style={{ margin: "3px 0 0", fontSize: 11.5 }}>
             {nb(pret.logo.introuvable)} n&apos;ont aucune URL : rien à aller chercher, l&apos;en-tête
             composera leur nom.
           </p>
@@ -239,79 +249,78 @@ function CarteLot({
   };
 
   return (
-    <div className="rounded-lg border">
+    <div className="lem-carte">
       <button
         type="button"
         onClick={() => setOuvert((v) => !v)}
-        className="flex w-full min-h-14 items-center gap-3 px-3 py-2.5 text-left"
+        className="lem-repli"
         aria-expanded={ouvert}
       >
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium">{lot.nom}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{nb(lot.total)}</span>
-          </div>
+        <span className="corps">
+          <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span className="nom" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {lot.nom}
+            </span>
+            <span className="lem-second" style={{ fontSize: 12, flexShrink: 0 }}>
+              {nb(lot.total)}
+            </span>
+          </span>
           <Jauge part={part} />
-          <p className="truncate text-xs text-muted-foreground">
+          <span
+            className="lem-second"
+            style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
             {geste ? `Prochain : ${geste.geste}` : "Complet sur les sept axes"}
-          </p>
-        </div>
+          </span>
+        </span>
         {ouvert ? (
-          <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronUp size={16} className="chevron" />
         ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronDown size={16} className="chevron" />
         )}
       </button>
 
       {ouvert && (
-        <div className="space-y-3 border-t px-3 py-3">
+        <div className="lem-replie">
           {pret && <BlocPretDemo pret={pret} />}
 
           {/* Les sept axes, dans l'ordre du plan — c'est cet ordre qui permet de
               désigner LE prochain geste plutôt que d'afficher sept trous. */}
-          <ul className="space-y-1">
+          <ul className="lem-legende">
             {AXES.map((axe) => {
               const trou = manque(lot, axe.cle);
               return (
-                <li key={axe.cle} className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className={trou === 0 ? "text-muted-foreground" : ""}>{axe.colonne}</span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {trou === 0 ? "complet" : `${nb(trou)} à faire`}
+                <li key={axe.cle}>
+                  <span className="l" style={trou === 0 ? { color: "var(--lem-gris-2)" } : undefined}>
+                    {axe.colonne}
                   </span>
+                  <b className="lem-second">{trou === 0 ? "complet" : `${nb(trou)} à faire`}</b>
                 </li>
               );
             })}
           </ul>
 
-          <Button
-            className="min-h-11 w-full"
-            variant="secondary"
+          <button
+            type="button"
+            className="lem-btn principal large"
             onClick={() => void lancerLissage()}
             disabled={lancement || lot.total === 0}
           >
-            {lancement ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-2 h-4 w-4" />
-            )}
+            {lancement ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
             Mettre ce lot en file de lissage
-          </Button>
+          </button>
 
-          <Button
-            className="min-h-11 w-full"
-            variant="outline"
+          <button
+            type="button"
+            className="lem-btn large"
             onClick={() => void preparerPlaquettes()}
             disabled={plaquettes || lot.total === 0}
           >
-            {plaquettes ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <FileText className="mr-2 h-4 w-4" />
-            )}
+            {plaquettes ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
             Préparer les plaquettes
-          </Button>
+          </button>
 
-          <p className="text-[11px] text-muted-foreground">
+          <p className="lem-second" style={{ fontSize: 11.5, margin: 0, lineHeight: 1.45 }}>
             Le lissage cherche le SIRET, les données publiques et le constat de présence web. Les
             plaquettes préparées ici sont des LIENS — ils relisent les prix du jour à chaque
             ouverture ; le PDF, lui, se fabrique au bureau. Les démos et les audits se font fiche
@@ -403,145 +412,167 @@ export function Atelier() {
   const parLot = new Map((donnees?.pretDemo ?? []).map((p) => [p.lotId, p]));
 
   return (
-    <div className="mobile-safe-pb space-y-4 px-3 py-4 md:px-6">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">L&apos;atelier</h1>
-          <p className="text-sm text-muted-foreground">
-            Choisir une population, la figer, la faire avancer.
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-11 w-11 shrink-0"
-          onClick={() => void charger()}
-          aria-label="Rafraîchir"
-        >
-          <RefreshCw className={`h-4 w-4 ${chargement ? "animate-spin" : ""}`} />
-        </Button>
-      </div>
+    <div className="lem-skin">
+      <div className="lem-page" style={{ display: "grid", gap: 14, maxWidth: 820 }}>
+        <header className="lem-entete" style={{ marginBottom: 0 }}>
+          <div>
+            <h1 className="lem-titre">L&apos;atelier</h1>
+            <p className="lem-sous">Choisir une population, la figer, la faire avancer.</p>
+          </div>
+          <button
+            type="button"
+            className="lem-btn discret"
+            onClick={() => void charger()}
+            aria-label="Rafraîchir"
+          >
+            <RefreshCw size={15} className={chargement ? "animate-spin" : undefined} />
+          </button>
+        </header>
 
-      {/* ── Ce qui peut partir maintenant, et ce qui attendra le bureau ── */}
-      {lissage && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">La file de lissage</CardTitle>
-            <CardDescription>
-              {lissage.passesOuvertes === 0
-                ? "Aucune passe ouverte."
-                : `${nb(lissage.passesOuvertes)} passe${lissage.passesOuvertes > 1 ? "s" : ""} ouverte${lissage.passesOuvertes > 1 ? "s" : ""}.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg border px-2 py-2">
-                <div className="text-xl font-semibold tabular-nums">{nb(lissage.serveur)}</div>
-                <div className="text-[11px] text-muted-foreground">d&apos;ici</div>
-              </div>
-              <div className="rounded-lg border px-2 py-2">
-                <div className="text-xl font-semibold tabular-nums">{nb(lissage.local)}</div>
-                <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-                  <Laptop className="h-3 w-3" />
-                  au bureau
-                </div>
-              </div>
-              <div className="rounded-lg border px-2 py-2">
-                <div className="text-xl font-semibold tabular-nums">{nb(lissage.humain)}</div>
-                <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-                  <UserRound className="h-3 w-3" />
-                  à l&apos;œil
-                </div>
+        {/* ── Ce qui peut partir maintenant, et ce qui attendra le bureau ── */}
+        {lissage && (
+          <section className="lem-carte" style={{ overflow: "hidden" }}>
+            <div style={{ padding: "12px 13px 10px" }}>
+              <strong style={{ fontSize: 15 }}>La file de lissage</strong>
+              <div className="lem-meta">
+                {lissage.passesOuvertes === 0
+                  ? "Aucune passe ouverte."
+                  : `${nb(lissage.passesOuvertes)} passe${lissage.passesOuvertes > 1 ? "s" : ""} ouverte${lissage.passesOuvertes > 1 ? "s" : ""}.`}
               </div>
             </div>
 
-            <Button
-              className="min-h-12 w-full"
-              onClick={() => void avancerLaFile()}
-              disabled={avance || lissage.serveur === 0}
-            >
-              {avance ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="mr-2 h-4 w-4" />
-              )}
-              {lissage.serveur === 0
-                ? "Rien à avancer d'ici"
-                : `Avancer la file (${nb(lissage.serveur)})`}
-            </Button>
-
-            {/* L'honnêteté, écrite : ces lignes-là ne partiront pas d'ici, et
-                savoir combien elles sont est ce qui prépare la séance au bureau. */}
-            {lissage.local > 0 && (
-              <p className="flex items-start gap-2 text-xs text-muted-foreground">
-                <Laptop className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  {nb(lissage.local)} étape{lissage.local > 1 ? "s" : ""} attend
-                  {lissage.local > 1 ? "ent" : ""} la machine : recherche Google pilotée, profil
-                  Chrome persistant, CAPTCHA. Au bureau,{" "}
-                  <code className="rounded bg-muted px-1">node scripts/lissage/runner.mjs --boucle</code>{" "}
-                  les prend.
+            {/* Les trois lieux, côte à côte. C'est la comparaison qui informe :
+                « 12 d'ici » ne veut rien dire sans « 340 au bureau ». */}
+            <div className="lem-chiffres">
+              <div>
+                <span className="n">{nb(lissage.serveur)}</span>
+                <span className="l">d&apos;ici</span>
+              </div>
+              <div>
+                <span className="n">{nb(lissage.local)}</span>
+                <span className="l">
+                  <Laptop size={11} style={{ display: "inline", marginRight: 4 }} />
+                  au bureau
                 </span>
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              </div>
+              <div>
+                <span className="n">{nb(lissage.humain)}</span>
+                <span className="l">
+                  <UserRound size={11} style={{ display: "inline", marginRight: 4 }} />à
+                  l&apos;œil
+                </span>
+              </div>
+            </div>
 
-      {/* ── Créer un lot, replié par défaut ── */}
-      <Card>
-        <CardHeader className="pb-2">
+            <div style={{ padding: "12px 13px", display: "grid", gap: 10 }}>
+              <button
+                type="button"
+                className="lem-btn principal large"
+                onClick={() => void avancerLaFile()}
+                disabled={avance || lissage.serveur === 0}
+              >
+                {avance ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                {lissage.serveur === 0
+                  ? "Rien à avancer d'ici"
+                  : `Avancer la file (${nb(lissage.serveur)})`}
+              </button>
+
+              {/* L'honnêteté, écrite : ces lignes-là ne partiront pas d'ici, et
+                  savoir combien elles sont est ce qui prépare la séance au bureau. */}
+              {lissage.local > 0 && (
+                <p
+                  className="lem-second"
+                  style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, margin: 0, lineHeight: 1.45 }}
+                >
+                  <Laptop size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    {nb(lissage.local)} étape{lissage.local > 1 ? "s" : ""} attend
+                    {lissage.local > 1 ? "ent" : ""} la machine : recherche Google pilotée, profil
+                    Chrome persistant, CAPTCHA. Au bureau,{" "}
+                    <code
+                      style={{
+                        background: "var(--lem-survol)",
+                        borderRadius: 4,
+                        padding: "1px 5px",
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: 11.5,
+                      }}
+                    >
+                      node scripts/lissage/runner.mjs --boucle
+                    </code>{" "}
+                    les prend.
+                  </span>
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── Créer un lot, replié par défaut ── */}
+        <section className="lem-carte">
           <button
             type="button"
             onClick={() => setCreation((v) => !v)}
-            className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
+            className="lem-repli"
             aria-expanded={creation}
           >
-            <CardTitle className="flex items-center gap-2 text-base">
-              <PackagePlus className="h-4 w-4" />
-              Nouveau lot
-            </CardTitle>
+            <span className="corps">
+              <span className="nom" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <PackagePlus size={16} />
+                Nouveau lot
+              </span>
+            </span>
             {creation ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              <ChevronUp size={16} className="chevron" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown size={16} className="chevron" />
             )}
           </button>
-        </CardHeader>
-        {creation && (
-          <CardContent>
-            <CreerLot
-              onLotCree={() => {
-                setCreation(false);
-                void charger();
-              }}
-            />
-          </CardContent>
-        )}
-      </Card>
+          {creation && (
+            <div className="lem-replie">
+              <CreerLot
+                onLotCree={() => {
+                  setCreation(false);
+                  void charger();
+                }}
+              />
+            </div>
+          )}
+        </section>
 
-      {/* ── Les lots ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            Les lots
-            {lots.length > 0 && <Badge variant="secondary">{lots.length}</Badge>}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* ── Les lots ── */}
+        <section>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 8px", fontSize: 15 }}
+          >
+            <strong>Les lots</strong>
+            {lots.length > 0 && (
+              <span className="lem-pill" data-ton="neutre">
+                {lots.length}
+              </span>
+            )}
+          </div>
+
           {chargement ? (
-            <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Lecture…
+            <div className="lem-vide" style={{ padding: "28px 20px" }}>
+              <Loader2 size={18} className="animate-spin" style={{ margin: "0 auto" }} />
             </div>
           ) : erreur ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">{erreur}</p>
+            <div className="lem-alerte" data-gravite="bloquant">
+              <div>
+                <b>Les lots n&apos;ont pas pu être lus.</b> {erreur}
+              </div>
+            </div>
           ) : lots.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Aucun lot. Créez-en un depuis les filtres ci-dessus.
-            </p>
+            <div className="lem-vide" style={{ padding: "28px 20px" }}>
+              <h3>Aucun lot</h3>
+              <p>Un lot se fige depuis les filtres, juste au-dessus. C&apos;est une photo : sa composition ne bouge plus.</p>
+              <button type="button" className="lem-btn principal" onClick={() => setCreation(true)}>
+                <PackagePlus size={15} /> Créer un lot
+              </button>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: "grid", gap: 8 }}>
               {lots.map((lot) => (
                 <CarteLot
                   key={lot.lotId}
@@ -552,14 +583,14 @@ export function Atelier() {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
 
-      <p className="pb-2 text-center text-xs text-muted-foreground">
-        <Link href="/entreprises/lots" className="underline underline-offset-2">
-          Vue complète des lots
-        </Link>
-      </p>
+        <p className="lem-second" style={{ textAlign: "center", fontSize: 12.5, margin: 0 }}>
+          <Link href="/entreprises/lots" style={{ color: "var(--lem-bleu)" }}>
+            Vue complète des lots
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

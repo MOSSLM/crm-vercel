@@ -25,10 +25,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, PackagePlus } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { authedFetch } from "@/utils/authedFetch";
+import "@/components/prospection/lem-skin.css";
 
 /**
  * Les filtres offerts au pouce. Volontairement plus courts que ceux de
@@ -169,74 +167,78 @@ export function CreerLot({ onLotCree }: { onLotCree?: () => void }) {
   const tropGrand = total !== null && total > PLAFOND;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {FILTRES.map((f) => {
-          const actif = flags.includes(f.cle);
-          return (
-            <button
-              key={f.cle}
-              type="button"
-              onClick={() => basculer(f.cle)}
-              aria-pressed={actif}
-              title={f.aide}
-              className={`min-h-11 rounded-full border px-3.5 text-sm font-medium transition-colors ${
-                actif
-                  ? "border-transparent bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent/40"
-              }`}
-            >
-              {f.libelle}
-            </button>
-          );
-        })}
+    <div style={{ display: "grid", gap: 14 }}>
+      {/* Les filtres en onglets pressables — la forme lemlist du choix multiple.
+          `aria-pressed` porte l'état : c'est lui que le skin colore, et c'est
+          aussi lui qu'un lecteur d'écran annonce. */}
+      <div className="lem-onglets">
+        {FILTRES.map((f) => (
+          <button
+            key={f.cle}
+            type="button"
+            className="lem-onglet"
+            onClick={() => basculer(f.cle)}
+            aria-pressed={flags.includes(f.cle)}
+            title={f.aide}
+          >
+            {f.libelle}
+          </button>
+        ))}
       </div>
 
       {/* Le compte, en grand. C'est lui qu'on valide en tapant sur le bouton. */}
-      <div className="flex items-baseline gap-2">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         {compte ? (
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--lem-gris-2)" }} />
         ) : (
-          <span className="text-3xl font-semibold tabular-nums">
+          <span
+            style={{
+              font: "700 30px/1 var(--lem-police)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--lem-encre)",
+            }}
+          >
             {total === null ? "—" : total.toLocaleString("fr-FR")}
           </span>
         )}
-        <span className="text-sm text-muted-foreground">
+        <span className="lem-second" style={{ fontSize: 13.5 }}>
           {total === 1 ? "entreprise vivante" : "entreprises vivantes"}
         </span>
       </div>
 
       <div>
-        <Label htmlFor="nom-lot" className="text-xs text-muted-foreground">
+        <label
+          htmlFor="nom-lot"
+          className="lem-second"
+          style={{ display: "block", fontSize: 11.5, marginBottom: 4 }}
+        >
           Nom du lot
-        </Label>
-        <Input
+        </label>
+        <input
           id="nom-lot"
+          className="lem-champ"
           value={nom}
           onChange={(e) => setNom(e.target.value)}
           placeholder={nomPropose()}
-          className="min-h-11"
+          style={{ width: "100%", minHeight: 44 }}
         />
       </div>
 
-      <Button
-        className="min-h-12 w-full"
+      <button
+        type="button"
+        className="lem-btn principal large"
         onClick={() => void figer()}
         disabled={figeage || compte || total === null || total === 0 || tropGrand}
       >
-        {figeage ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <PackagePlus className="mr-2 h-4 w-4" />
-        )}
+        {figeage ? <Loader2 size={15} className="animate-spin" /> : <PackagePlus size={15} />}
         {tropGrand
           ? `Trop grand — plafond ${PLAFOND.toLocaleString("fr-FR")}`
           : total === 0
             ? "Aucune entreprise"
             : `Figer ce lot${total !== null ? ` (${total.toLocaleString("fr-FR")})` : ""}`}
-      </Button>
+      </button>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="lem-second" style={{ fontSize: 12, margin: 0, lineHeight: 1.45 }}>
         Un lot est une photo : sa composition ne bouge plus, et un traitement lancé dessus se
         rejoue à l&apos;identique. Les filtres, eux, continuent de vivre.
       </p>
