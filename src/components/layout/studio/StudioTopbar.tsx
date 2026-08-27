@@ -103,8 +103,14 @@ export function StudioTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <span className="max-w-[120px] truncate text-xs font-medium">{user?.name ?? "Sama CRM"}</span>
       </div>
 
-      {/* Breadcrumbs */}
-      <nav className="flex min-w-0 items-center gap-1.5 text-sm" aria-label="Fil d'Ariane">
+      {/*
+        LE FIL D'ARIANE SORT SUR TÉLÉPHONE. Il coûte une icône, deux chevrons et
+        un titre tronqué — pour dire où l'on est, alors que chaque écran porte
+        déjà son propre titre en grand juste en dessous. La place qu'il libère
+        va à la recherche, qui est la SEULE porte vers les écrans absents de la
+        barre du bas : elle doit se voir sans être cherchée.
+      */}
+      <nav className="hidden min-w-0 items-center gap-1.5 text-sm md:flex" aria-label="Fil d'Ariane">
         <Home className="h-3.5 w-3.5 shrink-0 text-[var(--text-4)]" />
         <ChevronRight className="h-3 w-3 shrink-0 text-[var(--text-4)]" />
         <span className="hidden shrink-0 text-[var(--text-3)] lg:inline">{space.label}</span>
@@ -116,10 +122,21 @@ export function StudioTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <button
         type="button"
         onClick={onOpenSearch}
+        aria-label="Rechercher dans tout le CRM"
         className="ml-auto flex h-9 max-w-md flex-1 items-center gap-2 rounded-lg border border-border/60 bg-[var(--surface)] px-3 text-sm text-[var(--text-3)] transition-colors hover:border-border hover:bg-[var(--bg-2)] md:ml-4"
       >
         <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate text-left">Rechercher contacts, outils, actions…</span>
+        {/*
+          DEUX LIBELLÉS, ET CE N'EST PAS UN CAPRICE. Sur un téléphone, la barre
+          du bas ne propose que les quatre écrans faits pour le pouce : tout le
+          reste — un site, un thème, une automatisation — n'a plus d'autre
+          chemin que celui-ci. Le libellé doit donc le DIRE, pas énumérer des
+          exemples qu'on lirait tronqués.
+        */}
+        <span className="truncate text-left md:hidden">Rechercher — tout le CRM</span>
+        <span className="hidden truncate text-left md:inline">
+          Rechercher contacts, outils, actions…
+        </span>
         <kbd className="ml-auto hidden shrink-0 items-center gap-0.5 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-3)] sm:inline-flex">
           ⌘K
         </kbd>
@@ -148,7 +165,15 @@ export function StudioTopbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         >
           <Settings className="h-4 w-4" />
         </Link>
-        <ThemeToggle />
+        {/*
+          Le thème sort du bandeau sur téléphone : c'est un réglage qu'on pose
+          une fois, et il a sa place dans les Paramètres — dont la roue, elle,
+          reste visible partout. Chaque icône gardée ici est prise sur la
+          largeur de la recherche.
+        */}
+        <span className="hidden sm:inline-flex">
+          <ThemeToggle />
+        </span>
       </div>
     </header>
   );

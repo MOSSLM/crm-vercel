@@ -19,6 +19,9 @@ import type { LigneTache } from '@/lib/prospection/vue-taches'
  * 4. « TERMINER » N'EST PAS DANS LA BARRE DE MASSE, et ce n'est pas un oubli :
  *    boucler une tâche date la première touche de l'entreprise, et les deux
  *    cohortes se comparent à l'âge depuis cette date.
+ * 5. SOUS 768 px, LE TABLEAU DEVIENT DES CARTES — et ce sont les MÊMES
+ *    colonnes. Deux définitions de « ce qu'on montre » divergeraient à la
+ *    première colonne ajoutée : c'est ce que le dernier test empêche.
  */
 
 jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn() } }))
@@ -179,5 +182,70 @@ describe('le tableau', () => {
     expect(screen.getByRole('button', { name: /Ignorer/ })).toBeInTheDocument()
     // Et surtout pas celui-là.
     expect(screen.queryByRole('button', { name: /^Terminer/ })).toBeNull()
+  })
+})
+
+/**
+ * jsdom part à 1 024 px. On règle `innerWidth` AVANT le rendu : `useIsMobile`
+ * lit la largeur dans son premier effet, et aucun redimensionnement n'est
+ * simulé ensuite (voir le repli `matchMedia` de `setupTests.ts`).
+ */
+const largeurDe = (px: number) => {
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: px })
+}
+
+describe('au téléphone', () => {
+  afterEach(() => largeurDe(1024))
+
+  it('remplace le tableau par des cartes sous 768 px', async () => {
+    largeurDe(390)
+    repondre([ligne({ id: 'T1', entreprise: 'SARL Martin' })])
+    render(<TachesTableau />)
+
+    await screen.findByText('SARL Martin')
+    // Plus aucun tableau : neuf colonnes sur 390 px ne se lisent pas, et un
+    // défilement horizontal ne montre jamais la ligne entière.
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('columnheader')).toBeNull()
+    expect(screen.getByRole('list')).toBeInTheDocument()
+  })
+
+  it('rend les MÊMES colonnes que le tableau, en intitulés', async () => {
+    largeurDe(390)
+    repondre([ligne({ id: 'T1', entreprise: 'SARL Martin', agent: 'Bilal Cacan' })])
+    render(<TachesTableau />)
+    await screen.findByText('SARL Martin')
+
+    // Les six colonnes par défaut moins « Entreprise », qui sert de titre à la
+    // carte. Si l'une d'elles n'apparaît pas, les deux rendus ont divergé.
+    for (const intitule of ['Canal', 'Tâche', 'Échéance', 'Campagne', 'Statut']) {
+      expect(screen.getByText(intitule)).toBeInTheDocument()
+    }
+    // Et RIEN de plus : la carte ne s'autorise pas des colonnes que le tableau
+    // ne montre pas. C'est la moitié qui compte de ce test — l'autre sens de la
+    // divergence.
+    expect(screen.queryByText('Ville')).toBeNull()
+    expect(screen.queryByText('Agent')).toBeNull()
+    expect(screen.queryByText('Cohorte')).toBeNull()
+  })
+
+  it('garde la sélection en masse, avec l\'intitulé pour cible', async () => {
+    largeurDe(390)
+    repondre([ligne({ id: 'T1', entreprise: 'SARL Martin' })])
+    render(<TachesTableau />)
+    await screen.findByText('SARL Martin')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Sélectionner SARL Martin/ }))
+    // La barre de masse apparaît : cocher depuis une carte vaut cocher depuis
+    // une ligne, sinon le téléphone perdrait le report en série.
+    await waitFor(() => expect(screen.getByText(/1 sélectionnée/)).toBeInTheDocument())
+  })
+
+  it('garde le tableau au-dessus du seuil', async () => {
+    largeurDe(1024)
+    repondre([ligne({ id: 'T1', entreprise: 'SARL Martin' })])
+    render(<TachesTableau />)
+    await screen.findByText('SARL Martin')
+    expect(screen.getByRole('table')).toBeInTheDocument()
   })
 })

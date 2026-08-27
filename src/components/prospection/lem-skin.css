@@ -585,12 +585,18 @@
  * travail dont on ne lit plus les chiffres ne sert à rien ; un écran de travail
  * sans gouttière se lit très bien.
  *
- * 640 px et non 768 : au-delà, un iPhone en paysage ou une petite tablette ont
- * la place de la mise en page de bureau, et la leur retirer serait une perte. */
-@media (max-width: 640px) {
-  .lem-skin .lem-page { padding: 14px 12px 96px; }
-  /* 96 px en bas : la barre d'onglets est en `fixed`, elle recouvrirait la
-     dernière carte. C'est le défaut classique d'un pied de page mobile. */
+ * 767 px, ET PAS UNE AUTRE VALEUR : c'est exactement le complément du `md:` de
+ * Tailwind (≥ 768 px), donc le seuil auquel la barre d'onglets du bas apparaît
+ * (`md:hidden`). Prendre 640 px ferait une bande de 128 px où la barre recouvre
+ * la dernière carte sans que la marge du bas soit posée — le genre de défaut
+ * qu'on ne voit que sur l'appareil de quelqu'un d'autre. */
+@media (max-width: 767px) {
+  /* Le dégagement sous la barre d'onglets N'EST PAS ICI : les deux coques
+     (`StudioShell`, `AgentPortalLayout`) posent déjà `pb-24 md:pb-0` sur leur
+     `main`. Le redoubler ferait 192 px de vide sous la dernière carte — et le
+     jour où la hauteur de la barre change, il faudrait s'en souvenir à deux
+     endroits. */
+  .lem-skin .lem-page { padding: 14px 12px 24px; }
   .lem-skin .lem-titre { font-size: 21px; }
   .lem-skin .lem-sous { font-size: 13px; }
   .lem-skin .lem-entete { flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -622,3 +628,35 @@
   font-size: 11px; line-height: 1.35; color: var(--lem-gris-2);
   display: block; margin-top: 2px;
 }
+
+/* ── Le tableau, quand il n'y a plus de place pour un tableau ────────────
+ * `TachesTableau` rend NEUF colonnes. Sur 360 px, un défilement horizontal ne
+ * sauve rien : on lit une colonne à la fois sans jamais voir la ligne entière,
+ * et cocher une case du bord droit demande de faire défiler pour retrouver de
+ * quelle entreprise il s'agissait.
+ *
+ * La carte rend les MÊMES colonnes, empilées — donc la vue enregistrée continue
+ * de commander ce qui s'affiche. C'est la seule façon de ne pas se retrouver
+ * avec deux définitions de « ce qu'on montre », l'une pour le bureau, l'autre
+ * pour le téléphone, qui divergeraient à la première colonne ajoutée. */
+.lem-skin .lem-cartes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lem-skin .lem-cartes > li {
+  background: var(--lem-surface); border: 1px solid var(--lem-bord);
+  border-radius: var(--lem-rayon); padding: 11px 12px;
+}
+.lem-skin .lem-cartes > li[data-choisie="oui"] {
+  border-color: var(--lem-bleu); background: var(--lem-bleu-pale);
+}
+/* L'INTITULÉ EST LA CIBLE, pas la case. Une case de 18 px se rate une fois sur
+   trois ; le libellé qui l'enveloppe fait toute la largeur de la carte. */
+.lem-skin .lem-cartes .tete {
+  display: flex; align-items: flex-start; gap: 10px;
+  min-height: 36px; font-size: 14px; cursor: pointer;
+}
+.lem-skin .lem-cartes .tete input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+.lem-skin .lem-cartes dl {
+  margin: 8px 0 0; display: grid; grid-template-columns: minmax(84px, auto) 1fr;
+  gap: 3px 10px; font-size: 12.5px; align-items: baseline;
+}
+.lem-skin .lem-cartes dt { color: var(--lem-gris-2); }
+.lem-skin .lem-cartes dd { margin: 0; min-width: 0; }
