@@ -47,6 +47,23 @@
 -- Si « Seq Scan » apparaît à la place de « Bitmap Index Scan », l'index a
 -- décroché.
 --
+-- ⚠️ NE JAMAIS ÉPINGLER LE `search_path` DE `host_est_generique`, `host_key`
+-- NI DE `chercher_entreprises`. C'est contre-intuitif, et un audit de sécurité
+-- bien intentionné le fera un jour : les advisors Supabase signalent ces trois
+-- fonctions en `function_search_path_mutable`, et le correctif habituel est un
+-- `alter function … set search_path`.
+--
+-- Sauf qu'une fonction SQL portant une clause `SET` ne peut PLUS être inlinée
+-- par le planificateur. Or c'est précisément l'inlining qui fait apparaître le
+-- prédicat en clair dans la requête, donc qui permet à Postgres de prouver
+-- qu'il implique celui de cet index partiel. Les épingler ferait disparaître
+-- « Bitmap Index Scan on entreprises_sans_site_idx » du plan, et on retomberait
+-- à 6 461 ms — sans aucun message, avec un index toujours présent et inutile.
+--
+-- Les fonctions que le projet épingle (`figer_lot_depuis_criteres`,
+-- `entreprises_sans_plaquette`, `assurer_jetons_plaquette`) n'ont pas ce
+-- problème : aucune n'a de prédicat à faire reconnaître par un index partiel.
+--
 -- ── CE QUE ÇA COÛTE ──────────────────────────────────────────────────────
 -- Une évaluation du prédicat par écriture sur `entreprises`. Les bots qui
 -- écrivent cette table font tous des appels HTTP par ligne ; un regex local est

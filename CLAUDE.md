@@ -115,6 +115,16 @@ fonction mot pour mot** : le planificateur inline `host_est_generique`, et la
 moindre variation d'écriture lui fait cesser de prouver l'implication — sans
 rien signaler. Contrôle en une ligne dans `sql/20260826_index_sans_site.sql`.
 
+**Ne jamais épingler le `search_path` de `host_est_generique`, `host_key` ni
+`chercher_entreprises`.** Les advisors Supabase les signalent en
+`function_search_path_mutable`, et le correctif réflexe est un
+`alter function … set search_path`. Mais une fonction SQL portant une clause
+`SET` **ne peut plus être inlinée** — et c'est l'inlining qui fait reconnaître
+le prédicat de `entreprises_sans_site_idx`. Les épingler ferait silencieusement
+retomber l'explorateur de 351 ms à 6 461 ms, index toujours présent et inutile.
+Les autres fonctions du projet sont épinglées sans risque : aucune n'a de
+prédicat à faire reconnaître par un index partiel.
+
 **Un lot se fige depuis des critères, mais jamais en silence.** La règle
 d'origine (« depuis une liste d'identifiants, jamais depuis des critères »)
 visait le silence d'une divergence, pas la résolution côté serveur — et à
