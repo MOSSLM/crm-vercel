@@ -51,6 +51,7 @@ import {
   Bot,
   Send,
   ShieldCheck,
+  Hammer,
 } from "lucide-react";
 
 /**
@@ -131,6 +132,18 @@ export const SPACES: Space[] = [
       // On ne le DÉPLACE pas — il reste dans Acquisition, où il sert aussi.
       { title: "Leads", href: "/entreprises/explorateur", icon: Building2 },
       { title: "Rapports", href: "/prospection/rapports", icon: BarChart3 },
+      // L'ATELIER, ET POURQUOI IL EST ICI PLUTÔT QU'AILLEURS. C'est le seul
+      // écran du CRM conçu POUR le téléphone : figer un lot, lancer la file,
+      // voir combien de fiches sont fabricables. Il vit donc à côté des Lots et
+      // du Lissage, qu'il commande — et non dans un espace à lui, qui aurait
+      // fait un neuvième bouton de rail pour un seul écran.
+      //
+      // ⚠️ IL N'ÉTAIT INSCRIT NULLE PART. Le rail, le sous-menu ET la palette
+      // Cmd+K lisent tous `SPACES` (`getAllTools`) : un écran absent d'ici
+      // n'existe pour aucun des trois, même quand sa route répond. Il ne se
+      // trouvait que par la barre du bas, qui lit encore l'ancien
+      // `navigation.ts`. Toute route ajoutée au CRM se déclare ICI.
+      { title: "Atelier", href: "/atelier", icon: Hammer },
       // Les LOTS : le pipeline des populations, au-dessus de celui des fiches.
       // Il se range juste avant le lissage parce que c'est lui qui dit combien
       // il reste à lisser, et sur quel lot.
@@ -310,6 +323,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/media-library", "web"],
 
   ["/prospection", "prospection"],
+  ["/atelier", "prospection"],
 
   ["/dashboard", "hub"],
 ];
