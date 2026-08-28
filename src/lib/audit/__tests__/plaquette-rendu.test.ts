@@ -148,11 +148,11 @@ describe("le boost SEO local", () => {
 
   it("chiffre les trois formules pour CE prospect", () => {
     const { html } = rendrePlaquette("mobile", base);
-    // Deux métiers : 20, 40 et 60 pages.
+    // Deux métiers : 20, 40 et 60 pages, donc 160, 320 et 460 €.
     expect(html).toContain("20 pages écrites");
     expect(html).toContain("40 pages écrites");
     expect(html).toContain("60 pages écrites");
-    expect(html).toContain("1\u00A0430\u00A0\u20AC");
+    expect(html).toContain("460\u00A0\u20AC");
   });
 
   it("accorde « métiers » au nombre, sans jamais écrire « 1 métiers »", () => {

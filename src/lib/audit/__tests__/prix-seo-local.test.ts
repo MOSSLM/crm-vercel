@@ -23,12 +23,12 @@ import { pagesServiceFacturables } from "@/lib/audit/prix-site";
 
 describe("le barème par tranches", () => {
   it("cumule les tranches au lieu de retenir la dernière", () => {
-    // 50 × 25 = 1 250, puis 40 × 18 = 720.
-    expect(prixPagesSeoLocal(30)).toBe(750);
-    expect(prixPagesSeoLocal(50)).toBe(1250);
-    expect(prixPagesSeoLocal(60)).toBe(1430);
-    expect(prixPagesSeoLocal(90)).toBe(1970);
-    expect(prixPagesSeoLocal(100)).toBe(2150);
+    // 50 × 8 = 400, puis 40 × 6 = 240.
+    expect(prixPagesSeoLocal(30)).toBe(240);
+    expect(prixPagesSeoLocal(50)).toBe(400);
+    expect(prixPagesSeoLocal(60)).toBe(460);
+    expect(prixPagesSeoLocal(90)).toBe(640);
+    expect(prixPagesSeoLocal(100)).toBe(700);
   });
 
   it("ne baisse jamais quand le nombre de pages monte", () => {
@@ -45,7 +45,7 @@ describe("le barème par tranches", () => {
 
   it("continue de chiffrer au-delà de la dernière borne", () => {
     // 9 métiers × 30 communes : le cas qui plafonnerait un barème borné.
-    expect(prixPagesSeoLocal(270)).toBe(1250 + 100 * 18 + 120 * 12);
+    expect(prixPagesSeoLocal(270)).toBe(400 + 100 * 6 + 120 * 4);
   });
 
   it("rend zéro pour zéro page, sans négatif ni NaN", () => {
@@ -72,7 +72,7 @@ describe("le boost d'un prospect", () => {
     const boost = boostSeoLocal(troisMetiers);
     expect(boost.paliers.map((p) => p.communes)).toEqual([...COMMUNES_DES_BUNDLES]);
     expect(boost.paliers.map((p) => p.pages)).toEqual([30, 60, 90]);
-    expect(boost.paliers.map((p) => p.montant)).toEqual([750, 1430, 1970]);
+    expect(boost.paliers.map((p) => p.montant)).toEqual([240, 460, 640]);
   });
 
   it("s'adapte au prospect : plus de métiers, plus de pages", () => {
@@ -80,7 +80,7 @@ describe("le boost d'un prospect", () => {
     // même devis à un carreleur seul et à une entreprise à cinq métiers.
     const cinq = boostSeoLocal(["climatisation", "plomberie", "chauffage", "électricité", "ventilation"]);
     expect(cinq.paliers[0].pages).toBe(50);
-    expect(cinq.paliers[0].montant).toBe(1250);
+    expect(cinq.paliers[0].montant).toBe(400);
   });
 
   it("chiffre quand même une fiche sans étiquette reconnue", () => {
@@ -93,7 +93,14 @@ describe("le boost d'un prospect", () => {
 
   it("écrit ses montants avec les insécables du prix du site", () => {
     const boost = boostSeoLocal(troisMetiers);
-    expect(boost.paliers[0].texte).toBe("750 €");
-    expect(boost.paliers[2].texte).toBe("1 970 €");
+    expect(boost.paliers[0].texte).toBe("240\u00A0\u20AC");
+    // Le millier se prend sur une fiche qui l'atteint : les insécables sont ce
+    // qui empêche le document de couper sa ligne entre 1 et 480.
+    const neuf = boostSeoLocal([
+      ...troisMetiers, "ventilation", "pompe à chaleur", "photovoltaïque",
+      "rénovation générale", "bornes IRVE", "électricité",
+    ]);
+    expect(neuf.paliers[2].pages).toBe(270);
+    expect(neuf.paliers[2].texte).toBe("1\u00A0480\u00A0\u20AC");
   });
 });

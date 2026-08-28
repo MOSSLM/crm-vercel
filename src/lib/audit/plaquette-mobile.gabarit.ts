@@ -444,7 +444,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       </div>
     </div>
     <div class="seonote">
-      <p><b>Le compte est le vôtre.</b> Vos {{SEO_METIERS}} {{SEO_METIERS_MOT}} × les communes choisies. Chaque page est écrite pour son métier et sa ville — jamais le même texte recopié d'une commune à l'autre, que Google écarte.</p>
+      <p><b>Le compte est le vôtre.</b> Vos {{SEO_METIERS}} {{SEO_METIERS_MOT}} × les communes choisies. Chaque page porte son métier et sa ville : c'est la recherche que fait votre client, et c'est ce que Google va chercher.</p>
       <p>Plus la zone est large, moins la page coûte. Au-delà de {{SEO_COMMUNES_C}} communes, sur devis. Le site fonctionne sans : le boost s'ajoute quand vous voulez.</p>
     </div>
   </div>

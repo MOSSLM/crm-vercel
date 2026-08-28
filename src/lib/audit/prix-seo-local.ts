@@ -39,14 +39,24 @@ export interface TrancheSeoLocal {
 }
 
 /**
- * Le barème, du plus cher au moins cher. La dernière tranche n'a pas de
- * plafond : une entreprise à neuf métiers sur trente communes fait 270 pages,
- * et un barème qui s'arrêterait avant rendrait un prix faux sans le dire.
+ * Le barème, du plus cher au moins cher.
+ *
+ * IL EST TRÈS EN DESSOUS DU PAS D'UNE PAGE DE SITE (50 €, `prix_page_service`
+ * au catalogue), et c'est délibéré : une page de commune ne coûte qu'une
+ * fraction de ce que coûte une page de service, et le prix doit rester celui
+ * d'une option qu'on ajoute sans y réfléchir à deux fois. Un tarif calé sur
+ * celui du site ferait un second devis à côté du premier — c'est-à-dire une
+ * deuxième décision, prise au moment où le prospect n'a pas encore signé la
+ * première.
+ *
+ * La dernière tranche n'a pas de plafond : une entreprise à neuf métiers sur
+ * trente communes fait 270 pages, et un barème qui s'arrêterait avant rendrait
+ * un prix faux sans le dire.
  */
 export const TRANCHES_SEO_LOCAL: readonly TrancheSeoLocal[] = [
-  { jusqua: 50, prixPage: 25 },
-  { jusqua: 150, prixPage: 18 },
-  { jusqua: Number.POSITIVE_INFINITY, prixPage: 12 },
+  { jusqua: 50, prixPage: 8 },
+  { jusqua: 150, prixPage: 6 },
+  { jusqua: Number.POSITIVE_INFINITY, prixPage: 4 },
 ];
 
 /**
