@@ -281,6 +281,50 @@ export function DemActionCard({
     setMsg(versions.find((x) => x.variant === v)?.message ?? "");
   };
 
+  /**
+   * « J'ai changé le modèle et la carte dit toujours l'ancien texte. »
+   *
+   * CE N'EST PAS UNE PANNE : le moteur rend le message AU MOMENT où il pose
+   * l'étape et l'écrit dans la charge utile de la tâche ; la carte lit cette
+   * charge utile, jamais le modèle. C'est ce qui garantit que l'agent voit
+   * exactement ce que le moteur a préparé. Le prix est qu'un modèle corrigé ne
+   * rattrape que les tâches créées après — au 28/08/2026, quarante-neuf tâches
+   * « Plaquette » en attente portaient encore le texte d'avant.
+   *
+   * D'OÙ UN BOUTON, ET PAS UN RAFRAÎCHISSEMENT AUTOMATIQUE. Un message qui se
+   * recalculerait à chaque ouverture changerait sous les yeux de quelqu'un qui
+   * vient de le relire, et ne correspondrait plus à ce qui a été journalisé.
+   * Ici l'agent demande, lit, puis décide d'envoyer.
+   *
+   * `versions` étant dérivé de `task.payload`, on demande un rechargement de la
+   * file après coup : sans ça, la bascule entreprise/contact reservirait
+   * l'ancien texte, qui vit encore dans le payload que la carte a en mémoire.
+   */
+  const [rechargeant, setRechargeant] = useState(false);
+  const rechargerDepuisLeModele = async () => {
+    setRechargeant(true);
+    try {
+      const res = await authedFetch("/api/agent/demarchage/recharger-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: task.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        inchange?: boolean;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      if (data.message) setMsg(data.message);
+      toast.success(data.inchange ? "Le modèle n'a pas changé." : "Message rechargé depuis le modèle.");
+      onLogged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Rechargement impossible");
+    } finally {
+      setRechargeant(false);
+    }
+  };
+
   const [att, setAtt] = useState({ demo: false, audit: false });
   useEffect(() => setAtt({ demo: false, audit: false }), [task.id]);
 
@@ -317,11 +361,17 @@ export function DemActionCard({
    *
    * CE QUE LE CLIC PEUT ET NE PEUT PAS FAIRE. Aucun PDF n'est fabriqué ici : le
    * CRM n'embarque pas de moteur de PDF et Chromium ne tient pas dans une
-   * fonction Vercel (cf. `src/app/(public)/plaquette/rendu.tsx`). On ouvre la
-   * feuille A4 avec la boîte d'impression du navigateur, d'où « Enregistrer en
+   * fonction Vercel (cf. `src/app/(public)/plaquette/rendu.tsx`). On ouvre le
+   * document avec la boîte d'impression du navigateur, d'où « Enregistrer en
    * PDF » — exactement ce que fait « Exporter PDF » de l'éditeur d'audit depuis
    * toujours. Il reste donc UN clic à l'agent, et il vaut mieux le dire que
    * promettre un téléchargement qui n'existe pas.
+   *
+   * AU FORMAT TÉLÉPHONE, ET C'EST LA DESTINATION QUI LE DÉCIDE. Ce PDF part
+   * dans WhatsApp, lu sur un téléphone : l'A4 y arrive en vignette qu'il faut
+   * pincer pour lire, page après page. Le gabarit mobile est paginé pour ça —
+   * huit écrans de 430 × 932 px, un par page. L'A4 reste ce qu'on joint à un
+   * mail, et il s'ouvre toujours d'un clic depuis le pipeline marketing.
    */
   const plaquetteUrl =
     typeof task.payload?.plaquette_url === "string" && task.payload.plaquette_url
@@ -336,7 +386,7 @@ export function DemActionCard({
    */
   const ouvrirPlaquette = () => {
     if (!plaquetteUrl) return;
-    window.open(urlPlaquetteImprimable(plaquetteUrl), "_blank", "noopener,noreferrer");
+    window.open(urlPlaquetteImprimable(plaquetteUrl, "mobile"), "_blank", "noopener,noreferrer");
   };
 
   const logMessage = async (channel: "whatsapp" | "linkedin", to: string) => {
@@ -744,6 +794,20 @@ export function DemActionCard({
                     rapport d&apos;audit
                   </button>
                 )}
+                {/* SEULEMENT SUR UNE TÂCHE DE SÉQUENCE : celles qu'une action
+                    `create_task` a posées n'ont aucune étape, donc aucun modèle
+                    à relire — le bouton rendrait une erreur à tous les coups. */}
+                {task.enrollment_id && task.step_id && (
+                  <button
+                    className="dm-att"
+                    disabled={rechargeant || busy}
+                    onClick={rechargerDepuisLeModele}
+                    title="Refaire le texte depuis le modèle actuel de l'étape, avec les variables de ce prospect"
+                  >
+                    <Icon name="refresh" className="ico-xs" />
+                    {rechargeant ? "rechargement…" : "recharger le modèle"}
+                  </button>
+                )}
                 <span
                   style={{
                     marginLeft: "auto",
@@ -768,9 +832,10 @@ export function DemActionCard({
               <div className="dm-hint">
                 <Icon name="doc" className="ico-sm" />
                 <span>
-                  La plaquette s&apos;ouvre en A4 avec la boîte d&apos;impression au clic sur
-                  «&nbsp;{ch.cta}&nbsp;» — «&nbsp;Enregistrer en PDF&nbsp;», puis on la joint dans
-                  la conversation. Le message, lui, ne contient aucun lien.
+                  La plaquette s&apos;ouvre au format téléphone avec la boîte
+                  d&apos;impression au clic sur «&nbsp;{ch.cta}&nbsp;» —
+                  «&nbsp;Enregistrer en PDF&nbsp;», puis on la joint dans la conversation.
+                  Le message, lui, ne contient aucun lien.
                 </span>
               </div>
             )}

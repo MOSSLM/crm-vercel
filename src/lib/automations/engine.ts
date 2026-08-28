@@ -1718,8 +1718,9 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
         // LE DOCUMENT VOYAGE AVEC LA TÂCHE, PAS DANS LE TEXTE. La plaquette ne
         // part plus en lien mais en PDF joint : le message n'en dit donc plus
         // l'adresse, et la carte d'action n'a plus rien à y lire. C'est ce
-        // champ qu'elle ouvre au clic sur « Envoyer », en feuille A4 avec la
-        // boîte d'impression (`urlPlaquetteImprimable`).
+        // champ qu'elle ouvre au clic sur « Envoyer », au format téléphone avec
+        // la boîte d'impression (`urlPlaquetteImprimable`) — c'est un PDF qui
+        // part dans WhatsApp, où un A4 arrive en vignette illisible.
         //
         // Posé SEULEMENT quand l'étape le demande : sans ce garde, les six
         // autres messages manuels de S1 et S2 porteraient un bouton « ouvrir la

@@ -12,9 +12,16 @@ jest.mock("@/components/telephony/CallProvider", () => ({ useTelephonyOptional: 
  * soit envoyée en PDF et que le téléchargement soit fait au clic sur le bouton
  * d'envoi. »
  *
- * Deux choses se vérifient ici, et l'ORDRE en est une : la feuille part avant
+ * Trois choses se vérifient ici. L'ORDRE en est une : le document part avant
  * WhatsApp, sinon la boîte d'impression vole le focus à la conversation au
  * moment précis où l'agent va coller son message.
+ *
+ * LE FORMAT EN EST UNE AUTRE, et c'est la destination qui le décide : ce PDF
+ * est joint dans WhatsApp, lu sur un téléphone. L'A4 (`?a4&imprimer`) y arrive
+ * en vignette qu'il faut pincer pour lire ; le gabarit mobile (`?imprimer`) est
+ * paginé pour ça, un écran de téléphone par page. Le jour où l'un des deux
+ * bouge, c'est ici que ça se voit — la carte compose son URL par
+ * `urlPlaquetteImprimable`, pas à la main.
  */
 
 const PLAQUETTE = "https://app.samadigitalstudio.fr/plaquette/abc123";
@@ -68,18 +75,18 @@ describe("DemActionCard — la plaquette en pièce jointe", () => {
     }) as typeof window.open;
   });
 
-  it("ouvre la feuille A4 imprimable AVANT WhatsApp", () => {
+  it("ouvre le PDF au format téléphone AVANT WhatsApp", () => {
     renderCard(AVEC);
     fireEvent.click(screen.getByRole("button", { name: /Envoyer le WhatsApp/ }));
     expect(ouvertures).toHaveLength(2);
-    expect(ouvertures[0]).toBe(`${PLAQUETTE}?a4&imprimer`);
+    expect(ouvertures[0]).toBe(`${PLAQUETTE}?imprimer`);
     expect(ouvertures[1]).toContain("wa.me");
   });
 
   it("laisse rouvrir la plaquette seule, sans repasser par l'envoi", () => {
     renderCard(AVEC);
     fireEvent.click(screen.getByRole("button", { name: /Rouvrir la plaquette seule/ }));
-    expect(ouvertures).toEqual([`${PLAQUETTE}?a4&imprimer`]);
+    expect(ouvertures).toEqual([`${PLAQUETTE}?imprimer`]);
   });
 
   it("dit ce qui va s'ouvrir, plutôt que de surprendre l'agent", () => {
