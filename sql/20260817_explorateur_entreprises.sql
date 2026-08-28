@@ -1,3 +1,12 @@
+-- ⚠️ CE FICHIER N'EST PLUS LA VERSION EN PLACE DE `explorateur_entreprises`.
+-- Le `cross join f` qu'il porte rend les vingt-sept filtres opaques au
+-- planificateur : l'estimation s'effondre, les jointures repassent en boucle
+-- imbriquée, et la fonction est passée de 2 s à plus de trois minutes.
+-- Rejouer ce fichier tel quel RÉINTRODUIT le timeout.
+-- La version en service est `sql/20260828_explorateur_sans_cte_de_filtres.sql`.
+-- Ce qui suit reste ici pour l'histoire du raisonnement, et pour les objets
+-- qu'il crée par ailleurs.
+
 -- L'explorateur d'entreprises : une passe, tous les filtres, les compteurs et la page.
 --
 -- POURQUOI UNE FONCTION ET PAS DES REQUÊTES POSTGREST. L'écran a besoin de

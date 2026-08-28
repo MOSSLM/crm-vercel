@@ -6,6 +6,19 @@ import { z } from "zod";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/**
+ * Le budget est DÉCLARÉ, pas hérité du défaut de la plateforme.
+ *
+ * Sans cette ligne, la route prenait le défaut Vercel et se faisait couper bien
+ * avant la réponse le jour où `explorateur_entreprises` a basculé de 2 s à plus
+ * de trois minutes (cf. sql/20260828_explorateur_sans_cte_de_filtres.sql) : le
+ * 504 arrivait sans rien dire de la cause, et on cherchait le bug dans l'écran.
+ *
+ * 60 s est très au-dessus du besoin — le pire cas, sans aucun filtre, tient en
+ * un demi-millier de millisecondes. C'est un plafond de panne, pas une cible :
+ * s'il est atteint, c'est le plan SQL qu'il faut rouvrir, pas ce nombre.
+ */
+export const maxDuration = 60;
 export const OPTIONS = (req: Request) => preflight(req);
 
 /**
