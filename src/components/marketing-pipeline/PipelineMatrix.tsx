@@ -40,6 +40,7 @@ import {
   BookOpen,
   Copy,
   Printer,
+  Smartphone,
   Gauge,
   Rocket,
   Share2,
@@ -53,6 +54,7 @@ import { archiveReasonLabel } from "@/lib/archive/reasons";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import { authedFetch } from "@/utils/authedFetch";
+import { urlPlaquetteImprimable } from "@/lib/audit/plaquette-lien";
 import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
 import { aUneFicheGoogle, lienGoogle, lienMaps } from "@/lib/prospects/lien-google";
 import { AUTO_SEQUENCE, aDemarcher, inscriptionFinLabel, inscriptionVivante, sequenceEtatLabel, sequenceOptionLabel } from "./types";
@@ -385,10 +387,19 @@ function VignetteCell({ item }: { item: BoardItem }) {
  * c'est la seule mesure dont dispose la cohorte sans site, invisible de GA4.
  * Une colonne est le seul endroit d'où l'on voit cet état ligne par ligne.
  *
- * DEUX LIENS, PARCE QU'ILS NE SERVENT PAS AU MÊME MOMENT. Celui qu'on copie part
- * par WhatsApp et s'ouvre au pouce ; celui qu'on imprime ajoute `?a4&imprimer`
- * et ouvre la boîte d'impression du navigateur — d'où l'on enregistre le PDF à
- * joindre à un mail. C'est exactement la mécanique du document d'audit.
+ * TROIS GESTES, PARCE QU'ILS NE SERVENT PAS AU MÊME MOMENT. Celui qu'on copie
+ * part par WhatsApp et s'ouvre au pouce ; les deux autres ouvrent la boîte
+ * d'impression du navigateur — d'où l'on enregistre le PDF. C'est exactement la
+ * mécanique du document d'audit.
+ *
+ * ET LE PDF A DEUX FORMATS, PARCE QU'IL A DEUX DESTINATIONS. L'A4 se joint à un
+ * mail et se lit sur un écran d'ordinateur. Le mobile sort les sept pages du
+ * gabarit téléphone (`plaquette-mobile.gabarit`, 430 × 932 px, une page par
+ * écran) : c'est le PDF qu'on joint dans WhatsApp, où un A4 arrive en vignette
+ * qu'il faut pincer pour lire. Le second existait déjà en maquette et n'avait
+ * aucun chemin depuis le CRM — `veutImprimer` exigeait `?a4`. Les deux boutons
+ * composent leur URL par `urlPlaquetteImprimable`, jamais à la main : ces liens
+ * partent chez des prospects, et le jour où le chemin bouge il bouge partout.
  *
  * ELLE NE DÉPEND D'AUCUNE ÉTAPE. La plaquette s'envoie à qui n'a pas de site,
  * donc précisément aux lignes qui n'atteindront jamais la colonne « Audit ». La
@@ -486,13 +497,23 @@ function PlaquetteCell({ item }: { item: BoardItem }) {
         </button>
         <a
           className="btn ghost sm"
-          href={`${url}?a4&imprimer`}
+          href={urlPlaquetteImprimable(url, "a4")}
           target="_blank"
           rel="noopener noreferrer"
-          title="Ouvrir en A4 et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur"
+          title="Ouvrir en A4 et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur. C'est le PDF qu'on joint à un mail."
         >
           <Printer className="ico-sm" />
-          PDF
+          PDF A4
+        </a>
+        <a
+          className="btn ghost sm"
+          href={urlPlaquetteImprimable(url, "mobile")}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Ouvrir les sept pages au format téléphone et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur. C'est le PDF qu'on joint dans WhatsApp."
+        >
+          <Smartphone className="ico-sm" />
+          PDF mobile
         </a>
       </div>
     </div>

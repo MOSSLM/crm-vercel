@@ -27,6 +27,15 @@
  * le travail. Le `?a4` seul ne compte pas d'ouverture (cf. la page) : la passe
  * ne fabrique donc pas quarante-neuf fausses lectures au nom des prospects.
  *
+ * LE JOUR OÙ CETTE PASSE VOUDRA LE FORMAT MOBILE — il existe depuis le
+ * 28/08/2026, sept pages de téléphone que le CRM enregistre par `?imprimer` —,
+ * elle ne peut PAS naviguer vers `/plaquette/{jeton}` nu : le mobile sans
+ * paramètre est le seul rendu que la page compte, et la passe attribuerait une
+ * lecture à chaque prospect. Il faudra `?imprimer` (qui n'est pas compté, et
+ * dont le `window.print()` ne gêne pas `page.pdf()`), ou un paramètre de
+ * non-comptage à ajouter à la page. Le `preferCSSPageSize` ci-dessous suffit
+ * pour le reste : le gabarit mobile porte son propre `@page`.
+ *
  * CE QUE LE FICHIER FIGE, ET QU'IL FAUT SAVOIR. La plaquette servie en ligne
  * relit les prix du catalogue à CHAQUE ouverture — c'est ce qui l'empêche
  * d'annoncer un tarif périmé. Un PDF, lui, est une photo. Le nom du fichier

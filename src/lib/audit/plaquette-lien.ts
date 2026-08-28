@@ -36,8 +36,23 @@ export function urlPlaquette(jeton?: string | null): string {
 }
 
 /**
- * La même plaquette, en feuille A4 avec la boîte d'impression qui s'ouvre —
- * d'où l'on choisit « Enregistrer en PDF ».
+ * Le format du PDF qu'on va enregistrer. Les deux existent depuis que le
+ * document nominatif a sa maquette mobile paginée (`plaquette-mobile.gabarit`,
+ * sept écrans de 430 × 932 px avec leur `@page`) : ce n'est plus l'A4 réduit
+ * sur un téléphone, c'est un autre document.
+ */
+export type FormatImpressionPlaquette = "a4" | "mobile";
+
+/**
+ * La même plaquette avec la boîte d'impression qui s'ouvre — d'où l'on choisit
+ * « Enregistrer en PDF ».
+ *
+ * DEUX FORMATS, ET LE CHOIX APPARTIENT À L'AGENT. L'A4 se joint à un mail et se
+ * lit sur un écran d'ordinateur ; le mobile sort sept pages au format téléphone,
+ * qui est ce qu'un prospect reçoit dans WhatsApp — un A4 y arrive en vignette
+ * illisible qu'il faut pincer pour lire. Le défaut reste l'A4 : c'est le
+ * document que les surfaces existantes envoient déjà, et le changer en silence
+ * changerait ce que le démarchage joint à ses mails.
  *
  * POURQUOI CE N'EST PAS UN FICHIER QU'ON FABRIQUE. Le CRM ne produit aucun PDF :
  * aucune librairie n'est installée, et Chromium ne tient pas dans une fonction
@@ -50,8 +65,14 @@ export function urlPlaquette(jeton?: string | null): string {
  * boîte du navigateur. C'est le prix d'une plaquette dont les tarifs sont relus
  * à chaque ouverture plutôt que figés dans un fichier stocké.
  */
-export function urlPlaquetteImprimable(url: string): string {
-  return `${url}${url.includes("?") ? "&" : "?"}a4&imprimer`;
+export function urlPlaquetteImprimable(
+  url: string,
+  format: FormatImpressionPlaquette = "a4",
+): string {
+  const sep = url.includes("?") ? "&" : "?";
+  // `?a4` sert la feuille, son absence sert le mobile : le format ne se dit donc
+  // que dans un sens, et `?imprimer` seul EST la demande d'un PDF mobile.
+  return `${url}${sep}${format === "a4" ? "a4&imprimer" : "imprimer"}`;
 }
 
 /**
