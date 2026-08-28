@@ -4,6 +4,7 @@
  * couverture qui promet une démo qui n'existe pas.
  */
 import { rendrePlaquette, type DonneesPlaquette } from "@/lib/audit/plaquette-rendu";
+import { boostSeoLocal } from "@/lib/audit/prix-seo-local";
 
 const base: DonneesPlaquette = {
   nom: "Maac-Air",
@@ -12,6 +13,9 @@ const base: DonneesPlaquette = {
   captureDemo: "https://llzrpcbwnqvbrcjjwysm.supabase.co/storage/v1/object/public/x/shot.jpg",
   prix: "690 €",
   date: "21 août 2026",
+  // Deux métiers : de quoi voir que le nombre de pages du boost n'est pas
+  // celui des communes, et que l'accord suit (« vos 2 métiers »).
+  boost: boostSeoLocal(["climatisation", "plomberie"]),
 };
 
 describe.each(["a4", "mobile"] as const)("plaquette %s", (format) => {
@@ -114,9 +118,56 @@ describe("pagination", () => {
     expect(html.match(/class="half/g) ?? []).toHaveLength(4);
   });
 
-  it("le mobile fait sept écrans, et une page d'impression par écran", () => {
+  it("le mobile fait huit écrans, et une page d'impression par écran", () => {
     const { html, css } = rendrePlaquette("mobile", base);
-    expect(html.match(/class="page[ "]/g) ?? []).toHaveLength(7);
+    expect(html.match(/class="page[ "]/g) ?? []).toHaveLength(8);
     expect(css).toContain("page-break-before:always");
+  });
+});
+
+/**
+ * L'ÉCRAN DU BOOST SEO LOCAL — et la promesse qu'il remplace.
+ *
+ * Le document vendait « une page par métier ET PAR COMMUNE » dans le prix du
+ * site : ce n'est pas ce que le générateur livre, et ça n'a jamais été facturé.
+ * Les communes sont devenues un produit à part, chiffré pour le prospect. Ce
+ * que ces tests tiennent est la couture des deux moitiés — le barème calcule,
+ * le gabarit affiche — parce qu'un marqueur mal nommé ne casse rien : il part
+ * en clair chez le prospect.
+ */
+describe("le boost SEO local", () => {
+  it("ne promet plus les communes dans le prix du site", () => {
+    // LA FAUTE D'ORIGINE, dans les deux formats : la phrase se lisait sur la
+    // page des piliers ET sur celle des repères.
+    for (const format of ["a4", "mobile"] as const) {
+      const { html } = rendrePlaquette(format, base);
+      expect(html).not.toContain("par métier et par commune");
+      expect(html).toContain("Une page par métier ou service");
+    }
+  });
+
+  it("chiffre les trois formules pour CE prospect", () => {
+    const { html } = rendrePlaquette("mobile", base);
+    // Deux métiers : 20, 40 et 60 pages, donc 160, 320 et 460 €.
+    expect(html).toContain("20 pages écrites");
+    expect(html).toContain("40 pages écrites");
+    expect(html).toContain("60 pages écrites");
+    expect(html).toContain("460\u00A0\u20AC");
+  });
+
+  it("accorde « métiers » au nombre, sans jamais écrire « 1 métiers »", () => {
+    const un = rendrePlaquette("mobile", { ...base, boost: boostSeoLocal([]) }).html;
+    expect(un).toContain("1 métier<");
+    expect(un).not.toContain("1 métiers");
+    expect(rendrePlaquette("mobile", base).html).toContain("2 métiers<");
+  });
+
+  it("n'existe qu'en mobile, et l'A4 n'en garde aucune trace", () => {
+    // L'A4 est une mise en page à positions fixes : l'écran n'y rentre pas. Ce
+    // qu'on vérifie est qu'il n'en porte AUCUN marqueur — un marqueur laissé
+    // dans un gabarit qui ne le remplit pas partirait en clair chez le prospect.
+    const { html } = rendrePlaquette("a4", base);
+    expect(html).not.toContain("SEO_");
+    expect(html).not.toMatch(/\{\{[A-Z_]+\}\}/);
   });
 });

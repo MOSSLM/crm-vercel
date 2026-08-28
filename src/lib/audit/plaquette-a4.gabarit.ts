@@ -285,7 +285,7 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
         <g fill="#B5D0F0" fill-opacity=".8"><circle cx="410" cy="90" r="2"></circle><circle cx="410" cy="196" r="2"></circle><circle cx="410" cy="240" r="2"></circle><circle cx="462" cy="17" r="2"></circle><circle cx="462" cy="127" r="2"></circle><circle cx="462" cy="231" r="2"></circle></g>
       </svg>
       <div class="note" style="top:8px"><div class="t">Crédibilité <s>on vous croit</s></div><p><b>Vos chantiers en photo</b>, vos avis et vos certifications dès l'accueil.</p></div>
-      <div class="note" style="top:118px"><div class="t">Référencement <s>on vous trouve</s></div><p><b>Une page par métier</b> et par commune que vous couvrez.</p></div>
+      <div class="note" style="top:118px"><div class="t">Référencement <s>on vous trouve</s></div><p><b>Une page par métier</b> ou service que vous proposez.</p></div>
       <div class="note" style="top:222px"><div class="t">Conversion <s>on vous appelle</s></div><p>« Appeler » sur chaque écran, <b>formulaire intelligent</b>.</p></div>
       <a class="rbtn" href="https://{{DEMO_URL}}">
         <svg viewBox="0 0 88 88" aria-hidden="true"><text><textPath href="#ring-a" startOffset="25%">Cliquez pour visiter</textPath></text></svg>
@@ -298,12 +298,12 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
       <div class="st">Le site que nous préparons pour vous tient sur <em>trois idées</em>.</div>
       <div class="tri">
         <div><div class="n">1</div><div class="k">Crédibilité</div><p>Vos chantiers, vos avis et vos certifications dès l'accueil.</p></div>
-        <div><div class="n">2</div><div class="k">Référencement</div><p>Une page par métier et par commune que vous couvrez.</p></div>
+        <div><div class="n">2</div><div class="k">Référencement</div><p>Une page par métier ou service que vous proposez.</p></div>
         <div><div class="n">3</div><div class="k">Conversion</div><p>« Appeler » sur chaque écran, formulaire intelligent.</p></div>
       </div>
       <div class="att">
         <span class="rbtn sm"><svg viewBox="0 0 76 76" aria-hidden="true"><text><textPath href="#ring-b" startOffset="25%">Votre aperçu arrive</textPath></text></svg><span class="core">→</span></span>
-        <p>Votre aperçu est en préparation. Vous le recevrez en ligne, à votre nom, avec vos photos et vos communes — vous n'aurez rien à installer.</p>
+        <p>Votre aperçu est en préparation. Vous le recevrez en ligne, à votre nom, avec vos photos et vos métiers — vous n'aurez rien à installer.</p>
       </div>
     </div>
 
@@ -335,7 +335,7 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
           <div class="top"><b>2</b><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="3.4"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"></circle><path d="M12 0.8v3M12 20.2v3M0.8 12h3M20.2 12h3"></path></svg></div>
           <div class="k">Référencement</div>
           <h3>Apparaissez <em>devant vos concurrents</em> sur le web</h3>
-          <p><b class="hl">Une page par métier et par commune</b> que vous couvrez. Vos textes et vos images sont décrits pour que Google comprenne ce que vous faites, et où.</p>
+          <p><b class="hl">Une page par métier ou service</b> que vous proposez. Vos textes et vos images sont décrits pour que Google comprenne ce que vous faites, et où.</p>
           <ul><li>Une page par métier</li><li>Fiche d'entreprise complétée</li></ul>
         </div>
         <div class="pil">
@@ -384,7 +384,7 @@ export const CORPS_PLAQUETTE_A4 = String.raw`
       <div class="svcs">
         <div class="svc">
           <div class="top"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="14" width="4" height="7" fill="currentColor" stroke="none"></rect><rect x="10" y="9" width="4" height="12" fill="currentColor" stroke="none"></rect><rect x="17" y="4" width="4" height="17" fill="currentColor" stroke="none"></rect></svg><span class="n">Suivi du référencement</span></div>
-          <p>Nous ajoutons vos nouvelles communes et vos nouveaux métiers, et nous surveillons ce que Google affiche de vous.</p>
+          <p>Nous ajoutons vos nouveaux métiers et vos nouvelles pages, et nous surveillons ce que Google affiche de vous.</p>
           <div class="w">Sur devis</div>
         </div>
         <div class="svc">

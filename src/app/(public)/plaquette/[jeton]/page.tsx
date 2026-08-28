@@ -29,7 +29,7 @@ import {
  * d'autre n'y figure — ni note, ni relevé, ni donnée client.
  *
  * ET LE PDF SE PREND DANS LES DEUX FORMATS. `?a4&imprimer` rend la feuille,
- * `?imprimer` seul rend les sept pages du gabarit mobile — celui qui a été
+ * `?imprimer` seul rend les huit pages du gabarit mobile — celui qui a été
  * dessiné pour WhatsApp, où un A4 arrive en vignette. Le corollaire est plus bas,
  * au compteur : aucune des deux demandes d'impression ne compte une ouverture.
  *

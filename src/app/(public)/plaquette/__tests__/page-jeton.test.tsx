@@ -11,7 +11,7 @@
  *      cents.
  *   2. L'IMPRESSION EST UN GESTE À NOUS, DANS LES DEUX FORMATS. `?imprimer`
  *      ouvre la boîte du navigateur pour qu'on enregistre le PDF — A4 pour le
- *      mail, sept pages de téléphone pour WhatsApp — donc aucune des deux
+ *      mail, huit pages de téléphone pour WhatsApp — donc aucune des deux
  *      demandes ne compte une ouverture. Le seul rendu compté est le mobile nu,
  *      celui qu'on ne demande jamais soi-même.
  *   3. UN JETON MORT NE FAIT PAS D'ERREUR. Le document reste public et
@@ -134,7 +134,7 @@ describe("l'impression", () => {
 
   it("s'ouvre aussi sur le rendu mobile — c'est le PDF de WhatsApp", async () => {
     // ELLE NE S'Y OUVRAIT PAS JUSQU'AU 28/08/2026, et c'était le défaut : le
-    // gabarit mobile nominatif est paginé pour l'impression (sept écrans, un par
+    // gabarit mobile nominatif est paginé pour l'impression (huit écrans, un par
     // page), donc dessiné pour faire un PDF — mais `veutImprimer` exigeait `?a4`,
     // et ce PDF-là n'avait aucun chemin depuis le CRM.
     const el = await ouvrir(JETON, { imprimer: "" });

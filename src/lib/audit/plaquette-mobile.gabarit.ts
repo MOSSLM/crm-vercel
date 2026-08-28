@@ -9,6 +9,16 @@
  * surprise », parce qu'un abonnement qui arrive après la signature ferait
  * mentir la première formule.
  *
+ * TROISIÈME AMENDEMENT, LE 28/08/2026, ET C'EST LE PLUS LOURD : L'OFFRE A
+ * CHANGÉ. Le document promettait « une page par métier ET PAR COMMUNE que vous
+ * couvrez » dans le prix du site. Ce n'est pas ce qui est livré — le générateur
+ * pose une page par service, pas le produit des services par les communes — et
+ * trente communes pour trois métiers font quatre-vingt-dix pages à écrire. La
+ * promesse est donc devenue « une page par métier ou service », et les communes
+ * sont un produit à part : la page 5, chiffrée pour le prospect par
+ * `prix-seo-local.ts`. C'est aussi ce qui fait passer le document de sept
+ * écrans à huit — les pieds de page comptent sur huit, pas sept.
+ *
  * POURQUOI LE MARKUP EST ICI ET PAS DANS UN `.html`. Garder le fichier de
  * maquette à côté du module obligerait à décider, à chaque retouche, lequel des
  * deux fait foi. Le markup vit donc dans le code, comme celui de l'audit
@@ -21,7 +31,7 @@
  * faite ». Cf. `plaquette-rendu.ts`.
  *
  * LE COMPOSANT WEB EXTERNE A ÉTÉ REMPLACÉ PAR `#doc`. La maquette s'appuyait
- * sur un composant chargé en `<script src>` pour dimensionner ses sept écrans.
+ * sur un composant chargé en `<script src>` pour dimensionner ses huit écrans.
  * Un script externe ne se résout pas dans un rendu serveur : la page serait
  * sortie sans dimensions, sept blocs empilés à la taille de leur contenu. Le
  * dimensionnement est donc écrit en CSS, et `@page` est posé pour que
@@ -39,7 +49,7 @@ export const CSS_PLAQUETTE_MOBILE = String.raw`
 :root{--nuit:#0A1B33;--azur:#2F7AE0;--brume:#B5D0F0;--creme:#F7FAFD;--casse:#E8F3FF;--ink:#0A1B33;--soft:rgba(10,27,51,.72);--faint:rgba(10,27,51,.46);--line:rgba(10,27,51,.12);--line2:rgba(10,27,51,.22);--lineaz:rgba(47,122,224,.22);--pad:24px;--grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E")}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{color:var(--ink);font-family:'DM Sans','Helvetica Neue',Arial,sans-serif;font-size:17px;line-height:1.38;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
-/* ── mise en page des sept écrans, écrite ici plutôt que par un composant ── */
+/* ── mise en page des huit écrans, écrite ici plutôt que par un composant ── */
 #doc{display:flex;flex-direction:column;align-items:center;gap:20px;padding:20px 0}
 .page{width:430px;height:932px;flex:none;box-shadow:0 1px 5px rgba(10,27,51,.28)}
 @page{size:430px 932px;margin:0}
@@ -202,20 +212,40 @@ a{color:inherit;text-decoration:none}
 .pcard .uk+ul{margin-top:12px}
 .pcard li{position:relative;padding-left:17px;font-size:16px;line-height:1.24;color:rgba(232,243,255,.94)}
 .pcard li::before{content:'';position:absolute;left:0;top:10px;width:9px;height:1px;background:var(--brume)}
-/* ── page 5 : pour aller plus loin ────────────────── */
+/* ── page 5 : le boost SEO local ─────────────────────
+   TROIS FORMULES, ET LEUR NOMBRE NE DÉPEND PAS DU PROSPECT — seuls les nombres
+   à l'intérieur changent. La page n'a donc aucun débordement à prévoir : elle a
+   à rester lisible à bout de bras. Le montant est posé à droite, en regard de
+   sa formule : c'est la colonne que l'œil descend pour comparer, et la seule
+   chose qu'on vient chercher sur cet écran. */
+.seo{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;margin-top:18px;min-height:0}
+/* HAUTEUR NATURELLE ET NON flex:1 : trois cartons étirés sur la hauteur libre
+   ouvraient quatre-vingts pixels de vide au milieu de chacun — le blanc se lit
+   comme une information manquante quand il est DANS un cadre, alors qu'il ne se
+   voit pas entre deux traits (cf. les repères de la page 2). L'espace restant
+   passe donc autour du groupe, qui se centre. */
+.seorow{flex:none;display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 14px;padding:23px 18px;background:var(--casse);border:1px solid var(--line);border-left:2px solid var(--azur)}
+.seorow .c{font-size:17.5px;line-height:1.2;color:var(--nuit)}
+.seorow .c b{font-weight:500}
+.seorow .pg{grid-column:1;font-size:13.5px;letter-spacing:.02em;color:var(--faint)}
+.seorow .a{grid-column:2;grid-row:1 / span 2;align-self:center;font-size:29px;font-weight:500;letter-spacing:-.015em;line-height:1;color:var(--azur);white-space:nowrap}
+.seonote{flex:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.seonote p{font-size:13.5px;line-height:1.34;color:var(--soft);text-wrap:pretty}
+.seonote p b{font-weight:500;color:var(--nuit)}
+/* ── page 6 : pour aller plus loin ────────────────── */
 .svcs{flex:1;display:flex;flex-direction:column;gap:14px;margin-top:20px;min-height:0}
 .svc{flex:1;display:flex;flex-direction:column;background:var(--casse);border:1px solid var(--line);padding:18px}
 .svc .top{display:flex;align-items:center;gap:12px}
 .svc .n{font-size:18.5px;font-weight:500;line-height:1.15;color:var(--nuit)}
 .svc p{font-size:17px;line-height:1.36;color:var(--soft);margin-top:10px;text-wrap:pretty}
 .svc .w{margin-top:auto;padding-top:12px;font-size:10.5px;font-weight:500;letter-spacing:.17em;text-transform:uppercase;color:var(--azur)}
-/* ── page 6 : pour démarrer ───────────────────────── */
+/* ── page 7 : pour démarrer ───────────────────────── */
 .etapes{flex:1;display:flex;flex-direction:column;margin-top:20px;border-top:1.5px solid var(--nuit);min-height:0}
 .etape{flex:1;display:grid;grid-template-columns:38px 1fr;gap:16px;align-content:center;padding:18px 0;border-bottom:1px solid var(--line)}
 .etape .n{font-family:'Cormorant Garamond','Times New Roman',serif;font-weight:300;font-size:40px;line-height:.78;color:var(--azur)}
 .etape h3{font-size:19px;font-weight:500;line-height:1.2;color:var(--nuit)}
 .etape p{grid-column:2;font-size:17px;line-height:1.34;color:var(--soft);margin-top:8px}
-/* ── page 7 : aperçu et contact ───────────────────── */
+/* ── page 8 : aperçu et contact ───────────────────── */
 .demoblk{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;margin-top:20px;padding:26px 20px;background:rgba(232,243,255,.07);border:1px solid rgba(181,208,240,.28)}
 .demoblk .row{display:flex;flex-direction:row-reverse;align-items:center;gap:18px}
 .demoblk .row>span{flex:1}
@@ -278,7 +308,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       <div class="st">Le site que nous préparons pour vous tient sur <em>trois idées</em>.</div>
       <div class="att">
         <span class="rbtn"><svg viewBox="0 0 100 100" aria-hidden="true"><text><textPath href="#ring-a" startOffset="25%">Votre aperçu arrive</textPath></text></svg><span class="core">→</span></span>
-        <p>Votre aperçu est en préparation. Vous le recevrez en ligne, à votre nom, avec vos photos et vos communes — vous n'aurez rien à installer.</p>
+        <p>Votre aperçu est en préparation. Vous le recevrez en ligne, à votre nom, avec vos photos et vos métiers — vous n'aurez rien à installer.</p>
       </div>
     </div>
     <div class="cvcta">
@@ -289,7 +319,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       <p>Ouvrez-le, il est déjà en ligne à votre nom : <b>{{DEMO_URL}}</b></p>
     </div>
   </div>
-  <div class="pgfoot"><span>sama digital studio</span><span>1 / 7</span></div>
+  <div class="pgfoot"><span>sama digital studio</span><span>1 / 8</span></div>
 </section>
 
 <!-- ═════ 2 — les trois repères ════════════════════════════════════════ -->
@@ -301,7 +331,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
     </div>
     <div class="reps">
       <div class="rep"><div class="n">1</div><div class="t">Crédibilité <s>on vous croit</s></div><p><b>Vos chantiers en photo</b>, vos avis et vos certifications dès l'accueil.</p></div>
-      <div class="rep"><div class="n">2</div><div class="t">Référencement <s>on vous trouve</s></div><p><b>Une page par métier</b> et par commune que vous couvrez.</p></div>
+      <div class="rep"><div class="n">2</div><div class="t">Référencement <s>on vous trouve</s></div><p><b>Une page par métier</b> ou service que vous proposez.</p></div>
       <div class="rep"><div class="n">3</div><div class="t">Conversion <s>on vous appelle</s></div><p>« Appeler » sur chaque écran, <b>formulaire intelligent</b>.</p></div>
     </div>
     <div class="cvend">
@@ -309,7 +339,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       <span class="fb">Les trois piliers sont détaillés sur les pages qui suivent.</span>
     </div>
   </div>
-  <div class="pgfoot"><span>Votre aperçu · sama digital studio</span><span>2 / 7</span></div>
+  <div class="pgfoot"><span>Votre aperçu · sama digital studio</span><span>2 / 8</span></div>
 </section>
 
 <!-- ═════ 3 — les trois piliers ════════════════════════════════════════ -->
@@ -336,7 +366,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
           <div><div class="k">Référencement</div><h3>Apparaissez <em>devant vos concurrents</em> sur le web</h3></div>
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="3.4"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"></circle><path d="M12 0.8v3M12 20.2v3M0.8 12h3M20.2 12h3"></path></svg>
         </div>
-        <p><b class="hl">Une page par métier et par commune</b> que vous couvrez. Vos textes et vos images sont décrits pour que Google comprenne ce que vous faites, et où.</p>
+        <p><b class="hl">Une page par métier ou service</b> que vous proposez. Vos textes et vos images sont décrits pour que Google comprenne ce que vous faites, et où.</p>
         <ul><li>Une page par métier</li><li>Fiche Google</li></ul>
       </div>
       <div class="pil">
@@ -350,7 +380,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       </div>
     </div>
   </div>
-  <div class="pgfoot"><span>Ce que votre site fait · samadigitalstudio.fr</span><span>3 / 7</span></div>
+  <div class="pgfoot"><span>Ce que votre site fait · samadigitalstudio.fr</span><span>3 / 8</span></div>
 </section>
 
 <!-- ═════ 4 — le prix ══════════════════════════════════════════════════ -->
@@ -375,14 +405,54 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
         <div class="s">Réglé à la commande.<br>Le devis reprend le détail, ligne par ligne.</div>
       </div>
       <div class="uk">Compris dans ce montant</div>
-      <ul><li>Une page par métier</li><li>Écriture de tous les textes</li><li>Mise en place de vos photos</li><li>Formulaire intelligent</li><li>Mise en ligne à votre nom</li></ul>
+      <ul><li>Une page par métier ou service</li><li>Écriture de tous les textes</li><li>Mise en place de vos photos</li><li>Formulaire intelligent</li><li>Mise en ligne à votre nom</li></ul>
     </div>
   </div>
-  <div class="pgfoot"><span>Montant valable pour le site présenté le {{DATE}}</span><span>4 / 7</span></div>
+  <div class="pgfoot"><span>Montant valable pour le site présenté le {{DATE}}</span><span>4 / 8</span></div>
 </section>
 
-<!-- ═════ 5 — pour aller plus loin ═════════════════════════════════════ -->
-<section class="page" data-screen-label="05 — pour aller plus loin">
+<!-- ═════ 5 — le boost SEO local ═════════════════════════════════════ -->
+<!-- LE SEUL ÉCRAN QUI VEND AUTRE CHOSE QUE LE SITE, et il est ici plutôt qu'en
+     ligne de la page « prix » parce que ce qu'il vend est un TRAVAIL : une page
+     écrite par métier ET par commune. Le site, lui, livre une page par métier —
+     c'est ce que le générateur pose. La plaquette promettait « et par commune »
+     dans le prix du site jusqu'au 28/08/2026, sans que ça ait jamais été livré.
+     Les trois formules sont chiffrées POUR CE PROSPECT : ses métiers multipliés
+     par les communes de la formule, au barème dégressif de prix-seo-local.ts. -->
+<section class="page" data-screen-label="05 — boost SEO local">
+  <div class="pbody">
+    <div class="hd">
+      <div class="lbl">En option</div>
+      <h2 class="h">Une page par service <em>et par commune</em></h2>
+      <p class="intro">Votre site couvre vos <b>{{SEO_METIERS}} {{SEO_METIERS_MOT}}</b>. Le boost écrit une page pour chacun d'eux dans chaque commune que vous voulez : c'est ce que Google lit quand quelqu'un cherche votre métier près de chez lui.</p>
+    </div>
+    <div class="seo">
+      <div class="seorow">
+        <div class="c"><b>+{{SEO_COMMUNES_A}} communes</b></div>
+        <div class="pg">{{SEO_PAGES_A}} pages écrites autour de vous</div>
+        <div class="a num">{{SEO_PRIX_A}}</div>
+      </div>
+      <div class="seorow">
+        <div class="c"><b>+{{SEO_COMMUNES_B}} communes</b></div>
+        <div class="pg">{{SEO_PAGES_B}} pages écrites autour de vous</div>
+        <div class="a num">{{SEO_PRIX_B}}</div>
+      </div>
+      <div class="seorow">
+        <div class="c"><b>+{{SEO_COMMUNES_C}} communes</b></div>
+        <div class="pg">{{SEO_PAGES_C}} pages écrites autour de vous</div>
+        <div class="a num">{{SEO_PRIX_C}}</div>
+      </div>
+    </div>
+    <div class="seonote">
+      <p><b>Le compte est le vôtre.</b> Vos {{SEO_METIERS}} {{SEO_METIERS_MOT}} × les communes choisies. Chaque page porte son métier et sa ville : c'est la recherche que fait votre client, et c'est ce que Google va chercher.</p>
+      <p>Plus la zone est large, moins la page coûte. Au-delà de {{SEO_COMMUNES_C}} communes, sur devis. Le site fonctionne sans : le boost s'ajoute quand vous voulez.</p>
+    </div>
+  </div>
+  <div class="pgfoot"><span>En option · sama digital studio</span><span>5 / 8</span></div>
+</section>
+
+<!-- ═════ 6 — pour aller plus loin ═════════════════════════════════════ -->
+<section class="page" data-screen-label="06 — pour aller plus loin">
   <div class="pbody">
     <div class="hd">
       <div class="lbl">Pour aller plus loin</div>
@@ -392,7 +462,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
     <div class="svcs">
       <div class="svc">
         <div class="top"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="14" width="4" height="7" fill="currentColor" stroke="none"></rect><rect x="10" y="9" width="4" height="12" fill="currentColor" stroke="none"></rect><rect x="17" y="4" width="4" height="17" fill="currentColor" stroke="none"></rect></svg><span class="n">Suivi du référencement</span></div>
-        <p>Nous ajoutons vos nouvelles communes et vos nouveaux métiers, et nous surveillons ce que Google affiche de vous.</p>
+        <p>Nous ajoutons vos nouveaux métiers et vos nouvelles pages, et nous surveillons ce que Google affiche de vous.</p>
         <div class="w">Sur devis</div>
       </div>
       <div class="svc">
@@ -407,11 +477,11 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       </div>
     </div>
   </div>
-  <div class="pgfoot"><span>Chacun sur devis</span><span>5 / 7</span></div>
+  <div class="pgfoot"><span>Chacun sur devis</span><span>6 / 8</span></div>
 </section>
 
-<!-- ═════ 6 — pour démarrer ════════════════════════════════════════════ -->
-<section class="page" data-screen-label="06 — pour démarrer">
+<!-- ═════ 7 — pour démarrer ════════════════════════════════════════════ -->
+<section class="page" data-screen-label="07 — pour démarrer">
   <div class="pbody">
     <div class="hd">
       <span class="cut"><svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="currentColor" mask="url(#sama-sun)"></rect></svg></span>
@@ -425,11 +495,11 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       <div class="etape"><span class="n">3</span><h3>Vous relisez, nous mettons en ligne à votre nom</h3><p>Rien n'est publié avant votre accord.</p></div>
     </div>
   </div>
-  <div class="pgfoot"><span>Pour démarrer</span><span>6 / 7</span></div>
+  <div class="pgfoot"><span>Pour démarrer</span><span>7 / 8</span></div>
 </section>
 
-<!-- ═════ 7 — votre aperçu et le contact ═══════════════════════════════ -->
-<section class="page dark tex" data-screen-label="07 — contact">
+<!-- ═════ 8 — votre aperçu et le contact ═══════════════════════════════ -->
+<section class="page dark tex" data-screen-label="08 — contact">
   <div class="pbody">
     <div class="demoblk">
       <div class="row">
@@ -444,7 +514,7 @@ export const CORPS_PLAQUETTE_MOBILE = String.raw`
       <div class="m"><span><b>matteos@samadigitalstudio.fr</b></span><span>samadigitalstudio.fr</span><span>Plaquette établie le <b>{{DATE}}</b></span></div>
     </div>
   </div>
-  <div class="pgfoot"><span>sama digital studio</span><span>7 / 7</span></div>
+  <div class="pgfoot"><span>sama digital studio</span><span>8 / 8</span></div>
 </section>
 </div>
 

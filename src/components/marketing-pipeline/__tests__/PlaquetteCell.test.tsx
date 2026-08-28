@@ -9,7 +9,7 @@ import type { BoardItem, BulkHandlers, MatrixHandlers } from "../types";
  * CE QUI SE JOUE ICI EST UN CHOIX DE FORMAT, PAS UN BOUTON DE PLUS. La plaquette
  * ne part plus en lien mais en PDF que l'agent joint lui-même, et les deux
  * destinations n'attendent pas le même document : l'A4 se joint à un mail, le
- * gabarit mobile sort sept pages au format téléphone — c'est celui qu'on dépose
+ * gabarit mobile sort huit pages au format téléphone — c'est celui qu'on dépose
  * dans WhatsApp, où un A4 arrive en vignette qu'il faut pincer pour lire. Le
  * second existait en maquette, paginé pour l'impression, et n'avait AUCUN chemin
  * depuis le CRM : `veutImprimer` exigeait `?a4`.

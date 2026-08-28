@@ -273,6 +273,11 @@ serait un skin de plus à faire converger le jour du re-skin global.
 - Les notifications poussées ne partent que si `VAPID_*` est posé en
   production (`node scripts/pwa/vapid.mjs` fabrique la paire). Sans les clés,
   tout fonctionne à l'identique, sans push et sans erreur.
+- La grille du **boost SEO local** (`src/lib/audit/prix-seo-local.ts`) est la
+  seule de la plaquette écrite dans le code : aucune ligne `offres` ne porte ce
+  produit. Le jour où elle existe, c'est là qu'elle se branche — le reste des
+  prix vient du catalogue, et l'en-tête de `prix-site.ts` dit ce que coûte un
+  tarif figé.
 - **ProÉco** figure dans le schéma des sources et dans les libellés de
   l'explorateur, mais aucun bot du dépôt ne l'interroge : les fiches portant
   cette source viennent d'un versement antérieur.

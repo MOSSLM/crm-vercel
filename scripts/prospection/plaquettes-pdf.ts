@@ -28,7 +28,7 @@
  * ne fabrique donc pas quarante-neuf fausses lectures au nom des prospects.
  *
  * LE JOUR OÙ CETTE PASSE VOUDRA LE FORMAT MOBILE — il existe depuis le
- * 28/08/2026, sept pages de téléphone que le CRM enregistre par `?imprimer` —,
+ * 28/08/2026, huit pages de téléphone que le CRM enregistre par `?imprimer` —,
  * elle ne peut PAS naviguer vers `/plaquette/{jeton}` nu : le mobile sans
  * paramètre est le seul rendu que la page compte, et la passe attribuerait une
  * lecture à chaque prospect. Il faudra `?imprimer` (qui n'est pas compté, et
