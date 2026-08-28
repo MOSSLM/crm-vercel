@@ -1,5 +1,14 @@
 # Du lot à la campagne — plan du 28/08/2026
 
+> **État : les cinq phases sont livrées le 28/08.** Ce document reste pour le
+> RAISONNEMENT — ce qui avait cassé, ce qu'on a mesuré, et pourquoi on n'a pas
+> fusionné ce qui en avait l'air. Les mesures et les pièges vivent désormais là
+> où on les relira : `CLAUDE.md` pour les deux règles générales,
+> `sql/20260828_explorateur_sans_cte_de_filtres.sql` pour le contrôle rejouable.
+>
+> Une seule chose a été écartée en route, et pour une raison : l'éditeur
+> d'étapes n'est pas devenu un onglet de la campagne (voir la phase 4).
+
 Trois sujets, un seul fil : l'explorateur ne répond plus, les lots ne se créent
 nulle part, et campagnes et séquences sont deux portes sur la même ligne de
 base. Le premier bloque les deux autres — rien de ce qui suit n'est utilisable
