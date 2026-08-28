@@ -487,8 +487,11 @@
 
 .lem-skin .lots-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .lem-skin a.lem-btn{text-decoration:none}
-.lem-skin .lots-lien-simple{color:var(--lem-bleu);text-decoration:underline;text-underline-offset:2px}
-.lem-skin .lots-lien-simple:hover{color:var(--lem-bleu-2)}
+/* Un lien de PROSE, au fil d'une phrase — distinct de `.lem-btn`, qui est un
+   geste. Souligné parce qu'au milieu d'un paragraphe la couleur seule ne suffit
+   pas à le désigner comme cliquable. */
+.lem-skin .lem-lien{color:var(--lem-bleu);text-decoration:underline;text-underline-offset:2px}
+.lem-skin .lem-lien:hover{color:var(--lem-bleu-2)}
 
 .lem-skin .lots-carte{background:var(--lem-surface);border:1px solid var(--lem-bord);border-radius:var(--lem-rayon);overflow:hidden}
 .lem-skin .lots-enveloppe{overflow-x:auto}

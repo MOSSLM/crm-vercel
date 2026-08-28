@@ -178,7 +178,12 @@ export const SPACES: Space[] = [
       { title: "Qualifiés", href: "/qualified", icon: CheckCircle },
       { title: "Nouvelle recherche", href: "/search/new", icon: Search },
       { title: "Réseaux", href: "/networks", icon: Share2 },
-      { title: "Séquences", href: "/automations/sequences", icon: Workflow },
+      // « SÉQUENCES » N'EST PLUS ICI, et c'était le deuxième des deux boutons
+      // qui donnaient l'impression d'un doublon. Acquisition sert à TROUVER et
+      // qualifier des entreprises ; régler des cadences d'envoi appartient à
+      // Prospection, où l'entrée reste — avec « Campagnes », l'autre face du
+      // même objet. La palette ⌘K lit tous les espaces : rien ne devient
+      // introuvable.
       { title: "Blacklist", href: "/blacklist", icon: Ban },
       { title: "Concurrents", href: "/concurrents", icon: Swords },
       { title: "Duplicats", href: "/duplicates", icon: Copy },

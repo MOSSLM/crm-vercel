@@ -70,10 +70,44 @@ function adresseServie(href: string): boolean {
 
 /**
  * Les trois façons de nommer une destination dans ce dépôt : un `href`, une
- * poussée du routeur, une redirection serveur. Les gabarits (`${…}`) sont hors
- * de portée et sont donc exclus par la classe de caractères.
+ * poussée du routeur, une redirection serveur. Les gabarits (`${…}`) sont
+ * exclus ici par la classe de caractères — ils passent par `PREFIXES` ci-dessous.
  */
 const NAVIGATIONS = /(?:href=|router\.(?:push|replace)\(|redirect\()\s*\{?\s*["'](\/[^"'${}\s]*)["']/g;
+
+/**
+ * LES GABARITS SE VÉRIFIENT À MOITIÉ, ET C'EST MIEUX QUE PAS DU TOUT.
+ *
+ * `` href={`/prospection/lots/${id}`} `` porte un identifiant qu'on ne connaît
+ * pas ici, mais son DÉBUT est écrit en clair : `/prospection/lots/…` doit mener
+ * quelque part. On vérifie donc que ce préfixe existe, ce qui attrape la classe
+ * la plus courante de fautes — un chemin renommé, un pluriel oublié.
+ *
+ * Ce que ça n'attrape PAS, et qu'il ne faut pas croire couvert : un lien de la
+ * bonne FORME vers le mauvais écran. `` /automations/${id} `` existait — c'est
+ * l'éditeur de workflows — et ouvert sur l'identifiant d'une séquence il
+ * montrait un canevas vide. Aucune lecture statique ne voit ça.
+ */
+const PREFIXES = /(?:href=|router\.(?:push|replace)\(|redirect\()\s*\{?\s*`(\/[^`]*)`/g;
+
+/** Les segments écrits en clair avant le premier `${`, le dernier exclu s'il est coupé. */
+function prefixeStatique(gabarit: string): string[] {
+  const debut = gabarit.split("${")[0];
+  const segments = debut.split("/").filter(Boolean);
+  return debut.endsWith("/") ? segments : segments.slice(0, -1);
+}
+
+/** Une route commence-t-elle par ces segments ? */
+function prefixeServi(segments: string[]): boolean {
+  if (segments.length === 0) return true;
+  return ROUTES.some((route) => {
+    const motif = route.split("/").filter(Boolean);
+    return (
+      motif.length >= segments.length &&
+      segments.every((s, i) => motif[i].startsWith("[") || motif[i] === s)
+    );
+  });
+}
 
 function fichiersDEcran(): string[] {
   const trouves: string[] = [];
@@ -134,10 +168,36 @@ describe("les liens écrits dans les écrans", () => {
     expect(morts).toEqual([]);
   });
 
+  it("ne compose jamais une adresse sur un chemin qui n'existe pas", () => {
+    const morts: string[] = [];
+    let releves = 0;
+
+    for (const fichier of fichiersDEcran()) {
+      const court = path.relative(RACINE, fichier).split(path.sep).join("/");
+      if (ORPHELINS.includes(court)) continue;
+      const source = fs.readFileSync(fichier, "utf8");
+      for (const m of source.matchAll(PREFIXES)) {
+        releves += 1;
+        if (!prefixeServi(prefixeStatique(m[1]))) morts.push(`${court} → ${m[1]}`);
+      }
+    }
+
+    expect(releves).toBeGreaterThan(40);
+    expect(morts).toEqual([]);
+  });
+
   it("reconnaît un chemin dynamique, et refuse ce qui n'existe pas", () => {
     expect(adresseServie("/prospection/lots/12")).toBe(true);
     expect(adresseServie("/prospection/lots?tri=nom")).toBe(true);
     expect(adresseServie("/entreprises/lots")).toBe(false); // le chemin de l'API
     expect(adresseServie("/prospection/lots/12/quelque-chose")).toBe(false);
+  });
+
+  it("lit le préfixe d'un gabarit, et rien de plus", () => {
+    expect(prefixeStatique("/prospection/campagnes/${id}")).toEqual(["prospection", "campagnes"]);
+    // Segment coupé : `/entreprise` n'est pas un chemin complet, on ne le garde pas.
+    expect(prefixeStatique("/entreprises/${id}")).toEqual(["entreprises"]);
+    expect(prefixeServi(["prospection", "campagnes"])).toBe(true);
+    expect(prefixeServi(["prospection", "campagne"])).toBe(false);
   });
 });

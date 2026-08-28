@@ -139,10 +139,10 @@ export function Lots() {
             <strong>Aucun lot pour l&apos;instant.</strong>
           </p>
           <p>
-            Un lot se fabrique dans l&apos;<Link className="lots-lien-simple" href="/entreprises/explorateur">explorateur</Link> :
+            Un lot se fabrique dans l&apos;<Link className="lem-lien" href="/entreprises/explorateur">explorateur</Link> :
             on filtre jusqu&apos;à voir la population qu&apos;on veut travailler, on la coche, et on
             la fige sous un nom. Le marketing pipeline sait le faire aussi, sur une sélection de
-            fiches, et l&apos;<Link className="lots-lien-simple" href="/atelier">atelier</Link> le
+            fiches, et l&apos;<Link className="lem-lien" href="/atelier">atelier</Link> le
             fait au pouce, sur quelques critères.
           </p>
           <p>

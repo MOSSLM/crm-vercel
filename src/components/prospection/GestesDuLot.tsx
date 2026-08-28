@@ -233,7 +233,7 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
               </React.Fragment>
             ))}
             .{' '}
-            <Link className="lots-lien-simple" href="/atelier">
+            <Link className="lem-lien" href="/atelier">
               L’atelier
             </Link>{' '}
             compte ce qui attend le poste local.
