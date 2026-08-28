@@ -454,6 +454,45 @@
  * pastilles cliquables portant leur compte. C'est la façon dont lemlist range
  * un tableau, et c'est ce qui fait qu'on reconnaît l'écran sans lire le titre.
  */
+/* Les deux actions de l'en-tête des lots. `principal` existe déjà (ci-dessus) :
+   ce qui manquait n'était qu'une rangée, et un lien de prose. Un `<a>` portant
+   `.lem-btn` hérite du `text-decoration` du document : on le coupe ici plutôt
+   que dans le composant, sinon chaque bouton-lien devra s'en souvenir. */
+/* ── L'en-tête de la fiche d'un lot : ce qu'il est, et quoi lancer ─────
+   Trois formes manquaient à lemlist, qui n'a pas d'écran de traitement de
+   masse : une rangée de gestes dont UN est mis en avant, une jauge d'en-tête,
+   et la ligne « ce qui se comble ailleurs ». Elles sont posées ici avec les
+   jetons du skin plutôt qu'à côté — un douzième skin serait un skin de plus à
+   faire converger le jour du re-skin global. */
+.lem-skin .lot-gestes{display:flex;flex-direction:column;gap:14px;background:var(--lem-surface);border:1px solid var(--lem-bord);border-radius:var(--lem-rayon);padding:16px 18px;margin-bottom:16px}
+.lem-skin .lot-gestes-etat{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.lem-skin .lot-gestes-jauge{flex:0 0 120px;height:6px;background:var(--lem-bord);border-radius:999px;overflow:hidden}
+.lem-skin .lot-gestes-jauge i{display:block;height:100%;border-radius:999px;background:var(--lem-bleu)}
+.lem-skin .lot-gestes-chiffres{font-size:13.5px;color:var(--lem-gris-2);font-variant-numeric:tabular-nums}
+.lem-skin .lot-gestes-chiffres b{color:var(--lem-encre);font-weight:600}
+
+.lem-skin .lot-gestes-rangee{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+.lem-skin .lot-geste{display:flex;flex-direction:column;gap:5px;min-width:0}
+.lem-skin .lot-geste .lem-champ{max-width:230px}
+/* Le geste conseillé passe devant, sans changer l'ordre du DOM : la lecture au
+   clavier et au lecteur d'écran garde l'ordre du plan de préparation. */
+.lem-skin .lot-geste[data-principal="oui"]{order:-1}
+.lem-skin .lot-geste-aide{font-size:11.5px;line-height:1.4;color:var(--lem-gris-2);max-width:230px}
+.lem-skin .lot-tourne{animation:lot-tourne 1s linear infinite}
+@keyframes lot-tourne{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.lem-skin .lot-tourne{animation:none}}
+
+.lem-skin .lot-gestes-ailleurs{display:flex;gap:8px;align-items:flex-start;margin:0;padding-top:12px;border-top:1px solid var(--lem-bord);font-size:12.5px;line-height:1.55;color:var(--lem-gris-2)}
+.lem-skin .lot-gestes-ailleurs b{color:var(--lem-encre);font-variant-numeric:tabular-nums}
+
+.lem-skin .lots-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lem-skin a.lem-btn{text-decoration:none}
+/* Un lien de PROSE, au fil d'une phrase — distinct de `.lem-btn`, qui est un
+   geste. Souligné parce qu'au milieu d'un paragraphe la couleur seule ne suffit
+   pas à le désigner comme cliquable. */
+.lem-skin .lem-lien{color:var(--lem-bleu);text-decoration:underline;text-underline-offset:2px}
+.lem-skin .lem-lien:hover{color:var(--lem-bleu-2)}
+
 .lem-skin .lots-carte{background:var(--lem-surface);border:1px solid var(--lem-bord);border-radius:var(--lem-rayon);overflow:hidden}
 .lem-skin .lots-enveloppe{overflow-x:auto}
 .lem-skin .lots-enveloppe table{min-width:1040px;width:100%;border-collapse:collapse}

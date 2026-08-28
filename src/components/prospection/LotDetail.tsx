@@ -23,7 +23,9 @@ import Link from 'next/link'
 import { ChevronLeft, ExternalLink, Layers, RefreshCw, X } from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
 import { piecesManquantes, type Blocage, type LigneContenu } from '@/lib/lots/contenu'
-import { AXES, type CleAxe } from '@/lib/lots/couverture'
+import { AXES, type CleAxe, type Couverture } from '@/lib/lots/couverture'
+import type { PretDemo } from '@/lib/lots/pret-demo'
+import { GestesDuLot } from './GestesDuLot'
 import './lem-skin.css'
 
 type LigneDetail = LigneContenu & { blocage: Blocage }
@@ -49,6 +51,8 @@ const sansAccent = (v: string): string =>
 
 export function LotDetail({ lotId }: { lotId: number }) {
   const [lignes, setLignes] = useState<LigneDetail[] | null>(null)
+  const [lot, setLot] = useState<Couverture | null>(null)
+  const [pretDemo, setPretDemo] = useState<PretDemo | null>(null)
   const [tronque, setTronque] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [chargement, setChargement] = useState(false)
@@ -62,6 +66,8 @@ export function LotDetail({ lotId }: { lotId: number }) {
     try {
       const res = await authedFetch(`/api/entreprises/lots/${lotId}`)
       const corps = (await res.json().catch(() => ({}))) as {
+        lot?: Couverture | null
+        pretDemo?: PretDemo | null
         entreprises?: LigneDetail[]
         tronque?: boolean
         error?: string
@@ -73,6 +79,8 @@ export function LotDetail({ lotId }: { lotId: number }) {
         return
       }
       setErreur(null)
+      setLot(corps.lot ?? null)
+      setPretDemo(corps.pretDemo ?? null)
       setLignes(corps.entreprises ?? [])
       setTronque(!!corps.tronque)
     } finally {
@@ -139,11 +147,11 @@ export function LotDetail({ lotId }: { lotId: number }) {
       <div className="lem-entete">
         <div>
           <h1 className="lem-titre">
-            <Layers size={19} aria-hidden="true" /> Contenu du lot
+            <Layers size={19} aria-hidden="true" /> {lot?.nom ?? 'Contenu du lot'}
           </h1>
           <p className="lem-sous">
-            Une ligne par entreprise : son étape dans la séquence, ce qui la retient, et le geste
-            qui la débloque. Ce qui demande une action est en tête.
+            {lot?.note ??
+              'Une ligne par entreprise : son étape dans la séquence, ce qui la retient, et le geste qui la débloque. Ce qui demande une action est en tête.'}
           </p>
         </div>
         <button
@@ -155,6 +163,12 @@ export function LotDetail({ lotId }: { lotId: number }) {
           <RefreshCw size={14} aria-hidden="true" /> Rafraîchir
         </button>
       </div>
+
+      {/* LES GESTES AVANT LA TABLE. On ouvre cet écran pour faire avancer un
+          lot, pas pour l'inventorier : ce qu'on peut lancer doit être lisible
+          sans défiler. La table répond à « pourquoi ça coince », qui vient
+          après « qu'est-ce que je lance ». */}
+      {lot && <GestesDuLot lot={lot} pretDemo={pretDemo} onLance={() => void charger()} />}
 
       {erreur && <div className="lem-alerte">{erreur}</div>}
       {lignes === null && <div className="lem-vide">Lecture du lot…</div>}

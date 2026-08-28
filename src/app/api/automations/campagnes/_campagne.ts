@@ -97,8 +97,15 @@ export const ajoutLeadsSchema = z
     entreprise_ids: z.array(z.number().int().positive()).max(MAX_AJOUT).optional(),
     /** Pour `segment` : le segment à rejouer. */
     segment_id: z.string().uuid().optional(),
-    /** Pour `lot` : le lot à lire. */
-    lot_id: z.string().uuid().optional(),
+    /**
+     * Pour `lot` : le lot à lire. Un ENTIER, parce que `lots.id` est un bigint
+     * — un segment porte un uuid, un lot non, et les deux ne se valident donc
+     * pas pareil. Le schéma exigeait un uuid ici : « Ajouter depuis un lot »
+     * rendait 400 quel que soit le lot choisi, et le seul chaînage qui relie
+     * une population figée à une campagne était mort sans que rien ne le dise.
+     * `coerce` parce qu'un `<select>` ne sait envoyer qu'une chaîne.
+     */
+    lot_id: z.coerce.number().int().positive().optional(),
     /**
      * Où reprendre dans une source plus large que `MAX_AJOUT`. Un segment de
      * 1 200 entreprises s'ajoute en trois appels, et chacun dit combien il

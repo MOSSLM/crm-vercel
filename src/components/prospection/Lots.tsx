@@ -23,7 +23,7 @@
 // on passe dix minutes à filtrer mérite sa propre adresse.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ChevronRight, Layers, RefreshCw } from 'lucide-react'
+import { ChevronRight, Layers, PackagePlus, RefreshCw } from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
 import {
   AXES,
@@ -109,14 +109,24 @@ export function Lots() {
             la démarcher — la dernière dit par quoi commencer.
           </p>
         </div>
-        <button
-          type="button"
-          className="lem-btn"
-          onClick={() => void charger()}
-          disabled={chargement}
-        >
-          <RefreshCw size={14} aria-hidden="true" /> Rafraîchir
-        </button>
+        <div className="lots-actions">
+          {/* CRÉER EST L'ACTION PRINCIPALE, ET ELLE MÈNE AILLEURS. Cet écran
+              MESURE des populations, il n'en fabrique pas : ce qui les fabrique
+              est l'explorateur, seul endroit où l'on voit ce qu'on est en train
+              de choisir. Un formulaire de création ici demanderait de recopier
+              vingt-sept filtres pour ne rien montrer de leur résultat. */}
+          <Link className="lem-btn principal" href="/entreprises/explorateur">
+            <PackagePlus size={14} aria-hidden="true" /> Créer un lot
+          </Link>
+          <button
+            type="button"
+            className="lem-btn"
+            onClick={() => void charger()}
+            disabled={chargement}
+          >
+            <RefreshCw size={14} aria-hidden="true" /> Rafraîchir
+          </button>
+        </div>
       </div>
 
       {erreur && <div className="lem-alerte">{erreur}</div>}
@@ -129,10 +139,15 @@ export function Lots() {
             <strong>Aucun lot pour l&apos;instant.</strong>
           </p>
           <p>
-            Un lot se fabrique depuis une sélection : va dans le marketing pipeline ou dans
-            l&apos;explorateur, coche ce que tu veux travailler, et fige-le sous un nom. Un segment
-            reste une requête vivante — c&apos;est le lot, figé, qu&apos;on mesure et qu&apos;on
-            traite, pour qu&apos;un traitement lancé dessus se rejoue à l&apos;identique.
+            Un lot se fabrique dans l&apos;<Link className="lem-lien" href="/entreprises/explorateur">explorateur</Link> :
+            on filtre jusqu&apos;à voir la population qu&apos;on veut travailler, on la coche, et on
+            la fige sous un nom. Le marketing pipeline sait le faire aussi, sur une sélection de
+            fiches, et l&apos;<Link className="lem-lien" href="/atelier">atelier</Link> le
+            fait au pouce, sur quelques critères.
+          </p>
+          <p>
+            Un segment reste une requête vivante — c&apos;est le lot, figé, qu&apos;on mesure et
+            qu&apos;on traite, pour qu&apos;un traitement lancé dessus se rejoue à l&apos;identique.
           </p>
         </div>
       )}

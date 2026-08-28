@@ -1,17 +1,16 @@
-import { z } from "zod";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { lireCouverture, type LigneCouverture } from "@/lib/lots/couverture";
 import { FLAGS_CONNUS, SOURCES_CONNUES } from "../explorer/criteres";
-
-/**
- * Le plafond d'un lot. Même valeur que la porte « identifiants » ci-dessous :
- * au-delà, ce n'est plus un lot de travail, c'est un backfill — et un backfill
- * se pilote autrement qu'en cochant une case sur un téléphone.
- */
-const PLAFOND_LOT = 20_000;
+import { nettoyer, filtresVides } from "../explorateur/_filtres";
+import {
+  PLAFOND_LOT,
+  corpsCriteresSchema,
+  corpsExplorateurSchema,
+  corpsSchema,
+} from "./_corps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,58 +55,14 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
 });
 
 /**
- * Figer un lot : la seule façon d'en créer un.
- *
- * ON FIGE DEPUIS UNE LISTE D'IDENTIFIANTS, jamais depuis des critères. C'est
- * l'appelant — l'explorateur, le marketing pipeline — qui a déjà résolu sa
- * requête et sait exactement ce qu'il a sous les yeux. Refaire la requête ici
- * rendrait un lot différent de ce que l'humain a vu défiler, sans que rien ne
- * le signale.
+ * Figer un lot : la seule façon d'en créer un. TROIS portes, et leurs corps
+ * vivent dans `_corps.ts` — voir ce fichier pour ce que chacune désigne, et
+ * pourquoi aucune ne remplace les deux autres.
  *
  * Le doublon ne fait pas échouer : `lots_entreprises` a sa clé primaire sur le
  * couple, et un `upsert` qui ignore les conflits permet de rejouer un
  * enregistrement interrompu sans nettoyer d'abord.
  */
-const corpsSchema = z.object({
-  nom: z.string().trim().min(1).max(120),
-  note: z.string().trim().max(500).nullable().optional(),
-  entrepriseIds: z.array(z.number().int().positive()).min(1).max(20_000),
-});
-
-/**
- * L'AUTRE PORTE : figer depuis des critères, sans transporter les identifiants.
- *
- * La règle ci-dessus visait le SILENCE d'une divergence, pas la résolution côté
- * serveur — et sa prémisse (« ce que l'humain a vu défiler ») ne tient plus à
- * 34 633 lignes : personne ne fait défiler ça. Ce que l'humain voit, c'est un
- * NOMBRE. C'est donc ce nombre qu'on protège : `totalAttendu` est comparé en
- * base, et une divergence REFUSE la création au lieu de fabriquer un lot que
- * personne n'a validé.
- *
- * Sans cette porte, figer 20 000 fiches depuis un téléphone demandait de
- * parcourir cent pages puis de poster 150 ko de JSON. Avec, c'est un appel —
- * mesuré à ~350 ms sur les « sans site ».
- */
-const corpsCriteresSchema = z.object({
-  nom: z.string().trim().min(1).max(120),
-  note: z.string().trim().max(500).nullable().optional(),
-  criteres: z.object({
-    q: z.string().trim().max(200).nullable().optional(),
-    flags: z.array(z.string()).max(20).optional(),
-    sources: z.array(z.string()).max(10).optional(),
-    owner: z.string().uuid().nullable().optional(),
-    /**
-     * Le vocabulaire du pipeline marketing. Il est ACCEPTÉ à la lecture pour
-     * qu'un segment venu de là puisse être présenté tel quel — et refusé plus
-     * bas, parce que `chercher_entreprises` ne sait pas le trancher.
-     */
-    services: z.array(z.string()).max(50).optional(),
-    filtres: z.array(z.string()).max(20).optional(),
-  }),
-  /** Le compte affiché au moment du clic. La garde, et la raison d'être de cette porte. */
-  totalAttendu: z.number().int().nonnegative(),
-});
-
 export const POST = withAuth({ role: "admin" }, async ({ req, user, cors }) => {
   let brut: unknown;
   try {
@@ -115,11 +70,13 @@ export const POST = withAuth({ role: "admin" }, async ({ req, user, cors }) => {
   } catch {
     return jsonError("Corps illisible.", 400, {}, cors);
   }
-  // La porte « critères » se reconnaît à son champ, pas à un drapeau de mode :
-  // un corps ne peut pas porter les deux sans être ambigu.
-  if (brut && typeof brut === "object" && "criteres" in (brut as Record<string, unknown>)) {
-    return figerDepuisCriteres(brut, user.id, cors);
-  }
+  // Chaque porte se reconnaît à SON champ, pas à un drapeau de mode : un corps
+  // ne peut pas en porter deux sans être ambigu. La lecture est faite à la
+  // RACINE — un corps « critères » porte lui aussi une clé `filtres`, mais
+  // imbriquée sous `criteres`, où celle-ci ne la voit pas.
+  const cles = brut && typeof brut === "object" ? (brut as Record<string, unknown>) : {};
+  if ("filtres" in cles) return figerDepuisExplorateur(brut, user.id, cors);
+  if ("criteres" in cles) return figerDepuisCriteres(brut, user.id, cors);
 
   const lu = corpsSchema.safeParse(brut);
   if (!lu.success) return jsonError(lu.error.issues[0]?.message ?? "Corps invalide.", 400, {}, cors);
@@ -148,6 +105,57 @@ export const POST = withAuth({ role: "admin" }, async ({ req, user, cors }) => {
   if (erreurMembres) return jsonError(erreurMembres.message, 500, {}, cors);
   return json({ lotId, entreprises: ids.length }, { headers: cors });
 });
+
+/**
+ * Figer depuis les filtres de l'explorateur — la porte que l'écran de création
+ * d'un lot emprunte.
+ *
+ * TOUT SE RÉSOUT EN BASE, par `figer_lot_depuis_explorateur`, qui appelle le
+ * MÊME `explorateur_base_sql` que l'affichage. C'est ce qui garantit que le lot
+ * contient exactement la population dont l'écran montrait le compte : il n'y a
+ * pas deux définitions à faire coïncider, il n'y en a qu'une.
+ *
+ * Aucun identifiant ne circule. Figer 20 000 fiches demandait avant de
+ * parcourir cent pages puis de poster 150 ko de JSON ; c'est un appel.
+ */
+async function figerDepuisExplorateur(
+  brut: unknown,
+  userId: string,
+  cors: Record<string, string>,
+): Promise<Response> {
+  const lu = corpsExplorateurSchema.safeParse(brut);
+  if (!lu.success) return jsonError(lu.error.issues[0]?.message ?? "Corps invalide.", 400, {}, cors);
+
+  const { nom, note, filtres, totalAttendu } = lu.data;
+  const propres = nettoyer(filtres as Record<string, unknown>);
+
+  // `masquees` et `archivees` sont posés par défaut par l'écran : un lot qui
+  // n'aurait qu'eux prendrait les 60 000 fiches sous un nom qui promet le
+  // contraire. Le plafond finirait par le refuser, mais bien plus tard et pour
+  // la mauvaise raison.
+  if (filtresVides(propres)) {
+    return jsonError("criteres_vides", 400, { message: "Un lot sans filtre prendrait tout le parc." }, cors);
+  }
+
+  const sc = getServiceClient();
+  const { data, error } = await sc.rpc("figer_lot_depuis_explorateur", {
+    p_nom: nom.trim(),
+    p_note: note ?? null,
+    p_cree_par: userId,
+    p_filtres: propres,
+    p_total_attendu: totalAttendu,
+    p_plafond: PLAFOND_LOT,
+  });
+
+  if (error) {
+    if (fonctionAbsente(error)) {
+      return jsonError("sql/20260828_figer_lot_depuis_explorateur.sql n'est pas appliquée", 503, { code: "migration" }, cors);
+    }
+    return jsonError(error.message, 500, {}, cors);
+  }
+
+  return repondreAuFigeage(data, totalAttendu, cors);
+}
 
 /**
  * Figer depuis des critères. Toute la résolution est en base
@@ -223,6 +231,23 @@ async function figerDepuisCriteres(
     return jsonError(error.message, 500, {}, cors);
   }
 
+  return repondreAuFigeage(data, totalAttendu, cors);
+}
+
+/**
+ * La réponse des deux portes qui résolvent en base — elles rendent le même
+ * statut, et il doit se traduire pareil.
+ *
+ * LES REFUS SONT DES RÉPONSES, PAS DES PANNES. La fonction SQL rend un statut
+ * plutôt que de lever, pour que la route n'ait pas à reconnaître un message
+ * d'erreur au texte ; en face, chaque statut a son code, pour que l'écran n'ait
+ * pas à lire le nôtre.
+ */
+function repondreAuFigeage(
+  data: unknown,
+  totalAttendu: number,
+  cors: Record<string, string>,
+): Response {
   // La fonction rend une table : une seule ligne, mais une table.
   const ligne = (Array.isArray(data) ? data[0] : data) as
     | { statut: string; lot: number | null; membres: number; total_trouve: number }

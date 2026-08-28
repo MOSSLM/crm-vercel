@@ -112,10 +112,16 @@ export function CampagnesListe() {
         <header className="lem-entete">
           <div>
             <h1 className="lem-titre">Campagnes</h1>
+            {/* LE LIEN VERS L'AUTRE FACE FERME LA BOUCLE. Les deux écrans
+                listent les mêmes lignes d'`automations` — il n'y a pas de table
+                `campagnes` — et ne le disaient nulle part. Le nommer coûte une
+                phrase et évite de chercher lequel des deux fait foi. */}
             <p className="lem-sous">
               Une campagne, c’est une séquence <em>et</em> sa liste de leads — qui part, qui reste,
               et pourquoi. Les deux décomptes ci-dessous ne s’additionnent pas : la liste dit ce qui
-              doit partir, les inscriptions ce qui est parti.
+              doit partir, les inscriptions ce qui est parti. Les étapes, elles, se règlent dans{' '}
+              <Link href="/automations/sequences" className="lem-lien">l’éditeur de séquences</Link> —
+              même objet, vu par ce qu’il fait plutôt que par à qui.
             </p>
           </div>
           <Link href="/automations/sequences" className="lem-btn principal">

@@ -202,6 +202,26 @@ export function ExplorateurEntreprises() {
       .map((cle) => ({ cle, libelle: libelle(LABELS_CMS, cle), n: s[cle] }));
   }, [facettes]);
 
+  /**
+   * Ce qui empêche de figer, ou null. Une seule décision, lue par le bouton,
+   * son infobulle et la phrase sous la barre : sans ça, les trois se
+   * contrediraient au premier changement de plafond.
+   */
+  const lotImpossible = useMemo<string | null>(() => {
+    if (selection.size > 0) {
+      return selection.size > 500
+        ? "Un lot se fige avec 500 entreprises cochées au maximum. Sans rien cocher, on peut en figer 20 000 d'un coup."
+        : null;
+    }
+    const total = donnees?.total ?? 0;
+    if (total === 0) return "Ce résultat est vide.";
+    if (total > 20_000)
+      return `${nombre(total)} entreprises : au-delà de 20 000, ce n'est plus un lot de travail mais un backfill. Resserre les filtres.`;
+    if (nbFiltres === 0)
+      return "Sans aucun filtre, le lot prendrait tout le parc. Choisis au moins un critère.";
+    return null;
+  }, [selection.size, donnees?.total, nbFiltres]);
+
   const attribuer = async () => {
     if (!agentChoisi || selection.size === 0) return;
     setAttribution(true);
@@ -234,44 +254,79 @@ export function ExplorateurEntreprises() {
   };
 
   /**
-   * Figer la sélection dans un lot nommé — une photo, pas une requête vivante
-   * (voir la vision segments/lots). Contrairement à l'attribution, ça ne
-   * retire pas les entreprises du résultat courant : un lot n'est qu'une
-   * étiquette de plus, elle ne déplace personne.
+   * Figer en lot — DEUX PORTES, et c'est la sélection qui choisit laquelle.
+   *
+   * Sans rien de coché, on fige TOUT LE RÉSULTAT : les filtres partent au
+   * serveur, qui les résout par le même `explorateur_base_sql` que l'affichage,
+   * et le compte affiché part avec eux comme garde. C'est ce qui rend un lot de
+   * 34 633 fiches possible — cocher cent pages ne l'était pas.
+   *
+   * Avec une sélection, on fige CE QUI EST COCHÉ, en transportant les
+   * identifiants. Les deux ne sont pas redondantes : la seconde sert à retirer
+   * trois fiches d'un résultat qu'on a lu, et aucun jeu de filtres n'exprime
+   * « ces trois-là ».
+   *
+   * Un lot ne retire personne du résultat courant, contrairement à
+   * l'attribution : c'est une étiquette de plus, elle ne déplace rien.
    */
   const figerEnLot = async () => {
     const nom = nomLot.trim();
-    if (!nom || selection.size === 0) return;
+    if (!nom) return;
+
+    const surSelection = selection.size > 0;
+    const attendu = surSelection ? selection.size : (donnees?.total ?? 0);
+    if (attendu === 0) return;
+
     setCreationLot(true);
     try {
+      // La porte se reconnaît au champ envoyé, pas à un drapeau de mode.
+      const corpsEnvoye = surSelection
+        ? { nom, entrepriseIds: [...selection] }
+        : { nom, filtres: { ...filtres, q: recherche.trim() || undefined }, totalAttendu: attendu };
+
       const r = await authedFetch("/api/entreprises/lots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nom, entreprise_ids: [...selection] }),
+        body: JSON.stringify(corpsEnvoye),
       });
       const corps = (await r.json().catch(() => ({}))) as {
         error?: string;
-        id?: number;
-        nom?: string;
-        taille?: number;
-        cree_le?: string;
+        message?: string;
+        lotId?: number;
+        entreprises?: number;
+        totalTrouve?: number;
       };
-      if (!r.ok) throw new Error(corps.error ?? `Erreur ${r.status}`);
 
-      const taille = corps.taille ?? selection.size;
-      toast.success(`Lot « ${corps.nom} » créé — ${nombre(taille)} entreprise${taille > 1 ? "s" : ""}`);
-      setReferentiel((ref) => ({
-        ...ref,
-        lots: [
-          {
-            id: corps.id as number,
-            nom: corps.nom as string,
-            taille,
-            cree_le: corps.cree_le ?? new Date().toISOString(),
-          },
-          ...ref.lots,
-        ],
-      }));
+      if (!r.ok) {
+        // 409 : le monde a bougé entre l'affichage et le clic. Rien n'a été
+        // créé, et l'écran doit le dire avec les DEUX nombres — « réessayez »
+        // seul laisserait croire à une panne réseau.
+        if (r.status === 409) {
+          toast.error("La population a changé depuis l'affichage", {
+            description: `L'écran annonçait ${nombre(attendu)} entreprises, il y en a maintenant ${nombre(corps.totalTrouve ?? 0)}. Rien n'a été créé — on rafraîchit, et tu revalides.`,
+          });
+          void charger();
+          return;
+        }
+        if (r.status === 413) {
+          toast.error("Ce lot serait trop grand", {
+            description: `${nombre(corps.totalTrouve ?? attendu)} entreprises. Au-delà de 20 000, ce n'est plus un lot de travail : resserre les filtres.`,
+          });
+          return;
+        }
+        throw new Error(corps.message ?? corps.error ?? `Erreur ${r.status}`);
+      }
+
+      const taille = corps.entreprises ?? attendu;
+      toast.success(`Lot « ${nom} » figé — ${nombre(taille)} entreprise${taille > 1 ? "s" : ""}`, {
+        description: surSelection ? undefined : "Il est mesuré dans Prospection → Lots.",
+      });
+      if (corps.lotId !== undefined) {
+        setReferentiel((ref) => ({
+          ...ref,
+          lots: [{ id: corps.lotId as number, nom, taille, cree_le: new Date().toISOString() }, ...ref.lots],
+        }));
+      }
       setNomLot("");
       setSelection(new Set());
     } catch (e) {
@@ -474,51 +529,77 @@ export function ExplorateurEntreprises() {
             />
           </section>
 
-          {/* La barre d'action de masse — n'apparaît qu'avec une sélection. */}
-          {selection.size > 0 ? (
+          {/*
+            LA BARRE D'ACTION. Elle n'apparaissait qu'avec une sélection, et
+            c'est ce qui rendait un lot de 34 633 fiches impossible : il fallait
+            cocher cent pages. Elle est maintenant là dès qu'il y a un résultat,
+            parce que le geste par défaut n'est pas « figer ce que j'ai coché »
+            mais « figer ce que je regarde ».
+
+            L'attribution, elle, reste réservée à une sélection : mettre 34 633
+            fiches dans le pipeline d'un agent n'est pas un geste qu'on veut
+            rendre facile.
+          */}
+          {(donnees?.total ?? 0) > 0 || selection.size > 0 ? (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
               <span className="text-xs font-medium text-foreground">
-                {nombre(selection.size)} entreprise{selection.size > 1 ? "s" : ""} sélectionnée
-                {selection.size > 1 ? "s" : ""}
-              </span>
-              <select
-                value={agentChoisi}
-                onChange={(e) => setAgentChoisi(e.target.value)}
-                className="ml-auto h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-                aria-label="Agent à qui attribuer"
-              >
-                <option value="">Choisir un agent…</option>
-                {referentiel.agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nom} ({a.role})
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                onClick={attribuer}
-                disabled={!agentChoisi || attribution || selection.size > 200}
-                className="h-8 gap-1.5 text-xs"
-              >
-                {attribution ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {selection.size > 0 ? (
+                  <>
+                    {nombre(selection.size)} entreprise{selection.size > 1 ? "s" : ""} sélectionnée
+                    {selection.size > 1 ? "s" : ""}
+                  </>
                 ) : (
-                  <UserPlus className="h-3.5 w-3.5" />
+                  <>
+                    {nombre(donnees?.total ?? 0)} entreprise{(donnees?.total ?? 0) > 1 ? "s" : ""} dans
+                    ce résultat
+                  </>
                 )}
-                Mettre dans le pipeline
-              </Button>
-              <span className="h-5 w-px shrink-0 bg-border" />
+              </span>
+
+              {selection.size > 0 ? (
+                <>
+                  <select
+                    value={agentChoisi}
+                    onChange={(e) => setAgentChoisi(e.target.value)}
+                    className="ml-auto h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                    aria-label="Agent à qui attribuer"
+                  >
+                    <option value="">Choisir un agent…</option>
+                    {referentiel.agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nom} ({a.role})
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    onClick={attribuer}
+                    disabled={!agentChoisi || attribution || selection.size > 200}
+                    className="h-8 gap-1.5 text-xs"
+                  >
+                    {attribution ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-3.5 w-3.5" />
+                    )}
+                    Mettre dans le pipeline
+                  </Button>
+                  <span className="h-5 w-px shrink-0 bg-border" />
+                </>
+              ) : null}
+
               <Input
                 value={nomLot}
                 onChange={(e) => setNomLot(e.target.value)}
                 placeholder="Nom du lot…"
-                className="h-8 w-40 text-xs"
+                className={`h-8 w-40 text-xs${selection.size > 0 ? "" : " ml-auto"}`}
               />
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={figerEnLot}
-                disabled={!nomLot.trim() || creationLot || selection.size > 500}
+                disabled={!nomLot.trim() || creationLot || lotImpossible !== null}
+                title={lotImpossible ?? undefined}
                 className="h-8 gap-1.5 text-xs"
               >
                 {creationLot ? (
@@ -526,25 +607,34 @@ export function ExplorateurEntreprises() {
                 ) : (
                   <Archive className="h-3.5 w-3.5" />
                 )}
-                Figer en lot
+                {selection.size > 0 ? "Figer la sélection" : "Figer ce résultat"}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelection(new Set())}
-                className="h-8 text-xs"
-              >
-                Désélectionner
-              </Button>
-              {selection.size > 200 ? (
+
+              {selection.size > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelection(new Set())}
+                  className="h-8 text-xs"
+                >
+                  Désélectionner
+                </Button>
+              ) : null}
+
+              {selection.size > 200 && selection.size <= 500 ? (
                 <p className="w-full text-[11px] text-destructive">
-                  L&apos;attribution se fait par lots de 200 au maximum
-                  {selection.size <= 500 ? " — un lot, lui, accepte jusqu'à 500 entreprises." : "."}
+                  L&apos;attribution se fait par lots de 200 au maximum — un lot, lui, accepte
+                  jusqu&apos;à 500 entreprises cochées.
                 </p>
               ) : null}
-              {selection.size > 500 ? (
-                <p className="w-full text-[11px] text-destructive">
-                  Un lot se fige avec 500 entreprises au maximum.
+              {lotImpossible ? (
+                <p className="w-full text-[11px] text-destructive">{lotImpossible}</p>
+              ) : null}
+              {selection.size === 0 && !lotImpossible ? (
+                <p className="w-full text-[11px] text-muted-foreground">
+                  Le lot fige la population entière du résultat, pas la page — les filtres sont
+                  rejoués en base, et le compte ci-dessus est revérifié avant que quoi que ce soit
+                  ne soit créé.
                 </p>
               ) : null}
             </div>

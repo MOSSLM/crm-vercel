@@ -356,8 +356,19 @@ export function SequencesList() {
       <div className="alist-hd">
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1>Séquences de prospection</h1>
+          {/* CE N'EST PAS UN DOUBLON DE « CAMPAGNES », C'EST L'AUTRE FACE.
+              Il n'existe pas de table `campagnes` : une campagne EST cette
+              ligne d'`automations`, vue par son audience. Ici on décrit ce que
+              la séquence fera, là-bas à qui elle le fera. Les deux écrans
+              listaient les mêmes neuf lignes sans jamais le dire, et c'est ça
+              qui donnait l'impression d'un doublon. */}
           <div className="desc">
-            Cadences multi-canal alternant emails automatiques et actions manuelles (appels, WhatsApp, LinkedIn).
+            Cadences multi-canal alternant emails automatiques et actions manuelles (appels,
+            WhatsApp, LinkedIn). Une séquence dit ce qu’elle FERA ; sa{' '}
+            <Link href="/prospection/campagnes" style={{ color: 'var(--accent-2)' }}>
+              campagne
+            </Link>{' '}
+            dit à QUI — même objet, deux faces.
           </div>
         </div>
         <Link href="/automations/sequences/stats" className="btn outline">
@@ -562,6 +573,7 @@ export function SequencesList() {
           left={menu.left}
           onClose={() => setMenu(null)}
           onOpen={() => router.push(`/automations/sequences/${menuSeq.id}`)}
+          onAudience={() => router.push(`/prospection/campagnes/${menuSeq.id}`)}
           onStatus={(s) => applyStatus([menuSeq], s)}
           onDuplicate={() => handleDuplicate([menuSeq])}
           onAcces={() => setConfirmAcces([menuSeq])}
@@ -944,6 +956,7 @@ function RowMenu({
   left,
   onClose,
   onOpen,
+  onAudience,
   onStatus,
   onDuplicate,
   onAcces,
@@ -954,6 +967,7 @@ function RowMenu({
   left: number
   onClose: () => void
   onOpen: () => void
+  onAudience: () => void
   onStatus: (s: AutomationStatus) => void
   onDuplicate: () => void
   onAcces: () => void
@@ -1020,7 +1034,12 @@ function RowMenu({
   return createPortal(
     <div className="au-skin">
       <div ref={popRef} className="pop row-pop" role="menu" style={{ top: pos.top, left: pos.left }}>
-        {item('edit', 'Modifier', onOpen)}
+        {item('edit', 'Modifier les étapes', onOpen)}
+        {/* L'AUDIENCE EST L'AUTRE MOITIÉ DU MÊME OBJET. Une séquence dit ce
+            qu'elle FERA ; sa campagne dit à QUI, combien restent à lancer, et
+            pourquoi les autres sont écartés. Sans cette entrée, on ouvrait
+            l'éditeur pour chercher une liste qui n'y est pas. */}
+        {item('users', 'Voir l’audience', onAudience)}
         {item('copyClip', 'Dupliquer', onDuplicate)}
         {item('users', 'Accès des agents…', onAcces)}
         <div className="menu-sep" />

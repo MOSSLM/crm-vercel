@@ -45,6 +45,7 @@ import {
   ChevronUp,
   Image as ImageIcon,
   Laptop,
+  ListTree,
   Loader2,
   FileText,
   PackagePlus,
@@ -320,11 +321,20 @@ function CarteLot({
             Préparer les plaquettes
           </button>
 
+          {/* LA SORTIE VERS LA FICHE DU LOT. L'atelier porte les deux gestes
+              qu'un pouce lance entre deux rendez-vous ; la fiche porte les
+              mêmes plus la mise en campagne, et surtout le POURQUOI de chaque
+              blocage — une table de cinq cents lignes qui n'a rien à faire sur
+              un téléphone. Sans ce lien, les deux écrans s'ignoraient. */}
+          <Link className="lem-btn large" href={`/prospection/lots/${lot.lotId}`}>
+            <ListTree size={15} /> Ouvrir la fiche du lot
+          </Link>
+
           <p className="lem-second" style={{ fontSize: 11.5, margin: 0, lineHeight: 1.45 }}>
             Le lissage cherche le SIRET, les données publiques et le constat de présence web. Les
             plaquettes préparées ici sont des LIENS — ils relisent les prix du jour à chaque
             ouverture ; le PDF, lui, se fabrique au bureau. Les démos et les audits se font fiche
-            par fiche, depuis le pipeline.
+            par fiche, depuis le pipeline ; verser le lot dans une campagne se fait depuis sa fiche.
           </p>
         </div>
       )}
@@ -586,7 +596,11 @@ export function Atelier() {
         </section>
 
         <p className="lem-second" style={{ textAlign: "center", fontSize: 12.5, margin: 0 }}>
-          <Link href="/entreprises/lots" style={{ color: "var(--lem-bleu)" }}>
+          {/* `/prospection/lots` et non `/entreprises/lots` : ce dernier est le
+              chemin de l'API, pas celui de l'écran. Le lien rendait un 404, et
+              rien ne le signalait — un lien mort ne casse jamais rien, il perd
+              juste la sortie. C'est ce que `liens-vivants.test.ts` tient. */}
+          <Link href="/prospection/lots" style={{ color: "var(--lem-bleu)" }}>
             Vue complète des lots
           </Link>
         </p>

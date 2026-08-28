@@ -357,6 +357,15 @@ export function SequenceBuilder({ id }: { id: string }) {
           </div>
         </div>
         <div className="pane-body">
+          {/* L'AUTRE FACE DU MÊME OBJET, à portée de clic. Cet éditeur dit ce
+              que la séquence FERA ; sa campagne dit à qui, combien restent à
+              lancer, et pourquoi les autres sont écartés. On ouvrait l'éditeur
+              pour y chercher une liste qui n'y est pas — il n'y a pas de table
+              `campagnes`, c'est la même ligne d'`automations`. */}
+          <Link href={`/prospection/campagnes/${id}`} className="btn outline sm" style={{ width: '100%', justifyContent: 'center', marginBottom: 10 }}>
+            <XI name="users" className="ico-sm" />
+            Voir l’audience de cette campagne
+          </Link>
           <Section label="Cible">
             <Field label="Pipeline" hint="vide = lancement manuel">
               <SupaSelect

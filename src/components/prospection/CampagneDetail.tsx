@@ -12,7 +12,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { AlertTriangle, ArrowLeft, Plus, Rocket, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Rocket, RotateCcw, Workflow, X } from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
 import type { MotifEcart, RevueCampagne, StatutListe } from '@/lib/automations/campagne'
 import {
@@ -54,7 +54,15 @@ interface Revue {
 }
 
 interface Segment { id: string; nom: string }
-interface Lot { id: string; nom: string; taille: number }
+/**
+ * LE LOT SE LIT DANS LA FORME QUE LA ROUTE REND, pas dans celle qu'on espérait.
+ * `/api/entreprises/lots` rend la COUVERTURE d'un lot (`lotId`, `total`, les
+ * sept axes) et non sa ligne brute : lire `id` et `taille` rendait `undefined`,
+ * les `<option>` partaient sans `value`, et le navigateur envoyait alors leur
+ * TEXTE comme valeur. Le menu ne pouvait rien ajouter, et l'erreur ne ressemblait
+ * pas à sa cause.
+ */
+interface Lot { lotId: number; nom: string; total: number }
 
 const LIBELLE_STATUT_LISTE: Record<StatutListe, string> = {
   a_lancer: 'À lancer',
@@ -239,12 +247,23 @@ export function CampagneDetail({ id }: { id: string }) {
               <ArrowLeft size={15} /> Campagnes
             </Link>
             <h1 className="lem-titre">{revue?.campagne.nom ?? 'Campagne'}</h1>
+            {/* UNE CAMPAGNE ET UNE SÉQUENCE SONT LA MÊME LIGNE. Il n'y a pas de
+                table `campagnes` : c'est l'automation (`kind='sequence'`), vue
+                par son AUDIENCE ici et par ses ÉTAPES dans l'éditeur. Le dire
+                est ce qui empêche de chercher laquelle des deux fait foi. */}
             <p className="lem-sous">
-              {revue?.campagne.etapes ?? 0} étape(s) · {revue?.campagne.canaux.join(', ') || 'aucun canal'}
+              {revue?.campagne.etapes ?? 0} étape(s) ·{' '}
+              {revue?.campagne.canaux.join(', ') || 'aucun canal'} — cette campagne EST sa séquence :
+              ici son audience et son lancement, dans l’éditeur ses étapes.
             </p>
           </div>
-          <Link href={`/automations/${id}`} className="lem-btn">
-            Ouvrir la séquence
+          {/* `/automations/sequences/${id}`, PAS `/automations/${id}`. Ce
+              dernier est l'éditeur de WORKFLOWS : ouvert sur l'identifiant
+              d'une séquence, il montrait un canevas vide, et on cherchait la
+              panne dans la séquence. Les deux écrans lisent la même table, ce
+              qui rend l'erreur silencieuse. */}
+          <Link href={`/automations/sequences/${id}`} className="lem-btn">
+            <Workflow size={15} /> Modifier les étapes
           </Link>
         </header>
 
@@ -312,7 +331,7 @@ export function CampagneDetail({ id }: { id: string }) {
               >
                 <option value="">Ajouter depuis un lot…</option>
                 {lots.map((l) => (
-                  <option key={l.id} value={l.id}>{l.nom} ({l.taille})</option>
+                  <option key={l.lotId} value={l.lotId}>{l.nom} ({l.total})</option>
                 ))}
               </select>
 

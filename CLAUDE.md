@@ -106,6 +106,19 @@ tests : `jours_sans_echange` **nul n'est pas zéro** (nul = jamais aucun
 n'est **pas** un échange — sinon ranger son pipeline rajeunirait tout le
 portefeuille.
 
+**Un filtre lu dans un CTE est invisible au planificateur.** `explorateur_entreprises`
+croisait ses vingt-sept filtres depuis un CTE `f` d'une ligne : `f.qualifie` n'est
+alors pas une valeur mais une colonne opaque, aucun des prédicats n'est estimable,
+et les sélectivités par défaut se multiplient. L'estimation tombait à quelques
+dizaines de lignes pour 60 078, les six jointures repassaient en boucle imbriquée,
+et la fonction est passée de 2 s à **199 s** sans que rien ne change dans les
+données. Le SQL est donc assemblé (`explorateur_base_sql`, `sql/20260828_…`) et
+n'émet que les prédicats demandés — 0,5 s sans filtre, 40 à 280 ms avec. Deux
+corollaires à ne pas réapprendre : un `coalesce(colonne, false)` n'est pas
+estimable non plus (0,5 par défaut) là où `is not true` lit les statistiques ; et
+**le symptôme à surveiller n'est pas un temps, c'est une estimation qui
+s'effondre** — le contrôle est en fin de fichier de migration.
+
 **Un filtre coûteux sans index se paie dix fois.** `chercher_entreprises`
 plafonne à 200 lignes par appel, donc tout traitement de masse le rappelle en
 boucle — et chaque appel refaisait le balayage des 60 726 fiches. Une passe de
@@ -128,13 +141,26 @@ prédicat à faire reconnaître par un index partiel.
 **Un lot se fige depuis des critères, mais jamais en silence.** La règle
 d'origine (« depuis une liste d'identifiants, jamais depuis des critères »)
 visait le silence d'une divergence, pas la résolution côté serveur — et à
-34 633 lignes, ce que l'humain voit est un NOMBRE, pas une liste.
-`figer_lot_depuis_criteres` compare donc ce nombre et **refuse de créer quoi que
-ce soit** s'il a bougé. Deux pièges y sont écrits : un paramètre de SORTIE
-plpgsql nommé comme une colonne rend la clause `on conflict` ambiguë (et seul le
-chemin de création échoue, pas les refus) ; et un segment né du pipeline
-marketing porte `services`/`filtres`, que `chercher_entreprises` ne sait pas
-trancher — le matérialiser rendrait une population bien plus large.
+34 633 lignes, ce que l'humain voit est un NOMBRE, pas une liste. Les deux
+fonctions de figeage comparent donc ce nombre et **refusent de créer quoi que ce
+soit** s'il a bougé. Deux pièges y sont écrits : un paramètre de SORTIE plpgsql
+nommé comme une colonne rend la clause `on conflict` ambiguë (et seul le chemin
+de création échoue, pas les refus) ; et un segment né du pipeline marketing porte
+`services`/`filtres`, que `chercher_entreprises` ne sait pas trancher — le
+matérialiser rendrait une population bien plus large.
+
+**Trois portes pour figer, et aucune ne remplace les autres.** Par identifiants
+(cocher dans le pipeline marketing ou l'explorateur, plafond 500) ; par critères
+`chercher_entreprises` (`figer_lot_depuis_criteres`, la porte de l'atelier, neuf
+drapeaux) ; par filtres d'explorateur (`figer_lot_depuis_explorateur`, les
+vingt-sept familles). **Elles ne disent pas la même chose** : `sans_site` chez
+`chercher_entreprises` passe par `host_est_generique` — une page Facebook compte
+comme « pas de site » — quand `site = ['absent']` chez l'explorateur lit
+`site_web_canonique` et les constats. Les fusionner changerait en silence ce que
+« sans site » veut dire, sur les deux écrans à la fois. Ce qui rend la troisième
+sûre est qu'elle n'a **aucune définition à elle** : elle appelle le même
+`explorateur_base_sql` que l'affichage, depuis le même objet de filtres validé
+par le même schéma (`api/entreprises/explorateur/_filtres.ts`).
 
 **« Prêt pour la démo » et « couverture » ne se déduisent pas l'un de l'autre.**
 Les sept axes comptent des PIÈCES (SIRET, constat, démo…) ;
