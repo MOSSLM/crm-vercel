@@ -317,11 +317,17 @@ export function DemActionCard({
    *
    * CE QUE LE CLIC PEUT ET NE PEUT PAS FAIRE. Aucun PDF n'est fabriqué ici : le
    * CRM n'embarque pas de moteur de PDF et Chromium ne tient pas dans une
-   * fonction Vercel (cf. `src/app/(public)/plaquette/rendu.tsx`). On ouvre la
-   * feuille A4 avec la boîte d'impression du navigateur, d'où « Enregistrer en
+   * fonction Vercel (cf. `src/app/(public)/plaquette/rendu.tsx`). On ouvre le
+   * document avec la boîte d'impression du navigateur, d'où « Enregistrer en
    * PDF » — exactement ce que fait « Exporter PDF » de l'éditeur d'audit depuis
    * toujours. Il reste donc UN clic à l'agent, et il vaut mieux le dire que
    * promettre un téléchargement qui n'existe pas.
+   *
+   * AU FORMAT TÉLÉPHONE, ET C'EST LA DESTINATION QUI LE DÉCIDE. Ce PDF part
+   * dans WhatsApp, lu sur un téléphone : l'A4 y arrive en vignette qu'il faut
+   * pincer pour lire, page après page. Le gabarit mobile est paginé pour ça —
+   * huit écrans de 430 × 932 px, un par page. L'A4 reste ce qu'on joint à un
+   * mail, et il s'ouvre toujours d'un clic depuis le pipeline marketing.
    */
   const plaquetteUrl =
     typeof task.payload?.plaquette_url === "string" && task.payload.plaquette_url
@@ -336,7 +342,7 @@ export function DemActionCard({
    */
   const ouvrirPlaquette = () => {
     if (!plaquetteUrl) return;
-    window.open(urlPlaquetteImprimable(plaquetteUrl), "_blank", "noopener,noreferrer");
+    window.open(urlPlaquetteImprimable(plaquetteUrl, "mobile"), "_blank", "noopener,noreferrer");
   };
 
   const logMessage = async (channel: "whatsapp" | "linkedin", to: string) => {
@@ -768,9 +774,10 @@ export function DemActionCard({
               <div className="dm-hint">
                 <Icon name="doc" className="ico-sm" />
                 <span>
-                  La plaquette s&apos;ouvre en A4 avec la boîte d&apos;impression au clic sur
-                  «&nbsp;{ch.cta}&nbsp;» — «&nbsp;Enregistrer en PDF&nbsp;», puis on la joint dans
-                  la conversation. Le message, lui, ne contient aucun lien.
+                  La plaquette s&apos;ouvre au format téléphone avec la boîte
+                  d&apos;impression au clic sur «&nbsp;{ch.cta}&nbsp;» —
+                  «&nbsp;Enregistrer en PDF&nbsp;», puis on la joint dans la conversation.
+                  Le message, lui, ne contient aucun lien.
                 </span>
               </div>
             )}
