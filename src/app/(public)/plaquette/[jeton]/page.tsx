@@ -28,6 +28,11 @@ import {
  * un prospect qui transfère la plaquette transfère son nom et son aperçu. Rien
  * d'autre n'y figure — ni note, ni relevé, ni donnée client.
  *
+ * ET LE PDF SE PREND DANS LES DEUX FORMATS. `?a4&imprimer` rend la feuille,
+ * `?imprimer` seul rend les sept pages du gabarit mobile — celui qui a été
+ * dessiné pour WhatsApp, où un A4 arrive en vignette. Le corollaire est plus bas,
+ * au compteur : aucune des deux demandes d'impression ne compte une ouverture.
+ *
  * DEUX REPLIS VERS LE DOCUMENT COLLECTIF, jamais vers une erreur : jeton inconnu
  * et base injoignable. L'entreprise SANS démo montrable n'en est plus un — le
  * gabarit a une couverture pour elle (« votre aperçu est en préparation »), et
@@ -69,6 +74,7 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
 
   const sp = await searchParams;
   const a4 = estA4(sp);
+  const imprimer = veutImprimer(sp);
 
   // Best-effort et non attendu, comme sur le rapport : le compteur est un signal
   // commercial — « il l'a ouverte trois fois » vaut une relance — jamais une
@@ -84,9 +90,15 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
   // l'agent l'ouvre à CHAQUE envoi pour l'enregistrer. La compter attribuerait
   // au prospect une ouverture faite par nous — et `vueQ`, dans S2, aiguille sur
   // « a vu la plaquette » : chaque envoi aurait basculé le prospect vers l'appel
-  // chaud sans qu'il ait rien lu. Le format mobile reste compté, lui : c'est
-  // celui qu'un prospect reçoit quand un ancien lien circule encore.
-  if (!a4) {
+  // chaud sans qu'il ait rien lu.
+  //
+  // `?imprimer` NON PLUS, ET C'EST LE MÊME RAISONNEMENT PORTÉ AU MOBILE. Depuis
+  // qu'on peut enregistrer le PDF au format téléphone, la demande d'impression
+  // arrive sur une URL sans `?a4` : la tester seule aurait compté une ouverture
+  // à chaque PDF mobile fabriqué, c'est-à-dire exactement le geste que l'A4 a
+  // été exclu pour ne pas compter. Ce qui reste compté est ce qu'on n'a jamais
+  // demandé nous-mêmes : le mobile nu, celui que le prospect ouvre.
+  if (!a4 && !imprimer) {
     try {
       void marquerPlaquetteVue(getServiceClient(), jeton);
     } catch {
@@ -99,5 +111,5 @@ export default async function PlaquetteJetonPage({ params, searchParams }: Plaqu
   // tout l'intérêt du document.
   const prospect = await chargerProspectPlaquette(getServiceClient(), jeton);
 
-  return <RenduPlaquette a4={a4} imprimer={veutImprimer(sp)} prospect={prospect} />;
+  return <RenduPlaquette a4={a4} imprimer={imprimer} prospect={prospect} />;
 }

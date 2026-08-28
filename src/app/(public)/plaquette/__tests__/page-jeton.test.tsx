@@ -4,15 +4,16 @@
  * `/plaquette/{jeton}` — ce que le jeton personnalise, et ce qu'il ne
  * personnalise toujours pas.
  *
- *   1. LE RENDU MOBILE RESTE LE DÉPLIANT COLLECTIF, MOT POUR MOT. C'est celui
- *      qui part par WhatsApp, donc celui qui se transfère : un document qui
- *      nommerait son lecteur atterrirait chez des tiers avec son nom dessus.
- *      Le jour où les deux routes ne rendent plus la même chose en mobile, la
- *      moitié de la cohorte reçoit un autre document — et personne ne le voit
- *      avant le prospect.
- *   2. LE A4 EST NOMINATIF, ET SEULEMENT LUI. Le jeton désigne UNE entreprise :
- *      c'est ce qui autorise sa couverture à porter son nom et la capture de sa
- *      démo. Sans jeton, aucun prospect n'est chargé — le verrou est là.
+ *   1. LES DEUX FORMATS SONT NOMINATIFS, ET LE JETON EST CE QUI LES AUTORISE. Il
+ *      désigne UNE entreprise : c'est la garantie qui permet de porter son nom
+ *      et la capture de sa démo sur la couverture. Sans jeton, aucun prospect
+ *      n'est chargé — le verrou est là, et c'est cette page-ci qui part à trois
+ *      cents.
+ *   2. L'IMPRESSION EST UN GESTE À NOUS, DANS LES DEUX FORMATS. `?imprimer`
+ *      ouvre la boîte du navigateur pour qu'on enregistre le PDF — A4 pour le
+ *      mail, sept pages de téléphone pour WhatsApp — donc aucune des deux
+ *      demandes ne compte une ouverture. Le seul rendu compté est le mobile nu,
+ *      celui qu'on ne demande jamais soi-même.
  *   3. UN JETON MORT NE FAIT PAS D'ERREUR. Le document reste public et
  *      générique : il n'y a rien à protéger, donc rien à refuser. Chaque repli
  *      — jeton inconnu, prospect introuvable, compteur en panne — rend le
@@ -35,8 +36,7 @@ jest.mock("@/lib/audit/plaquette", () => ({
 // ici on ne vérifie que ce que les pages en font.
 jest.mock("../rendu", () => ({
   estA4: (sp: Record<string, unknown> | undefined) => sp?.a4 !== undefined,
-  veutImprimer: (sp: Record<string, unknown> | undefined) =>
-    sp?.a4 !== undefined && sp?.imprimer !== undefined,
+  veutImprimer: (sp: Record<string, unknown> | undefined) => sp?.imprimer !== undefined,
   metadonneesPlaquette: async () => ({}),
   viewportPlaquette: () => ({}),
   RenduPlaquette: function RenduPlaquette() {
@@ -132,8 +132,14 @@ describe("l'impression", () => {
     expect((await collective({ a4: "", imprimer: "" })).props.imprimer).toBe(true);
   });
 
-  it("ne s'ouvre jamais sur le rendu mobile", async () => {
-    expect((await ouvrir(JETON, { imprimer: "" })).props.imprimer).toBe(false);
+  it("s'ouvre aussi sur le rendu mobile — c'est le PDF de WhatsApp", async () => {
+    // ELLE NE S'Y OUVRAIT PAS JUSQU'AU 28/08/2026, et c'était le défaut : le
+    // gabarit mobile nominatif est paginé pour l'impression (sept écrans, un par
+    // page), donc dessiné pour faire un PDF — mais `veutImprimer` exigeait `?a4`,
+    // et ce PDF-là n'avait aucun chemin depuis le CRM.
+    const el = await ouvrir(JETON, { imprimer: "" });
+    expect(el.props.imprimer).toBe(true);
+    expect(el.props.a4).toBe(false);
   });
 });
 
@@ -161,6 +167,25 @@ describe("l'ouverture est comptée", () => {
       expect(mockMarquer).not.toHaveBeenCalled();
       expect(el.props.a4).toBe(true);
     }
+  });
+
+  /**
+   * LE PDF MOBILE NON PLUS — et c'est le même geste, sur une URL sans `?a4`.
+   * Depuis qu'on peut l'enregistrer, la demande d'impression arrive en mobile :
+   * s'en tenir au seul `a4` aurait compté une ouverture à CHAQUE PDF fabriqué,
+   * c'est-à-dire exactement ce que l'exclusion de l'A4 existe pour éviter.
+   */
+  it("ne compte pas le PDF mobile, qu'on fabrique nous-mêmes", async () => {
+    const el = await ouvrir(JETON, { imprimer: "" });
+    expect(mockMarquer).not.toHaveBeenCalled();
+    expect(el.props).toMatchObject({ a4: false, imprimer: true });
+  });
+
+  it("compte le mobile nu — celui que le prospect ouvre", async () => {
+    // La contrepartie du test précédent : c'est le seul rendu qu'on ne demande
+    // jamais nous-mêmes, donc le seul dont l'ouverture soit celle du prospect.
+    await ouvrir(JETON);
+    expect(mockMarquer).toHaveBeenCalledWith(CLIENT, JETON);
   });
 });
 

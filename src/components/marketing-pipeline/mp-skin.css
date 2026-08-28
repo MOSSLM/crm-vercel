@@ -396,7 +396,10 @@
 .mp-scope .plaq-vues{ font-size:11.5px; font-weight:600; color:var(--text-3); }
 .mp-scope .plaq-vues.on{ color:var(--ok); }
 .mp-scope .plaq-url{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mp-scope .plaq-actions{ display:flex; gap:6px; align-items:center; }
+/* Trois gestes pour 236 px de colonne : « Copier », puis un PDF par format.
+   Sans le retour à la ligne, le troisième bouton sortirait de la cellule par
+   la droite — la grille est en `width:max-content`, rien ne l'y retiendrait. */
+.mp-scope .plaq-actions{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 
 /* ── Agent : un menu, sous le nom de l'entreprise ─────────────────────────
    L'agent est une PROPRIÉTÉ de la ligne, pas une étape du parcours. Il se règle

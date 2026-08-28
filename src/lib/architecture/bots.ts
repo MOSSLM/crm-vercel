@@ -689,6 +689,7 @@ export const BOTS: Bot[] = [
       "LOCAL ET SEULEMENT LOCAL, comme le PDF d'audit : Chromium ne tient pas dans une fonction Vercel.",
       "ON NAVIGUE VERS LA PAGE RÉELLE (/plaquette/{jeton}?a4), on ne reconstruit pas le HTML. Le rendu A4 lit les offres du jour, la capture de la démo et le prix DE CE PROSPECT : un second rendu divergerait au premier changement de tarif.",
       "?a4 SANS ?imprimer : la version imprimable ouvre une boîte de dialogue dont Chromium sans tête n'a que faire, et le ?a4 seul ne compte pas d'ouverture — la passe ne fabrique donc pas de fausses lectures au nom des prospects.",
+      "LE FORMAT MOBILE EXISTE AUSSI (sept pages de téléphone, enregistrées depuis le CRM par ?imprimer), mais cette passe ne le fabrique pas — et si elle le fabriquait un jour, jamais en naviguant vers /plaquette/{jeton} nu : le mobile sans paramètre est le SEUL rendu que la page compte comme une ouverture du prospect.",
       "UN PDF EST UNE PHOTO. La plaquette en ligne relit les prix à chaque ouverture ; le fichier, non. Le nom porte sa date : on refabrique avant chaque vague, on ne réutilise pas les fichiers du mois dernier.",
       "Une plaquette en échec n'arrête pas la vague : elle est nommée en fin de passe, et relancer le script reprend celles qui manquent.",
     ],

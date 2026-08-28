@@ -36,8 +36,15 @@ const POLICES =
 export const estA4 = (sp: SearchParamsPlaquette | undefined): boolean => sp?.a4 !== undefined;
 
 /**
- * `?a4&imprimer` ouvre la boîte d'impression du navigateur — d'où l'on choisit
- * « Enregistrer en PDF ».
+ * `?imprimer` ouvre la boîte d'impression du navigateur — d'où l'on choisit
+ * « Enregistrer en PDF ». Avec `?a4` on enregistre la feuille, sans lui les sept
+ * pages du format téléphone.
+ *
+ * IL A EXIGÉ L'A4 JUSQU'AU 28/08/2026, et ce n'est plus vrai : le gabarit mobile
+ * nominatif est paginé pour l'impression (`@page{size:430px 932px}`, sept écrans
+ * franchis un par page) — il a été DESSINÉ pour faire le PDF qui part sur
+ * WhatsApp, où un A4 arrive en vignette qu'il faut pincer pour lire. Refuser
+ * d'ouvrir la boîte sur ce format-là laissait ce PDF inaccessible depuis le CRM.
  *
  * C'EST EXACTEMENT LA MÉCANIQUE DE L'AUDIT, et il faut savoir ce qu'elle est :
  * le CRM ne fabrique aucun fichier PDF. Le bouton « Exporter PDF » de l'éditeur
@@ -47,11 +54,15 @@ export const estA4 = (sp: SearchParamsPlaquette | undefined): boolean => sp?.a4 
  * un service externe, qui n'est pas configuré en production.
  *
  * Séparé de `?a4` parce que les deux usages diffèrent : on relit une plaquette à
- * l'écran en A4 pour la vérifier avant de l'envoyer, et une boîte d'impression
- * qui s'ouvre toute seule à chaque relecture serait insupportable.
+ * l'écran pour la vérifier avant de l'envoyer, et une boîte d'impression qui
+ * s'ouvre toute seule à chaque relecture serait insupportable.
+ *
+ * CONSÉQUENCE POUR LE COMPTEUR D'OUVERTURES : la page à jeton ne doit pas
+ * compter une ouverture demandée avec ce paramètre — le mobile imprimé est le
+ * nôtre, comme l'A4. Cf. `[jeton]/page.tsx`.
  */
 export const veutImprimer = (sp: SearchParamsPlaquette | undefined): boolean =>
-  estA4(sp) && sp?.imprimer !== undefined;
+  sp?.imprimer !== undefined;
 
 /**
  * On n'imprime pas avant que les polices soient arrivées.
@@ -184,7 +195,13 @@ export async function RenduPlaquette({
       {/* Le rendu est produit serveur, à partir du catalogue d'offres et du
           contenu par défaut, et tout passe par `esc()` dans les rendus. */}
       <div dangerouslySetInnerHTML={{ __html: html }} />
-      {imprimer && <script dangerouslySetInnerHTML={{ __html: SCRIPT_IMPRESSION_PLAQUETTE }} />}
+      {/* `&& a4` ICI ET NON DANS `veutImprimer` : le dépliant collectif n'a pas
+          de mobile paginé — sa feuille de style est celle de l'audit mobile, sans
+          `@page` ni saut de page — et l'imprimer rendrait un ruban continu. Seul
+          le document NOMINATIF a les deux formats, et c'est lui qu'on enregistre.
+          La règle est posée là parce que ce repli sert aussi la page à jeton,
+          quand le prospect n'a pas pu être chargé. */}
+      {imprimer && a4 && <script dangerouslySetInnerHTML={{ __html: SCRIPT_IMPRESSION_PLAQUETTE }} />}
     </>
   );
 }
