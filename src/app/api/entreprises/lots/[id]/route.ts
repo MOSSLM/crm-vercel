@@ -3,6 +3,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { blocageDe, parUrgence, type LigneContenu } from "@/lib/lots/contenu";
+import { lireCouverture, type Couverture, type LigneCouverture } from "@/lib/lots/couverture";
+import { lirePretDemo, type LignePretDemo, type PretDemo } from "@/lib/lots/pret-demo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +23,18 @@ export const OPTIONS = (req: Request) => preflight(req);
  *
  * PLAFOND À 500 LIGNES. Un lot peut en porter vingt mille ; personne ne lit
  * vingt mille lignes, et les renvoyer ferait une réponse de plusieurs mégaoctets
- * pour un écran qu'on ouvre pour comprendre, pas pour inventorier. Le total du
- * lot reste lisible sur l'écran des lots — c'est lui qui porte le compte.
+ * pour un écran qu'on ouvre pour comprendre, pas pour inventorier.
+ *
+ * LA COUVERTURE VIENT AVEC, et ce n'est pas un doublon de l'écran des lots. La
+ * fiche d'un lot est l'endroit où on le TRAVAILLE : elle doit dire quel geste
+ * lancer, donc connaître les sept axes et le nombre de fiches fabricables. Les
+ * faire chercher par un second appel laisserait l'en-tête se remplir après la
+ * table — et le bouton principal apparaître une seconde trop tard, quand on a
+ * déjà commencé à lire ailleurs.
+ *
+ * Les deux fonctions rendent TOUS les lots : elles sont écrites pour la
+ * comparaison, et il y en a une poignée. On filtre ici plutôt que d'ajouter
+ * deux fonctions SQL qui ne différeraient que par un `where`.
  */
 
 const PLAFOND = 500;
@@ -36,11 +48,12 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
   }
 
   const sc = getServiceClient();
-  const { data, error } = await sc.rpc("contenu_du_lot", {
-    p_lot_id: lotId,
-    p_limite: PLAFOND,
-    p_decalage: 0,
-  });
+  const [contenu, couverture, pret] = await Promise.all([
+    sc.rpc("contenu_du_lot", { p_lot_id: lotId, p_limite: PLAFOND, p_decalage: 0 }),
+    sc.rpc("couverture_des_lots"),
+    sc.rpc("pretes_pour_demo_des_lots"),
+  ]);
+  const { data, error } = contenu;
 
   if (error) {
     const absente =
@@ -59,8 +72,30 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
   }
 
   const lignes = ((data ?? []) as LigneContenu[]).map((l) => ({ ...l, blocage: blocageDe(l) }));
+
+  // L'en-tête se dégrade proprement : une couverture illisible rend `null` et
+  // l'écran affiche la table sans ses boutons, plutôt qu'une erreur pour tout
+  // le monde. C'est la même règle que l'atelier applique au bloc « prêtes ».
+  const lot: Couverture | null = couverture.error
+    ? null
+    : (((couverture.data ?? []) as LigneCouverture[])
+        .map(lireCouverture)
+        .find((c) => c.lotId === lotId) ?? null);
+
+  const pretDemo: PretDemo | null = pret.error
+    ? null
+    : (((pret.data ?? []) as LignePretDemo[])
+        .map(lirePretDemo)
+        .find((p) => p.lotId === lotId) ?? null);
+
   return json(
-    { entreprises: parUrgence(lignes), plafond: PLAFOND, tronque: lignes.length === PLAFOND },
+    {
+      lot,
+      pretDemo,
+      entreprises: parUrgence(lignes),
+      plafond: PLAFOND,
+      tronque: lignes.length === PLAFOND,
+    },
     { headers: cors },
   );
 });

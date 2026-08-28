@@ -93,19 +93,17 @@ function fichiersDEcran(): string[] {
 }
 
 /**
- * DEUX COMPOSANTS ORPHELINS, ET C'EST LA DETTE QU'ILS SIGNALENT.
+ * LA LISTE EST VIDE, ET ELLE DOIT LE RESTER.
  *
- * `WorkflowsPage` et `WorkflowEditor` pointent sur `/workflows`, une adresse qui
- * n'a jamais existé dans ce dépôt — les workflows vivent sous `/automations`.
- * Rien ne les monte : aucun fichier ne les importe. Ils sont donc listés ici
- * plutôt que corrigés, parce que la bonne correction n'est pas de réparer leurs
- * liens mais de décider s'ils doivent rester.
+ * Elle a servi une fois : `WorkflowsPage` et `WorkflowEditor` pointaient sur
+ * `/workflows`, une adresse qui n'a jamais existé — les workflows vivent sous
+ * `/automations` — et rien ne les montait. Ils ont été supprimés plutôt
+ * qu'exemptés, parce que la bonne correction n'était pas de réparer leurs liens.
  *
- * Cette liste est un CONSTAT daté, pas une soupape : y ajouter un fichier pour
- * faire passer le test reviendrait à publier un lien mort en connaissance de
- * cause. Un écran vivant n'y entre pas.
+ * Ce n'est pas une soupape : y ajouter un fichier pour faire passer le test
+ * reviendrait à publier un lien mort en connaissance de cause.
  */
-const ORPHELINS = ["components/WorkflowsPage.tsx", "components/WorkflowEditor.tsx"];
+const ORPHELINS: string[] = [];
 
 describe("les liens écrits dans les écrans", () => {
   it("connaît les routes du dépôt", () => {
