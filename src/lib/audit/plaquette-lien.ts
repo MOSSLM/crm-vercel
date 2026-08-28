@@ -38,7 +38,7 @@ export function urlPlaquette(jeton?: string | null): string {
 /**
  * Le format du PDF qu'on va enregistrer. Les deux existent depuis que le
  * document nominatif a sa maquette mobile paginée (`plaquette-mobile.gabarit`,
- * sept écrans de 430 × 932 px avec leur `@page`) : ce n'est plus l'A4 réduit
+ * huit écrans de 430 × 932 px avec leur `@page`) : ce n'est plus l'A4 réduit
  * sur un téléphone, c'est un autre document.
  */
 export type FormatImpressionPlaquette = "a4" | "mobile";
@@ -48,7 +48,7 @@ export type FormatImpressionPlaquette = "a4" | "mobile";
  * « Enregistrer en PDF ».
  *
  * DEUX FORMATS, ET LE CHOIX APPARTIENT À L'AGENT. L'A4 se joint à un mail et se
- * lit sur un écran d'ordinateur ; le mobile sort sept pages au format téléphone,
+ * lit sur un écran d'ordinateur ; le mobile sort huit pages au format téléphone,
  * qui est ce qu'un prospect reçoit dans WhatsApp — un A4 y arrive en vignette
  * illisible qu'il faut pincer pour lire. Le défaut reste l'A4 : c'est le
  * document que les surfaces existantes envoient déjà, et le changer en silence

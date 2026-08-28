@@ -393,7 +393,7 @@ function VignetteCell({ item }: { item: BoardItem }) {
  * mécanique du document d'audit.
  *
  * ET LE PDF A DEUX FORMATS, PARCE QU'IL A DEUX DESTINATIONS. L'A4 se joint à un
- * mail et se lit sur un écran d'ordinateur. Le mobile sort les sept pages du
+ * mail et se lit sur un écran d'ordinateur. Le mobile sort les huit pages du
  * gabarit téléphone (`plaquette-mobile.gabarit`, 430 × 932 px, une page par
  * écran) : c'est le PDF qu'on joint dans WhatsApp, où un A4 arrive en vignette
  * qu'il faut pincer pour lire. Le second existait déjà en maquette et n'avait
@@ -510,7 +510,7 @@ function PlaquetteCell({ item }: { item: BoardItem }) {
           href={urlPlaquetteImprimable(url, "mobile")}
           target="_blank"
           rel="noopener noreferrer"
-          title="Ouvrir les sept pages au format téléphone et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur. C'est le PDF qu'on joint dans WhatsApp."
+          title="Ouvrir les huit pages au format téléphone et lancer l'impression — « Enregistrer en PDF » dans la boîte du navigateur. C'est le PDF qu'on joint dans WhatsApp."
         >
           <Smartphone className="ico-sm" />
           PDF mobile

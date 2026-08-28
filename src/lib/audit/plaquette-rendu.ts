@@ -8,7 +8,8 @@
  *
  * CHAQUE MARQUEUR A SON CONTEXTE, ET UN SEUL ÉCHAPPEMENT NE SUFFIT PAS :
  *
- *  - `NOM_ENTREPRISE`, `SECTEUR_VILLE`, `PRIX_SITE`, `DATE` sont du texte HTML.
+ *  - `NOM_ENTREPRISE`, `SECTEUR_VILLE`, `PRIX_SITE`, `DATE` et les onze
+ *    marqueurs `SEO_*` du boost local sont du texte HTML.
  *  - `DEMO_URL` est à la fois du texte ET la fin d'un `href="https://…"`. Il
  *    est donc servi SANS SCHÉMA — le gabarit pose `https://` lui-même — et un
  *    guillemet dans la valeur casserait l'attribut.
@@ -27,6 +28,7 @@
  */
 
 import { esc } from "@/utils/audit/htmlShared";
+import type { BoostSeoLocal } from "@/lib/audit/prix-seo-local";
 import { CORPS_PLAQUETTE_A4, CSS_PLAQUETTE_A4 } from "@/lib/audit/plaquette-a4.gabarit";
 import { CORPS_PLAQUETTE_MOBILE, CSS_PLAQUETTE_MOBILE } from "@/lib/audit/plaquette-mobile.gabarit";
 
@@ -45,6 +47,22 @@ export interface DonneesPlaquette {
   prix: string | null;
   /** La date d'établissement, en toutes lettres. */
   date: string;
+  /**
+   * Le boost SEO local de ce prospect — ses métiers, et trois formules de
+   * communes chiffrées pour lui (`boostSeoLocal`).
+   *
+   * OBLIGATOIRE ET JAMAIS NUL, contrairement à `prix`. Le prix du site peut
+   * manquer (catalogue injoignable ⇒ « sur devis »), mais le boost se calcule
+   * d'un barème écrit dans le code : il n'a aucune raison d'échouer, et une
+   * valeur optionnelle laisserait ses onze marqueurs en clair dans le document
+   * du prospect le jour où un appelant l'oublierait.
+   *
+   * SEUL LE GABARIT MOBILE LES PORTE, et c'est voulu : l'A4 est une mise en
+   * page à positions fixes où l'écran ne rentre pas. Un marqueur absent d'un
+   * gabarit ne coûte rien — le remplacement ne cherche pas les marqueurs, il
+   * les remplace là où ils sont.
+   */
+  boost: BoostSeoLocal;
 }
 
 const GABARITS: Record<FormatPlaquette, { css: string; corps: string }> = {
@@ -79,6 +97,33 @@ const urlImageSure = (url: string | null | undefined): string => {
 const PRIX_INCONNU = "sur devis";
 
 /**
+ * Les onze marqueurs de l'écran « boost SEO local ».
+ *
+ * DES LETTRES ET PAS DES CHIFFRES DANS LES NOMS (`_A`, `_B`, `_C`) : le
+ * remplacement ne reconnaît que `[A-Z_]`, et `{{SEO_PRIX_1}}` traverserait le
+ * document tel quel jusque chez le prospect. Élargir la regex pour trois
+ * marqueurs coûterait plus cher que les nommer autrement.
+ *
+ * L'ACCORD EST UNE VALEUR, PAS UNE RÈGLE DU GABARIT : une fiche sur deux n'a
+ * qu'un seul métier reconnu, et « vos 1 métiers » est la faute qu'on lit en
+ * premier sur un document commercial.
+ */
+function marqueursDuBoost(boost: BoostSeoLocal): Record<string, string> {
+  const suffixes = ["A", "B", "C"];
+  const valeurs: Record<string, string> = {
+    SEO_METIERS: String(boost.pagesService),
+    SEO_METIERS_MOT: boost.pagesService > 1 ? "métiers" : "métier",
+  };
+  boost.paliers.slice(0, suffixes.length).forEach((p, i) => {
+    valeurs[`SEO_COMMUNES_${suffixes[i]}`] = String(p.communes);
+    valeurs[`SEO_PAGES_${suffixes[i]}`] = String(p.pages);
+    // `formatPrixEuros` a déjà posé les insécables ; `esc` ne les touche pas.
+    valeurs[`SEO_PRIX_${suffixes[i]}`] = esc(p.texte);
+  });
+  return valeurs;
+}
+
+/**
  * Le document prêt à servir : sa feuille de style et son corps.
  *
  * Les deux sont rendus ensemble parce qu'ils ne vont jamais l'un sans l'autre —
@@ -99,6 +144,7 @@ export function rendrePlaquette(
     CAPTURE_DEMO: capture,
     PRIX_SITE: esc(d.prix?.trim() || PRIX_INCONNU),
     DATE: esc(d.date),
+    ...marqueursDuBoost(d.boost),
   };
 
   const rempli = corps.replace(/\{\{([A-Z_]+)\}\}/g, (brut, cle: string) =>

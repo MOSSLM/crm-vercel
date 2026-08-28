@@ -9,6 +9,7 @@ import {
   type ProspectPlaquetteChiffre,
 } from "@/lib/audit/plaquette";
 import { rendrePlaquette } from "@/lib/audit/plaquette-rendu";
+import { boostSeoLocal } from "@/lib/audit/prix-seo-local";
 import { prixPlaquette } from "@/lib/audit/prix-site";
 import { corpsPlaquette } from "@/utils/audit/htmlCompact";
 import { CSS_COMPACT } from "@/utils/audit/compactCss";
@@ -41,7 +42,7 @@ export const estA4 = (sp: SearchParamsPlaquette | undefined): boolean => sp?.a4 
  * pages du format téléphone.
  *
  * IL A EXIGÉ L'A4 JUSQU'AU 28/08/2026, et ce n'est plus vrai : le gabarit mobile
- * nominatif est paginé pour l'impression (`@page{size:430px 932px}`, sept écrans
+ * nominatif est paginé pour l'impression (`@page{size:430px 932px}`, huit écrans
  * franchis un par page) — il a été DESSINÉ pour faire le PDF qui part sur
  * WhatsApp, où un A4 arrive en vignette qu'il faut pincer pour lire. Refuser
  * d'ouvrir la boîte sur ce format-là laissait ce PDF inaccessible depuis le CRM.
@@ -157,6 +158,12 @@ export async function RenduPlaquette({
       captureDemo: prospect.captureDemo,
       prix: prixPlaquette(offres, prospect.serviceTags)?.texte ?? null,
       date: DATE_LONGUE.format(new Date()),
+      // LES MÊMES ÉTIQUETTES QUE LE PRIX DU SITE, et c'est ce qui tient les deux
+      // écrans ensemble : le boost multiplie par ses communes le nombre de
+      // métiers que la page « prix » vient de facturer. Deux comptes distincts
+      // annonceraient « 3 métiers » page 4 et « 5 métiers » page 5, au même
+      // prospect, sur deux écrans qui se suivent.
+      boost: boostSeoLocal(prospect.serviceTags),
     });
     return (
       <>
