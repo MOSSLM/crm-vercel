@@ -220,7 +220,7 @@ export const POST = withAuth<AjoutLeadsBody, Params>(
       origineRef = body.segment_id
       restant = Math.max(r.total - (offset + r.ids.length), 0)
     } else if (body.origine === 'lot') {
-      if (!body.lot_id) return jsonError('lot_id_manquant', 400, { message: 'Indiquez le lot à ajouter.' }, cors)
+      if (body.lot_id === undefined) return jsonError('lot_id_manquant', 400, { message: 'Indiquez le lot à ajouter.' }, cors)
       const { data, error, count } = await sc
         .from('lots_entreprises')
         .select('entreprise_id', { count: 'exact' })
@@ -229,7 +229,10 @@ export const POST = withAuth<AjoutLeadsBody, Params>(
         .range(offset, offset + MAX_AJOUT - 1)
       if (error) return erreurBase(error, cors)
       entrepriseIds = ((data ?? []) as { entreprise_id: number }[]).map((r) => Number(r.entreprise_id))
-      origineRef = body.lot_id
+      // `origine_ref` est du texte : elle porte indifféremment l'uuid d'un
+      // segment ou l'identifiant d'un lot. C'est une TRACE, pas une clé
+      // étrangère — le lead reste dans la campagne même si le lot disparaît.
+      origineRef = String(body.lot_id)
       restant = Math.max((count ?? entrepriseIds.length) - (offset + entrepriseIds.length), 0)
     } else {
       entrepriseIds = body.entreprise_ids ?? []
@@ -256,7 +259,7 @@ export const POST = withAuth<AjoutLeadsBody, Params>(
         await noterAudience(sc, campagne.automation, {
           type: body.origine,
           segmentId: body.origine === 'segment' ? body.segment_id : null,
-          lotId: body.origine === 'lot' ? body.lot_id : null,
+          lotId: body.origine === 'lot' && body.lot_id !== undefined ? String(body.lot_id) : null,
           dernierRafraichissement: new Date().toISOString(),
         })
       }

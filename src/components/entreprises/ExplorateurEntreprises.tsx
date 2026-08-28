@@ -244,34 +244,34 @@ export function ExplorateurEntreprises() {
     if (!nom || selection.size === 0) return;
     setCreationLot(true);
     try {
+      // `entrepriseIds`, pas `entreprise_ids` : le schéma de la route est en
+      // camel, et Zod n'a pas de champ à valider quand on lui envoie l'autre —
+      // il rendait 400 « Required », et cet écran était le SEUL chemin que le
+      // vide de /prospection/lots proposait pour créer un lot.
       const r = await authedFetch("/api/entreprises/lots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nom, entreprise_ids: [...selection] }),
+        body: JSON.stringify({ nom, entrepriseIds: [...selection] }),
       });
+      // La route rend `{ lotId, entreprises }` — pas la ligne du lot. On
+      // recompose donc l'entrée du menu déroulant avec ce qu'on sait déjà :
+      // le nom vient d'ici, la date est maintenant.
       const corps = (await r.json().catch(() => ({}))) as {
         error?: string;
-        id?: number;
-        nom?: string;
-        taille?: number;
-        cree_le?: string;
+        message?: string;
+        lotId?: number;
+        entreprises?: number;
       };
-      if (!r.ok) throw new Error(corps.error ?? `Erreur ${r.status}`);
+      if (!r.ok) throw new Error(corps.message ?? corps.error ?? `Erreur ${r.status}`);
 
-      const taille = corps.taille ?? selection.size;
-      toast.success(`Lot « ${corps.nom} » créé — ${nombre(taille)} entreprise${taille > 1 ? "s" : ""}`);
-      setReferentiel((ref) => ({
-        ...ref,
-        lots: [
-          {
-            id: corps.id as number,
-            nom: corps.nom as string,
-            taille,
-            cree_le: corps.cree_le ?? new Date().toISOString(),
-          },
-          ...ref.lots,
-        ],
-      }));
+      const taille = corps.entreprises ?? selection.size;
+      toast.success(`Lot « ${nom} » créé — ${nombre(taille)} entreprise${taille > 1 ? "s" : ""}`);
+      if (corps.lotId !== undefined) {
+        setReferentiel((ref) => ({
+          ...ref,
+          lots: [{ id: corps.lotId as number, nom, taille, cree_le: new Date().toISOString() }, ...ref.lots],
+        }));
+      }
       setNomLot("");
       setSelection(new Set());
     } catch (e) {

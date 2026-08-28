@@ -454,6 +454,15 @@
  * pastilles cliquables portant leur compte. C'est la façon dont lemlist range
  * un tableau, et c'est ce qui fait qu'on reconnaît l'écran sans lire le titre.
  */
+/* Les deux actions de l'en-tête des lots. `principal` existe déjà (ci-dessus) :
+   ce qui manquait n'était qu'une rangée, et un lien de prose. Un `<a>` portant
+   `.lem-btn` hérite du `text-decoration` du document : on le coupe ici plutôt
+   que dans le composant, sinon chaque bouton-lien devra s'en souvenir. */
+.lem-skin .lots-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lem-skin a.lem-btn{text-decoration:none}
+.lem-skin .lots-lien-simple{color:var(--lem-bleu);text-decoration:underline;text-underline-offset:2px}
+.lem-skin .lots-lien-simple:hover{color:var(--lem-bleu-2)}
+
 .lem-skin .lots-carte{background:var(--lem-surface);border:1px solid var(--lem-bord);border-radius:var(--lem-rayon);overflow:hidden}
 .lem-skin .lots-enveloppe{overflow-x:auto}
 .lem-skin .lots-enveloppe table{min-width:1040px;width:100%;border-collapse:collapse}

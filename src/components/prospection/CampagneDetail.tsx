@@ -54,7 +54,15 @@ interface Revue {
 }
 
 interface Segment { id: string; nom: string }
-interface Lot { id: string; nom: string; taille: number }
+/**
+ * LE LOT SE LIT DANS LA FORME QUE LA ROUTE REND, pas dans celle qu'on espérait.
+ * `/api/entreprises/lots` rend la COUVERTURE d'un lot (`lotId`, `total`, les
+ * sept axes) et non sa ligne brute : lire `id` et `taille` rendait `undefined`,
+ * les `<option>` partaient sans `value`, et le navigateur envoyait alors leur
+ * TEXTE comme valeur. Le menu ne pouvait rien ajouter, et l'erreur ne ressemblait
+ * pas à sa cause.
+ */
+interface Lot { lotId: number; nom: string; total: number }
 
 const LIBELLE_STATUT_LISTE: Record<StatutListe, string> = {
   a_lancer: 'À lancer',
@@ -312,7 +320,7 @@ export function CampagneDetail({ id }: { id: string }) {
               >
                 <option value="">Ajouter depuis un lot…</option>
                 {lots.map((l) => (
-                  <option key={l.id} value={l.id}>{l.nom} ({l.taille})</option>
+                  <option key={l.lotId} value={l.lotId}>{l.nom} ({l.total})</option>
                 ))}
               </select>
 

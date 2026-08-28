@@ -1,17 +1,10 @@
-import { z } from "zod";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { lireCouverture, type LigneCouverture } from "@/lib/lots/couverture";
 import { FLAGS_CONNUS, SOURCES_CONNUES } from "../explorer/criteres";
-
-/**
- * Le plafond d'un lot. Même valeur que la porte « identifiants » ci-dessous :
- * au-delà, ce n'est plus un lot de travail, c'est un backfill — et un backfill
- * se pilote autrement qu'en cochant une case sur un téléphone.
- */
-const PLAFOND_LOT = 20_000;
+import { PLAFOND_LOT, corpsCriteresSchema, corpsSchema } from "./_corps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,58 +49,14 @@ export const GET = withAuth({ role: "admin" }, async ({ cors }) => {
 });
 
 /**
- * Figer un lot : la seule façon d'en créer un.
- *
- * ON FIGE DEPUIS UNE LISTE D'IDENTIFIANTS, jamais depuis des critères. C'est
- * l'appelant — l'explorateur, le marketing pipeline — qui a déjà résolu sa
- * requête et sait exactement ce qu'il a sous les yeux. Refaire la requête ici
- * rendrait un lot différent de ce que l'humain a vu défiler, sans que rien ne
- * le signale.
+ * Figer un lot : la seule façon d'en créer un. Deux portes, et leurs corps
+ * vivent dans `_corps.ts` — voir ce fichier pour ce qu'elles protègent, et
+ * pourquoi ils en sont sortis.
  *
  * Le doublon ne fait pas échouer : `lots_entreprises` a sa clé primaire sur le
  * couple, et un `upsert` qui ignore les conflits permet de rejouer un
  * enregistrement interrompu sans nettoyer d'abord.
  */
-const corpsSchema = z.object({
-  nom: z.string().trim().min(1).max(120),
-  note: z.string().trim().max(500).nullable().optional(),
-  entrepriseIds: z.array(z.number().int().positive()).min(1).max(20_000),
-});
-
-/**
- * L'AUTRE PORTE : figer depuis des critères, sans transporter les identifiants.
- *
- * La règle ci-dessus visait le SILENCE d'une divergence, pas la résolution côté
- * serveur — et sa prémisse (« ce que l'humain a vu défiler ») ne tient plus à
- * 34 633 lignes : personne ne fait défiler ça. Ce que l'humain voit, c'est un
- * NOMBRE. C'est donc ce nombre qu'on protège : `totalAttendu` est comparé en
- * base, et une divergence REFUSE la création au lieu de fabriquer un lot que
- * personne n'a validé.
- *
- * Sans cette porte, figer 20 000 fiches depuis un téléphone demandait de
- * parcourir cent pages puis de poster 150 ko de JSON. Avec, c'est un appel —
- * mesuré à ~350 ms sur les « sans site ».
- */
-const corpsCriteresSchema = z.object({
-  nom: z.string().trim().min(1).max(120),
-  note: z.string().trim().max(500).nullable().optional(),
-  criteres: z.object({
-    q: z.string().trim().max(200).nullable().optional(),
-    flags: z.array(z.string()).max(20).optional(),
-    sources: z.array(z.string()).max(10).optional(),
-    owner: z.string().uuid().nullable().optional(),
-    /**
-     * Le vocabulaire du pipeline marketing. Il est ACCEPTÉ à la lecture pour
-     * qu'un segment venu de là puisse être présenté tel quel — et refusé plus
-     * bas, parce que `chercher_entreprises` ne sait pas le trancher.
-     */
-    services: z.array(z.string()).max(50).optional(),
-    filtres: z.array(z.string()).max(20).optional(),
-  }),
-  /** Le compte affiché au moment du clic. La garde, et la raison d'être de cette porte. */
-  totalAttendu: z.number().int().nonnegative(),
-});
-
 export const POST = withAuth({ role: "admin" }, async ({ req, user, cors }) => {
   let brut: unknown;
   try {

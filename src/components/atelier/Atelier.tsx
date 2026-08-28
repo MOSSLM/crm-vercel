@@ -586,7 +586,11 @@ export function Atelier() {
         </section>
 
         <p className="lem-second" style={{ textAlign: "center", fontSize: 12.5, margin: 0 }}>
-          <Link href="/entreprises/lots" style={{ color: "var(--lem-bleu)" }}>
+          {/* `/prospection/lots` et non `/entreprises/lots` : ce dernier est le
+              chemin de l'API, pas celui de l'écran. Le lien rendait un 404, et
+              rien ne le signalait — un lien mort ne casse jamais rien, il perd
+              juste la sortie. C'est ce que `liens-vivants.test.ts` tient. */}
+          <Link href="/prospection/lots" style={{ color: "var(--lem-bleu)" }}>
             Vue complète des lots
           </Link>
         </p>
