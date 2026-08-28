@@ -50,14 +50,65 @@ describe("stepIsInConversation", () => {
 
   it("reconnaît une étape de la branche « il a répondu », sans rien lire d'autre", () => {
     const branche: ConversationStep[] = [
-      { kind: "whatsapp" },
-      { kind: "wait", waitMode: "reply" },
-      { kind: "whatsapp", branch: { waitId: "w1", on: "reply" } },
-      { kind: "whatsapp", branch: { waitId: "w1", on: "timeout" } },
+      { id: "s0", kind: "whatsapp" },
+      { id: "w1", kind: "wait", waitMode: "reply" },
+      { id: "s2", kind: "whatsapp", branch: { waitId: "w1", on: "reply" } },
+      { id: "s3", kind: "whatsapp", branch: { waitId: "w1", on: "timeout" } },
     ];
     expect(stepIsInConversation(branche, 2, {})).toBe(true);
     // La branche « il n'a pas répondu » reste du démarchage : c'est une relance.
     expect(stepIsInConversation(branche, 3, {})).toBe(false);
+  });
+
+  /* ── `on` est un nom de sortie, pas un sens ─────────────────────────────── */
+
+  it("ne prend PAS la voie « oui » d'une condition pour une réponse du prospect", () => {
+    // LE bug du 28/08/2026. « S1 — Premier contact » commence par une condition
+    // (« a-t-il un mobile ? ») dont la voie oui porte `on: 'reply'` — c'est le
+    // nom de la première sortie, pas une réponse. Le tout premier WhatsApp était
+    // donc classé « en discussion » : rangé dans l'onglet des relances, et
+    // exempté du quota du jour.
+    const s1: ConversationStep[] = [
+      { id: "waQ", kind: "condition" },
+      { id: "wa1", kind: "whatsapp", branch: { waitId: "waQ", on: "reply" } },
+    ];
+    expect(stepIsInConversation(s1, 1, {})).toBe(false);
+  });
+
+  it("ne prend pas davantage un cas d'aiguillage pour une réponse", () => {
+    const aiguillage: ConversationStep[] = [
+      { id: "q", kind: "condition" },
+      { id: "c1", kind: "whatsapp", branch: { waitId: "q", on: "reply" } },
+      { id: "c2", kind: "call", branch: { waitId: "q", on: "c2" } },
+      { id: "cs", kind: "email", branch: { waitId: "q", on: "sinon" } },
+    ];
+    expect(stepIsInConversation(aiguillage, 1, {})).toBe(false);
+    expect(stepIsInConversation(aiguillage, 2, {})).toBe(false);
+    expect(stepIsInConversation(aiguillage, 3, {})).toBe(false);
+  });
+
+  it("classe en premier contact une voie dont la fourche a disparu", () => {
+    // Voie orpheline : le cas a été supprimé de la séquence. On ne devine pas —
+    // et le défaut prudent est « premier contact », qui consomme une place. Ne
+    // pas la compter fausserait la cadence sans que rien ne le dise.
+    const orpheline: ConversationStep[] = [
+      { id: "s0", kind: "whatsapp" },
+      { id: "s1", kind: "whatsapp", branch: { waitId: "disparue", on: "reply" } },
+    ];
+    expect(stepIsInConversation(orpheline, 1, {})).toBe(false);
+  });
+
+  it("reste vrai sur la voie « il a répondu » d'une attente imbriquée dans une condition", () => {
+    // Une attente peut vivre DANS la voie d'une condition : ce qui la suit sur
+    // sa sortie « reply » reste une vraie discussion.
+    const imbriquee: ConversationStep[] = [
+      { id: "q", kind: "condition" },
+      { id: "wa", kind: "whatsapp", branch: { waitId: "q", on: "reply" } },
+      { id: "w", kind: "wait", waitMode: "reply", branch: { waitId: "q", on: "reply" } },
+      { id: "suite", kind: "whatsapp", branch: { waitId: "w", on: "reply" } },
+    ];
+    expect(stepIsInConversation(imbriquee, 1, {})).toBe(false);
+    expect(stepIsInConversation(imbriquee, 3, {})).toBe(true);
   });
 
   it("ne regarde que les attentes SITUÉES AVANT l'étape", () => {

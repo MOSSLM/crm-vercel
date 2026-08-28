@@ -26,6 +26,7 @@
 // sert pour le rendu. Une seule définition, donc pas de dérive entre les deux.
 
 import type { SeqStepKind } from '@/components/automations/types'
+import { SORTIE_SINON } from '@/lib/automations/conditions'
 import { roleTint, stageRole, type StageRole } from '@/lib/opportunites/stage-roles'
 
 /** Ce qui pilote une colonne. */
@@ -288,6 +289,30 @@ export interface PipelineStageRef {
  * séquence » — deux séquences n'ont pas les mêmes étapes, les aligner
  * afficherait chaque prospect sous une colonne qui n'est pas la sienne.
  */
+/**
+ * Le sous-titre d'une colonne de voie — « si réponse », « si oui », « sinon »…
+ *
+ * `on` est le NOM DE LA SORTIE de la fourche, jamais son sens : sur une
+ * attente-réponse il se lit « il a répondu / sans réponse », sur une CONDITION
+ * « oui / non », et sur un AIGUILLAGE ce n'est qu'un cas parmi N
+ * (cf. `src/lib/automations/branches.ts`). Écrire « si réponse » sans avoir
+ * résolu la fourche promettait donc une réponse du prospect au-dessus de
+ * colonnes qui ne testent qu'un champ de sa fiche — et « si silence » là où la
+ * condition répond « non ».
+ *
+ * L'aiguillage ne dit pas LEQUEL de ses cas : `SequenceStepRef` ne porte pas
+ * leurs libellés, et les y faire descendre pour un sous-titre coûterait plus
+ * que ça ne rend. Une voie sans nom vaut mieux qu'un nom faux.
+ */
+function libelleDeLaVoie(fourche: SequenceStepRef | undefined, on: string): string {
+  if (fourche?.kind === 'wait' && fourche.waitMode === 'reply') {
+    return on === 'reply' ? 'si réponse' : 'si silence'
+  }
+  if (on === 'reply') return 'si oui'
+  if (on === 'timeout') return 'si non'
+  return on === SORTIE_SINON ? 'sinon' : 'une voie'
+}
+
 export function buildColumns(opts: {
   steps: SequenceStepRef[]
   sequenceName: string | null
@@ -359,7 +384,12 @@ export function buildColumns(opts: {
         // Une colonne de voie n'est traversée que par la moitié des prospects.
         // Le dire dans le sous-titre évite de lire une case vide comme une étape
         // ratée alors qu'elle appartient à l'autre chemin.
-        hint: step.branch ? `${quand} · ${step.branch.on === 'reply' ? 'si réponse' : 'si silence'}` : quand,
+        hint: step.branch
+          ? `${quand} · ${libelleDeLaVoie(
+              opts.steps.find((s) => s.id === step.branch!.waitId),
+              step.branch.on,
+            )}`
+          : quand,
         mode: channel.mode,
         color: channel.color,
         kind: step.kind,

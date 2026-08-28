@@ -44,6 +44,51 @@ const STEPS = [
 const columnsOf = (over: Partial<Parameters<typeof buildColumns>[0]> = {}) =>
   buildColumns({ steps: STEPS, sequenceName: 'Artisans', stages: STAGES, handoffOrdre: 50, ...over })
 
+/**
+ * Le sous-titre d'une colonne de voie dit CE QUE LA FOURCHE A RÉPONDU.
+ *
+ * `on` n'est que le nom de la première sortie : « reply » se lit « il a
+ * répondu » derrière une attente et « oui » derrière une condition. Les lire
+ * pareil affichait « si réponse » au-dessus de colonnes qui ne testent qu'un
+ * champ de la fiche — et « si silence » là où la condition répond non.
+ */
+describe('buildColumns — le sous-titre des voies', () => {
+  const hintDe = (steps: Parameters<typeof buildColumns>[0]['steps'], id: string) =>
+    buildColumns({ steps, sequenceName: 'S', stages: STAGES, handoffOrdre: 50 }).find(
+      (c) => c.id === stepColumnId(id),
+    )?.hint
+
+  it('dit réponse et silence derrière une attente-réponse', () => {
+    const steps = [
+      { id: 'w', kind: 'wait' as SeqStepKind, day: 0, label: null, waitMode: 'reply' as const, replyTimeoutDays: 3 },
+      { id: 'oui', kind: 'whatsapp' as SeqStepKind, day: 1, label: null, branch: { waitId: 'w', on: 'reply' } },
+      { id: 'non', kind: 'call' as SeqStepKind, day: 3, label: null, branch: { waitId: 'w', on: 'timeout' } },
+    ]
+    expect(hintDe(steps, 'oui')).toBe('J+1 · si réponse')
+    expect(hintDe(steps, 'non')).toBe('J+3 · si silence')
+  })
+
+  it('dit oui et non derrière une condition, qui ne mesure aucune réponse', () => {
+    const steps = [
+      { id: 'q', kind: 'condition' as SeqStepKind, day: 0, label: 'A-t-il un mobile ?' },
+      { id: 'oui', kind: 'whatsapp' as SeqStepKind, day: 0, label: null, branch: { waitId: 'q', on: 'reply' } },
+      { id: 'non', kind: 'email' as SeqStepKind, day: 0, label: null, branch: { waitId: 'q', on: 'timeout' } },
+    ]
+    expect(hintDe(steps, 'oui')).toBe('immédiat · si oui')
+    expect(hintDe(steps, 'non')).toBe('immédiat · si non')
+  })
+
+  it("n'invente pas le cas d'un aiguillage, dont il n'a pas les libellés", () => {
+    const steps = [
+      { id: 'q', kind: 'condition' as SeqStepKind, day: 0, label: 'Quel métier ?' },
+      { id: 'c2', kind: 'call' as SeqStepKind, day: 0, label: null, branch: { waitId: 'q', on: 'c2' } },
+      { id: 'autre', kind: 'email' as SeqStepKind, day: 0, label: null, branch: { waitId: 'q', on: 'sinon' } },
+    ]
+    expect(hintDe(steps, 'c2')).toBe('immédiat · une voie')
+    expect(hintDe(steps, 'autre')).toBe('immédiat · sinon')
+  })
+})
+
 const state = (over: Partial<SalesStateRow> = {}): SalesStateRow => ({
   ...EMPTY_STATE,
   skipped: [],
