@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { schemaFiltres } from "../explorateur/_filtres";
+
 /**
  * Les corps acceptés pour figer un lot — sortis de la route pour être
  * ÉPROUVABLES.
@@ -73,5 +75,32 @@ export const corpsCriteresSchema = z.object({
   totalAttendu: z.number().int().nonnegative(),
 });
 
+/**
+ * LA TROISIÈME PORTE : les filtres de l'explorateur, tels quels.
+ *
+ * Les deux autres ne pouvaient pas la remplacer. Par identifiants, on plafonne
+ * à ce qui est coché — cinq cents fiches, une page à la fois : sans objet sur
+ * un résultat de 34 633 lignes. Par critères, on ne parle que le vocabulaire de
+ * `chercher_entreprises`, neuf drapeaux et quatre sources : figer « WordPress
+ * abandonnés, en Gironde » par là rendrait TOUT LE PARC, puisque ni la
+ * technologie ni le département ne s'y traduisent.
+ *
+ * `schemaFiltres` est celui de l'écran, importé et pas recopié : ce que
+ * l'explorateur affiche et ce qu'on fige traversent la même validation, puis le
+ * même `explorateur_base_sql`. Il n'y a rien à faire diverger.
+ *
+ * `totalAttendu` est le compte qui était affiché au moment du clic. La base le
+ * recompte et REFUSE de créer quoi que ce soit s'il a bougé : c'est ce qui
+ * permet de figer sans transporter d'identifiants sans perdre ce que la règle
+ * d'origine protégeait — le silence d'une divergence.
+ */
+export const corpsExplorateurSchema = z.object({
+  nom: z.string().trim().min(1).max(120),
+  note: z.string().trim().max(500).nullable().optional(),
+  filtres: schemaFiltres,
+  totalAttendu: z.number().int().nonnegative(),
+});
+
 export type CorpsLot = z.infer<typeof corpsSchema>;
 export type CorpsLotCriteres = z.infer<typeof corpsCriteresSchema>;
+export type CorpsLotExplorateur = z.infer<typeof corpsExplorateurSchema>;
