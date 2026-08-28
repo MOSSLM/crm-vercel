@@ -281,6 +281,50 @@ export function DemActionCard({
     setMsg(versions.find((x) => x.variant === v)?.message ?? "");
   };
 
+  /**
+   * « J'ai changé le modèle et la carte dit toujours l'ancien texte. »
+   *
+   * CE N'EST PAS UNE PANNE : le moteur rend le message AU MOMENT où il pose
+   * l'étape et l'écrit dans la charge utile de la tâche ; la carte lit cette
+   * charge utile, jamais le modèle. C'est ce qui garantit que l'agent voit
+   * exactement ce que le moteur a préparé. Le prix est qu'un modèle corrigé ne
+   * rattrape que les tâches créées après — au 28/08/2026, quarante-neuf tâches
+   * « Plaquette » en attente portaient encore le texte d'avant.
+   *
+   * D'OÙ UN BOUTON, ET PAS UN RAFRAÎCHISSEMENT AUTOMATIQUE. Un message qui se
+   * recalculerait à chaque ouverture changerait sous les yeux de quelqu'un qui
+   * vient de le relire, et ne correspondrait plus à ce qui a été journalisé.
+   * Ici l'agent demande, lit, puis décide d'envoyer.
+   *
+   * `versions` étant dérivé de `task.payload`, on demande un rechargement de la
+   * file après coup : sans ça, la bascule entreprise/contact reservirait
+   * l'ancien texte, qui vit encore dans le payload que la carte a en mémoire.
+   */
+  const [rechargeant, setRechargeant] = useState(false);
+  const rechargerDepuisLeModele = async () => {
+    setRechargeant(true);
+    try {
+      const res = await authedFetch("/api/agent/demarchage/recharger-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: task.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        inchange?: boolean;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      if (data.message) setMsg(data.message);
+      toast.success(data.inchange ? "Le modèle n'a pas changé." : "Message rechargé depuis le modèle.");
+      onLogged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Rechargement impossible");
+    } finally {
+      setRechargeant(false);
+    }
+  };
+
   const [att, setAtt] = useState({ demo: false, audit: false });
   useEffect(() => setAtt({ demo: false, audit: false }), [task.id]);
 
@@ -748,6 +792,20 @@ export function DemActionCard({
                   <button className="dm-att" aria-pressed={att.audit} onClick={() => setAtt((a) => ({ ...a, audit: !a.audit }))}>
                     <Icon name="clipboard" className="ico-xs" />
                     rapport d&apos;audit
+                  </button>
+                )}
+                {/* SEULEMENT SUR UNE TÂCHE DE SÉQUENCE : celles qu'une action
+                    `create_task` a posées n'ont aucune étape, donc aucun modèle
+                    à relire — le bouton rendrait une erreur à tous les coups. */}
+                {task.enrollment_id && task.step_id && (
+                  <button
+                    className="dm-att"
+                    disabled={rechargeant || busy}
+                    onClick={rechargerDepuisLeModele}
+                    title="Refaire le texte depuis le modèle actuel de l'étape, avec les variables de ce prospect"
+                  >
+                    <Icon name="refresh" className="ico-xs" />
+                    {rechargeant ? "rechargement…" : "recharger le modèle"}
                   </button>
                 )}
                 <span
