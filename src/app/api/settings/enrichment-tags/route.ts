@@ -7,6 +7,7 @@ import {
   SERVICE_TAGS_TAXONOMY,
   collectServiceTags,
   isServiceTagAllowed,
+  isServiceTagDemarchable,
   isServiceTagKnownToTemplate,
   serviceTagKey,
   serviceTagNearMiss,
@@ -44,6 +45,12 @@ export const GET = withAuth({}, async ({ cors }) => {
     return {
       tag,
       allowed: isServiceTagAllowed(tag, universe.settings),
+      /**
+       * Troisième axe : vend-on à ce métier ? Indépendant d'`allowed`, qui ne
+       * parle que de la POSE du tag. L'isolation vient de l'import ADEME —
+       * l'interdire à la pose n'aurait écarté aucune fiche.
+       */
+      demarchable: isServiceTagDemarchable(tag, universe.settings),
       knownToTemplate: isServiceTagKnownToTemplate(tag),
       /** Tag de la taxonomie dont celui-ci n'est qu'une variante de graphie. */
       nearMiss: serviceTagNearMiss(tag),
@@ -70,13 +77,22 @@ export const PUT = withAuth({}, async ({ req, cors }) => {
   if (!Array.isArray(rawTags)) return jsonError("tags_must_be_array", 400, {}, cors);
 
   const now = new Date().toISOString();
-  const rows: { tag: string; allowed: boolean; updated_at: string }[] = [];
+  const rows: { tag: string; allowed: boolean; demarchable: boolean; updated_at: string }[] = [];
   for (const entry of rawTags) {
     const tag = typeof (entry as { tag?: unknown })?.tag === "string"
       ? ((entry as { tag: string }).tag).trim()
       : "";
     if (!tag) continue;
-    rows.push({ tag, allowed: !!(entry as { allowed?: unknown }).allowed, updated_at: now });
+    // `demarchable` ABSENT vaut `true`, jamais `false` : un appelant qui ignore
+    // ce champ — un script, une ancienne version de la page — ne doit pas
+    // mettre de côté tout le catalogue en un enregistrement.
+    const brut = (entry as { demarchable?: unknown }).demarchable;
+    rows.push({
+      tag,
+      allowed: !!(entry as { allowed?: unknown }).allowed,
+      demarchable: brut === undefined ? true : !!brut,
+      updated_at: now,
+    });
   }
 
   if (rows.length === 0) return jsonError("no_valid_tags", 400, {}, cors);

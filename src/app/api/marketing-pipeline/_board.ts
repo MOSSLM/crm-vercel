@@ -9,6 +9,7 @@ import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
 import { inscriptionVivante, type BoardItem } from "@/components/marketing-pipeline/types";
 import type { SequenceSettings } from "@/components/automations/types";
 import { noteSummaries } from "./_notes";
+import { estMiseDeCote, type ServiceTagSetting } from "@/utils/serviceTags";
 
 /**
  * Construction du tableau d'avancement Marketing & Web.
@@ -490,6 +491,41 @@ export type BoardResult =
  *   fiches archivées, pour pouvoir les relire et les désarchiver. Par défaut il
  *   ne montre que les actives.
  */
+/**
+ * RETIRE DU TABLEAU LES FICHES DONT UN MÉTIER EST FERMÉ.
+ *
+ * LE BESOIN, MOT POUR MOT : « maintenant si il y a isolation je veux plus que
+ * ça se voit dans marketing pipeline, ça les exclut complet. Jusqu'à ce que
+ * j'autorise. Sinon je me mets à faire des actions en lot même sur eux alors
+ * qu'il faut pas. »
+ *
+ * C'EST LE FILTRE QUI DEVAIT DISPARAÎTRE, PAS LES FICHES. Une case à cocher se
+ * décoche, et « tout sélectionner » ne se souvient d'aucun filtre : le seul
+ * endroit où l'exclusion tient est AVANT que la carte existe. Ce qui n'est pas
+ * dans `items` ne peut être atteint par aucun geste de masse.
+ *
+ * ⚠️ LE DÉFAUT PENCHE VERS « ON MONTRE ». Sans réglages — lecture en échec,
+ * migration absente — on n'écarte personne. Un tableau trop large se voit ; un
+ * tableau amputé en silence, non.
+ *
+ * Fonction PURE et exportée pour être testée sans monter un board : c'est
+ * l'idiome du fichier (`missingForSite`, `isEnrichmentDone`).
+ */
+export function retirerMetiersMisDeCote<T extends { service_tags: string[] }>(
+  items: readonly T[],
+  reglages: readonly ServiceTagSetting[] | null | undefined,
+): { gardees: T[]; masquees: number; metiers: string[] } {
+  const gardees = items.filter((item) => !estMiseDeCote(item.service_tags, reglages));
+  const metiers = [
+    ...new Set(
+      (reglages ?? [])
+        .filter((r) => r.demarchable === false && typeof r.tag === "string")
+        .map((r) => r.tag as string),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "fr"));
+  return { gardees, masquees: items.length - gardees.length, metiers };
+}
+
 export async function buildBoard(
   opts: { ownerId?: string; archived?: boolean } = {},
 ): Promise<BoardResult> {
@@ -621,7 +657,7 @@ export async function buildBoard(
   // PostgREST plafonne une réponse à 1 000 lignes : avec assez de démos, un
   // « select all » finissait par tronquer la liste des templates (le template
   // choisi disparaissait du menu) et par perdre des sites d'entreprises.
-  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes, plaquettesRes] =
+  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes, plaquettesRes, metiersRes] =
     await Promise.all([
     supabase
       .from("entreprises")
@@ -689,6 +725,14 @@ export async function buildBoard(
           .select("entreprise_id, plaquette_token, plaquette_cree_le, plaquette_vues, plaquette_vu_le")
           .in("entreprise_id", entIds)
       : Promise.resolve({ data: [] as PlaquetteRow[], error: null }),
+    // LES MÉTIERS MIS DE CÔTÉ. Lus à chaque construction, jamais figés : c'est
+    // ce qui fait qu'un métier rouvert dans les Paramètres ramène ses fiches au
+    // rafraîchissement suivant, sans population à reconstruire.
+    //
+    // L'échec n'est PAS fatal, et le défaut penche du bon côté : sans réglages
+    // on n'écarte personne. Un tableau trop large se voit ; un tableau amputé
+    // en silence, non.
+    supabase.from("enrichment_tag_settings").select("tag, allowed, demarchable"),
   ]);
 
   if (entsRes.error) return { ok: false, error: entsRes.error.message, status: 500 };
@@ -1091,10 +1135,27 @@ export async function buildBoard(
   }
   // `other_opportunities` : on ne masque pas l'existence des autres deals, on
   // arrête juste d'en faire des cartes séparées.
-  const dedupedItems = [...bestByEnterprise.values()].map((item) => ({
+  const tousLesItems = [...bestByEnterprise.values()].map((item) => ({
     ...item,
     other_opportunities: item.entreprise_id != null ? (otherOpportunities.get(item.entreprise_id) ?? 0) : 0,
   }));
+
+  /* ── LES MÉTIERS MIS DE CÔTÉ SORTENT DU TABLEAU ────────────────────────────
+   * Le pourquoi est sur `retirerMetiersMisDeCote`. Ici on ne fait que
+   * l'appliquer, et rendre le compte pour que l'écran l'annonce.
+   *
+   * AUCUNE EXCEPTION POUR LES FICHES ENGAGÉES, et c'est mesuré, pas supposé :
+   * sur les 28 364 mises de côté au 29/08/2026, DEUX ont une conversation en
+   * cours. Elles restent visibles là où on les travaille — la file de tâches,
+   * qui lit les tâches et non ce tableau — donc rien ne se perd. Coder une
+   * exception pour deux lignes aurait fait une règle de plus à retenir.
+   */
+  const tri = retirerMetiersMisDeCote(
+    tousLesItems,
+    (metiersRes.data ?? []) as ServiceTagSetting[],
+  );
+  const dedupedItems = tri.gardees;
+  const misDeCote = { masquees: tri.masquees, metiers: tri.metiers };
 
   const pipelines = (
     (pipelinesRes.data ?? []) as Array<{
@@ -1120,6 +1181,7 @@ export async function buildBoard(
       has_validated_column: hasValidatedColumn,
       has_archivage: hasArchivage,
       has_plaquette: hasPlaquette,
+      mis_de_cote: misDeCote,
     },
   };
 }

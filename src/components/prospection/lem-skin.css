@@ -739,3 +739,101 @@
 .lem-skin .lem-repli .nom { font-weight: 600; font-size: 14px; }
 .lem-skin .lem-repli .chevron { flex-shrink: 0; color: var(--lem-gris-2); }
 .lem-skin .lem-replie { border-top: 1px solid var(--lem-bord); padding: 12px; display: grid; gap: 12px; }
+
+/* ── La chaîne : les groupes d'un lot ──────────────────────────────────────
+   Des CARTES et non un tableau, à l'inverse de l'écran Lots : la question
+   n'est plus comparative — « lequel de mes lots » se lit sur des colonnes
+   alignées, « où en sont mes fiches » se lit groupe par groupe, et chaque
+   groupe porte trois informations de natures différentes (un compte, un
+   acteur, un geste) qui ne s'alignent pas en colonnes sans se déformer. */
+.lem-skin .ch-voie { margin-top: 22px; }
+.lem-skin .ch-voie-titre {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 10px; font-size: 15px; font-weight: 650; color: var(--lem-encre);
+}
+.lem-skin .ch-voie-sous { font-size: 12px; font-weight: 400; color: var(--lem-gris-2); }
+
+/* `auto-fill` et non `auto-fit` : à trois cartes dans la voie « trouver », un
+   `auto-fit` les étirerait sur toute la largeur et ferait croire à trois
+   groupes énormes. La largeur d'une carte doit rester la même d'une voie à
+   l'autre — c'est ce qui rend les comptes comparables à l'œil. */
+.lem-skin .ch-grille {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+.lem-skin .ch-carte {
+  display: grid; gap: 8px; padding: 12px;
+  background: var(--lem-surface); border: 1px solid var(--lem-bord);
+  border-radius: var(--lem-rayon); box-shadow: var(--lem-ombre);
+}
+/* Un groupe vide reste LISIBLE, seulement en retrait : le faire disparaître
+   effacerait la preuve que le travail a marché. */
+.lem-skin .ch-carte[data-vide="1"] { opacity: .5; box-shadow: none; }
+
+.lem-skin .ch-tete { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.lem-skin .ch-nom { font-size: 13px; font-weight: 650; color: var(--lem-encre); cursor: help; }
+.lem-skin .ch-qui {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-size: 10.5px; padding: 2px 7px; border-radius: 999px; cursor: help;
+  background: var(--lem-survol); color: var(--lem-gris-2); border: 1px solid var(--lem-bord);
+}
+/* Trois teintes, et trois seulement. « Au bureau » et « à l'œil » sont les
+   deux qui coûtent une présence : elles doivent se voir sans être lues. */
+.lem-skin .ch-carte[data-qui="serveur"] .ch-qui {
+  background: var(--lem-bleu-voile); color: var(--lem-bleu); border-color: var(--lem-bleu-pale);
+}
+.lem-skin .ch-carte[data-qui="local"] .ch-qui {
+  background: var(--lem-attention-voile); color: var(--lem-attention); border-color: var(--lem-attention);
+}
+.lem-skin .ch-carte[data-qui="humain"] .ch-qui {
+  background: var(--lem-danger-voile); color: var(--lem-danger); border-color: var(--lem-danger);
+}
+
+.lem-skin .ch-compte { display: flex; align-items: baseline; gap: 8px; }
+.lem-skin .ch-compte > strong {
+  font-size: 24px; font-weight: 680; line-height: 1; color: var(--lem-encre);
+  font-variant-numeric: tabular-nums;
+}
+.lem-skin .ch-part { font-size: 11px; color: var(--lem-gris-3); }
+
+.lem-skin .ch-jauge {
+  display: block; height: 4px; border-radius: 999px; overflow: hidden;
+  background: var(--lem-survol); border: 1px solid var(--lem-bord);
+}
+.lem-skin .ch-jauge > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--lem-bleu); transition: width .18s ease;
+}
+
+.lem-skin .ch-geste { font-size: 11.5px; color: var(--lem-bleu-2); font-weight: 550; }
+
+.lem-skin .ch-replie {
+  justify-self: start; padding: 0; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--lem-gris-2); text-decoration: underline;
+}
+.lem-skin .ch-replie:hover { color: var(--lem-encre); }
+
+.lem-skin .ch-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lem-skin .ch-liste > li { display: grid; gap: 2px; font-size: 11.5px; }
+.lem-skin .ch-ville { color: var(--lem-gris-3); font-size: 10.5px; }
+.lem-skin .ch-manque { color: var(--lem-danger); font-size: 10.5px; }
+.lem-skin .ch-reste { color: var(--lem-gris-2); }
+
+/* La bande « qui attend quoi » — la première chose lue, donc en haut et à
+   plat. Un total à côté, jamais dedans : il ne s'additionne pas aux autres. */
+.lem-skin .ch-attentes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.lem-skin .ch-attente {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px; font-size: 12px;
+  background: var(--lem-surface); border: 1px solid var(--lem-bord); color: var(--lem-gris-2);
+}
+.lem-skin .ch-attente > strong { color: var(--lem-encre); font-variant-numeric: tabular-nums; }
+.lem-skin .ch-attente[data-qui="local"] { border-color: var(--lem-attention); }
+.lem-skin .ch-attente[data-qui="humain"] { border-color: var(--lem-danger); }
+
+.lem-skin .ch-note {
+  display: flex; align-items: flex-start; gap: 7px; margin: 0 0 4px;
+  font-size: 12px; line-height: 1.5; color: var(--lem-gris-2);
+}
+.lem-skin .ch-note > svg { flex-shrink: 0; margin-top: 3px; }

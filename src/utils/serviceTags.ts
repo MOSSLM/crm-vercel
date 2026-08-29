@@ -187,6 +187,14 @@ export const serviceTagNearMiss = (tag: string): string | null => {
 export interface ServiceTagSetting {
   tag?: unknown;
   allowed?: unknown;
+  /**
+   * Vend-on à ce métier aujourd'hui ? Axe INDÉPENDANT de `allowed`, et les
+   * confondre casse quelque chose : `allowed` dit si l'enrichissement peut
+   * POSER le tag, `demarchable` si on veut de ces artisans dans nos files.
+   * L'isolation vient de l'import ADEME, pas de l'enrichissement — la bloquer
+   * à la pose n'aurait écarté personne.
+   */
+  demarchable?: unknown;
 }
 
 const compareTags = (a: string, b: string): number =>
@@ -378,6 +386,66 @@ export function rewriteNestedServiceTag(
  * Paramètres afficheraient « autorisé » un tag que la fiche ne propose pas.
  * L'enregistrement des Paramètres fait le ménage de ces doublons.
  */
+/**
+ * VEND-ON À CE MÉTIER AUJOURD'HUI ?
+ *
+ * Même contrat que `isServiceTagAllowed`, y compris le défaut : une ligne
+ * absente ne met rien de côté. C'est ce qui permet qu'un libellé nouveau
+ * apparaisse dans les files au lieu d'en disparaître en silence.
+ *
+ * Résolu par CLÉ CANONIQUE : mettre « Isolation des combles perdus » de côté
+ * doit valoir pour toutes ses graphies, sinon la population reviendrait par la
+ * porte d'à côté au premier import qui capitalise autrement.
+ */
+export function isServiceTagDemarchable(
+  tag: string,
+  settings: readonly ServiceTagSetting[] | null | undefined
+): boolean {
+  const key = serviceTagKey(tag);
+  return !(settings ?? []).some(
+    (s) => s.demarchable === false && typeof s.tag === 'string' && serviceTagKey(s.tag) === key
+  );
+}
+
+/**
+ * Cette fiche est-elle mise de côté par l'un de ses métiers ?
+ *
+ * ⚠️ LA PRÉSENCE SUFFIT, ET IL N'Y A PAS D'EXCEPTION « IL FAIT AUSSI DE LA
+ * CLIM ». La règle du propriétaire, mot pour mot : « isolation les exclut pour
+ * le moment, c'est un service FORT, on peut pas présenter un site démo sans
+ * ça. » Un poseur d'isolation qui fait aussi de la clim recevrait une démo où
+ * son métier principal n'a aucune page — pire qu'aucune démo.
+ *
+ * Une fiche SANS AUCUN TAG n'est jamais mise de côté : l'absence n'est pas une
+ * information tant que l'enrichissement n'est pas passé.
+ */
+export function estMiseDeCote(
+  tags: readonly string[] | null | undefined,
+  settings: readonly ServiceTagSetting[] | null | undefined
+): boolean {
+  return (tags ?? []).some((t) => t && !isServiceTagDemarchable(t, settings));
+}
+
+/**
+ * Porte-t-elle AUSSI un métier explicitement déclaré vendable ?
+ *
+ * Ne rattrape personne — c'est un COMPTEUR : il dit combien de fiches
+ * reviendront en premier le jour où le métier mis de côté sera débloqué.
+ * « Explicitement déclaré » et non « pas mis de côté » : un libellé RGE
+ * générique comme « Travaux d'efficacité énergétique » ne prouve aucun métier.
+ */
+export function porteUnMetierVendu(
+  tags: readonly string[] | null | undefined,
+  settings: readonly ServiceTagSetting[] | null | undefined
+): boolean {
+  const declares = new Set(
+    (settings ?? [])
+      .filter((s) => s.demarchable === true && typeof s.tag === 'string')
+      .map((s) => serviceTagKey(s.tag as string))
+  );
+  return (tags ?? []).some((t) => t && declares.has(serviceTagKey(t)));
+}
+
 export function isServiceTagAllowed(
   tag: string,
   settings: readonly ServiceTagSetting[] | null | undefined

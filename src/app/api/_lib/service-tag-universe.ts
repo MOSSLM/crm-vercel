@@ -73,7 +73,7 @@ export async function loadServiceTagUniverse(
 ): Promise<ServiceTagUniverse> {
   const [usageRes, settingsRes] = await Promise.all([
     supabase.rpc("service_tag_usage_json"),
-    supabase.from("enrichment_tag_settings").select("tag, allowed"),
+    supabase.from("enrichment_tag_settings").select("tag, allowed, demarchable"),
   ]);
 
   if (usageRes.error) throw new Error(usageRes.error.message);

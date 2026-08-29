@@ -27,6 +27,17 @@ import { ServiceTagMergePanel } from "./ServiceTagMergePanel";
 export interface ServiceTagRow {
   tag: string;
   allowed: boolean;
+  /**
+   * Vend-on à ce métier aujourd'hui ? TROISIÈME axe, indépendant des deux
+   * autres — et le seul qui parle de commerce plutôt que de rendu.
+   *
+   * L'isolation en est l'exemple : ses libellés viennent de l'import ADEME, pas
+   * de l'enrichissement, donc les passer en `allowed = false` n'écarterait
+   * personne. Ce qu'on veut, c'est que leurs fiches sortent des files de
+   * démarchage tant que le gabarit n'a pas de page pour ce service — un site
+   * démo qui ampute le métier principal du prospect est pire que pas de démo.
+   */
+  demarchable: boolean;
   knownToTemplate: boolean;
   /**
    * Tag de la taxonomie dont celui-ci n'est qu'une variante de graphie, ou null.
@@ -72,6 +83,13 @@ export function EnrichmentTagsSettings() {
     setSaved(false);
   };
 
+  /** Le troisième axe. Rouvrir un métier ici fait revenir ses fiches dans les
+      files au prochain affichage — aucune population n'est à reconstruire. */
+  const toggleDemarchable = (tag: string, demarchable: boolean) => {
+    setTags((prev) => prev.map((t) => (t.tag === tag ? { ...t, demarchable } : t)));
+    setSaved(false);
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return tags;
@@ -79,6 +97,7 @@ export function EnrichmentTagsSettings() {
   }, [tags, search]);
 
   const blockedCount = useMemo(() => tags.filter((t) => !t.allowed).length, [tags]);
+  const misDeCoteCount = useMemo(() => tags.filter((t) => !t.demarchable).length, [tags]);
 
   /**
    * Divergences de graphie portées par quelque chose : quelqu'un a nommé ce
@@ -107,7 +126,13 @@ export function EnrichmentTagsSettings() {
       const res = await authedFetch("/api/settings/enrichment-tags", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: tags.map((t) => ({ tag: t.tag, allowed: t.allowed })) }),
+        body: JSON.stringify({
+          tags: tags.map((t) => ({
+            tag: t.tag,
+            allowed: t.allowed,
+            demarchable: t.demarchable,
+          })),
+        }),
       });
       if (!res.ok) throw new Error("save_failed");
       setSaved(true);
@@ -130,6 +155,8 @@ export function EnrichmentTagsSettings() {
     if (t.nearMiss && porteurs(t) > 0) return "border-l-2 border-l-red-500 bg-red-500/[0.07]";
     if (t.allowed && !t.knownToTemplate) return "border-l-2 border-l-red-500 bg-red-500/[0.07]";
     if (!t.allowed) return "border-l-2 border-l-orange-500 bg-orange-500/[0.07]";
+    // Mis de côté : ni cassé ni refusé — en attente d'une page de service.
+    if (!t.demarchable) return "border-l-2 border-l-sky-500 bg-sky-500/[0.07]";
     return "border-l-2 border-l-emerald-500 bg-emerald-500/[0.06]";
   };
 
@@ -212,6 +239,15 @@ export function EnrichmentTagsSettings() {
                       ? `${blockedCount} tag(s) interdit(s)`
                       : "Tous les tags autorisés"}
                   </Badge>
+                  {/* Compté à part de « interdit » : ce n'est pas le même
+                      refus. Un tag interdit ne doit jamais être posé ; un
+                      métier mis de côté est vrai, on ne sait juste pas encore
+                      le servir. */}
+                  {misDeCoteCount > 0 && (
+                    <Badge variant="outline">
+                      {misDeCoteCount} métier(s) mis de côté
+                    </Badge>
+                  )}
                 </div>
               </div>
 
@@ -259,11 +295,36 @@ export function EnrichmentTagsSettings() {
                           )
                         )}
                       </Label>
-                      <Switch
-                        id={`tag-${t.tag}`}
-                        checked={t.allowed}
-                        onCheckedChange={(value) => toggle(t.tag, value)}
-                      />
+                      <div className="flex flex-shrink-0 items-center gap-4">
+                        {/* DEUX INTERRUPTEURS, ET L'ORDRE COMPTE : « posable »
+                            puis « vendable ». Les empiler dans un seul
+                            basculeur fondrait deux décisions sans rapport —
+                            bloquer un tag mal orthographié n'a rien à voir avec
+                            écarter un métier qu'on ne sait pas encore servir. */}
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Posable
+                          </span>
+                          <Switch
+                            id={`tag-${t.tag}`}
+                            checked={t.allowed}
+                            onCheckedChange={(value) => toggle(t.tag, value)}
+                          />
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                            title="Vend-on à ce métier aujourd'hui ? Fermé, ses fiches sortent des files de démarchage — sans être supprimées. Rouvrir les fait toutes revenir."
+                          >
+                            Vendable
+                          </span>
+                          <Switch
+                            id={`vend-${t.tag}`}
+                            checked={t.demarchable}
+                            onCheckedChange={(value) => toggleDemarchable(t.tag, value)}
+                          />
+                        </div>
+                      </div>
                     </div>
                   ))
                 )}

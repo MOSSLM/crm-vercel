@@ -1910,8 +1910,33 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onArchive: openArchive,
   };
 
+  const misDeCote = board?.mis_de_cote;
+
   return (
     <>
+      {/* CE QUE LE TABLEAU NE MONTRE PAS. Les fiches d'un métier fermé sont
+          retirées côté serveur — c'est la seule façon qu'un geste de masse ne
+          puisse pas les atteindre. Mais un tableau qui rétrécit en silence fait
+          chercher une fiche qu'on croit perdue : on l'annonce, avec le nombre
+          et le métier responsable. */}
+      {misDeCote && misDeCote.masquees > 0 && (
+        <div
+          className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-sky-500/30 bg-sky-500/[0.07] px-3 py-2 text-xs text-muted-foreground"
+          role="status"
+        >
+          <strong className="text-foreground">
+            {misDeCote.masquees.toLocaleString("fr-FR")} fiche(s) masquée(s)
+          </strong>
+          <span>
+            — métier mis de côté ({misDeCote.metiers.slice(0, 2).join(", ")}
+            {misDeCote.metiers.length > 2 && ` +${misDeCote.metiers.length - 2}`}). Elles ne sont
+            ni supprimées ni archivées, et aucun geste de masse ne peut les atteindre.
+          </span>
+          <a className="underline underline-offset-2 hover:text-foreground" href="/settings">
+            Rouvrir un métier
+          </a>
+        </div>
+      )}
       <PipelineMatrix
         items={board?.items ?? []}
         agents={board?.agents ?? []}

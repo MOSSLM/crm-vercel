@@ -375,6 +375,18 @@ export interface BoardData {
    * afficherait « aucune » sur toutes les lignes ferait cliquer pour rien.
    */
   has_plaquette?: boolean;
+  /**
+   * Ce que le tableau NE MONTRE PAS, et pourquoi.
+   *
+   * Les fiches dont un métier est fermé (`enrichment_tag_settings.demarchable
+   * = false`) sont retirées côté serveur, avant que la carte existe : c'est la
+   * seule façon qu'un geste de masse ne puisse pas les atteindre. Un filtre se
+   * décoche, et « tout sélectionner » ne se souvient d'aucun filtre.
+   *
+   * Le compte est rendu pour être AFFICHÉ : un tableau qui rétrécit sans
+   * explication fait chercher une fiche qu'on croit perdue, puis la recréer.
+   */
+  mis_de_cote?: { masquees: number; metiers: string[] };
 }
 
 /**

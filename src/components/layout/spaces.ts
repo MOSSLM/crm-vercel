@@ -19,6 +19,7 @@ import {
   Swords,
   Copy,
   Workflow,
+  Route,
   User,
   Building2,
   UserCheck,
@@ -155,6 +156,12 @@ export const SPACES: Space[] = [
       // Il se range juste avant le lissage parce que c'est lui qui dit combien
       // il reste à lisser, et sur quel lot.
       { title: "Lots", href: "/prospection/lots", icon: Layers },
+      // LA CHAÎNE : le même lot, vu par l'ÉTAT de ses fiches et non par les
+      // pièces qui leur manquent. Les Lots comptent des pièces — une fiche à
+      // qui il en manque trois y apparaît trois fois — quand la chaîne range
+      // chaque fiche dans un groupe et un seul. C'est la lecture qui permet de
+      // dire « ce groupe-là, on le met en séquence ».
+      { title: "La chaîne", href: "/prospection/chaine", icon: Route },
       { title: "Lissage", href: "/prospection/lissage", icon: Sparkles },
       { title: "Choix du SIRET", href: "/prospection/identite", icon: Fingerprint },
       { title: "Modèles", href: "/automations/modeles", icon: LayoutTemplate },
