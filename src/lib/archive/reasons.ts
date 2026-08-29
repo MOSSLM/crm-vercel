@@ -20,7 +20,23 @@ export const ARCHIVE_REASONS = [
   { value: 'doublon', label: 'Doublon' },
   { value: 'deja_client', label: 'Devenu client' },
   { value: 'autre', label: 'Autre' },
-] as const satisfies readonly { value: string; label: string; needsConcurrent?: boolean }[];
+  /**
+   * MOTIF MACHINE, jamais proposé à un humain (`machine: true` — l'ArchiveDialog
+   * l'écarte). Posé par les triggers du 30/08/2026 quand une fiche porte un
+   * métier mis de côté, et retiré par `rouvrir_metier()`.
+   *
+   * Il lui fallait sa propre valeur plutôt que « hors cible » : celui-là est un
+   * verdict définitif pris par quelqu'un, celui-ci une mise de côté temporaire
+   * que la réouverture du métier annule. Les confondre ferait lire « on a jugé
+   * ce prospect hors cible » là où personne n'a rien jugé.
+   */
+  { value: 'metier_mis_de_cote', label: 'Métier mis de côté', machine: true },
+] as const satisfies readonly {
+  value: string;
+  label: string;
+  needsConcurrent?: boolean;
+  machine?: boolean;
+}[];
 
 export type ArchiveReason = (typeof ARCHIVE_REASONS)[number]['value'];
 
@@ -37,6 +53,17 @@ export const ARCHIVE_REASON_LABEL = Object.fromEntries(
 /** Libellé affichable, avec repli sur la valeur brute si la base a dérivé. */
 export const archiveReasonLabel = (reason: string | null | undefined): string =>
   (reason && ARCHIVE_REASON_LABEL[reason as ArchiveReason]) || reason || '';
+
+/**
+ * Les motifs qu'un humain peut CHOISIR — tout sauf ceux que les triggers
+ * posent. Un motif machine reste affichable (il a son libellé), il n'est
+ * simplement pas dans la liste déroulante : le proposer laisserait quelqu'un
+ * archiver « métier mis de côté » à la main, et `rouvrir_metier()` ne saurait
+ * pas quoi en faire.
+ */
+export const ARCHIVE_REASONS_CHOISISSABLES = ARCHIVE_REASONS.filter(
+  (r) => !('machine' in r && r.machine),
+);
 
 /** Seul « refait par un concurrent » exige de dire lequel. */
 export const reasonNeedsConcurrent = (reason: string | null | undefined): boolean =>

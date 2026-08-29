@@ -12,6 +12,11 @@ import {
   loadPendingEntrepriseIds,
   type QueueCompany,
 } from "../_lib";
+import {
+  estMiseDeCote,
+  normalizeServiceTags,
+  type ServiceTagSetting,
+} from "@/utils/serviceTags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +65,23 @@ export const GET = withAuth(
       .filter(Boolean);
 
     const sc = getServiceClient();
-    const [blacklist, pending] = await Promise.all([loadBlacklist(), loadPendingEntrepriseIds()]);
+    // LES MÉTIERS MIS DE CÔTÉ NE REMONTENT PAS DANS LA FILE. On ne demande pas
+    // à un agent de trancher sur une fiche qu'on ne veut pas vendre : sa
+    // décision serait de toute façon annulée par la garde en base, et il aurait
+    // travaillé pour rien.
+    //
+    // Filtré EN MÉMOIRE et non par un `.filter()` PostgREST : la règle croise
+    // `service_tags` avec une table de réglages, ce qu'une requête de liste ne
+    // sait pas exprimer. La boucle raffine déjà de la même façon pour l'URL et
+    // les domaines vus, et elle sait se remplir sur plusieurs passes.
+    const [blacklist, pending, reglagesRes] = await Promise.all([
+      loadBlacklist(),
+      loadPendingEntrepriseIds(),
+      sc.from("enrichment_tag_settings").select("tag, allowed, demarchable"),
+    ]);
+    // Réglages illisibles = on n'écarte personne : une file trop large se voit,
+    // une file amputée en silence ferait croire le stock épuisé.
+    const reglagesMetiers = (reglagesRes.data ?? []) as ServiceTagSetting[];
 
     /**
      * Filtres exprimables en base, décrits une seule fois puis appliqués tels
@@ -126,6 +147,7 @@ export const GET = withAuth(
         if (picked.length >= limit) break;
         if (pending.has(Number(row.id))) continue;
         if (isBlacklisted(row, blacklist)) continue;
+        if (estMiseDeCote(normalizeServiceTags(row.service_tags), reglagesMetiers)) continue;
 
         // Une `canonical_url` vide compte comme « sans site ».
         const hasUrl = Boolean(row.canonical_url?.trim());
