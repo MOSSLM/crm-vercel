@@ -238,12 +238,35 @@ export function DemActionCard({
   const [basculeAppel, setBasculeAppel] = useState(true);
   const [sortie, setSortie] = useState(false);
 
+  // ── il a pris contact de lui-même ───────────────────────────────────────
+  const [rappel, setRappel] = useState(false);
+  const [canalRappel, setCanalRappel] = useState<"call" | "whatsapp" | "email">("call");
+  /**
+   * Les pièces cochées par défaut, et c'est le cœur du geste.
+   *
+   * Quand un prospect appelle, on lui envoie ce qu'on a — c'est le réflexe, et
+   * c'est exactement ce qui n'était journalisé nulle part. Les décocher est
+   * donc l'exception, pas la règle : la case part cochée dès que la pièce
+   * existe. L'audit, lui, part DÉCOCHÉ — il n'est presque jamais envoyé de
+   * vive voix, et une case cochée par défaut sur un envoi qui n'a pas eu lieu
+   * écrirait un faux dans le fil.
+   */
+  const [pieces, setPieces] = useState<Record<"demo" | "plaquette" | "audit", boolean>>({
+    demo: true,
+    plaquette: true,
+    audit: false,
+  });
+  const [envoiRappel, setEnvoiRappel] = useState(false);
+
   // Changer de tâche referme tout : un panneau resté ouvert d'un prospect à
   // l'autre ferait appliquer à l'un ce qu'on avait commencé à écrire pour
   // l'autre.
   useEffect(() => {
     setDeCote(false);
     setHorsCanal(false);
+    setRappel(false);
+    setCanalRappel("call");
+    setPieces({ demo: true, plaquette: true, audit: false });
     setDateRetour(dansNJours(14));
     setMotif("");
     setBasculeAppel(true);
@@ -666,6 +689,78 @@ export function DemActionCard({
     }
   };
 
+  /**
+   * IL A PRIS CONTACT DE LUI-MÊME — la porte de sortie du scénario.
+   *
+   * Le seul geste de cette carte qui ne suit pas la séquence mais la QUITTE.
+   * Un prospect qui rappelle a fait en cinq minutes ce que la séquence met
+   * trois semaines à obtenir, et le scénario, lui, ne sait pas le voir : il
+   * continue de compter un silence qui n'a pas eu lieu, et pose une relance
+   * « je me permets de revenir vers vous » à quelqu'un qui vient de parler.
+   *
+   * Un clic écrit les six choses qui étaient à écrire (l'entrant, les pièces
+   * envoyées à la main, la tâche, `replied`, l'étape, la bascule vers « S4 —
+   * Il a rappelé ») — le détail et l'ordre sont dans l'en-tête de la route.
+   *
+   * ⚠️ RIEN N'EST ENVOYÉ ICI. On DÉCLARE ce qui est déjà parti de la main de
+   * l'agent, pendant la conversation. C'est la même distinction que
+   * `/api/messages/log`, et elle décide de ce qu'on ose mettre derrière une
+   * case cochée par défaut.
+   */
+  const declarerRappel = async () => {
+    if (!note.trim()) {
+      toast.error("Note ce qu'il a dit : c'est tout ce qui restera de cet appel.");
+      return;
+    }
+    setEnvoiRappel(true);
+    try {
+      const res = await authedFetch("/api/agent/demarchage/il-a-rappele", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: task.id,
+          entreprise_id: task.entreprise_id ?? undefined,
+          canal: canalRappel,
+          note: note.trim(),
+          pieces: (["demo", "plaquette", "audit"] as const).filter((p) => pieces[p]),
+        }),
+      });
+      const corps = (await res.json().catch(() => ({}))) as {
+        pieces_journalisees?: string[];
+        pieces_sans_lien?: string[];
+        sequence?: { inscrit?: boolean; refus?: string | null };
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(corps?.message || corps?.error || "Action impossible.");
+        return;
+      }
+
+      // CE QUI N'A PAS PU S'ÉCRIRE SE DIT, et se dit en premier : une pièce
+      // cochée sans lien disponible n'est pas consignée, et l'agent doit le
+      // savoir avant de passer au suivant.
+      const manquantes = corps.pieces_sans_lien ?? [];
+      if (manquantes.length > 0) {
+        toast.warning(
+          `Consigné, sauf ${manquantes.join(" et ")} : aucun lien disponible pour ce prospect.`,
+        );
+      } else if (corps.sequence?.inscrit) {
+        toast.success("Consigné. Il passe sur « S4 — Il a rappelé », l'appel de suite arrive dans la file.");
+      } else {
+        // La bascule a refusé (plus aucun canal, séquence absente). Le reste
+        // est écrit : on le dit, plutôt que d'annoncer un succès entier.
+        toast.warning("Échange consigné, mais la séquence de suite n'a pas pu s'ouvrir.");
+      }
+      setRappel(false);
+      onRetire();
+    } catch {
+      toast.error("Action impossible.");
+    } finally {
+      setEnvoiRappel(false);
+    }
+  };
+
   return (
     <section className="dm-card" style={{ ["--k" as string]: ch.c, ["--kt" as string]: ch.c + "1a" }}>
       <div className="dm-card-h">
@@ -1062,9 +1157,33 @@ export function DemActionCard({
           </>
         )}
 
-        {/* ── ni oui ni non : mettre de côté, ou sortir du canal ── */}
-        {task.kind !== "wait" && (
-          <div className="dm-side-acts">
+        {/* ── ni oui ni non : mettre de côté, sortir du canal, ou sortir du
+            scénario. LA BARRE EST RENDUE SUR TOUS LES TYPES DE TÂCHE, attentes
+            comprises — c'est précisément sur une attente qu'on découvre qu'il a
+            appelé, puisque c'est là que la séquence croit qu'il se tait. */}
+        <div className="dm-side-acts">
+          {/* IL A PRIS CONTACT DE LUI-MÊME — en tête, et sur toute fiche.
+              Ce n'est pas une variante des trois autres : les trois autres
+              rangent un prospect qui n'a rien dit, celui-ci ramasse un prospect
+              qui a parlé. C'est le seul geste de la carte qui rapporte de
+              l'information ENTRANTE, et il ne doit pas se chercher. */}
+          <button
+            type="button"
+            className="dm-side-b"
+            aria-pressed={rappel}
+            disabled={busy || envoiRappel}
+            title="Il a appelé, écrit, ou répondu hors séquence — on consigne l'échange et ce qu'on lui a envoyé."
+            onClick={() => {
+              setRappel((v) => !v);
+              setDeCote(false);
+              setHorsCanal(false);
+              setMotif("");
+            }}
+          >
+            <Icon name="phone" className="ico-sm" />
+            Il m&apos;a rappelé
+          </button>
+          {task.kind !== "wait" && (
             <button
               type="button"
               className="dm-side-b"
@@ -1073,6 +1192,7 @@ export function DemActionCard({
               onClick={() => {
                 setDeCote((v) => !v);
                 setHorsCanal(false);
+                setRappel(false);
                 // Le motif est propre à chaque geste : « il est en congés » n'a
                 // rien à faire dans la note d'une sortie de canal.
                 setMotif("");
@@ -1081,41 +1201,131 @@ export function DemActionCard({
               <Icon name="clock" className="ico-sm" />
               Mettre de côté
             </button>
-            {/* Décider d'appeler plutôt que d'écrire ne devrait pas coûter un
-                faux « Fait » : la tâche change de canal, elle ne se ferme pas.
-                Absent sur un appel (il l'est déjà) et sur une attente (il n'y a
-                rien à envoyer). */}
-            {isMessageKind(task.kind) && (
-              <button
-                type="button"
-                className="dm-side-b"
-                disabled={busy}
-                title="Transformer cette tâche en appel — même prospect, même étape de séquence."
-                onClick={onBasculerEnAppel}
-              >
-                <Icon name="phone" className="ico-sm" />
-                Appeler plutôt
-              </button>
-            )}
-            {/* Une sortie de canal n'a de sens que là où le canal peut manquer :
-                un numéro sans compte WhatsApp, un contact sans LinkedIn. Un
-                téléphone, lui, sonne ou ne sonne pas. */}
-            {isMessageKind(task.kind) && (
-              <button
-                type="button"
-                className="dm-side-b danger"
-                aria-pressed={horsCanal}
-                disabled={busy || sortie}
-                onClick={() => {
-                  setHorsCanal((v) => !v);
-                  setDeCote(false);
-                  setMotif("");
-                }}
-              >
-                <Icon name="phoneOff" className="ico-sm" />
-                Pas sur {ch.lb}
-              </button>
-            )}
+          )}
+          {/* Décider d'appeler plutôt que d'écrire ne devrait pas coûter un
+              faux « Fait » : la tâche change de canal, elle ne se ferme pas.
+              Absent sur un appel (il l'est déjà) et sur une attente (il n'y a
+              rien à envoyer). */}
+          {isMessageKind(task.kind) && (
+            <button
+              type="button"
+              className="dm-side-b"
+              disabled={busy}
+              title="Transformer cette tâche en appel — même prospect, même étape de séquence."
+              onClick={onBasculerEnAppel}
+            >
+              <Icon name="phone" className="ico-sm" />
+              Appeler plutôt
+            </button>
+          )}
+          {/* Une sortie de canal n'a de sens que là où le canal peut manquer :
+              un numéro sans compte WhatsApp, un contact sans LinkedIn. Un
+              téléphone, lui, sonne ou ne sonne pas. */}
+          {isMessageKind(task.kind) && (
+            <button
+              type="button"
+              className="dm-side-b danger"
+              aria-pressed={horsCanal}
+              disabled={busy || sortie}
+              onClick={() => {
+                setHorsCanal((v) => !v);
+                setDeCote(false);
+                setRappel(false);
+                setMotif("");
+              }}
+            >
+              <Icon name="phoneOff" className="ico-sm" />
+              Pas sur {ch.lb}
+            </button>
+          )}
+        </div>
+
+        {/* ── il a pris contact de lui-même ─────────────────────────────── */}
+        {rappel && (
+          <div className="dm-panel">
+            <div className="dm-lbl">
+              Il a pris contact de lui-même
+              <span>on sort du scénario</span>
+            </div>
+
+            {/* PAR OÙ. L'appel domine largement — c'est le geste d'un artisan
+                qui a le téléphone dans la main — mais un « oui c'est bien moi »
+                sur WhatsApp est le même événement du point de vue du CRM : le
+                prospect a parlé, hors de ce qu'on attendait. */}
+            <div className="dm-outs">
+              {(
+                [
+                  { id: "call", lb: "Il a appelé" },
+                  { id: "whatsapp", lb: "Il a écrit sur WhatsApp" },
+                  { id: "email", lb: "Il a répondu par e-mail" },
+                ] as const
+              ).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="dm-out"
+                  aria-pressed={canalRappel === c.id}
+                  onClick={() => setCanalRappel(c.id)}
+                >
+                  {c.lb}
+                </button>
+              ))}
+            </div>
+
+            {/* CE QU'ON LUI A ENVOYÉ PENDANT L'ÉCHANGE. Cochées par défaut :
+                quand quelqu'un appelle, on lui envoie ce qu'on a, et c'est
+                exactement ce qui ne se journalisait nulle part — le CRM voyait
+                ensuite un prospect « sans envoi » qui ouvrait des liens. */}
+            <div className="dm-lbl">
+              Ce qu&apos;on lui a envoyé pendant l&apos;échange
+              <span>décoche ce qui n&apos;est pas parti</span>
+            </div>
+            {(
+              [
+                { id: "demo", lb: "Le site démo" },
+                { id: "plaquette", lb: "La plaquette" },
+                { id: "audit", lb: "Le rapport d’audit" },
+              ] as const
+            ).map((p) => (
+              <label key={p.id} className="dm-check">
+                <input
+                  type="checkbox"
+                  checked={pieces[p.id]}
+                  onChange={(e) => setPieces((v) => ({ ...v, [p.id]: e.target.checked }))}
+                />
+                <span>{p.lb}</span>
+              </label>
+            ))}
+
+            {/* LA NOTE EST OBLIGATOIRE, et c'est la seule contrainte de ce
+                panneau. Un « il a rappelé » sans contenu ne vaut pas mieux que
+                le silence qu'il remplace : dans trois semaines, personne ne
+                saura s'il était intéressé ou s'il appelait pour qu'on cesse.
+                Elle est saisie dans le même champ que partout ailleurs sur la
+                carte — `note` — pour qu'un texte déjà commencé plus bas ne soit
+                pas à réécrire ici. */}
+            <textarea
+              className="dm-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ce qu'il a dit, mot pour mot si possible — son objection est ce qu'on relira avant de le rappeler."
+            />
+
+            <div className="dm-hint">
+              <Icon name="flow" className="ico-sm" />
+              Il sort de {froid ? "la file à froid" : "sa séquence"} et passe sur «&nbsp;S4 — Il a
+              rappelé&nbsp;» : un appel de suite arrive dans la file, avec le script qui correspond à
+              ce qu&apos;on sait de lui. La suite reste libre — mise de côté, RDV, ou rien.
+            </div>
+
+            <button
+              className="dm-cta"
+              disabled={busy || envoiRappel || !note.trim()}
+              onClick={declarerRappel}
+            >
+              <Icon name="check" className="ico-sm" />
+              {envoiRappel ? "Enregistrement…" : "Consigner l’échange et la suite"}
+            </button>
           </div>
         )}
 

@@ -227,6 +227,24 @@ canal téléphone a été laissé de côté : les compter comme du travail d'age
 mentirait de 70 %. `/equipe` les rend à part, sous une séparation, « toutes
 causes ».
 
+**Une séquence ne voit que le canal sur lequel elle écrit.** Un prospect qui
+répond AILLEURS — il rappelle au téléphone après une accroche WhatsApp — est
+invisible pour elle : l'attente n'est pas levée, et la voie du SILENCE part
+quand même. Azur Climat Froid (29/08/2026) a reçu de la file une relance « je me
+permets de revenir vers vous […] si ce n'est pas le bon moment, dites-le moi »
+deux heures après avoir appelé, reçu la démo et la plaquette. Rien n'était en
+panne : le CRM n'avait qu'un message sortant, parce que consigner l'échange
+coûtait quatre gestes dans quatre écrans, et que personne n'en fait quatre en
+raccrochant. D'où **« Il m'a rappelé »** sur la carte de démarchage
+(`/api/agent/demarchage/il-a-rappele`), qui les fait tous d'un clic et bascule
+vers **S4 — Il a rappelé** (`sql/20260829_sequence_il_a_rappele.sql`) : elle
+n'envoie rien de plus — il a déjà tout —, elle pose l'appel de suite avec le
+script qui correspond, et laisse les issues décider. Deux règles y sont
+verrouillées par `hors-scenario.test.ts` : **on inscrit dans la cible AVANT de
+sortir de la courante** (un prospect sans inscription vivante n'est sur aucun
+écran, et rien ne le signale), et la note est **obligatoire** — un « il a
+rappelé » vide ne vaut pas mieux que le silence qu'il remplace.
+
 **La DA lemlist ne se réinvente pas : `lem-skin.css` existe.** Palette relevée
 le 19/08/2026 sur lemlist.com en lisant les styles CALCULÉS, jetons préfixés
 `--lem-` (hors skin, `--accent` est une surface de survol, pas une couleur de

@@ -20,4 +20,12 @@ export const DEM_OBJECTIONS: { q: string; a: string }[] = [
     q: "« Je vais voir avec mon neveu »",
     a: "Bien sûr. La différence, c'est le référencement local et la maintenance — c'est ce qui fait sonner le téléphone.",
   },
+  {
+    // Celle-ci manquait, et elle n'est pas « j'ai déjà un site » : un chantier
+    // est EN COURS, avec quelqu'un. Attaquer le prestataire ferme la porte —
+    // ce qui l'ouvre, c'est la date, parce qu'une date de mise en ligne qui
+    // glisse est le moment où l'on redevient une option.
+    q: "« Quelqu'un me refait déjà le site »",
+    a: "Très bien, je ne vais pas vous vendre par-dessus. Juste : c'est prévu pour quand ? Si ça glisse, gardez mon numéro — la démo reste en ligne, elle ne vous engage à rien.",
+  },
 ];
