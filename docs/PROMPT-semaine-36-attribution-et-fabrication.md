@@ -152,39 +152,85 @@ tâche « Appel à froid » par la route : ne les dégèle pas deux fois.
 
 ---
 
-## Tâche 4 — lancer la fabrication *(gestes, pas du code)*
+## Tâche 4 — la chaîne de fabrication, outil par outil
 
-Une fois 1 à 3 passés :
+Lis `src/lib/architecture/bots.ts` avant de lancer quoi que ce soit : c'est le
+registre des trente-trois bots, et chaque entrée porte son coût et ses règles.
+Ce qui suit dit lesquels, dans quel ordre, et **à quelle condition chacun laisse
+passer** — c'est la partie qui manquait.
 
-1. **Lot 10 (65 fiches) → lissage.** Bouton « Lancer une passe de lissage » sur
-   la fiche du lot. Puis sur ce poste, pour les étapes Playwright que le serveur
-   ne peut pas faire :
+### La chaîne, et la porte de chaque étape
+
+| # | Étape | L'outil | Ce qui laisse passer à la suite |
+| --- | --- | --- | --- |
+| 1 | Présence web | `/api/lissage/passes` + `scripts/lissage/runner.mjs` | une URL qui RÉPOND |
+| 2 | Armer le dossier | « Préparer l'enrichissement » → `enrich-prepare` | `pret_pour_lm = true` |
+| 3 | Enrichir | `Réglages → Enrichissement` → `reenrich` → edge function | `service_tags` remplis, statut `framer` |
+| 4 | Créer le site | Site Builder → template → « Créer site web » → `deploy-batch` | un site publié, sous-domaine dérivé |
+| 5 | Vignettes | `og-cards-tick` | rien à faire, cron horaire |
+
+**L'étape 4 est celle que personne ne devine.** `regenerate-site` ne CRÉE pas un
+site — il exige un `site_id` et REFAIT un site existant. La création en masse
+passe par `POST /api/site-builder/sites/{templateSiteId}/deploy-batch` avec
+`companyIds[]`, déclenchée depuis les réglages d'un template
+(`TemplateDeployPanel.tsx`). Elle clone le gabarit, rattache l'entreprise et son
+projet lead-magnet, dérive un sous-domaine unique, et **publie immédiatement**.
+
+**La porte de l'étape 4 est double**, et c'est elle qui décide de ta semaine :
+`GET /api/site-builder/template-candidates` ne retient une entreprise que si son
+projet a `pret_pour_lm = true` **et** qu'elle partage au moins un `service_tag`
+avec le gabarit. Une fiche enrichie mais sans tags ne sortira jamais comme
+candidate, et rien ne le dira.
+
+### Où en sont les deux lots, mesuré le 29/08
+
+| | lot 9 (à enrichir) | lot 10 (à lisser) |
+| --- | ---: | ---: |
+| Fiches | 122 | 65 |
+| `pret_pour_lm = true` | 21 | 45 |
+| Avec `service_tags` | 66 | 36 |
+| **Déployables en site aujourd'hui** | **6** | **20** |
+| Enrichissement déjà terminé | 3 | 3 |
+
+**26 sites déployables sur 187.** Le goulot n'est ni le lissage ni le LLM : c'est
+la double porte ci-dessus. Les 85 mobiles sans `service_tags` sont exactement ce
+qui bloque — et c'est l'edge function qui les écrit (`edge function enrich/db.ts`,
+fusion non destructive). D'où l'ordre : enrichir d'abord, déployer ensuite.
+
+### Les gestes
+
+1. **Lot 10 (65) → lissage.** Bouton « Lancer une passe de lissage » sur la fiche
+   du lot. Puis sur ce poste, pour les étapes Playwright :
    ```
    npm run dev                      # la route locale doit répondre
    node scripts/lissage/runner.mjs --taille 20 --boucle
    ```
-   Le runner **n'écrit jamais une URL de site** : il dépose des candidats dans le
-   dossier de la ligne, un humain tranche. C'est voulu.
+   Le runner **n'écrit jamais une URL de site** : il dépose des candidats, un
+   humain tranche. C'est voulu, ne le « corrige » pas.
 
-2. **Lot 9 (122 fiches) → enrichissement.** `Réglages → Enrichissement`, scope
-   `ids`, `overwrite: false`, et **`dry_run: true` d'abord** : la route chiffre
-   avant de dépenser. Un appel LLM par projet, c'est le poste le plus cher de
-   toute la chaîne — ne l'envoie pas sur le lot 10, dont les sites ne répondent
-   pas (`home_unreachable_or_empty` garanti).
+2. **Lot 9 (122) → enrichissement.** `Réglages → Enrichissement`, scope `ids`,
+   `overwrite: false`, **`dry_run: true` d'abord** — la route chiffre avant de
+   dépenser. Un appel LLM par projet, poste le plus cher de la chaîne.
+   **N'envoie pas le lot 10 à l'enrichissement** : ses sites ne répondent pas,
+   l'échec `home_unreachable_or_empty` est garanti et l'appel est payé quand même.
 
-3. **Les vignettes : rien à faire.** `og-cards-tick` tourne toutes les heures à
-   la minute 41 et fabrique les cartes de partage. C'est ce qui rend le lien
-   propre dans WhatsApp.
+3. **Les 26 déployables → sites.** Site Builder, réglages du gabarit, « Créer
+   site web ». ⚠️ La publication est immédiate, et **republier régénère
+   `shared_assets.css` depuis le gabarit** : tout correctif CSS non cuit dans
+   l'asset est annulé. Un correctif qui vaut pour tout le parc se pose plutôt
+   dans `src/app/(public)/layout.tsx`.
 
-4. **PageSpeed jamais en masse** — uniquement sur une entreprise qu'on va
-   effectivement démarcher. Le quota est la ressource rare.
+4. **Vignettes : rien à faire.** `og-cards-tick` tourne toutes les heures à la
+   minute 41. C'est ce qui rend le lien propre dans WhatsApp — donc c'est
+   exactement ce qu'il faut ici, et c'est déjà branché.
 
-Ce qui manque encore aux 187 mobiles, mesuré le 29/08 : **85 sans
-`service_tags`** et 20 sans ville ou code postal. L'enrichissement écrit
-`entreprise.service_tags` en fusion non destructive, donc l'étape 2 en comble
-une bonne partie seule ; le reste se saisit dans la grille de complétion du
-pipeline marketing. Aujourd'hui **96 des 187 sont « prêtes pour démo »** — c'est
-ce chiffre qu'il faut monter.
+5. **PageSpeed jamais en masse** — uniquement sur une entreprise qu'on va
+   effectivement démarcher. Le quota est la ressource rare, pas le temps.
+
+Il reste 20 fiches sans ville ni code postal : elles ne seront jamais « prêtes
+pour démo » tant que ce n'est pas saisi (`pretes_pour_demo_des_lots()` l'exige).
+Ça se comble dans la grille de complétion du pipeline marketing. Aujourd'hui
+**96 des 187 sont prêtes pour démo** — c'est le chiffre à faire monter.
 
 ---
 
