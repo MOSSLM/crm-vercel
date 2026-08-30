@@ -11,13 +11,19 @@
  * Ce module fait la jonction : quels axes chaque geste comble, et lesquels ne
  * se lancent pas depuis le CRM.
  *
- * ── DEUX GESTES SEULEMENT SONT DES BOUTONS, ET C'EST HONNÊTE ─────────────
- * Sur les sept axes, trois se comblent par une route (le lissage en couvre
- * trois à lui seul, la mise en campagne un). Les autres demandent le poste
- * local — Playwright, un profil Chrome persistant, des CAPTCHA — ou un écran
- * qui travaille fiche par fiche. Onze des trente-trois bots du registre sont
- * dans ce cas, et ce n'est pas une dette : c'est la raison pour laquelle ils
- * marchent.
+ * ── TOUT N'EST PAS UN BOUTON, ET C'EST HONNÊTE ───────────────────────────
+ * Cinq des sept axes se comblent par une route : trois par le lissage, un par
+ * l'attribution, un par la mise en campagne. Les deux autres — fabriquer une
+ * démo, préparer un audit — demandent le poste local (Playwright, un profil
+ * Chrome persistant, des CAPTCHA) ou un écran qui travaille fiche par fiche.
+ * Onze des trente-trois bots du registre sont dans ce cas, et ce n'est pas une
+ * dette : c'est la raison pour laquelle ils marchent.
+ *
+ * L'ATTRIBUTION EST ARRIVÉE LA DERNIÈRE, le 30/08/2026, et son absence coûtait
+ * cher : la répartition du 29/08 avait figé 315 fiches dans deux lots sans
+ * qu'aucun geste ne sache les attribuer autrement qu'en cochant des cases
+ * deux cents par deux cents. Le geste manquant n'était pas un confort — sans
+ * propriétaire, une fiche ne remonte dans la journée de personne.
  *
  * Fabriquer un bouton qui « lancerait » ce qui ne peut pas l'être ferait pire
  * que rien : on cliquerait, il ne se passerait rien de visible, et on
@@ -27,7 +33,7 @@
 
 import { AXES, manque, prochainGeste, type CleAxe, type Couverture } from "./couverture";
 
-export type CleGeste = "lisser" | "campagne" | "plaquettes";
+export type CleGeste = "lisser" | "attribuer" | "campagne" | "plaquettes";
 
 export interface GesteDeLot {
   cle: CleGeste;
@@ -54,6 +60,12 @@ export const GESTES: readonly GesteDeLot[] = [
     libelle: "Lancer une passe de lissage",
     fait: "Met le lot en file : rapprochement au registre, données publiques, recherche de présence web. Aucun identifiant ne circule — la route lit le lot elle-même.",
     comble: ["siret", "donnees", "constat"],
+  },
+  {
+    cle: "attribuer",
+    libelle: "Attribuer le lot à un agent",
+    fait: "Pose le propriétaire, reprend l'affaire existante, qualifie, et met en séquence — c'est la séquence qui produit les tâches. Au plus 200 par clic : le bouton reprend là où il s'est arrêté.",
+    comble: ["proprietaire"],
   },
   {
     cle: "campagne",

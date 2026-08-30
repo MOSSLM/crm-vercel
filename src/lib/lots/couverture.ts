@@ -90,7 +90,11 @@ export const AXES: readonly AxeCouverture[] = [
     colonne: "Attribuée",
     aide: "Un agent la porte. Sans propriétaire, elle ne remonte dans la journée de personne.",
     geste: "Attribuer à un agent",
-    ou: "Pipeline commercial",
+    // Depuis le 30/08/2026, ce geste est un BOUTON sur la fiche du lot : il ne
+    // sort donc plus par `ailleurs()`, qui ne liste que les axes sans commande.
+    // `ou` reste lu par l'écran des lots, qui nomme l'endroit sous le geste
+    // conseillé — et l'endroit est maintenant ici.
+    ou: "Fiche du lot",
   },
   {
     cle: "sequence",

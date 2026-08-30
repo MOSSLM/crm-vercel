@@ -476,6 +476,56 @@ export async function assignProspectsToAgent(
   return { ok: true, assigned, failed };
 }
 
+/**
+ * Les entreprises d'un LOT qui doivent changer de main, et combien il en reste
+ * après ce paquet.
+ *
+ * AUCUN IDENTIFIANT NE CIRCULE. L'écran envoie un numéro de lot, la population
+ * se résout ici — même convention que `/api/lissage/passes`, les plaquettes et
+ * les campagnes, et pour la même raison : le geste doit rester possible en 4G
+ * quelle que soit la taille du lot. Faire voyager les 249 identifiants du lot
+ * « Semaine 36 — Bilal » à chaque clic marcherait encore ; un lot de deux mille
+ * ne passerait plus, et on ne s'en apercevrait que le jour où il existe.
+ *
+ * ⚠️ LE FILTRE SUR `owner_id` N'EST PAS UNE OPTIMISATION, C'EST LE CONTRAT.
+ * `assignProspectToAgent` est rejouable, mais elle réécrit `owner_id` et
+ * resynchronise les affaires même quand rien ne change : un second clic sur un
+ * lot de 249 ferait 249 écritures pour rien, et autant de coups de trigger.
+ * Ne présenter que ce qui DIFFÈRE rend le geste idempotent de fait — et rend
+ * `restant` honnête, puisqu'il tombe à zéro une fois le lot attribué. C'est
+ * aussi ce qui permet à l'écran de boucler sans jamais tourner en rond.
+ *
+ * Trié par identifiant, comme `populationDuLot` : sans ordre explicite, deux
+ * lectures du même lot pourraient prendre deux moitiés différentes et
+ * « reprendre » ne voudrait plus rien dire.
+ *
+ * Les archivées sont écartées. Un lot est une photo figée, prise ici le 29/08 :
+ * une fiche archivée depuis n'a rien à faire dans la journée d'un agent, et
+ * l'écarter du compte comme de la page garde les deux d'accord.
+ */
+export async function entreprisesDuLotAAttribuer(
+  lotId: number,
+  agentId: string,
+  max: number,
+): Promise<{ ids: number[]; restant: number } | { error: string }> {
+  const sc = getServiceClient();
+
+  // Une seule lecture rend la page ET le total : `count: 'exact'` compte tout
+  // ce qui correspond, `limit` ne borne que les lignes rendues.
+  const { data, count, error } = await sc
+    .from("entreprises")
+    .select("id, lots_entreprises!inner(lot_id)", { count: "exact" })
+    .eq("lots_entreprises.lot_id", lotId)
+    .or(`owner_id.is.null,owner_id.neq.${agentId}`)
+    .is("archived_at", null)
+    .order("id", { ascending: true })
+    .limit(max);
+  if (error) return { error: error.message };
+
+  const ids = ((data ?? []) as { id: number }[]).map((r) => Number(r.id));
+  return { ids, restant: Math.max(0, (count ?? ids.length) - ids.length) };
+}
+
 export type BatchUnassignResult = { released: number[]; failed: BatchFailure[] };
 
 /** Retire un lot d'entreprises, même contrat que `assignProspectsToAgent`. */

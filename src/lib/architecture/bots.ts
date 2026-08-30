@@ -576,9 +576,13 @@ export const BOTS: Bot[] = [
     ecrit: true,
     externes: ["Jina Reader", "Google Places API v1", "OpenAI ou DeepSeek"],
     cout: "Un appel LLM par projet — le poste le plus cher de toute la chaîne. Coût unitaire dans enrichment_llm_settings.",
-    declencheur: "Trigger DB via pg_net quand pret_pour_lm passe à true · ou appel manuel",
+    declencheur:
+      "Un fetch explicite, depuis quatre routes seulement — AUCUN trigger DB, contrairement à ce que cette ligne annonçait",
     regles: [
       "SON CODE N'EST PAS DANS supabase/functions/ — ce dossier n'existe pas dans le dépôt. La source est edge function enrich/, recopiée puis déployée via npx supabase functions deploy. Ne pas chercher ailleurs.",
+      "AUCUN TRIGGER NE L'APPELLE, et cette entrée a prétendu le contraire jusqu'au 30/08/2026. lead_magnet_projects porte huit triggers (defaults, favicon, snapshot des tags, contenu, updated_at, sync email, sync logo, sync statut) et un seul passe par pg_net : trg_leadmagnet_favicon, qui appelle generate-leadmagnet-favicon. C'est de là que venait la confusion — il y a bien un appel HTTP au départ de cette table, il ne va simplement pas ici. Le contrôle tient en une requête : select tgname, pg_get_triggerdef(oid) from pg_trigger where tgrelid = 'public.lead_magnet_projects'::regclass and not tgisinternal.",
+      "QUATRE ROUTES L'APPELLENT, et rien d'autre : marketing-pipeline/reenrich, lead-magnet/enrich, settings/ville-seo/recompute, settings/google-stats. Toutes par fetch ${SUPABASE_URL}/functions/v1/enrich-lead-magnet.",
+      "⚠️ « PRÉPARER L'ENRICHISSEMENT » NE LANCE RIEN. enrich-prepare pose pret_pour_lm = true et remet le projet en draft, c'est tout — elle rend le projet enrichissable et laisse l'appelant tirer. Croire qu'elle enrichit fait attendre un résultat qui ne viendra jamais, et chercher la panne dans l'edge function.",
       "ELLE PART DE site_web_canonique || canonical_url. Sans URL, elle n'a rien à lire et échoue en home_unreachable_or_empty — c'est pourquoi la présence web se règle AVANT d'enrichir.",
       "La clé service_role n'est pas accessible depuis cette machine : passer par /api/marketing-pipeline/reenrich depuis le navigateur, avec overwrite:false.",
       "La variante d'URL qui a RÉPONDU devient l'origine du reste du scraping. Sans ça, les pages secondaires — celles qui portent l'email et le SIRET — étaient demandées à un hôte injoignable et revenaient vides.",

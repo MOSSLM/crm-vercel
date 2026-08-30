@@ -26,6 +26,7 @@ jest.mock('@/lib/automations/engine', () => ({
 import {
   assignProspectToAgent,
   assignProspectsToAgent,
+  entreprisesDuLotAAttribuer,
   unassignProspectFromAgent,
   unassignProspectsFromAgent,
 } from './_assign';
@@ -49,12 +50,23 @@ const resultFor = (table: string, op: Op): Result => {
   return { data: null, error: null, ...value };
 };
 
+/**
+ * Filtres posés, dans l'ordre. Pour les écritures, `calls` suffit ; pour une
+ * lecture, ce qui compte est CE QU'ON DEMANDE à la base — un filtre oublié ne
+ * fait échouer aucun test tant qu'on ne regarde que le résultat qu'on a
+ * soi-même simulé.
+ */
+let filtres: { table: string; methode: string; args: unknown[] }[] = [];
+
 /** Chaîne Supabase minimale : tous les filtres renvoient la chaîne elle-même. */
 const makeChain = (table: string) => {
   let op: Op = 'select';
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'neq', 'in', 'is', 'not', 'or', 'order', 'limit']) {
-    chain[m] = () => chain;
+    chain[m] = (...args: unknown[]) => {
+      filtres.push({ table, methode: m, args });
+      return chain;
+    };
   }
   const record = (next: Op, payload?: unknown) => {
     op = next;
@@ -79,6 +91,7 @@ const updatesOn = (table: string) =>
 beforeEach(() => {
   __resetServiceClientForTests();
   calls = [];
+  filtres = [];
   results = {
     // getAgentPipeline
     pipelines: { data: { id: 'pipe-1' } },
@@ -390,6 +403,62 @@ describe('attributions en masse', () => {
     });
     const pipelineLookups = mockFrom.mock.calls.filter(([table]) => table === 'pipelines');
     expect(pipelineLookups).toHaveLength(1);
+  });
+
+  /**
+   * ATTRIBUER UN LOT SANS FAIRE VOYAGER SES IDENTIFIANTS.
+   *
+   * La répartition du 29/08 a figé 315 fiches dans deux lots ; l'écran n'envoie
+   * qu'un numéro de lot, la population se résout ici. Même convention que le
+   * lissage, les plaquettes et les campagnes, et pour la même raison : le geste
+   * doit rester possible en 4G quelle que soit la taille du lot.
+   */
+  it('résout la population depuis le lot, et dit ce qui reste après le paquet', async () => {
+    results['entreprises.select'] = { data: [{ id: 1 }, { id: 2 }], count: 249 };
+
+    const res = await entreprisesDuLotAAttribuer(7, AGENT, 2);
+
+    expect(res).toEqual({ ids: [1, 2], restant: 247 });
+    // Le lot est lu par la jointure, pas par une liste d'ids.
+    expect(filtres).toContainEqual(
+      expect.objectContaining({ methode: 'eq', args: ['lots_entreprises.lot_id', 7] }),
+    );
+    // Trié : sans ordre explicite, deux lectures du même lot pourraient prendre
+    // deux moitiés différentes et « reprendre » ne voudrait plus rien dire.
+    expect(filtres).toContainEqual(
+      expect.objectContaining({ methode: 'order', args: ['id', { ascending: true }] }),
+    );
+  });
+
+  /**
+   * UN SECOND CLIC NE DOIT RIEN RÉÉCRIRE.
+   *
+   * `assignProspectToAgent` est rejouable, mais elle réécrit `owner_id` et
+   * resynchronise les affaires même quand rien ne change : recliquer sur un lot
+   * de 249 ferait 249 écritures pour rien, et autant de coups de trigger. Le
+   * filtre écarte donc les fiches DÉJÀ chez l'agent visé — c'est lui qui rend
+   * le geste idempotent, et qui fait tomber `restant` à zéro quand le lot est
+   * fait. Sans lui, l'écran boucle indéfiniment sur la même population.
+   */
+  it("écarte les fiches déjà chez le bon agent, et n'écrit alors rien", async () => {
+    results['entreprises.select'] = { data: [], count: 0 };
+
+    const res = await entreprisesDuLotAAttribuer(7, AGENT, 200);
+
+    expect(res).toEqual({ ids: [], restant: 0 });
+    // « different de l'agent OU sans propriétaire » : le `neq` seul écarterait
+    // les fiches sans propriétaire, qui sont précisément celles qu'on attribue
+    // en premier — 120 des 625 de la répartition du 29/08.
+    expect(filtres).toContainEqual(
+      expect.objectContaining({ methode: 'or', args: [`owner_id.is.null,owner_id.neq.${AGENT}`] }),
+    );
+
+    // Et une population vide ne produit aucune écriture : pas d'affaire, pas de
+    // propriétaire, pas d'inscription.
+    expect('ids' in res).toBe(true);
+    const ids = 'ids' in res ? res.ids : [];
+    expect(await assignProspectsToAgent(ids, AGENT)).toEqual({ ok: true, assigned: [], failed: [] });
+    expect(calls.filter((c) => c.op !== 'select')).toEqual([]);
   });
 
   it("retire le lot et rend compte des échecs entreprise par entreprise", async () => {

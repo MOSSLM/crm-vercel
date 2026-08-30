@@ -59,6 +59,15 @@ describe("le geste conseillé suit l'ordre des axes", () => {
     expect(gesteConseille(complet(500, ["sequence"]))?.cle).toBe("campagne");
   });
 
+  // La répartition du 29/08 a figé 315 fiches dans deux lots que rien ne savait
+  // attribuer : l'axe `proprietaire` sortait par `ailleurs()`, donc un lot
+  // bloqué là-dessus n'avait plus aucun geste. Depuis qu'il est un bouton,
+  // c'est LUI le geste conseillé — et pas la campagne, qui verserait des fiches
+  // que personne ne porte.
+  it("propose l'attribution quand il ne manque que le propriétaire", () => {
+    expect(gesteConseille(complet(500, ["proprietaire", "sequence"]))?.cle).toBe("attribuer");
+  });
+
   it("ne propose rien sur un lot complet", () => {
     expect(gesteConseille(complet(500, []))).toBeNull();
   });
@@ -95,11 +104,21 @@ describe("la portée d'un geste", () => {
 
 describe("ce qui se comble ailleurs", () => {
   it("nomme l'endroit, et combien il en reste", () => {
-    const c = complet(500, ["audit", "proprietaire"]);
+    const c = complet(500, ["demo", "audit"]);
     expect(ailleurs(c)).toEqual([
+      { axe: "Fabriquer les démos", ou: "Production", combien: 500 },
       { axe: "Préparer les audits", ou: "Marketing pipeline", combien: 500 },
-      { axe: "Attribuer à un agent", ou: "Pipeline commercial", combien: 500 },
     ]);
+  });
+
+  // L'attribution a cessé d'être « ailleurs » le 30/08 en devenant un bouton.
+  // Le test tient la couture entre les deux fichiers : ajouter un geste sans
+  // retirer son axe d'`ailleurs()` afficherait « et ce qui ne se lance pas
+  // d'ici » juste au-dessus du bouton qui le lance.
+  it("ne renvoie plus l'attribution ailleurs, depuis qu'elle est un bouton", () => {
+    const c = complet(500, ["proprietaire"]);
+    expect(ailleurs(c)).toEqual([]);
+    expect(gestePourAxe("proprietaire")?.cle).toBe("attribuer");
   });
 
   it("ne liste jamais un axe qu'un bouton comble déjà", () => {

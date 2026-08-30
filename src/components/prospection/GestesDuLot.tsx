@@ -14,13 +14,21 @@
 // faux. `gesteConseille` décide, à partir de l'ordre des sept axes.
 //
 // CE QUI NE SE LANCE PAS D'ICI EST NOMMÉ, PAS CACHÉ. Fabriquer une démo,
-// préparer un audit, attribuer : trois axes qui se comblent ailleurs, dont un
-// qui demande le poste local. Un lot bloqué là-dessus n'a plus de bouton — sans
-// la ligne « et ce qui n'est pas ici », il paraîtrait fini.
+// préparer un audit : deux axes qui se comblent ailleurs, dont un qui demande
+// le poste local. Un lot bloqué là-dessus n'a plus de bouton — sans la ligne
+// « et ce qui n'est pas ici », il paraîtrait fini.
+//
+// L'ATTRIBUTION BOUCLE, ELLE NE REND PAS LA MAIN À 200. La route plafonne à
+// deux cents fiches par appel pour ne pas mourir en cours de route, et rend ce
+// qu'il reste. Laisser l'humain recliquer six fois sur un lot de mille serait
+// lui faire tenir le compteur à notre place : le bouton rappelle tant que
+// `restant` n'est pas nul, et dit où il en est pendant ce temps. Le filtre sur
+// `owner_id` côté route garantit que la boucle avance — ce qui vient d'être
+// attribué sort de la population suivante, donc `restant` ne peut que décroître.
 import React, { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { FileText, Loader2, Play, Send, Sparkles } from 'lucide-react'
+import { FileText, Loader2, Play, Send, Sparkles, UserPlus } from 'lucide-react'
 
 import { authedFetch } from '@/utils/authedFetch'
 import { avancement, pretADemarcher, type Couverture } from '@/lib/lots/couverture'
@@ -32,6 +40,7 @@ const pourcent = (v: number): string => `${Math.round(v * 100)} %`
 
 const ICONE: Record<CleGeste, React.ComponentType<{ size?: number }>> = {
   lisser: Play,
+  attribuer: UserPlus,
   campagne: Send,
   plaquettes: FileText,
 }
@@ -42,6 +51,12 @@ interface CampagneChoisissable {
   statut: string
 }
 
+interface AgentChoisissable {
+  id: string
+  nom: string
+  role: string
+}
+
 export function GestesDuLot({ lot, pretDemo, onLance }: {
   lot: Couverture
   pretDemo: PretDemo | null
@@ -50,6 +65,10 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
   const [enCours, setEnCours] = useState<CleGeste | null>(null)
   const [campagnes, setCampagnes] = useState<CampagneChoisissable[]>([])
   const [campagneChoisie, setCampagneChoisie] = useState('')
+  const [agents, setAgents] = useState<AgentChoisissable[]>([])
+  const [agentChoisi, setAgentChoisi] = useState('')
+  /** Où en est l'attribution, tant qu'elle boucle. Nul le reste du temps. */
+  const [progression, setProgression] = useState<string | null>(null)
 
   // Les campagnes ne se chargent qu'une fois : elles ne dépendent pas du lot.
   // Un échec laisse le menu vide et le bouton désactivé — le reste de l'écran
@@ -63,6 +82,23 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
         // Les archivées ne se proposent pas : y verser des leads serait un
         // geste sans suite, et le menu doit refuser ce qu'il ne sert pas.
         setCampagnes((j.campagnes ?? []).filter((c) => c.statut !== 'archived'))
+      } catch {
+        /* le menu restera vide */
+      }
+    })()
+  }, [])
+
+  // Les agents viennent du référentiel de l'explorateur, qui les rend déjà avec
+  // les départements et les lots. Pas de seconde source : deux listes d'agents
+  // finiraient par diverger, et c'est celle qu'on ne regarde pas qui se
+  // trompe. Elle ne dépend pas du lot non plus — une seule lecture.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await authedFetch('/api/entreprises/explorateur/referentiel')
+        if (!r.ok) return
+        const j = (await r.json()) as { agents?: AgentChoisissable[] }
+        setAgents(j.agents ?? [])
       } catch {
         /* le menu restera vide */
       }
@@ -87,6 +123,58 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
           : 'La file avance depuis Prospection → Lissage.',
     })
   }, [lot.lotId])
+
+  /**
+   * Attribue tout le lot, en autant d'appels qu'il faut.
+   *
+   * LA BOUCLE EST BORNÉE PAR `restant`, PAS PAR UN COMPTEUR À NOUS. Chaque
+   * réponse dit ce qu'il reste après elle ; on rappelle tant que ce n'est pas
+   * zéro. Un garde-fou coupe si `restant` cesse de décroître — la route ne
+   * devrait jamais rendre deux fois la même population (le filtre sur
+   * `owner_id` l'en empêche), mais une boucle réseau qui ne sait pas s'arrêter
+   * est le genre de faute qu'on ne voit qu'en production.
+   */
+  const attribuer = useCallback(async () => {
+    let attribuees = 0
+    const echecs: { entreprise_id: number; error: string }[] = []
+    let restantPrecedent = Infinity
+
+    for (;;) {
+      const r = await authedFetch('/api/admin/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lot_id: lot.lotId, agent_id: agentChoisi }),
+      })
+      const c = (await r.json().catch(() => ({}))) as {
+        error?: string
+        assigned?: number
+        restant?: number
+        failed?: { entreprise_id: number; error: string }[]
+      }
+      if (!r.ok) throw new Error(String(c.error ?? `Échec (${r.status})`))
+
+      attribuees += c.assigned ?? 0
+      echecs.push(...(c.failed ?? []))
+      const restant = c.restant ?? 0
+      if (restant === 0 || restant >= restantPrecedent) break
+      restantPrecedent = restant
+      setProgression(`${nombre(attribuees)} attribuées · ${nombre(restant)} en attente`)
+    }
+    setProgression(null)
+
+    if (attribuees === 0 && echecs.length === 0) {
+      toast.info('Tout le lot est déjà chez cet agent')
+      return
+    }
+    const nom = agents.find((a) => a.id === agentChoisi)?.nom ?? 'l’agent'
+    // LES ÉCHECS SE DISENT AVEC LEUR MOTIF. « 3 échecs » n'apprend rien ;
+    // « dont pipeline_introuvable » désigne quoi réparer.
+    toast.success(`${nombre(attribuees)} fiche${attribuees > 1 ? 's' : ''} attribuée${attribuees > 1 ? 's' : ''} à ${nom}`, {
+      description: echecs.length
+        ? `${nombre(echecs.length)} échec${echecs.length > 1 ? 's' : ''} (dont ${echecs[0].error}).`
+        : 'Elles sont en séquence : les tâches apparaissent dans sa file.',
+    })
+  }, [agentChoisi, agents, lot.lotId])
 
   const preparerPlaquettes = useCallback(async () => {
     const r = await authedFetch('/api/atelier/plaquettes', {
@@ -146,6 +234,7 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
     setEnCours(cle)
     try {
       if (cle === 'lisser') await lisser()
+      else if (cle === 'attribuer') await attribuer()
       else if (cle === 'plaquettes') await preparerPlaquettes()
       else await verserEnCampagne()
       onLance()
@@ -153,6 +242,7 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
       toast.error(e instanceof Error ? e.message : 'Geste impossible')
     } finally {
       setEnCours(null)
+      setProgression(null)
     }
   }
 
@@ -185,9 +275,25 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
           const principal = conseille?.cle === g.cle
           const portee = porteeDuGeste(lot, g)
           const occupe = enCours === g.cle
-          const bloque = enCours !== null || (g.cle === 'campagne' && !campagneChoisie)
+          const bloque =
+            enCours !== null ||
+            (g.cle === 'campagne' && !campagneChoisie) ||
+            (g.cle === 'attribuer' && !agentChoisi)
           return (
             <div key={g.cle} className="lot-geste" data-principal={principal ? 'oui' : undefined}>
+              {g.cle === 'attribuer' && (
+                <select
+                  className="lem-champ"
+                  value={agentChoisi}
+                  onChange={(e) => setAgentChoisi(e.target.value)}
+                  aria-label="Agent à qui attribuer le lot"
+                >
+                  <option value="">{agents.length ? 'Choisir un agent…' : 'Aucun agent'}</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nom}</option>
+                  ))}
+                </select>
+              )}
               {g.cle === 'campagne' && (
                 <select
                   className="lem-champ"
@@ -214,7 +320,14 @@ export function GestesDuLot({ lot, pretDemo, onLance }: {
                 {g.libelle}
               </button>
               <span className="lot-geste-aide">
-                {portee > 0 ? `${nombre(portee)} fiches à faire avancer` : g.fait}
+                {/* Pendant que l'attribution boucle, c'est son avancement qui
+                    s'écrit ici — sinon le bouton paraîtrait figé pendant les
+                    deux minutes que prend un lot de mille. */}
+                {occupe && progression
+                  ? progression
+                  : portee > 0
+                    ? `${nombre(portee)} fiches à faire avancer`
+                    : g.fait}
               </span>
             </div>
           )
