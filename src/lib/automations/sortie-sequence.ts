@@ -34,6 +34,20 @@ export type MotifSortie =
    * remettre à démarcher le ferait ré-inscrire une seconde fois.
    */
   | 'transfert'
+  /**
+   * Le métier est mis de côté : on ne vend pas à ce prospect aujourd'hui.
+   * NE RETOURNE PAS AU STOCK — c'est tout l'objet de la décision. Le jour où le
+   * gabarit sait servir ce métier, ces fiches se réinscrivent par le geste qui
+   * les rouvre, pas en réapparaissant toutes seules.
+   */
+  | 'metier_mis_de_cote'
+  /**
+   * Déchet de la phase de test : le régulateur retenait l'envoi parce que le
+   * destinataire n'était pas une adresse de test. RIEN N'EST PARTI, donc le
+   * prospect est intact et retourne au stock — l'oublier dans les démarchés
+   * perdrait 42 fiches neuves (relevé du 30/08/2026).
+   */
+  | 'test'
 
 /**
  * Cette sortie laisse-t-elle le prospect à démarcher ?
@@ -47,7 +61,7 @@ export type MotifSortie =
  * que relancer quelqu'un qui a dit non.
  */
 export const sortieARedemarcher = (motif: string | null | undefined): boolean =>
-  motif === 'hors_canal' || motif === 'reattribution'
+  motif === 'hors_canal' || motif === 'reattribution' || motif === 'test'
 
 /**
  * Le motif en clair, pour la carte du tableau. `null` si on ne sait pas — une
@@ -66,6 +80,10 @@ export const motifSortieLabel = (motif: string | null | undefined): string | nul
       return 'fiche archivée'
     case 'transfert':
       return 'passée à une autre séquence'
+    case 'metier_mis_de_cote':
+      return 'métier mis de côté'
+    case 'test':
+      return 'retenue par la phase de test — rien n’est parti'
     default:
       return null
   }

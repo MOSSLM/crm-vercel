@@ -57,7 +57,7 @@ import { authedFetch } from "@/utils/authedFetch";
 import { urlPlaquetteImprimable } from "@/lib/audit/plaquette-lien";
 import { CANAL_LABEL, sequenceSuggeree } from "@/lib/prospects/canal";
 import { aUneFicheGoogle, lienGoogle, lienMaps } from "@/lib/prospects/lien-google";
-import { AUTO_SEQUENCE, aDemarcher, inscriptionFinLabel, inscriptionVivante, sequenceEtatLabel, sequenceOptionLabel } from "./types";
+import { AUTO_SEQUENCE, aDemarcher, inscriptionFinLabel, inscriptionVivante, rienRecu, sequenceEtatLabel, sequenceOptionLabel } from "./types";
 import type {
   BoardItem,
   AgentRef,
@@ -2016,7 +2016,11 @@ export function PipelineMatrix({
       if (sequenceFilter === "none" && !aDemarcher(it)) return false;
       if (sequenceFilter === "any" && !inscriptionVivante(it.sequence)) return false;
       if (sequenceFilter === "done" && (aDemarcher(it) || inscriptionVivante(it.sequence))) return false;
-      if (!["all", "none", "any", "done"].includes(sequenceFilter)) {
+      // « Rien reçu » traverse les trois autres : une inscription VIVANTE n'a
+      // pas forcément parlé au prospect. Voir `rienRecu` — c'est la question
+      // « lui a-t-on dit quelque chose », pas « où en est la machine ».
+      if (sequenceFilter === "vierge" && !rienRecu(it)) return false;
+      if (!["all", "none", "any", "done", "vierge"].includes(sequenceFilter)) {
         if (it.sequence?.automationId !== sequenceFilter) return false;
       }
       if (ticketFilter === "open" && openNotes(it) === 0) return false;
@@ -2387,6 +2391,7 @@ export function PipelineMatrix({
           >
             <option value="all">Séquence : toutes</option>
             <option value="none">À démarcher</option>
+            <option value="vierge">Rien reçu — ni mail ni message</option>
             <option value="any">En séquence</option>
             <option value="done">Déjà démarchée</option>
             {sequences.map((s) => (

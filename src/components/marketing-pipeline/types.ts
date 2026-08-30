@@ -135,6 +135,18 @@ export interface BoardItem {
    * Optionnel : une réponse d'API antérieure au 20/08/2026 ne le porte pas.
    */
   premiereTouche?: string | null;
+  /**
+   * Le PREMIER geste sortant réellement parti vers ce prospect — WhatsApp ou
+   * e-mail —, lu dans `email_logs`. `null` = on ne lui a jamais rien dit.
+   *
+   * Distinct de `premiereTouche`, qui est posée quand un agent boucle une
+   * TÂCHE : un appel passé la pose sans qu'aucun message ne soit parti, et un
+   * envoi journalisé hors tâche ne la pose pas. Les deux ensemble font la
+   * preuve, aucune ne suffit seule.
+   *
+   * Optionnel : absent d'une réponse d'API antérieure au 30/08/2026.
+   */
+  premierEnvoiLe?: string | null;
   sequence?: {
     enrollmentId: string;
     automationId: string;
@@ -147,6 +159,11 @@ export interface BoardItem {
      * est jamais parvenu (cf. `src/lib/automations/sortie-sequence.ts`).
      */
     exitReason?: string | null;
+    /**
+     * Le dernier e-mail parti pour cette inscription. `null` = aucun.
+     * Optionnel : absent d'une réponse d'API antérieure au 30/08/2026.
+     */
+    lastEmailAt?: string | null;
   } | null;
   /**
    * La plaquette de ce prospect — le lien nominatif et ce qu'il a fait.
@@ -321,6 +338,41 @@ export const aDemarcher = (item: {
   const s = item.sequence;
   return !s || (s.status === "exited" && sortieARedemarcher(s.exitReason));
 };
+
+/**
+ * Ce prospect a-t-il reçu QUELQUE CHOSE ? Pas « où en est-il », mais « lui
+ * a-t-on parlé ».
+ *
+ * ⚠️ CE N'EST PAS `aDemarcher` INVERSÉ, ET LES CONFONDRE COÛTE CHER.
+ * `aDemarcher` répond « est-il dans le stock à attribuer » : une inscription
+ * VIVANTE l'en sort, parce qu'elle suppose un démarchage en cours. Mais une
+ * inscription vivante ne prouve rien sur ce qui est PARTI — le dégel du
+ * 30/08/2026 en a fait la démonstration : 431 inscriptions actives, toutes à
+ * l'étape 0, zéro e-mail, zéro message. Elles disparaissaient de « À
+ * démarcher » sans que personne ne leur ait jamais rien dit. Mesuré ce jour-là :
+ * 637 fiches n'avaient rien reçu, l'écran n'en montrait que 183.
+ *
+ * TROIS PREUVES, ET AUCUNE NE SUFFIT SEULE :
+ *   · `premierEnvoiLe` — un WhatsApp ou un e-mail sortant dans `email_logs`.
+ *     C'est le seul signal qui porte aujourd'hui : 193 entreprises en ont un.
+ *   · `premiereTouche` — un agent a bouclé une tâche. Couvre l'APPEL, que
+ *     `email_logs` n'enregistre pas comme un envoi.
+ *   · `sequence.lastEmailAt` — le moteur a envoyé. Zéro ligne au 30/08, mais
+ *     l'omettre ferait mentir le filtre le jour où les séquences enverront.
+ *
+ * ⚠️ NE PAS Y AJOUTER `current_step`. La première étape de S1 est une
+ * CONDITION : elle avance sans rien envoyer, donc « étape > 0 » désignerait
+ * comme contactés des prospects à qui personne n'a parlé — l'erreur exacte
+ * qu'on vient de corriger.
+ *
+ * Les champs absents (API d'avant le 30/08) se lisent comme « rien » : on ne
+ * fabrique pas un envoi qu'on ne sait pas prouver.
+ */
+export const rienRecu = (item: {
+  sequence?: { lastEmailAt?: string | null } | null;
+  premiereTouche?: string | null;
+  premierEnvoiLe?: string | null;
+}): boolean => !item.premiereTouche && !item.premierEnvoiLe && !item.sequence?.lastEmailAt;
 
 /**
  * Comment une inscription s'est terminée, en clair. `null` si elle court encore.

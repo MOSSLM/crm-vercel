@@ -330,6 +330,16 @@ type SequenceCanalRow = {
   settings: SequenceSettings | null;
 };
 
+/**
+ * Un geste RÉELLEMENT parti vers le prospect, lu dans `email_logs` — le journal
+ * de ce qui a été dit, tous canaux confondus.
+ *
+ * `direction = 'sortant'` et `channel` dans (whatsapp, email) : une note
+ * INTERNE est aussi dans cette table (33 lignes au 30/08/2026) et ne constitue
+ * évidemment pas un contact.
+ */
+type EnvoiRow = { entreprise_id: number | null; created_at: string };
+
 type EnrollmentCanalRow = {
   id: string;
   automation_id: string;
@@ -340,6 +350,14 @@ type EnrollmentCanalRow = {
   hold_reason: string | null;
   /** Pourquoi la sortie, quand il y en a une. Cf. `sortie-sequence.ts`. */
   exit_reason: string | null;
+  /**
+   * Le dernier e-mail RÉELLEMENT parti pour cette inscription.
+   *
+   * C'est la seule preuve directe qu'un message a été reçu — `current_step` n'en
+   * est pas une : la première étape de S1 est une CONDITION, qui avance sans
+   * rien envoyer. Un prospect à l'étape 1 peut n'avoir rien reçu du tout.
+   */
+  last_email_at: string | null;
 };
 
 /**
@@ -657,7 +675,7 @@ export async function buildBoard(
   // PostgREST plafonne une réponse à 1 000 lignes : avec assez de démos, un
   // « select all » finissait par tronquer la liste des templates (le template
   // choisi disparaissait du menu) et par perdre des sites d'entreprises.
-  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes, plaquettesRes, metiersRes] =
+  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes, contactsRes, sequencesRes, enrollmentsRes, plaquettesRes, envoisRes, metiersRes] =
     await Promise.all([
     supabase
       .from("entreprises")
@@ -712,7 +730,7 @@ export async function buildBoard(
     entIds.length > 0
       ? supabase
           .from("sequence_enrollments")
-          .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason, exit_reason")
+          .select("id, automation_id, opportunite_id, entreprise_id, current_step, status, hold_reason, exit_reason, last_email_at")
           .in("entreprise_id", entIds)
           .order("updated_at", { ascending: false })
       : Promise.resolve({ data: [] as EnrollmentCanalRow[], error: null }),
@@ -725,6 +743,22 @@ export async function buildBoard(
           .select("entreprise_id, plaquette_token, plaquette_cree_le, plaquette_vues, plaquette_vu_le")
           .in("entreprise_id", entIds)
       : Promise.resolve({ data: [] as PlaquetteRow[], error: null }),
+    // CE QUI EST DÉJÀ PARTI VERS LE PROSPECT.
+    //
+    // ⚠️ `sequence_enrollments.last_email_at` NE SUFFIT PAS, et s'y fier seul
+    // rendrait le filtre faux : le moteur l'écrit bien, mais aucun e-mail de
+    // séquence n'est encore parti (0 ligne au 30/08/2026) alors que 193
+    // entreprises ont reçu quelque chose. Tout est passé par la main des
+    // agents, donc par `email_logs` — 154 WhatsApp et 44 e-mails sortants.
+    entIds.length > 0
+      ? supabase
+          .from("email_logs")
+          .select("entreprise_id, created_at")
+          .in("entreprise_id", entIds)
+          .eq("direction", "sortant")
+          .in("channel", ["whatsapp", "email"])
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [] as EnvoiRow[], error: null }),
     // LES MÉTIERS MIS DE CÔTÉ. Lus à chaque construction, jamais figés : c'est
     // ce qui fait qu'un métier rouvert dans les Paramètres ramène ses fiches au
     // rafraîchissement suivant, sans population à reconstruire.
@@ -753,6 +787,20 @@ export async function buildBoard(
     for (const p of (plaquettesRes.data ?? []) as unknown as PlaquetteRow[]) {
       if (p.entreprise_id == null) continue;
       plaquetteParEnt.set(Number(p.entreprise_id), p);
+    }
+  }
+
+  // Le PREMIER envoi de chaque entreprise. Trié croissant par la requête, donc
+  // la première écriture gagne — et un échec (table absente) laisse simplement
+  // la map vide, ce qui se lit « rien n'est parti ». Le défaut penche du côté
+  // qui se voit : un prospect à tort dans « rien reçu » saute aux yeux dès
+  // qu'on ouvre sa fiche ; l'inverse le rendrait invisible pour toujours.
+  const premierEnvoiParEnt = new Map<number, string>();
+  if (!envoisRes.error) {
+    for (const e of (envoisRes.data ?? []) as unknown as EnvoiRow[]) {
+      if (e.entreprise_id == null) continue;
+      const cle = Number(e.entreprise_id);
+      if (!premierEnvoiParEnt.has(cle)) premierEnvoiParEnt.set(cle, e.created_at);
     }
   }
 
@@ -1080,6 +1128,7 @@ export async function buildBoard(
       agent: owner ? { id: owner.id, name: owner.name } : null,
       canaux: o.entreprise_id != null ? [...(canauxByEnt.get(o.entreprise_id)?.canaux ?? [])] : [],
       premiereTouche: ent?.premiere_touche_le ?? null,
+      premierEnvoiLe: o.entreprise_id != null ? (premierEnvoiParEnt.get(o.entreprise_id) ?? null) : null,
       sequence: (() => {
         const enr = enrollByOpp.get(o.id) ?? (o.entreprise_id != null ? enrollByEnt.get(o.entreprise_id) : undefined);
         if (!enr) return null;
@@ -1091,6 +1140,7 @@ export async function buildBoard(
           status: enr.status,
           holdReason: enr.hold_reason,
           exitReason: enr.exit_reason,
+          lastEmailAt: enr.last_email_at ?? null,
         };
       })(),
       plaquette: (() => {

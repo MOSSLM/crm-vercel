@@ -5,7 +5,7 @@
  * séquence en service, et l'inscription mourait sur un 409 que rien ne
  * traduisait. Ces tests tiennent les deux bouts : la règle, et ce qu'on en dit.
  */
-import { aDemarcher, inscriptionFinLabel, inscriptionVivante, sequenceEtatLabel, sequenceLancable, sequenceOptionLabel } from "../types";
+import { aDemarcher, inscriptionFinLabel, inscriptionVivante, rienRecu, sequenceEtatLabel, sequenceLancable, sequenceOptionLabel } from "../types";
 import { errorLabel } from "@/lib/sales-pipeline/error-labels";
 
 describe("sequenceLancable", () => {
@@ -127,5 +127,55 @@ describe("aDemarcher", () => {
   /** Une réponse d'API antérieure au 20/08 ne porte pas le champ. */
   it("sans la trace de touche, la règle d'avant s'applique telle quelle", () => {
     expect(aDemarcher({ sequence: { status: "exited", exitReason: "hors_canal" } })).toBe(true);
+  });
+});
+
+/**
+ * « RIEN REÇU » N'EST PAS « À DÉMARCHER » INVERSÉ, et c'est tout l'objet de
+ * cette fonction. Le dégel du 30/08/2026 l'a rendu visible : 431 inscriptions
+ * actives, toutes à l'étape 0, zéro e-mail, zéro message. `aDemarcher` les
+ * sortait du stock — elles ont une inscription vivante — alors que personne ne
+ * leur avait jamais rien dit. L'écran montrait 141 lignes « à démarcher » quand
+ * 581 fiches n'avaient rien reçu.
+ */
+describe("rienRecu", () => {
+  it("une inscription vivante qui n'a rien envoyé n'a RIEN envoyé", () => {
+    const gelee = { sequence: { status: "active", lastEmailAt: null }, premiereTouche: null };
+    expect(rienRecu(gelee)).toBe(true);
+    // Et c'est bien là que les deux réponses divergent.
+    expect(aDemarcher(gelee)).toBe(false);
+  });
+
+  /**
+   * LA PREUVE QUI PORTE AUJOURD'HUI. Aucun e-mail de séquence n'est encore
+   * parti (0 `last_email_at` en base au 30/08/2026) alors que 193 entreprises
+   * ont reçu quelque chose : tout passe par la main des agents, donc par
+   * `email_logs`. Un `rienRecu` qui ne lirait que l'inscription se réduirait à
+   * `premiereTouche` et raterait chaque WhatsApp envoyé hors tâche.
+   */
+  it("un WhatsApp sortant compte, même sans inscription ni tâche bouclée", () => {
+    expect(rienRecu({ sequence: null, premierEnvoiLe: "2026-08-19T14:02:00.000Z" })).toBe(false);
+  });
+
+  it("un e-mail de séquence compte, même si elle court encore", () => {
+    expect(rienRecu({ sequence: { status: "active", lastEmailAt: "2026-08-21T08:00:00.000Z" } })).toBe(false);
+  });
+
+  it("un geste d'agent compte, même sans aucune inscription", () => {
+    expect(rienRecu({ sequence: null, premiereTouche: "2026-08-12T09:30:00.000Z" })).toBe(false);
+  });
+
+  it("sans inscription, sans touche et sans envoi, rien n'est parti", () => {
+    expect(rienRecu({ sequence: null, premiereTouche: null, premierEnvoiLe: null })).toBe(true);
+  });
+
+  /**
+   * Une réponse d'API antérieure au 30/08 ne porte pas `lastEmailAt`. On ne
+   * fabrique pas un envoi qu'on ne sait pas prouver : le champ absent se lit
+   * comme « pas d'e-mail », et c'est `premiereTouche` qui tranche seule.
+   */
+  it("sans les champs récents, la touche d'agent tranche seule", () => {
+    expect(rienRecu({ sequence: { status: "active" } })).toBe(true);
+    expect(rienRecu({ sequence: { status: "active" }, premiereTouche: "2026-08-12T09:30:00.000Z" })).toBe(false);
   });
 });
