@@ -592,6 +592,32 @@ export const BOTS: Bot[] = [
     ],
   },
   {
+    id: "attribuer-lot",
+    nom: "Attribution d'un lot à un agent",
+    phase: "fabrication",
+    execution: "script-local",
+    statut: "ponctuel",
+    chemin: "scripts/prospection/attribuer-lot.ts",
+    resume:
+      "Le bouton « Attribuer le lot à un agent » par la porte de service : même population, mêmes fonctions, sans navigateur.",
+    entree: "Un lot (identifiant ou nom) et un agent",
+    sortie: "entreprises.owner_id, l'affaire reprise, la fiche qualifiée, l'inscription en séquence",
+    ecrit: true,
+    externes: ["Supabase REST"],
+    cout: "Gratuit. Quelques requêtes par fiche, quatre de front.",
+    commande:
+      "./scripts/audit/run.sh scripts/prospection/attribuer-lot.ts --lot \"Semaine 36 — Bilal\" --agent <uuid> [--dry-run]",
+    declencheur: "À la main. Le geste normal est le bouton de la fiche du lot.",
+    regles: [
+      "IL EXISTE PARCE QU'UN BOUTON NON DÉPLOYÉ N'EXISTE PAS. Écrit le 30/08/2026 : la répartition de la semaine 36 était figée, le bouton codé, et 315 fiches restaient chez une seule personne faute de déploiement. Il redevient inutile dès que la branche est en production.",
+      "IL NE DUPLIQUE RIEN : il appelle `entreprisesDuLotAAttribuer` puis `assignProspectsToAgent`, exactement ce que fait POST /api/admin/assign, boucle de 200 comprise. Si la règle d'attribution change, elle change pour les deux.",
+      "JAMAIS un `update entreprises set owner_id`. La fonction pose le propriétaire, REPREND l'affaire existante au lieu d'en ouvrir une seconde, qualifie, et met en séquence. Un update brut fabriquerait une fiche attribuée sans inscription — invisible sur tous les écrans, et rien ne le signalerait.",
+      "REJOUABLE SANS DOMMAGE : la population est filtrée sur `owner_id` différent de l'agent visé, donc un second passage ne réécrit rien et rend zéro.",
+      "UNE FICHE SANS AUCUN CANAL N'EST PAS INSCRITE, et ce n'est pas une panne : `mettreEnSequence` rend `injoignable` et ne crée rien. Elle est attribuée, qualifiée, et ne produira aucune tâche tant qu'elle n'a pas de numéro. 5 des 315 du 30/08 étaient dans ce cas.",
+      "--dry-run compte et montre la part de mobiles sans rien écrire. À jouer d'abord.",
+    ],
+  },
+  {
     id: "reenrich",
     nom: "Réenrichissement de masse",
     phase: "enrichissement",
