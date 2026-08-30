@@ -128,18 +128,58 @@ on conflict (entreprise_id) do nothing;
 -- Un LOT est une photo figée (voir docs/VISION-crm-segments-et-lots.md), et
 -- c'est exactement ce qu'il faut ici : la population ne doit pas bouger entre
 -- le moment où on la calcule et celui où on l'attribue.
-insert into public.lots (nom, note)
-values ('Semaine 36 — Bilal',  'Répartition du 29/08 : moitié du stock jamais touché, équilibrée par cohorte et par canal.'),
-       ('Semaine 36 — Matteo', 'Répartition du 29/08 : moitié du stock jamais touché, équilibrée par cohorte et par canal.')
+insert into public.lots (nom, note) values
+  ('Semaine 36 — Bilal',  'Répartition du 29/08 : fiches à attribuer à Bilal (équilibré par cohorte et par canal).'),
+  ('Semaine 36 — Matteo', 'Répartition du 29/08 : fiches à attribuer à Matteo (équilibré par cohorte et par canal).'),
+  ('Semaine 36 — mobiles à enrichir',
+   'Mobiles dont le site répond : l''edge function a de la matière à lire.'),
+  ('Semaine 36 — mobiles présence web à régler',
+   'Mobiles sans URL, URL générique, ou site injoignable : lissage AVANT enrichissement.')
 on conflict (lower(btrim(nom))) do nothing;
 
+-- Les deux lots d'ATTRIBUTION : seulement celles qui changent de main.
 insert into public.lots_entreprises (lot_id, entreprise_id)
 select l.id, a.entreprise_id
   from public.archive_repartition_20260829 a
   join public.lots l
     on l.nom = case when a.futur_owner = '76353de0-ac50-4645-9530-8be2db55c7a3'
                     then 'Semaine 36 — Bilal' else 'Semaine 36 — Matteo' end
- where a.owner_avant is distinct from a.futur_owner   -- seules celles qui bougent
+ where a.owner_avant is distinct from a.futur_owner
+on conflict do nothing;
+
+-- Les deux lots de FABRICATION, et le tri qui les sépare.
+--
+-- ⚠️ `enrich-lead-magnet` PART DE `site_web_canonique || canonical_url` : sans
+-- site qui répond, elle n'a rien à lire et échoue en
+-- `home_unreachable_or_empty`. Envoyer les 187 mobiles à l'enrichissement d'un
+-- bloc paierait un appel LLM pour 65 échecs — c'est le poste le plus cher de
+-- toute la chaîne. Le tri n'est donc pas une commodité, c'est ce qui évite de
+-- payer pour rien.
+--
+-- Le clivage est mesuré, pas supposé (29/08) : 122 mobiles ont un site vivant
+-- (83 en cohorte A, 18 en B, 21 hors cohorte), 34 portent une URL dont le site
+-- est injoignable, 14 une URL générique (Facebook, annuaire), 15 aucune URL —
+-- ces 15 sont toutes en cohorte B, ce qui est précisément sa définition.
+insert into public.lots_entreprises (lot_id, entreprise_id)
+select l.id, x.id
+  from (
+    select a.entreprise_id as id,
+           coalesce(nullif(e.canonical_url,''), nullif(e.site_web_canonique,'')) as url,
+           coalesce(s.injoignable, false) as injoignable,
+           s.entreprise_id as audite
+      from public.archive_repartition_20260829 a
+      join public.entreprises e on e.id = a.entreprise_id
+      left join public.entreprises_audit_site s on s.entreprise_id = a.entreprise_id
+     where a.canal = 'mobile'
+  ) x
+  join public.lots l
+    on l.nom = case
+         when x.url is not null
+          and not public.host_est_generique(public.host_key(x.url))
+          and x.audite is not null and not x.injoignable
+         then 'Semaine 36 — mobiles à enrichir'
+         else 'Semaine 36 — mobiles présence web à régler'
+       end
 on conflict do nothing;
 
 commit;
@@ -147,6 +187,12 @@ commit;
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Contrôles — à relire avant d'attribuer
 -- ═══════════════════════════════════════════════════════════════════════════
+-- APPLIQUÉ EN PRODUCTION LE 29/08/2026. Résultat relevé juste après :
+--   archive .......... 625 lignes (Bilal 314 dont 94 mobiles, Matteo 311 dont 93)
+--   lot « Bilal » .... 249   lot « Matteo » ....  66   (= 315 attributions)
+--   lot « à enrichir » 122   lot « à lisser » ..  65   (= 187 mobiles)
+-- Aucun `owner_id` n'a été touché : l'attribution reste à faire par la route.
+--
 -- Attendu au 29/08/2026 : Bilal 314 fiches (94 mobiles), Matteo 311 (93).
 -- select case when futur_owner = '76353de0-ac50-4645-9530-8be2db55c7a3' then 'Bilal' else 'Matteo' end as pour,
 --        count(*) as total,
