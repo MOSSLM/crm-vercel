@@ -626,7 +626,10 @@ export function EcranDemarchage() {
               le prospect ouvert au centre — et il s'efface tout seul quand il
               n'y a plus rien à annuler. Le toast, lui, ne sert qu'aux cinq
               secondes qui suivent le clic. */}
+          {/* La tâche ouverte au centre lui sert à proposer les étapes de SA
+              séquence : le reste du bloc reste indépendant du prospect affiché. */}
           <DemRetour
+            taskId={horsFile == null ? (task?.id ?? null) : null}
             apres={() => {
               setHistoryKey((k) => k + 1);
               void loadQueue();

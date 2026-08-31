@@ -2557,6 +2557,95 @@ async function traiterEtapeCourante(sb: SupabaseClient, enrollmentId: string): P
 }
 
 /**
+ * Replace une inscription sur une étape ANTÉRIEURE, et l'y relance.
+ *
+ * POURQUOI ÇA MANQUAIT. Tout ce qui existait pour reculer annule UN geste :
+ * le toast, le bloc « Revenir en arrière », `garerTacheAnnulee`. Or ce qu'un
+ * agent constate n'est pas « j'ai mal cliqué il y a dix secondes », c'est « ce
+ * prospect est à l'étape 6 sur 22 et je ne lui ai jamais écrit ». Mesuré le
+ * 31/08/2026 : 224 inscriptions S1 à l'étape 9, 151 à l'étape 15. Remonter de
+ * cinq étapes demandait cinq annulations, dans le bon ordre, et seulement si
+ * les gestes correspondants étaient encore dans les cinq dernières lignes du
+ * journal — c'est-à-dire jamais.
+ *
+ * ELLE RÉACTIVE UNE INSCRIPTION QUITTÉE, et c'est le cas le plus fréquent : le
+ * prospect a été poussé jusqu'au bout de S1, la dernière étape l'a fait passer
+ * en S2, et c'est précisément là qu'on s'aperçoit que rien n'est parti. Revenir
+ * dans S1 suppose donc de la rouvrir. L'appelant reste responsable de fermer
+ * celle d'en face (`sortirDeSequence(..., 'transfert')`) : deux inscriptions
+ * actives sur le même prospect lui écriraient deux fois.
+ *
+ * ELLE RÉANCRE, comme l'avancement après une tâche. Sans ça, les jours de
+ * l'étape se comptent depuis l'entrée d'origine — souvent trois semaines plus
+ * tôt — et la relance repart immédiatement, suivie de toutes celles dont le
+ * jour est déjà passé. On repart de maintenant, comme si le geste venait
+ * d'avoir lieu.
+ *
+ * ELLE NE VA JAMAIS EN AVANT. Sauter des étapes non faites enverrait le
+ * message de l'étape 9 à quelqu'un qui n'a pas reçu celui de l'étape 2 : c'est
+ * exactement la situation qu'on est en train de réparer.
+ */
+export async function replacerSurEtape(
+  enrollmentId: string,
+  cible: number,
+): Promise<{ ok: true; etape: number; annule: { jobs: number; tasks: number } } | { ok: false; motif: string }> {
+  const sb = getServiceClient()
+  const { data: enr } = await sb.from('sequence_enrollments').select('*').eq('id', enrollmentId).maybeSingle()
+  const enrollment = enr as SequenceEnrollment | null
+  if (!enrollment) return { ok: false, motif: 'inscription_introuvable' }
+
+  const { data: autoRow } = await sb
+    .from('automations')
+    .select('definition')
+    .eq('id', enrollment.automation_id)
+    .maybeSingle()
+  const def = (autoRow?.definition as SequenceDefinition) || { steps: [] }
+  const steps = Array.isArray(def.steps) ? def.steps : []
+  if (steps.length === 0) return { ok: false, motif: 'sequence_vide' }
+  if (!Number.isInteger(cible) || cible < 0 || cible >= steps.length) {
+    return { ok: false, motif: 'etape_hors_sequence' }
+  }
+  // Une inscription QUITTÉE a un `current_step` figé à l'étape où elle s'est
+  // arrêtée : le retour reste donc un retour, même quand la séquence est close.
+  if (enrollment.status === 'active' && cible >= enrollment.current_step) {
+    return { ok: false, motif: 'etape_deja_atteinte' }
+  }
+
+  // Le travail en cours part AVANT le replacement : une tâche de l'étape 9
+  // laissée en file continuerait de proposer le message de l'étape 9, à côté de
+  // celui qu'on vient de reposer.
+  const annule = await cancelEnrollmentWork(sb, enrollmentId)
+
+  // Rouvrir : `scheduleStep` écrit `current_step` et `next_run_at`, mais ne
+  // touche jamais au statut d'une inscription close — elle resterait invisible
+  // de tous les ticks, donc jamais reprise.
+  // Le type ne porte pas `exit_reason` (il vit en base, pas dans le contrat de
+  // l'inscription) : la copie mémoire n'en a pas besoin, l'écriture ci-dessous
+  // s'en charge.
+  const rouverte: SequenceEnrollment = {
+    ...enrollment,
+    status: 'active',
+    finished_at: null,
+    hold_reason: null,
+  }
+  await sb
+    .from('sequence_enrollments')
+    .update({ status: 'active', finished_at: null, exit_reason: null, hold_reason: null })
+    .eq('id', enrollmentId)
+
+  // `fromIdx` = l'étape d'avant la cible : l'ancre est ce qui fait partir les
+  // jours de la cible, et la faire partir de la cible elle-même décalerait tout
+  // d'une étape.
+  await scheduleStep(sb, rouverte, steps, cible, { reanchor: true, fromIdx: Math.max(0, cible - 1) })
+  // Best-effort, comme partout ailleurs : le replacement a réussi quoi qu'il
+  // arrive ici, et le prochain tick reprendra la main. Ce qu'on gagne à
+  // l'appeler tout de suite, c'est que la tâche est dans la file quand l'agent
+  // referme le panneau.
+  await traiterEtapeCourante(sb, enrollmentId).catch(() => {})
+  return { ok: true, etape: cible, annule }
+}
+
+/**
  * Libère une inscription garée sur une attente-réponse (cf. `declarerReponse`).
  *
  * Identique à l'avancement après tâche — même réancrage, pour la même raison :
