@@ -96,14 +96,28 @@ alter table public.entreprises drop constraint if exists entreprises_archive_rea
 alter table public.entreprises add constraint entreprises_archive_reason_valide
   check (archive_reason is null or archive_reason in (
     'refait_par_concurrent','refait_en_interne','site_deja_bon','pas_de_budget',
-    'pas_interesse','injoignable','ferme','hors_cible','doublon','deja_client','autre'
+    'pas_interesse','injoignable','ferme','hors_cible','doublon','deja_client','autre',
+    -- Motif MACHINE, ajouté le 30/08/2026 : posé par les triggers de
+    -- 20260830_qualification_metier_mis_de_cote.sql, jamais choisi par un
+    -- humain. Il lui fallait sa propre valeur : « hors cible » est un verdict
+    -- définitif, celui-ci est une mise de côté que la réouverture du métier
+    -- annule. Sans apostrophe dans ce commentaire : reasons.test.ts lit ce
+    -- bloc au regex, et une paire de quotes y passerait pour une valeur.
+    'metier_mis_de_cote'
   ));
 
 alter table public.opportunites drop constraint if exists opportunites_archive_reason_valide;
 alter table public.opportunites add constraint opportunites_archive_reason_valide
   check (archive_reason is null or archive_reason in (
     'refait_par_concurrent','refait_en_interne','site_deja_bon','pas_de_budget',
-    'pas_interesse','injoignable','ferme','hors_cible','doublon','deja_client','autre'
+    'pas_interesse','injoignable','ferme','hors_cible','doublon','deja_client','autre',
+    -- Motif MACHINE, ajouté le 30/08/2026 : posé par les triggers de
+    -- 20260830_qualification_metier_mis_de_cote.sql, jamais choisi par un
+    -- humain. Il lui fallait sa propre valeur : « hors cible » est un verdict
+    -- définitif, celui-ci est une mise de côté que la réouverture du métier
+    -- annule. Sans apostrophe dans ce commentaire : reasons.test.ts lit ce
+    -- bloc au regex, et une paire de quotes y passerait pour une valeur.
+    'metier_mis_de_cote'
   ));
 
 -- « Refait par un concurrent » sans dire lequel n'a aucune valeur : c'est le

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ARCHIVE_REASONS,
+  ARCHIVE_REASONS_CHOISISSABLES,
   archiveReasonLabel,
   isPlausibleDomain,
   reasonNeedsConcurrent,
@@ -179,7 +179,7 @@ export const ArchiveDialog: React.FC<ArchiveDialogProps> = ({
                   <SelectValue placeholder="Pourquoi cette piste s’arrête" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ARCHIVE_REASONS.map((r) => (
+                  {ARCHIVE_REASONS_CHOISISSABLES.map((r) => (
                     <SelectItem key={r.value} value={r.value}>
                       {r.label}
                     </SelectItem>

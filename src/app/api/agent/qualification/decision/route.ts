@@ -7,6 +7,11 @@ import {
   type AgentQualificationDecisionPayload,
 } from "@/app/api/_lib/schemas";
 import { logAgentAction } from "../_lib";
+import {
+  estMiseDeCote,
+  normalizeServiceTags,
+  type ServiceTagSetting,
+} from "@/utils/serviceTags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +39,7 @@ export const POST = withAuth<AgentQualificationDecisionPayload>(
 
     const { data: ent, error: entErr } = await sc
       .from("entreprises")
-      .select("id, name, qualifie, hidden_in_qualification")
+      .select("id, name, qualifie, hidden_in_qualification, service_tags")
       .eq("id", body.entreprise_id)
       .maybeSingle();
     if (entErr) return jsonError(entErr.message, 500, {}, cors);
@@ -44,6 +49,31 @@ export const POST = withAuth<AgentQualificationDecisionPayload>(
     // chargement de la file et le clic.
     if (ent.qualifie === true || ent.hidden_in_qualification === true) {
       return jsonError("entreprise_deja_traitee", 409, {}, cors);
+    }
+
+    // MÉTIER MIS DE CÔTÉ : on refuse la proposition, et on DIT pourquoi.
+    //
+    // La garde en base ramènerait `qualifie` à false de toute façon — mais
+    // silencieusement, à la revue admin, longtemps après le clic. L'agent
+    // croirait avoir qualifié. La file exclut déjà ces fiches ; ce contrôle
+    // couvre la course (une fiche enrichie entre le chargement et le clic) et
+    // c'est le SEUL endroit où quelqu'un attend une réponse.
+    if (body.decision === "qualify") {
+      const { data: reglages } = await sc
+        .from("enrichment_tag_settings")
+        .select("tag, allowed, demarchable");
+      const tags = normalizeServiceTags((ent as { service_tags?: unknown }).service_tags);
+      if (estMiseDeCote(tags, (reglages ?? []) as ServiceTagSetting[])) {
+        return jsonError(
+          "metier_mis_de_cote",
+          409,
+          {
+            message:
+              "Ce métier est mis de côté dans les Paramètres : le gabarit n’a pas de page pour ce service. La fiche ne peut pas être qualifiée tant qu’il n’est pas rouvert.",
+          },
+          cors,
+        );
+      }
     }
 
     const { data: inserted, error } = await sc
