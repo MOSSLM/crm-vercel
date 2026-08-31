@@ -621,11 +621,15 @@ export function EcranDemarchage() {
         )}
 
         <main className="dm-main">
-          {/* LE RATTRAPAGE AVANT LE TRAVAIL. Il ne dépend pas de la tâche
+          {/* LE RATTRAPAGE, REPLIÉ DANS LE COIN. Il ne dépend pas de la tâche
               affichée — ce sont les derniers gestes de l'agent, quel que soit
               le prospect ouvert au centre — et il s'efface tout seul quand il
               n'y a plus rien à annuler. Le toast, lui, ne sert qu'aux cinq
-              secondes qui suivent le clic. */}
+              secondes qui suivent le clic.
+              IL NE PREND PLUS LA TÊTE DE LA COLONNE : c'est une flèche et un
+              compteur, et la liste s'ouvre en panneau flottant. Ce qu'on vient
+              faire ici est la carte d'action ; elle doit être la première
+              chose sous les yeux. */}
           <DemRetour
             apres={() => {
               setHistoryKey((k) => k + 1);

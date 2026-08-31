@@ -22,12 +22,19 @@ export const OPTIONS = (req: Request) => preflight(req);
  * les tâches créées APRÈS la correction. Au 28/08/2026, quarante-neuf tâches
  * « Plaquette » en attente portaient encore le texte d'avant.
  *
- * CETTE ROUTE EST LA PORTE, ET ELLE EST EXPLICITE. Elle refait le rendu d'UNE
- * tâche depuis son étape de séquence, et écrit le résultat dans la charge
- * utile. Rien ne se recalcule tout seul : l'agent clique, lit le nouveau texte,
- * et décide de l'envoyer. Un rafraîchissement silencieux à chaque ouverture de
- * la journée ferait changer le message sous les yeux de quelqu'un qui vient de
- * le relire — et ferait diverger ce qui est affiché de ce qui a été journalisé.
+ * CETTE ROUTE EST LA PORTE. Elle refait le rendu d'UNE tâche depuis son étape
+ * de séquence, et écrit le résultat dans la charge utile.
+ *
+ * ELLE EST APPELÉE À L'OUVERTURE DE LA CARTE, plus seulement au clic. Le
+ * danger n'a jamais été de rafraîchir, mais de rafraîchir SOUS LES YEUX DE
+ * QUELQU'UN QUI VIENT DE RELIRE : le message partirait différent de celui
+ * qu'il a lu. Une passe unique à l'ouverture, avant toute lecture, ne pose pas
+ * ce problème — la carte s'interdit d'ailleurs d'écraser un texte déjà touché
+ * à la main. Ce qui a disparu, c'est le clic obligatoire sur chaque plaquette.
+ *
+ * CONSÉQUENCE CÔTÉ ÉCRITURE : elle n'écrit QUE si le rendu diffère. Appelée à
+ * chaque consultation, une mise à jour inconditionnelle ferait battre
+ * `updated_at` au rythme des ouvertures de carte.
  *
  * LES DEUX VERSIONS SONT REFAITES ENSEMBLE. La carte propose de basculer
  * « entreprise » / « contact » juste avant d'ouvrir WhatsApp : n'en rafraîchir
@@ -142,6 +149,7 @@ export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) 
   }
 
   const avant = typeof tache.payload?.message === "string" ? tache.payload.message : "";
+  const altAvant = (tache.payload?.variantAlt ?? null) as { message?: string } | null;
   const payload = {
     ...(tache.payload ?? {}),
     message: rendu.body,
@@ -153,16 +161,25 @@ export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) 
     variantAlt: rendu.other ? { variant: rendu.other.variant, message: rendu.other.body } : null,
   };
 
-  const { error } = await sc.from("prospection_tasks").update({ payload }).eq("id", taskId);
-  if (error) return jsonError(error.message, 500, {}, cors);
+  // RIEN À ÉCRIRE QUAND RIEN N'A BOUGÉ, et ce n'est pas une économie de
+  // clavier. La carte demande ce rendu à CHAQUE ouverture depuis qu'elle ne
+  // fait plus attendre un clic : écrire quand même ferait battre `updated_at`
+  // au rythme des consultations, et cette colonne ne dirait plus quand la
+  // tâche a changé — seulement quand on l'a regardée.
+  const inchange = avant === rendu.body && (altAvant?.message ?? null) === (rendu.other?.body ?? null);
+  if (!inchange) {
+    const { error } = await sc.from("prospection_tasks").update({ payload }).eq("id", taskId);
+    if (error) return jsonError(error.message, 500, {}, cors);
+  }
 
   return json(
     {
       ok: true,
       // `inchange` distingue « le modèle n'a pas bougé » d'un rechargement qui
       // a vraiment changé le texte : sans lui, un clic sans effet visible se
-      // lirait comme un bouton cassé.
-      inchange: avant === rendu.body,
+      // lirait comme un bouton cassé. C'est aussi ce que la carte lit pour
+      // décider si elle signale, à l'ouverture, que le texte a été refait.
+      inchange,
       message: rendu.body,
       variant: rendu.variant,
       variantAlt: payload.variantAlt,

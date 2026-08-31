@@ -894,3 +894,23 @@
    la séquence et non un compteur de gestes. */
 .dm-skin .dm-mini button[data-struct]{height:4px}
 .dm-skin .dm-mini button[data-struct][data-s="cur"]{height:13px}
+
+/* ── Revenir en arrière : une flèche dans le coin ──────────────────────────
+   Le rattrapage était une carte pleine en tête de colonne — en-tête, phrase
+   d'explication, cinq lignes de gestes — soit près de 250 px avant la carte de
+   message, qui est LA raison d'être de l'écran. Il tient maintenant dans un
+   bouton aligné à droite qui porte le nombre de gestes annulables ; la liste
+   s'ouvre en panneau flottant, donc sans jamais repousser ce qu'on lit. */
+.dm-skin .dm-undo{position:relative;align-self:flex-end;margin-bottom:-6px;z-index:26}
+.dm-skin .dm-undo-b{appearance:none;display:inline-flex;align-items:center;gap:5px;
+  height:24px;padding:0 8px;border-radius:20px;border:1px solid var(--border-2);
+  background:var(--surface);color:var(--text-3);cursor:pointer;font-size:11px}
+.dm-skin .dm-undo-b:hover{background:var(--surface-2);color:var(--text-2)}
+.dm-skin .dm-undo-b[aria-expanded="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
+.dm-skin .dm-undo-b .n{font-family:var(--font-mono);font-size:9.5px}
+.dm-skin .dm-undo-p{position:absolute;z-index:30;top:calc(100% + 6px);right:0;width:min(420px,80vw);
+  display:flex;flex-direction:column;gap:11px;padding:12px;border-radius:12px;
+  border:1px solid var(--border);background:var(--surface);
+  box-shadow:0 10px 30px rgba(18,40,68,.14)}
+.dark .dm-skin .dm-undo-p{box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.dm-skin .dm-undo-p .hd{font-size:11px;color:var(--text-3);line-height:1.45}

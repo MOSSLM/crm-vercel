@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Icon, Pill } from "./DemIcon";
 import { DemNotes } from "./DemNotes";
@@ -288,18 +288,49 @@ export function DemActionCard({
    * surfaces qui traitent une tâche ne peuvent donc pas montrer trois textes
    * différents du même message.
    */
-  const versions = useMemo(() => versionsPreparees(task.payload), [task.payload]);
-  const [variant, setVariant] = useState<MessageVariant>(versions[0]?.variant ?? "company");
-  const [msg, setMsg] = useState(versions[0]?.message ?? "");
+  const versionsPayload = useMemo(() => versionsPreparees(task.payload), [task.payload]);
+
+  /**
+   * Le couple REFAIT depuis le modèle, quand il l'a été — et il prime.
+   *
+   * `versionsPreparees` lit la charge utile que la FILE a en mémoire. Un
+   * rechargement écrit bien les deux versions en base, mais la file n'est pas
+   * relue pour autant : sans cet état, la bascule entreprise/contact
+   * reservirait l'ancien texte de l'autre version juste après avoir corrigé
+   * celle qu'on lit.
+   */
+  const [refait, setRefait] = useState<{ variant: MessageVariant; message: string }[] | null>(null);
+  /** Le texte affiché a-t-il été refait tout seul à l'ouverture, et différait-il ? */
+  const [refaitALOuverture, setRefaitALOuverture] = useState(false);
+  const versions = refait ?? versionsPayload;
+
+  const [variant, setVariant] = useState<MessageVariant>(versionsPayload[0]?.variant ?? "company");
+  const [msg, setMsg] = useState(versionsPayload[0]?.message ?? "");
+
+  /**
+   * Le texte a-t-il été touché à la main (frappe ou choix de version) ?
+   *
+   * La passe d'ouverture s'efface devant : personne ne doit voir sa propre
+   * phrase disparaître parce qu'une réponse réseau est arrivée après qu'il a
+   * commencé à écrire.
+   */
+  const retouche = useRef(false);
   useEffect(() => {
-    setVariant(versions[0]?.variant ?? "company");
-    setMsg(versions[0]?.message ?? "");
+    setRefait(null);
+    setRefaitALOuverture(false);
+    retouche.current = false;
+  }, [task.id]);
+
+  useEffect(() => {
+    setVariant(versionsPayload[0]?.variant ?? "company");
+    setMsg(versionsPayload[0]?.message ?? "");
     setNote("");
     setOutcome(null);
-  }, [task.id, versions]);
+  }, [task.id, versionsPayload]);
 
   /** Bascule de version : le texte change sous les yeux, y compris s'il a été retouché. */
   const pickVersion = (v: MessageVariant) => {
+    retouche.current = true;
     setVariant(v);
     setMsg(versions.find((x) => x.variant === v)?.message ?? "");
   };
@@ -314,39 +345,84 @@ export function DemActionCard({
    * rattrape que les tâches créées après — au 28/08/2026, quarante-neuf tâches
    * « Plaquette » en attente portaient encore le texte d'avant.
    *
-   * D'OÙ UN BOUTON, ET PAS UN RAFRAÎCHISSEMENT AUTOMATIQUE. Un message qui se
-   * recalculerait à chaque ouverture changerait sous les yeux de quelqu'un qui
-   * vient de le relire, et ne correspondrait plus à ce qui a été journalisé.
-   * Ici l'agent demande, lit, puis décide d'envoyer.
+   * LE RECHARGEMENT SE FAIT DONC À L'OUVERTURE DE LA CARTE. Ce qu'il fallait
+   * éviter n'a jamais été le rafraîchissement lui-même, mais qu'il tombe SOUS
+   * LES YEUX DE QUELQU'UN QUI VIENT DE RELIRE : un texte qui change entre la
+   * lecture et l'envoi fait partir autre chose que ce qu'on a lu. Une passe
+   * unique à l'ouverture, avant toute lecture, ne pose pas ce problème — et
+   * elle épargne un clic sur chaque plaquette, ce qui était le grief. Trois
+   * garde-fous : une seule fois par tâche (`autoFait`), jamais sur un texte
+   * déjà touché à la main (`retouche`), et jamais sur une carte d'appel — un
+   * script qui se refait pendant qu'on décroche change la phrase en cours.
    *
-   * `versions` étant dérivé de `task.payload`, on demande un rechargement de la
-   * file après coup : sans ça, la bascule entreprise/contact reservirait
-   * l'ancien texte, qui vit encore dans le payload que la carte a en mémoire.
+   * LE BOUTON RESTE, pour le cas qui reste : on corrige le modèle dans un
+   * autre onglet et on veut le relire sans changer de prospect.
+   *
+   * LE SILENCE EST VOULU sur la passe automatique. Un échec — étape supprimée,
+   * modèle vide, réseau — laisse en place le texte de la charge utile, c'est-à-
+   * dire exactement ce qui s'affichait avant. Le bouton, lui, dit tout : il a
+   * été cliqué, son refus a une raison, et cette raison indique quoi faire.
    */
   const [rechargeant, setRechargeant] = useState(false);
-  const rechargerDepuisLeModele = async () => {
-    setRechargeant(true);
-    try {
-      const res = await authedFetch("/api/agent/demarchage/recharger-message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: task.id }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        message?: string;
-        inchange?: boolean;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-      if (data.message) setMsg(data.message);
-      toast.success(data.inchange ? "Le modèle n'a pas changé." : "Message rechargé depuis le modèle.");
-      onLogged();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Rechargement impossible");
-    } finally {
-      setRechargeant(false);
-    }
-  };
+  const autoFait = useRef<string | null>(null);
+
+  const rechargerDepuisLeModele = useCallback(
+    async (auto: boolean) => {
+      if (!auto) setRechargeant(true);
+      try {
+        const res = await authedFetch("/api/agent/demarchage/recharger-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_id: task.id }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          inchange?: boolean;
+          variant?: MessageVariant;
+          variantAlt?: { variant: MessageVariant; message: string } | null;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+        // Arrivée après que l'agent a commencé à écrire : on n'écrase pas.
+        if (auto && retouche.current) return;
+        if (data.message) {
+          const couple = [
+            { variant: (data.variant ?? "company") as MessageVariant, message: data.message },
+            ...(data.variantAlt ? [data.variantAlt] : []),
+          ];
+          setRefait(couple);
+          // ON RESTE SUR LA VERSION CHOISIE. Recharger depuis l'onglet
+          // « contact » pour se retrouver avec le texte « entreprise » à
+          // l'écran ferait envoyer une version qu'on n'a pas demandée.
+          const lue = couple.find((c) => c.variant === variant) ?? couple[0];
+          setVariant(lue.variant);
+          setMsg(lue.message);
+          if (auto) setRefaitALOuverture(data.inchange !== true);
+        }
+        if (!auto) {
+          toast.success(
+            data.inchange ? "Le modèle n'a pas changé." : "Message rechargé depuis le modèle.",
+          );
+          onLogged();
+        }
+      } catch (e) {
+        if (!auto) toast.error(e instanceof Error ? e.message : "Rechargement impossible");
+      } finally {
+        if (!auto) setRechargeant(false);
+      }
+    },
+    [task.id, variant, onLogged],
+  );
+
+  useEffect(() => {
+    if (!isMessageKind(task.kind)) return;
+    // Une tâche posée par une action `create_task` n'a aucune étape, donc aucun
+    // modèle à relire : la route répondrait 409 à chaque ouverture.
+    if (!task.enrollment_id || !task.step_id) return;
+    if (autoFait.current === task.id) return;
+    autoFait.current = task.id;
+    void rechargerDepuisLeModele(true);
+  }, [task.id, task.kind, task.enrollment_id, task.step_id, rechargerDepuisLeModele]);
 
   const [att, setAtt] = useState({ demo: false, audit: false });
   useEffect(() => setAtt({ demo: false, audit: false }), [task.id]);
@@ -872,7 +948,14 @@ export function DemActionCard({
                   </span>
                 )}
               </div>
-              <textarea value={body} onChange={(e) => setMsg(e.target.value)} spellCheck="false" />
+              <textarea
+                value={body}
+                onChange={(e) => {
+                  retouche.current = true;
+                  setMsg(e.target.value);
+                }}
+                spellCheck="false"
+              />
               <div className="ft">
                 <button
                   className="dm-att"
@@ -891,17 +974,34 @@ export function DemActionCard({
                 )}
                 {/* SEULEMENT SUR UNE TÂCHE DE SÉQUENCE : celles qu'une action
                     `create_task` a posées n'ont aucune étape, donc aucun modèle
-                    à relire — le bouton rendrait une erreur à tous les coups. */}
+                    à relire — le bouton rendrait une erreur à tous les coups.
+                    LE TEXTE EST DÉJÀ REFAIT À L'OUVERTURE : ce bouton n'est plus
+                    le passage obligé, il sert à relire un modèle qu'on vient de
+                    corriger dans un autre onglet. */}
                 {task.enrollment_id && task.step_id && (
                   <button
                     className="dm-att"
                     disabled={rechargeant || busy}
-                    onClick={rechargerDepuisLeModele}
+                    onClick={() => void rechargerDepuisLeModele(false)}
                     title="Refaire le texte depuis le modèle actuel de l'étape, avec les variables de ce prospect"
                   >
                     <Icon name="refresh" className="ico-xs" />
                     {rechargeant ? "rechargement…" : "recharger le modèle"}
                   </button>
+                )}
+                {/* CE QUI A CHANGÉ TOUT SEUL SE DIT. Le texte affiché n'est plus
+                    celui que la file portait : sans cette ligne, un agent qui
+                    connaît son modèle par cœur croirait à un bug d'affichage. */}
+                {refaitALOuverture && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10.5,
+                      color: "var(--text-4)",
+                    }}
+                  >
+                    refait depuis le modèle
+                  </span>
                 )}
                 <span
                   style={{

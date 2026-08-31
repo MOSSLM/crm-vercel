@@ -15,15 +15,18 @@ import { authedFetch } from "@/utils/authedFetch";
  * rattrape que les tâches créées après. Au 28/08/2026, quarante-neuf tâches
  * « Plaquette » en attente portaient encore le texte d'avant.
  *
- * Le bouton est la porte, et elle est EXPLICITE : rien ne se recalcule tout
- * seul. Un rafraîchissement automatique changerait le texte sous les yeux de
- * quelqu'un qui vient de le relire, et ferait diverger l'écran de ce qui a été
- * journalisé.
+ * LE TEXTE EST REFAIT À L'OUVERTURE DE LA CARTE, et le bouton reste pour le
+ * rattrapage. Ce qu'il fallait éviter n'a jamais été le rafraîchissement, mais
+ * qu'il tombe SOUS LES YEUX DE QUELQU'UN QUI VIENT DE RELIRE : le message
+ * partirait différent de celui qu'il a lu. Une passe unique à l'ouverture,
+ * avant toute lecture, ne pose pas ce problème — et elle épargne un clic sur
+ * chaque plaquette, ce qui était le grief.
  *
- * Deux choses se vérifient : le nouveau texte remplace l'ancien DANS le champ
- * (sans quoi l'agent enverrait ce qu'il voit, c'est-à-dire l'ancien), et le
- * bouton n'apparaît pas sur une tâche sans étape de séquence — celles qu'une
- * action `create_task` a posées n'ont aucun modèle à relire.
+ * Ce qui se vérifie ici : le nouveau texte remplace l'ancien DANS le champ
+ * (sans quoi l'agent enverrait ce qu'il voit, c'est-à-dire l'ancien), la passe
+ * d'ouverture n'écrase JAMAIS ce que l'agent a tapé, et rien n'est demandé sur
+ * une tâche sans étape de séquence — celles qu'une action `create_task` a
+ * posées n'ont aucun modèle à relire, la route y répondrait 409.
  */
 
 jest.mock("sonner", () => ({
@@ -80,14 +83,68 @@ beforeEach(() => {
   (authedFetch as jest.Mock).mockReset();
 });
 
+/** Les appels à la route de rechargement, dans l'ordre. */
+const appelsRechargement = () =>
+  (authedFetch as jest.Mock).mock.calls.filter(
+    ([url]) => url === "/api/agent/demarchage/recharger-message",
+  );
+
 describe("recharger le message depuis le modèle", () => {
+  // LE GRIEF D'ORIGINE : « je ne veux pas avoir à appuyer sur recharger le
+  // message chaque fois que j'envoie une plaquette ».
+  it("refait le texte à l'ouverture de la carte, sans le moindre clic", async () => {
+    (authedFetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, inchange: false, message: NOUVEAU, variant: "company" }),
+    });
+    renderCard();
+
+    await waitFor(() => expect(champ()).toHaveValue(NOUVEAU));
+    expect(appelsRechargement()).toHaveLength(1);
+    expect(JSON.parse(appelsRechargement()[0][1].body)).toEqual({ task_id: "t1" });
+    // Et l'écran le dit : un texte qui change sans qu'on ait rien demandé se
+    // lirait sinon comme un bug d'affichage.
+    expect(await screen.findByText(/refait depuis le modèle/i)).toBeInTheDocument();
+  });
+
+  // LA LIMITE DE LA PASSE AUTOMATIQUE, et elle n'est pas négociable : personne
+  // ne doit voir sa propre phrase disparaître parce qu'une réponse réseau est
+  // arrivée après qu'il a commencé à écrire.
+  it("n'écrase jamais un texte déjà retouché à la main", async () => {
+    let repondre: (v: unknown) => void = () => {};
+    (authedFetch as jest.Mock).mockImplementation((url: string) =>
+      url === "/api/agent/demarchage/recharger-message"
+        ? new Promise((res) => {
+            repondre = res;
+          })
+        : Promise.resolve({ ok: true, json: async () => ({}) }),
+    );
+    renderCard();
+
+    fireEvent.change(champ(), { target: { value: "Bonjour Julien, je me permets…" } });
+    repondre({ ok: true, json: async () => ({ ok: true, inchange: false, message: NOUVEAU }) });
+
+    await waitFor(() => expect(appelsRechargement()).toHaveLength(1));
+    expect(champ()).toHaveValue("Bonjour Julien, je me permets…");
+  });
+
+  it("ne demande rien sur une tâche qui ne vient pas d'une séquence", async () => {
+    (authedFetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({}) });
+    renderCard(task({ enrollment_id: null, step_id: null }));
+    await waitFor(() => expect(authedFetch).toHaveBeenCalled());
+    expect(appelsRechargement()).toHaveLength(0);
+  });
+
   it("remplace le texte du champ par celui que rend le modèle actuel", async () => {
     (authedFetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true, inchange: false, message: NOUVEAU }),
     });
     renderCard();
-    expect(champ()).toHaveValue(ANCIEN);
+    // La passe d'ouverture a déjà posé le texte du modèle : le bouton se juge
+    // sur ce qu'il fait EN PLUS, pas sur le premier rendu.
+    await waitFor(() => expect(champ()).toHaveValue(NOUVEAU));
+    fireEvent.change(champ(), { target: { value: "brouillon" } });
 
     fireEvent.click(bouton());
 
@@ -118,6 +175,7 @@ describe("recharger le message depuis le modèle", () => {
   });
 
   it("n'apparaît pas sur une tâche qui ne vient pas d'une séquence", () => {
+    (authedFetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({}) });
     renderCard(task({ enrollment_id: null, step_id: null }));
     expect(screen.queryByRole("button", { name: /recharger le modèle/i })).not.toBeInTheDocument();
   });
