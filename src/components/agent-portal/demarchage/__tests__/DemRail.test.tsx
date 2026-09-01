@@ -9,6 +9,7 @@ import {
   type FileDeTravail,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemarchageQueueMeta, DemarchageTask } from "../types";
+import type { EtatSite } from "@/lib/agent-portal/etat-site";
 
 /**
  * LE RAIL, APRÈS LA SECONDE REFONTE.
@@ -91,6 +92,7 @@ function renderRail(
     canal = null as string | null,
     signal = null as DemarchageSignal | null,
     step = null as number | null,
+    etatSite = null as EtatSite | null,
     sel = null as string | null,
     doneToday = {} as Record<string, number>,
     quotas,
@@ -98,6 +100,7 @@ function renderRail(
     setCanal = jest.fn(),
     setSignal = jest.fn(),
     setStep = jest.fn(),
+    setEtatSite = jest.fn(),
     setAVenirOuvert = jest.fn(),
     onPick = jest.fn(),
     onBasculerEnAppel = jest.fn(),
@@ -109,7 +112,8 @@ function renderRail(
     (t) =>
       (canal == null || t.kind === canal) &&
       (signal == null || hasSignal(t, signal)) &&
-      (step == null || t.sequence?.stepIndex === step),
+      (step == null || t.sequence?.stepIndex === step) &&
+      (etatSite == null || t.etat_site === etatSite),
   );
 
   const meta: DemarchageQueueMeta = {
@@ -134,6 +138,8 @@ function renderRail(
       setStep={setStep}
       cohorte={null}
       setCohorte={jest.fn()}
+      etatSite={etatSite}
+      setEtatSite={setEtatSite}
       tasks={shown}
       meta={meta}
       agentName="Bilal"
@@ -160,6 +166,7 @@ function renderRail(
     setCanal,
     setSignal,
     setStep,
+    setEtatSite,
     setAVenirOuvert,
     onPick,
     onBasculerEnAppel,
@@ -392,6 +399,101 @@ describe("DemRail — une seule barre, des dimensions toujours séparées", () =
   it("ne propose aucun bouton de filtre quand rien n'est filtrable", () => {
     const { container } = renderRail([task({ id: "a" })]);
     expect(container.querySelector(".dm-chip.more")).toBeNull();
+  });
+});
+
+/**
+ * AVEC SITE / SANS SITE — la quatrième dimension de la file.
+ *
+ * Ce que ces trois tests tiennent, c'est la SÉPARATION des deux absences :
+ * « vérifié » (on a cherché, il n'y a rien) et « à vérifier » (personne n'a
+ * regardé) ne peuvent pas tomber dans la même pastille. Au 01/09/2026 la base
+ * porte 74 absences confirmées pour 34 244 fiches jamais regardées : les
+ * additionner ferait promettre au téléphone quatre cent cinquante fois ce
+ * qu'on est capable de démontrer.
+ */
+describe("DemRail — avec site, sans site, pas encore regardé", () => {
+  const parc = [
+    relance({ id: "avec", etat_site: "present" }),
+    relance({ id: "sans1", etat_site: "absent", site_constate_le: iso("2026-08-17") }),
+    relance({ id: "sans2", etat_site: "absent" }),
+    relance({ id: "jamais", etat_site: "inconnu" }),
+  ];
+
+  it("propose les trois états, chacun avec son compte", () => {
+    const { ouvrirFiltres, groupe } = renderRail(parc, { file: "relances" });
+    ouvrirFiltres();
+    const g = groupe("Site")!;
+    expect(within(g).getByText("avec site").textContent).toContain("1");
+    expect(within(g).getByText("sans site · vérifié").textContent).toContain("2");
+    expect(within(g).getByText("sans site · à vérifier").textContent).toContain("1");
+  });
+
+  it("filtre sur l'absence CONSTATÉE sans emporter celles qu'on n'a pas vérifiées", () => {
+    const { ouvrirFiltres, groupe, setEtatSite } = renderRail(parc, { file: "relances" });
+    ouvrirFiltres();
+    fireEvent.click(within(groupe("Site")!).getByText("sans site · vérifié"));
+    expect(setEtatSite).toHaveBeenCalledWith("absent");
+
+    // Et la file, une fois le filtre posé, ne rend QUE les deux constatées.
+    const { lignes } = renderRail(parc, { file: "relances", etatSite: "absent" });
+    expect(lignes()).toHaveLength(2);
+  });
+
+  it("ne propose rien à trier quand toute la file a un site", () => {
+    // La barre existe pour une AUTRE dimension (un prospect a répondu) : c'est
+    // ce qui rend le test concluant — le groupe « Site » manque parce qu'il n'a
+    // rien à trier, pas parce que le panneau est fermé.
+    const { ouvrirFiltres, groupe } = renderRail(
+      [
+        relance({ id: "a", etat_site: "present" }),
+        enDiscussion({ id: "b", etat_site: "present" }),
+      ],
+      { file: "relances" },
+    );
+    ouvrirFiltres();
+    expect(groupe("Signal")).toBeDefined();
+    // Une pastille unique qui rend la même liste est un bouton qui ment.
+    expect(groupe("Site")).toBeUndefined();
+  });
+
+  it("marque les deux absences sur la ligne, et laisse la présence muette", () => {
+    const { container } = renderRail(parc, { file: "relances" });
+    const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.site"));
+    expect(tags.map((t) => t.dataset.site)).toEqual(["absent", "absent", "inconnu"]);
+    // La date rend le « vérifié » vérifiable : sans elle, il ne prouve rien.
+    expect(tags[0].getAttribute("title")).toContain("17/08/2026");
+  });
+
+  /**
+   * 115 tâches de la file portaient les deux au 01/09/2026 : une cohorte
+   * « B_sans_site » figée en août, et une URL trouvée depuis. Laisser la seule
+   * version périmée à l'écran est le seul cas où se taire ment.
+   */
+  it("dément la cohorte quand elle annonce « sans site » sur une fiche qui en a un", () => {
+    const { container } = renderRail(
+      [
+        relance({ id: "perime", etat_site: "present", cohorte: "B_sans_site" }),
+        relance({ id: "coherent", etat_site: "present", cohorte: "A_site_faible" }),
+      ],
+      { file: "relances" },
+    );
+    const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.site"));
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe("a un site");
+  });
+
+  /** Deux étiquettes voisines écrivant les mêmes mots ne se lisent plus. */
+  it("ne redit pas les mots de l'étiquette de cohorte", () => {
+    const { container } = renderRail(
+      [relance({ id: "x", etat_site: "absent", cohorte: "B_sans_site" })],
+      { file: "relances" },
+    );
+    const ligne = container.querySelector<HTMLElement>(".dm-tk")!;
+    const cohorte = ligne.querySelector<HTMLElement>(".st.coh")!.textContent;
+    const site = ligne.querySelector<HTMLElement>(".st.site")!.textContent;
+    expect(cohorte).toBe("sans site");
+    expect(site).not.toBe(cohorte);
   });
 });
 

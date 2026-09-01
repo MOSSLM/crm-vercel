@@ -162,6 +162,37 @@ sûre est qu'elle n'a **aucune définition à elle** : elle appelle le même
 `explorateur_base_sql` que l'affichage, depuis le même objet de filtres validé
 par le même schéma (`api/entreprises/explorateur/_filtres.ts`).
 
+**« Sans site » a maintenant un TROISIÈME lecteur, et il lit la définition de
+l'explorateur.** Le filtre Site de « Ma journée »
+(`src/lib/agent-portal/etat-site.ts`) rend les trois états de
+`v_entreprises_presence_site` — une URL en base fait foi, sinon le dernier
+`constats_presence`, sinon `inconnu`. Il n'invente donc rien, mais il faut
+savoir ce qu'il dit : une page Facebook ou `sites.google.com` compte « avec
+site » ici et « sans site » chez `chercher_entreprises` (15 tâches dans ce cas
+au 01/09/2026). Deux pièges y sont verrouillés par des tests : la vue fait un
+`nullif(btrim(…), '')` que l'explorateur ne fait PAS — `site_web_canonique`
+vaut la chaîne vide sur sept tâches, dont six portent un constat « absent »,
+qu'un `is not null` rangerait « avec site » contre leur propre constat ; et
+**la cohorte ne répond pas à cette question** — elle est figée au jour du
+démarchage, 115 lignes étiquetées `B_sans_site` portaient une URL au
+01/09/2026, d'où l'étiquette « a un site » qui dément la ligne plutôt que de
+laisser seule la version périmée. La séparation vérifié / non vérifié n'est pas
+une coquetterie : 74 absences constatées en base contre 34 244 fiches jamais
+regardées.
+
+**Le seul endroit du CRM où un HUMAIN pose un constat de présence, c'est la
+ligne « Site » de « Ma journée »** (`DemSiteWeb`,
+`/api/agent/demarchage/site`). Deux règles y sont verrouillées par des tests :
+le constat s'écrit AVANT la fiche — la table est append-only, elle est la
+trace ; la colonne, elle, s'écrase, et si la seconde écriture échoue l'état
+calculé reste celui d'avant plutôt qu'une absence inventée. Et **cocher « aucun
+site » EFFACE `site_web_canonique`** : c'est le troisième piège de
+`20260817_constats_presence_trois_etats` — un constat « absent » sur une fiche
+qui garde une URL est contredit par sa propre table, l'URL gagne, et l'agent
+recocherait trois fois sans rien voir changer. L'adresse effacée ou corrigée ne
+survit que dans `preuve.url_precedente`. Le bouton « Google » n'appelle rien :
+il ouvre un onglet, parce que le CAPTCHA ne se résout jamais.
+
 **« Prêt pour la démo » et « couverture » ne se déduisent pas l'un de l'autre.**
 Les sept axes comptent des PIÈCES (SIRET, constat, démo…) ;
 `pretes_pour_demo_des_lots()` compte des fiches FABRICABLES. Une entreprise peut

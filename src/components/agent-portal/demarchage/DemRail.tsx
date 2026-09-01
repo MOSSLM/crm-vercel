@@ -5,6 +5,14 @@ import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
 import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
+import {
+  countByEtatSite,
+  ETAT_SITE_AIDE,
+  ETAT_SITE_LABEL,
+  ETAT_SITE_ORDER,
+  ETAT_SITE_TAG,
+  type EtatSite,
+} from "@/lib/agent-portal/etat-site";
 import type { DemCohorte, DemarchageQueueMeta, DemarchageTask } from "./types";
 import {
   cadenceEffective,
@@ -95,6 +103,21 @@ const jourCourt = (iso: string | null): string => {
   return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric" }).format(d);
 };
 
+/**
+ * Ce que dit l'étiquette « sans site » au survol — et surtout DEPUIS QUAND.
+ * Une absence constatée en juin ne se plaide pas en septembre de la même façon,
+ * et « vérifié » sans date ne se vérifie pas lui-même.
+ */
+const titreSite = (t: DemarchageTask): string => {
+  const etat = t.etat_site;
+  if (!etat) return "";
+  const aide = ETAT_SITE_AIDE[etat];
+  if (!t.site_constate_le) return aide;
+  const d = new Date(t.site_constate_le);
+  if (Number.isNaN(d.getTime())) return aide;
+  return `${aide} Constaté le ${new Intl.DateTimeFormat("fr-FR").format(d)}.`;
+};
+
 const nomDe = (t: DemarchageTask): string => {
   const ent = one(t.entreprise);
   const contact = one(t.contact);
@@ -182,6 +205,8 @@ export function DemRail({
   setStep,
   cohorte,
   setCohorte,
+  etatSite,
+  setEtatSite,
   tasks,
   meta,
   agentName,
@@ -214,6 +239,13 @@ export function DemRail({
   /** Cohorte filtrée, `null` = les deux. Se propage à la route en `?cohorte=…`. */
   cohorte: DemCohorte | null;
   setCohorte: (c: DemCohorte | null) => void;
+  /**
+   * État du site filtré, `null` = les trois. Filtre EN MÉMOIRE (la file est
+   * chargée entière), donc ses trois comptes sont toujours exacts — c'est ce
+   * qui le distingue de la cohorte juste au-dessus.
+   */
+  etatSite: EtatSite | null;
+  setEtatSite: (e: EtatSite | null) => void;
   /** La liste RÉELLEMENT affichée : la file courante, passée aux filtres. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
@@ -295,9 +327,28 @@ export function DemRail({
     }));
   }, [duJour, cohorte]);
 
+  /**
+   * Les états de site présents dans la file, et leur compte.
+   *
+   * À partir de DEUX seulement : une file entièrement « avec site » n'a rien à
+   * trier, et une pastille unique qui rend la même liste est un bouton qui ment
+   * sur ce qu'il fait. Les comptes sont exacts en toutes circonstances — le
+   * filtre travaille en mémoire, la file chargée ne bouge pas quand on clique.
+   */
+  const parEtatSite = useMemo(() => countByEtatSite(duJour), [duJour]);
+  const etatsSite = useMemo(
+    () => ETAT_SITE_ORDER.filter((e) => parEtatSite[e] > 0),
+    [parEtatSite],
+  );
+
   /** Combien de filtres « repliés » sont actifs — c'est ce que le bouton annonce. */
-  const filtresCaches = (signal ? 1 : 0) + (cohorte ? 1 : 0) + (step != null ? 1 : 0);
-  const filtrables = SIGNAL_ORDER.some((s) => parSignal[s] > 0) || cohortes.length > 0 || etapes.length > 1;
+  const filtresCaches =
+    (signal ? 1 : 0) + (cohorte ? 1 : 0) + (step != null ? 1 : 0) + (etatSite ? 1 : 0);
+  const filtrables =
+    SIGNAL_ORDER.some((s) => parSignal[s] > 0) ||
+    cohortes.length > 0 ||
+    etatsSite.length > 1 ||
+    etapes.length > 1;
 
   const compteFile: Record<FileDeTravail, number> = {
     premiers: rep.premiers.length,
@@ -423,6 +474,32 @@ export function DemRail({
                     </div>
                   )}
 
+                  {/* SITE — la question qu'on se pose en composant le numéro :
+                      est-ce que je lui vends son premier site, ou est-ce que je
+                      lui montre ce que le sien lui coûte ? Deux façons de ne pas
+                      en avoir, et elles ne se disent pas pareil : « vérifié »
+                      s'annonce, « à vérifier » se vérifie d'abord. */}
+                  {etatsSite.length > 1 && (
+                    <div className="g">
+                      <span className="lb">Site</span>
+                      <div className="ch">
+                        {etatsSite.map((e) => (
+                          <button
+                            key={e}
+                            className="dm-chip"
+                            data-site={e}
+                            aria-pressed={etatSite === e}
+                            title={ETAT_SITE_AIDE[e]}
+                            onClick={() => setEtatSite(etatSite === e ? null : e)}
+                          >
+                            {ETAT_SITE_LABEL[e]}
+                            <span className="n">{parEtatSite[e]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {cohortes.length > 0 && (
                     <div className="g">
                       <span className="lb">Cohorte</span>
@@ -471,6 +548,7 @@ export function DemRail({
                         setSignal(null);
                         setCohorte(null);
                         setStep(null);
+                        setEtatSite(null);
                       }}
                     >
                       <Icon name="x" className="ico-xs" />
@@ -549,6 +627,18 @@ export function DemRail({
                     </span>
                   )}
                   {t.hors_sequence && <span className="st froid">à froid</span>}
+                  {/* Les deux absences se signalent toujours. La PRÉSENCE se
+                      tait — un site, c'est 93 % de la file, et une étiquette
+                      portée par neuf lignes sur dix n'est plus une étiquette —
+                      SAUF quand la cohorte affiche « sans site » juste à côté :
+                      115 lignes étaient dans ce cas au 01/09/2026, et laisser
+                      seule la version périmée est le seul cas où se taire ment. */}
+                  {t.etat_site &&
+                    (t.etat_site !== "present" || t.cohorte === "B_sans_site") && (
+                      <span className="st site" data-site={t.etat_site} title={titreSite(t)}>
+                        {ETAT_SITE_TAG[t.etat_site]}
+                      </span>
+                    )}
                   {t.cohorte && (
                     <span className="st coh" data-coh={t.cohorte} title={COHORTE_INFO[t.cohorte].long}>
                       {COHORTE_INFO[t.cohorte].court}

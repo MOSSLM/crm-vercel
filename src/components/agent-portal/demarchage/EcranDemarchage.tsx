@@ -23,6 +23,7 @@ import {
   type DemarchageSignal,
   type FileDeTravail,
 } from "@/lib/agent-portal/demarchage-buckets";
+import type { EtatSite } from "@/lib/agent-portal/etat-site";
 import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
 import type {
   CompanyBundle,
@@ -116,10 +117,30 @@ export function EcranDemarchage() {
    */
   const [cohorte, setCohorte] = useState<DemCohorte | null>(null);
 
+  /**
+   * A-t-il un site ? — `null` = les trois états mêlés.
+   *
+   * Voisine de la cohorte, et pourtant son inverse sur deux points. La cohorte
+   * est FIGÉE au jour du démarchage (115 lignes étiquetées « sans site »
+   * portaient une URL au 01/09/2026) ; celle-ci relit l'état du jour. Et elle
+   * filtre EN MÉMOIRE, comme le canal et le signal : la file est chargée
+   * entière, donc les trois comptes sont exacts — là où la cohorte, qui part au
+   * serveur, doit renoncer à afficher le compte de celle qu'elle n'a pas
+   * chargée.
+   */
+  const [etatSite, setEtatSite] = useState<EtatSite | null>(null);
+
   const [company, setCompany] = useState<CompanyBundle | null>(null);
   const [audit, setAudit] = useState<DemAudit>(null);
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
+  /**
+   * Force la relecture de la fiche. Il en fallait une : la fiche se charge sur
+   * changement de prospect, et rien ne la rejouait quand c'est le prospect
+   * COURANT qui change — typiquement quand l'agent vient d'y écrire l'adresse
+   * de son site.
+   */
+  const [ficheKey, setFicheKey] = useState(0);
 
   /** La recherche « quelqu'un rappelle » est-elle ouverte ? */
   const [recherche, setRecherche] = useState(false);
@@ -238,6 +259,7 @@ export function EcranDemarchage() {
     setCanal((c) => (c == null || duJour.some((t) => t.kind === c) ? c : null));
     setSignal((s) => (s == null || duJour.some((t) => hasSignal(t, s)) ? s : null));
     setStep((s) => (s == null || duJour.some((t) => t.sequence?.stepIndex === s) ? s : null));
+    setEtatSite((e) => (e == null || duJour.some((t) => t.etat_site === e) ? e : null));
   }, [duJour]);
 
   // Le même filet, pour la cohorte. Il regarde la file ENTIÈRE et non l'onglet :
@@ -254,9 +276,10 @@ export function EcranDemarchage() {
         (t) =>
           (canal == null || t.kind === canal) &&
           (signal == null || hasSignal(t, signal)) &&
-          (step == null || t.sequence?.stepIndex === step),
+          (step == null || t.sequence?.stepIndex === step) &&
+          (etatSite == null || t.etat_site === etatSite),
       ),
-    [duJour, canal, signal, step],
+    [duJour, canal, signal, step, etatSite],
   );
 
   // Fiche entreprise + audit à chaque changement de prospect. La fiche ouverte
@@ -286,7 +309,7 @@ export function EcranDemarchage() {
     return () => {
       active = false;
     };
-  }, [entrepriseId]);
+  }, [entrepriseId, ficheKey]);
 
   /**
    * Le dossier de la fiche hors file — et seulement s'il est bien le SIEN.
@@ -575,6 +598,8 @@ export function EcranDemarchage() {
           setStep={setStep}
           cohorte={cohorte}
           setCohorte={setCohorte}
+          etatSite={etatSite}
+          setEtatSite={setEtatSite}
           tasks={shown}
           meta={meta}
           agentName={user?.name ?? null}
@@ -600,6 +625,14 @@ export function EcranDemarchage() {
             audit={audit}
             cohorte={horsFile != null ? null : (task?.cohorte ?? null)}
             horsSequence={horsFile == null && task?.hors_sequence === true}
+            // Relire la fiche NE SUFFIT PAS : l'étiquette « absence vérifiée »
+            // de la ligne vient de la file, pas de la fiche. Les deux se
+            // rejouent, sinon l'en-tête et le rail se contrediraient jusqu'au
+            // prochain rechargement.
+            onSiteEnregistre={() => {
+              setFicheKey((k) => k + 1);
+              void loadQueue();
+            }}
           />
         ) : (
           <header className="dm-head">

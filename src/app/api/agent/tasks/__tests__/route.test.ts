@@ -93,9 +93,18 @@ type Jeu = {
   garde: Record<string, unknown> | null;
   /** Tables dont toute écriture échoue — pour vérifier le « best effort ». */
   enPanne: readonly string[];
+  /** Le dernier constat de présence, par entreprise (`v_presence_actuelle`). */
+  constats: Record<string, unknown>[];
 };
 
-const JEU_VIDE: Jeu = { taches: [], faites: [], reglages: null, garde: null, enPanne: [] };
+const JEU_VIDE: Jeu = {
+  taches: [],
+  faites: [],
+  reglages: null,
+  garde: null,
+  enPanne: [],
+  constats: [],
+};
 
 /**
  * Toutes les requêtes de la route, servies depuis un jeu de lignes en mémoire.
@@ -103,7 +112,7 @@ const JEU_VIDE: Jeu = { taches: [], faites: [], reglages: null, garde: null, enP
  * de vérifier une ÉCRITURE (le PATCH n'a rien à relire).
  */
 const brancher = (jeu: Partial<Jeu>) => {
-  const { taches, faites, reglages, garde, enPanne } = { ...JEU_VIDE, ...jeu };
+  const { taches, faites, reglages, garde, enPanne, constats } = { ...JEU_VIDE, ...jeu };
   const opsParTable: Record<string, Op[][]> = {};
 
   mockFrom.mockImplementation((table: string) => {
@@ -116,6 +125,10 @@ const brancher = (jeu: Partial<Jeu>) => {
       const ecrit = ops.some((o) => o.m === "update");
 
       if (table === "user_profiles") return { data: { role: "freelance" }, error: null };
+      // La vue du DERNIER constat : la route la lit filtrée sur `site_web` et
+      // sur les entreprises de la file, et les deux filtres s'appliquent ici
+      // pour de vrai — un test doit échouer si la route oublie l'un des deux.
+      if (table === "v_presence_actuelle") return { data: filtrer(constats, ops), error: null };
       if (table === "agent_settings") return { data: reglages, error: null };
       if (table === "prospection_tasks") {
         if (ecrit) return { data: { id: "t1", status: "done" }, error: null };
@@ -155,6 +168,8 @@ type LigneFile = {
   id: string;
   kind: string;
   cohorte: string | null;
+  etat_site: string | null;
+  site_constate_le: string | null;
   hors_sequence: boolean;
   in_conversation: boolean;
   premiere_touche_le: string | null;
@@ -326,6 +341,89 @@ describe("GET /api/agent/tasks — la cohorte, portée et filtrable", () => {
     });
     const { meta } = await lire(await appel("?cohorte=A_site_faible"));
     expect(meta.done_today_by_kind).toEqual({ call: 1 });
+  });
+});
+
+/**
+ * A-T-IL UN SITE, ET LE SAIT-ON VRAIMENT ?
+ *
+ * La cohorte juste au-dessus répond à la question de la campagne — celle du
+ * jour où on a démarché — et elle ne se reprend jamais : au 01/09/2026, 115
+ * tâches étiquetées `B_sans_site` portaient une URL. `etat_site` est la lecture
+ * du jour, et surtout elle sépare les DEUX absences : 74 constatées en base
+ * contre 34 244 fiches jamais regardées.
+ */
+describe("GET /api/agent/tasks — avec site, sans site, jamais regardé", () => {
+  beforeEach(() => {
+    __resetServiceClientForTests();
+    mockFrom.mockReset();
+    mockAuthGetUser.mockResolvedValue({ data: { user: { id: AGENT } }, error: null });
+  });
+
+  /** Une tâche en séquence dont on choisit ce que porte l'entreprise jointe. */
+  const avec = (id: string, entreprise: Record<string, unknown>) => {
+    const ligne = enSequence(id);
+    return { ...ligne, entreprise: { ...(ligne.entreprise as object), ...entreprise } };
+  };
+
+  /** Un constat courant, tel que `v_presence_actuelle` le rend. */
+  const constat = (entrepriseId: number, etat: string, le = "2026-08-17T10:00:00.000Z") => ({
+    entreprise_id: entrepriseId,
+    sujet: "site_web",
+    etat,
+    constate_le: le,
+  });
+
+  it("lit la CHAÎNE VIDE comme une absence d'URL, et laisse le constat trancher", async () => {
+    // Sept tâches de la file portent `site_web_canonique = ''` et six d'entre
+    // elles un constat « absent » : un `is not null` les rangerait « avec site »
+    // contre leur propre constat.
+    brancher({
+      taches: [avec("t1", { site_web_canonique: "" })],
+      constats: [constat(1, "absent")],
+    });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].etat_site).toBe("absent");
+    expect(tasks[0].site_constate_le).toBe("2026-08-17T10:00:00.000Z");
+  });
+
+  it("laisse l'URL en base l'emporter sur un constat plus ancien", async () => {
+    brancher({
+      taches: [avec("t1", { site_web_canonique: "https://plombier-annecy.fr" })],
+      constats: [constat(1, "absent")],
+    });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].etat_site).toBe("present");
+  });
+
+  it("dit « inconnu », jamais « absent », quand personne n'a cherché", async () => {
+    brancher({ taches: [avec("t1", { site_web_canonique: null, canonical_url: null })] });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].etat_site).toBe("inconnu");
+    expect(tasks[0].site_constate_le).toBeNull();
+  });
+
+  it("ne confond pas le sujet d'un constat avec un autre", async () => {
+    // La même table porte la fiche Google, les avis, le téléphone. Un constat
+    // « absent » sur le TÉLÉPHONE ne dit rien du site.
+    brancher({
+      taches: [avec("t1", { site_web_canonique: null })],
+      constats: [{ entreprise_id: 1, sujet: "telephone", etat: "absent", constate_le: null }],
+    });
+    const { tasks } = await lire(await appel());
+    expect(tasks[0].etat_site).toBe("inconnu");
+  });
+
+  it("n'attribue pas le constat d'une entreprise à sa voisine", async () => {
+    brancher({
+      taches: [avec("t1", { site_web_canonique: null }), avec("t2", { site_web_canonique: null })],
+      constats: [constat(2, "absent")],
+    });
+    const { tasks } = await lire(await appel());
+    expect(Object.fromEntries(tasks.map((t) => [t.id, t.etat_site]))).toEqual({
+      t1: "inconnu",
+      t2: "absent",
+    });
   });
 });
 

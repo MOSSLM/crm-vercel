@@ -5,6 +5,7 @@
 
 import type { ProspectionTaskPayload } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
+import type { EtatSite } from "@/lib/agent-portal/etat-site";
 
 /** Les canaux réellement possibles dans notre file (`wait` = attente-réponse). */
 export type DemKind = "call" | "whatsapp" | "sms" | "linkedin" | "wait";
@@ -102,6 +103,21 @@ export type DemarchageTask = {
    * moitié de ce qu'il affiche de `sequence`.
    */
   hors_sequence?: boolean;
+  /**
+   * A-t-il un site, et le sait-on VRAIMENT ? Trois états
+   * (`present` / `absent` / `inconnu`) posés par `/api/agent/tasks` d'après
+   * l'URL en base et le dernier `constats_presence` — cf. `etatSiteDe`.
+   *
+   * Ne se déduit pas de la cohorte : celle-ci est figée au jour du démarchage,
+   * et 115 tâches étiquetées `B_sans_site` portaient une URL au 01/09/2026.
+   */
+  etat_site?: EtatSite | null;
+  /**
+   * Quand le constat a été posé. `null` quand l'état vient de l'URL en base
+   * (rien à dater) ou qu'aucun constat n'existe. Une absence « vérifiée » sans
+   * date ne se vérifie pas elle-même.
+   */
+  site_constate_le?: string | null;
   /**
    * Quand l'entreprise a été touchée pour la PREMIÈRE fois, `null` si jamais.
    * C'est ce qui sépare les deux files du poste de travail : sans date, la ligne
@@ -216,8 +232,22 @@ export type CompanyOpportunite = {
   stageNom: string | null;
 } | null;
 
+/**
+ * L'état de présence du site, tel que la fiche le rend. Recopie ce que porte
+ * une ligne de file (`etat_site`), pour une raison : l'en-tête sert aussi aux
+ * fiches ouvertes HORS FILE, qui n'ont aucune tâche pour le porter.
+ */
+export type CompanyPresenceSite = {
+  etat_site: EtatSite;
+  constate_le: string | null;
+  /** Qui a tranché — `agent:demarchage` pour un humain, un nom de bot sinon. */
+  source: string | null;
+};
+
 export type CompanyBundle = {
   entreprise: CompanyEntreprise;
+  /** Optionnel : une réponse d'avant cette lecture n'en portait pas. */
+  presenceSite?: CompanyPresenceSite | null;
   donneesPubliques: CompanyDonneesPubliques;
   contacts: CompanyContact[];
   site: CompanySite;

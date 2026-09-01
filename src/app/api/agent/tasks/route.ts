@@ -12,6 +12,7 @@ import { channelOf, stepOutcome as findStepOutcomeDef } from "@/lib/sales-pipeli
 import { readReplies } from "@/lib/automations/week";
 import { stepIsInConversation } from "@/lib/agent-portal/conversation";
 import { DAILY_QUOTA, normaliseQuotas } from "@/lib/agent-portal/demarchage-buckets";
+import { etatSiteDe } from "@/lib/agent-portal/etat-site";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
@@ -129,6 +130,27 @@ const premiereToucheDe = (entreprise: unknown): string | null => {
   return typeof valeur === "string" && valeur ? valeur : null;
 };
 
+/**
+ * L'URL du site portée par l'entreprise jointe, `null` si elle n'en a pas
+ * d'exploitable.
+ *
+ * `btrim` et non `is not null` : `site_web_canonique` vaut la CHAÎNE VIDE sur
+ * sept tâches de la file au 01/09/2026, dont six portent un constat « absent ».
+ * Les lire comme une URL les rangerait « avec site » contre leur propre
+ * constat. `canonical_url` est le repli, comme dans
+ * `v_entreprises_presence_site`.
+ */
+const urlSiteDe = (entreprise: unknown): string | null => {
+  const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
+    | { site_web_canonique?: unknown; canonical_url?: unknown }
+    | null
+    | undefined;
+  for (const brut of [e?.site_web_canonique, e?.canonical_url]) {
+    if (typeof brut === "string" && brut.trim() !== "") return brut.trim();
+  }
+  return null;
+};
+
 const cohorteDe = (entreprise: unknown): string | null => {
   const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
     | { cohorte_demarchage?: unknown }
@@ -178,7 +200,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       "id, kind, status, title, due_at, contact_id, entreprise_id, opportunite_id, payload, " +
         "enrollment_id, automation_id, step_id, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
     )
     .eq("entreprise.owner_id", user.id)
     // `snoozed` reste dans la file : c'est une tâche « pas le bon moment »
@@ -212,7 +234,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     .select(
       "id, automation_id, current_step, contact_id, entreprise_id, opportunite_id, updated_at, entered_at, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
     )
     .eq("entreprise.owner_id", user.id)
     .eq("status", "active")
@@ -355,6 +377,50 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     return stepIsInConversation(auto.steps, idx, replies);
   };
 
+  // ── Le site : présent, absent CONSTATÉ, ou jamais regardé ──────────────
+  //
+  // Trois états et non un booléen, parce que « on n'a pas trouvé de site » et
+  // « personne n'a cherché » ne s'annoncent pas de la même façon au téléphone :
+  // au 01/09/2026 la base porte 74 absences confirmées pour 34 244 fiches
+  // jamais regardées. La règle est dans `etatSiteDe`, recopiée de
+  // `v_entreprises_presence_site` — l'URL en base fait foi, le constat ne parle
+  // qu'à défaut.
+  //
+  // Une seule requête pour la file entière, sur la vue du DERNIER constat :
+  // `constats_presence` est append-only (4 081 lignes au total), lire la table
+  // brute rendrait plusieurs constats par entreprise et il faudrait retrancher
+  // ici ce que la vue tranche déjà.
+  const idsPresence = [
+    ...new Set(
+      [...tasks.map((t) => t.entreprise_id), ...waitEnrollments.map((e) => e.entreprise_id)].filter(
+        (id): id is number => id != null,
+      ),
+    ),
+  ];
+  const constatSite = new Map<number, { etat: string | null; le: string | null }>();
+  if (idsPresence.length) {
+    const { data: constats } = await sc
+      .from("v_presence_actuelle")
+      .select("entreprise_id, etat, constate_le")
+      .eq("sujet", "site_web")
+      .in("entreprise_id", idsPresence);
+    for (const c of (constats ?? []) as { entreprise_id: number; etat: string | null; constate_le: string | null }[]) {
+      constatSite.set(Number(c.entreprise_id), { etat: c.etat, le: c.constate_le });
+    }
+  }
+
+  /** L'état du site d'une ligne de file, et la date qui le date. */
+  const presenceDe = (entrepriseId: number | null, entreprise: unknown) => {
+    const constat = entrepriseId != null ? constatSite.get(entrepriseId) : undefined;
+    return {
+      etat_site: etatSiteDe(urlSiteDe(entreprise), constat?.etat),
+      // La date n'accompagne que le constat : « vérifié » sans « quand » ne se
+      // vérifie pas lui-même, et une absence constatée en juin ne vaut plus
+      // grand-chose en septembre.
+      site_constate_le: constat?.le ?? null,
+    };
+  };
+
   const nowDate = new Date();
 
   const enriched = tasks.map((t) => {
@@ -369,6 +435,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       // qui doit dire « premier contact » plutôt que d'inventer une étape.
       hors_sequence: t.enrollment_id == null,
       cohorte: cohorteDe(t.entreprise),
+      ...presenceDe(t.entreprise_id, t.entreprise),
       premiere_touche_le: premiereToucheDe(t.entreprise),
       sequence: auto
         ? {
@@ -435,6 +502,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       // une séquence.
       hors_sequence: false,
       cohorte: cohorteDe(e.entreprise),
+      ...presenceDe(e.entreprise_id, e.entreprise),
       premiere_touche_le: premiereToucheDe(e.entreprise),
       sequence: auto
         ? {

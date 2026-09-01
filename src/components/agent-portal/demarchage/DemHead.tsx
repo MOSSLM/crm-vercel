@@ -7,6 +7,7 @@ import { trancheEffectifLabel } from "@/lib/donnees-publiques/effectif";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
 import { COHORTE_INFO } from "./cohortes";
+import { DemSiteWeb } from "./DemSiteWeb";
 import type { CompanyBundle, DemCohorte, DemarchageSequenceInfo, DemAudit } from "./types";
 
 /** Euros courts — « 1,25 M€ », « 480 k€ ». Même règle que la maquette. */
@@ -107,6 +108,7 @@ export function DemHead({
   audit,
   cohorte = null,
   horsSequence = false,
+  onSiteEnregistre,
 }: {
   company: CompanyBundle;
   sequence: DemarchageSequenceInfo | null;
@@ -115,6 +117,12 @@ export function DemHead({
   cohorte?: DemCohorte | null;
   /** Appel à froid : la ligne « séquence » de l'en-tête n'a rien à dire. */
   horsSequence?: boolean;
+  /**
+   * L'agent vient de trancher sur le site. Rejoue la fiche ET la file — c'est
+   * la file qui porte l'étiquette de la ligne, et deux écrans qui ne disent pas
+   * la même chose du même artisan est précisément ce qu'on retire.
+   */
+  onSiteEnregistre: () => void;
 }) {
   const [ouvert, basculer] = useDossierDeploye();
   const { entreprise: e, donneesPubliques: dp, contacts, opportunite } = company;
@@ -136,7 +144,13 @@ export function DemHead({
   if (ca) stats.push({ key: "ca", ic: "trending", k: "Chiffre d'affaires", v: ca, sub: dp?.exercice_annee ? `exercice ${dp.exercice_annee}` : null });
   if (rn) stats.push({ key: "rn", ic: "banknote", k: "Résultat net", v: rn, sub: dp?.exercice_annee ? `exercice ${dp.exercice_annee}` : null, neg: (dp?.resultat_net ?? 0) < 0 });
   if (audit?.note_globale != null) stats.push({ key: "au", ic: "target", k: "Score audit", v: `${audit.note_globale}/100`, sub: audit.libelle });
-  if (e.site_web_canonique || audit?.url_analysee) stats.push({ key: "site", ic: "globe", k: "Site actuel", v: e.site_web_canonique || audit?.url_analysee || "" });
+  // L'adresse de la fiche n'est plus une tuile : elle a sa ligne, éditable, en
+  // haut de l'en-tête. Ne reste ici que l'adresse AUDITÉE quand elle diffère —
+  // c'est une information que la ligne ne porte pas, et elle signale souvent
+  // une correction à faire.
+  if (audit?.url_analysee && audit.url_analysee !== e.site_web_canonique) {
+    stats.push({ key: "site", ic: "globe", k: "Site audité", v: audit.url_analysee });
+  }
   if (dp?.categorie_entreprise || dp?.naf_code) {
     stats.push({
       key: "naf",
@@ -260,6 +274,18 @@ export function DemHead({
           )}
         </div>
       </div>
+
+      {/* LE SITE — hors du dossier repliable, exprès : on le vérifie pendant que
+          ça sonne, et un geste caché derrière un chevron n'est pas fait. */}
+      <DemSiteWeb
+        entrepriseId={e.id}
+        nom={name}
+        ville={e.ville}
+        url={(e.site_web_canonique ?? "").trim() || null}
+        etatSite={company.presenceSite?.etat_site ?? "inconnu"}
+        constateLe={company.presenceSite?.constate_le ?? null}
+        onEnregistre={onSiteEnregistre}
+      />
 
       {/* Replié, le dossier tient sur une ligne : mêmes valeurs, sans les
           bandeaux. C'est ce qui rend au centre de l'écran les ~150 px que la

@@ -86,7 +86,13 @@ export const LIBELLE_ACTION: Readonly<Record<string, string>> = {
   create_site: "Sites démo créés",
   regenerate_site: "Sites régénérés",
   validate_site: "Sites validés",
+  verifier_site: "Sites vérifiés à la main",
   create_plaquette: "Plaquettes préparées",
+  // Répondre à un prospect entre deux étapes de séquence est du travail, et
+  // c'est du travail qui ne laissait AUCUNE trace : ni tâche bouclée, ni carte
+  // fermée. Sans cette ligne, une demi-heure de conversations consignées se lit
+  // comme une demi-heure d'inactivité.
+  echange_hors_file: "Échanges consignés hors file",
   archive: "Fiches archivées",
 };
 

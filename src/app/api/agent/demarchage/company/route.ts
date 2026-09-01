@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
+import { etatSiteDe } from "@/lib/agent-portal/etat-site";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -42,7 +43,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     return jsonError("forbidden", 403, {}, cors);
   }
 
-  const [donneesRes, contactsRes, sitesRes, bookingRes, oppRes] = await Promise.all([
+  const [donneesRes, contactsRes, sitesRes, bookingRes, oppRes, presenceRes] = await Promise.all([
     sc
       .from("entreprises_donnees_publiques")
       .select(
@@ -82,6 +83,15 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Le DERNIER constat de présence du site. Lu ici, et pas déduit de la tâche
+    // en cours : l'en-tête sert aussi aux fiches ouvertes HORS FILE (« quelqu'un
+    // rappelle »), qui n'ont aucune tâche pour le porter.
+    sc
+      .from("v_presence_actuelle")
+      .select("etat, constate_le, source")
+      .eq("entreprise_id", entrepriseId)
+      .eq("sujet", "site_web")
+      .maybeSingle(),
   ]);
 
   if (donneesRes.error) return jsonError(donneesRes.error.message, 500, {}, cors);
@@ -96,9 +106,24 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     | { id: number; nom: string | null }
     | undefined;
 
+  const constat = presenceRes.data as
+    | { etat: string | null; constate_le: string | null; source: string | null }
+    | null;
+
   return json(
     {
       entreprise,
+      // Trois états, jamais un booléen : « on a cherché et il n'a rien » et
+      // « personne n'a regardé » ne s'annoncent pas de la même façon au
+      // téléphone (cf. `etatSiteDe`).
+      presenceSite: {
+        etat_site: etatSiteDe(
+          (entreprise as { site_web_canonique: string | null }).site_web_canonique,
+          constat?.etat,
+        ),
+        constate_le: constat?.constate_le ?? null,
+        source: constat?.source ?? null,
+      },
       donneesPubliques: donneesRes.data ?? null,
       contacts: contactsRes.data ?? [],
       site: sitesRes.data ?? null,
