@@ -50,6 +50,7 @@ export type CleFiltre =
   | "seq_close"
   // Ses métiers, et ce que l'allowlist en dit
   | "metier_aucun"
+  | "metier_rien_autorise"
   | "metier_autorise"
   | "metier_sans_autorise"
   | "metier_vendu"
@@ -184,6 +185,14 @@ export const GROUPES: GroupeFiltre[] = [
       "un métier est FERMÉ ne sont pas ici : elles sont retirées côté serveur, avant la carte.",
     options: [
       {
+        cle: "metier_rien_autorise",
+        label: "Aucun tag autorisé — site impossible",
+        aide:
+          "Les deux cas ci-dessous réunis : sans tag au catalogue, la fiche est incomplète " +
+          "et « Créer le site » refuse. Un MÉLANGE autorisé + non autorisé n’y figure pas — " +
+          "un seul tag au catalogue suffit à fabriquer.",
+      },
+      {
         cle: "metier_aucun",
         label: "Aucun métier connu",
         aide: "L’enrichissement n’est pas passé. Ce n’est pas « elle n’en a pas ».",
@@ -295,6 +304,11 @@ function tient(item: BoardItem, cle: CleFiltre): boolean {
 
     case "metier_aucun":
       return servicesDe(item).length === 0;
+    // Les trois cas que l'humain veut trier, et la règle qui les sépare : un
+    // SEUL tag au catalogue suffit à fabriquer un site, donc un mélange
+    // autorisé + non autorisé n'est pas un problème et ne se signale pas.
+    case "metier_rien_autorise":
+      return (item.metiers?.autorises ?? 0) === 0;
     case "metier_autorise":
       return (item.metiers?.autorises ?? 0) > 0;
     case "metier_sans_autorise":

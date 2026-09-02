@@ -486,6 +486,19 @@ export interface BulkHandlers {
    * de l'écran, sans que rien ne le signale.
    */
   onFigerLot?: (items: BoardItem[]) => void;
+  /**
+   * Pose des métiers sur tout un lot — le geste qui débloque la fabrication.
+   *
+   * Sans tag AUTORISÉ, la fiche est incomplète et « Créer les sites » refuse
+   * (cf. `missingForSite`). 161 entreprises du pipeline sur 818 étaient dans ce
+   * cas au 02/09/2026 : les corriger une par une, c'est ouvrir 161 modales.
+   *
+   * `remplacer` repart de zéro ; `ajouter` complète sans rien perdre — le cas
+   * ordinaire, sur des fiches qui ne portent qu'un libellé RGE générique.
+   *
+   * Absent en mode agent : le catalogue des métiers est une décision d'admin.
+   */
+  onServiceTags?: (items: BoardItem[], tags: string[], mode: "ajouter" | "remplacer") => void;
   onEnrich: (items: BoardItem[], overwrite: boolean) => void;
   /**
    * Ouvre la grille de complétion sur ces lignes. Sert aussi bien la barre de

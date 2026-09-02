@@ -56,6 +56,36 @@ const criteresSchema = z.object({
   services: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
   /** Les cases du marketing pipeline, mêmes clés que son module pur. */
   filtres: z.array(z.string()).max(20).optional(),
+  /**
+   * LES MENUS DE LA BARRE D'OUTILS — ce qu'un segment ignorait, et qui faisait
+   * qu'une vue enregistrée n'en était pas une.
+   *
+   * On sauvait `q`, `services` et `filtres` : trois dimensions sur treize.
+   * « Aucun tag autorisé + étape Site démo » se rouvrait sans l'étape, donc sur
+   * une population plus large, sous un nom qui promettait un tri. C'est la
+   * faute que ce fichier reproche déjà aux segments de l'explorateur.
+   *
+   * Vocabulaires FERMÉS, validés ici comme les drapeaux : une valeur inconnue
+   * enregistrée aujourd'hui deviendrait un filtre muet demain.
+   *
+   * `owner` échappe à la règle — c'est un identifiant d'agent, il n'y a pas de
+   * liste fermée. L'écran vérifie à la relecture que l'agent existe encore, et
+   * le dit plutôt que de rendre un tableau vide.
+   */
+  vue: z
+    .object({
+      attribution: z.enum(["all", "assigned", "unassigned"]).optional(),
+      owner: z.string().uuid().nullable().optional(),
+      hideAttributed: z.boolean().optional(),
+      pipeline: z.string().max(64).optional(),
+      data: z.enum(["all", "incomplete", "complete"]).optional(),
+      canal: z.string().max(32).optional(),
+      sequence: z.string().max(64).optional(),
+      ticket: z.enum(["all", "open", "none"]).optional(),
+      stage: z.string().max(8).optional(),
+      sort: z.string().max(32).optional(),
+    })
+    .optional(),
 });
 
 const postSchema = z.object({
@@ -73,6 +103,7 @@ type LigneSegment = {
     sources?: string[];
     services?: string[];
     filtres?: string[];
+    vue?: Record<string, unknown>;
   };
   cree_le: string;
   utilise_le: string | null;
@@ -118,10 +149,24 @@ export const POST = withAuth<PostBody>(
       (CLES_FILTRES as string[]).includes(f),
     );
 
-    if (!q && flags.length === 0 && sources.length === 0 && services.length === 0 && filtres.length === 0) {
+    // La vue est nettoyée comme le reste : on ne garde que les clés RENSEIGNÉES,
+    // pour qu'une valeur absente se relise comme « le défaut du jour » plutôt
+    // que comme celui d'il y a trois mois.
+    const vue = Object.fromEntries(
+      Object.entries(body.criteres.vue ?? {}).filter(([, v]) => v !== undefined && v !== null),
+    );
+
+    if (
+      !q &&
+      flags.length === 0 &&
+      sources.length === 0 &&
+      services.length === 0 &&
+      filtres.length === 0 &&
+      Object.keys(vue).length === 0
+    ) {
       // Un segment sans aucun critère, c'est « toutes les entreprises » sous un
       // nom qui promet un tri. Le refuser vaut mieux que de le laisser tromper.
-      return jsonError("Un segment sans critère ne trie rien", 400, {}, cors);
+      return jsonError("Une vue sans critère ne trie rien", 400, {}, cors);
     }
 
     const sc = getServiceClient();
@@ -129,7 +174,7 @@ export const POST = withAuth<PostBody>(
       .from("segments_entreprises")
       .insert({
         nom: body.nom.trim(),
-        criteres: { q, flags, sources, services, filtres },
+        criteres: { q, flags, sources, services, filtres, vue },
         cree_par: user.id,
       })
       .select("id, nom, criteres, cree_le, utilise_le")

@@ -323,6 +323,27 @@ describe("logo, métiers, plaquette et fiche Google", () => {
     expect(passeLesFiltres(catalogue, set("metier_autorise"))).toBe(true);
   });
 
+  // LE FILTRE QUI SERT VRAIMENT : « je ne peux pas fabriquer ». Il réunit les
+  // deux cas — aucun tag, et des tags hors catalogue — parce que le geste de
+  // réparation est le même : poser un métier autorisé. Un MÉLANGE n'en fait
+  // pas partie : un seul tag au catalogue suffit à fabriquer.
+  it("« aucun tag autorisé » réunit les deux cas, et laisse passer le mélange", () => {
+    const vide = ligne({ service_tags: [], metiers: { total: 0, autorises: 0, vendus: 0 } });
+    const horsCatalogue = ligne({
+      service_tags: ["Travaux d'efficacité énergétique"],
+      metiers: { total: 1, autorises: 0, vendus: 0 },
+    });
+    const melange = ligne({
+      service_tags: ["climatisation", "Travaux d'efficacité énergétique"],
+      metiers: { total: 2, autorises: 1, vendus: 1 },
+    });
+    expect(passeLesFiltres(vide, set("metier_rien_autorise"))).toBe(true);
+    expect(passeLesFiltres(horsCatalogue, set("metier_rien_autorise"))).toBe(true);
+    // Le mélange est fabricable : il ne doit PAS remonter dans « à réparer ».
+    expect(passeLesFiltres(melange, set("metier_rien_autorise"))).toBe(false);
+    expect(passeLesFiltres(melange, set("metier_autorise"))).toBe(true);
+  });
+
   // « Autorisé » (allowed) et « démarché » (demarchable) sont deux axes, et le
   // 02/09/2026 le dépôt en a établi la définition commune côté serveur : un
   // métier au catalogue peut très bien être mis de côté à la prospection.

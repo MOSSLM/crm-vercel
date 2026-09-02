@@ -329,6 +329,10 @@
 .mp-scope .fp-services .fp-recherche{ display:flex; align-items:center; gap:7px; margin:10px 0 8px; padding:0 9px; height:34px; border:1px solid var(--border-2); border-radius:9px; background:var(--surface-2); }
 .mp-scope .fp-services .fp-recherche input{ flex:1; min-width:0; border:0; background:transparent; outline:none; font-size:12.5px; color:var(--text); }
 .mp-scope .fp-services .fp-liste{ max-height:min(46vh, 340px); overflow:auto; }
+/* Le choix « ajouter / remplacer » est SÉPARÉ de la liste par un filet : c'est
+   le seul réglage du panneau qui puisse faire perdre une donnée, il ne doit pas
+   se lire comme une case de plus. */
+.mp-scope .fp-services .fp-modes{ margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
 .mp-scope .fp-services .fp-sep{ height:1px; background:var(--border); margin:7px 0; }
 .mp-scope .fp-services .fp-vide{ font-size:12px; color:var(--text-3); padding:10px 2px; line-height:1.5; }
 .mp-scope .fp-services .fp-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
