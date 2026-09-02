@@ -27,6 +27,16 @@
 .au-skin .rg-testbar .d { font-size: 11.5px; opacity: .85; }
 .au-skin .rg-testbar .btn { margin-left: auto; }
 
+/* ── bandeau « la chauffe autorise zéro » ──────────────────────────────────
+   Même forme que la phase de test, en rouge : ce n'est pas un réglage serré,
+   c'est une vanne fermée. Le 01/09/2026, le plafond a été confié à une chauffe
+   qui n'était pas démarrée — 200 inscriptions ont attendu sans que rien ne le
+   dise ailleurs que dans la description d'un interrupteur. */
+.au-skin .rg-testbar.grave {
+  background: var(--danger-tint); border-color: rgba(181,50,47,.35); color: #8A1F1C;
+}
+.au-skin .rg-testbar.grave .ico { color: var(--danger); }
+
 .au-skin .rg-testlist { display: flex; flex-wrap: wrap; gap: 5px; }
 .au-skin .rg-testmail {
   display: inline-flex; align-items: center; gap: 4px;

@@ -865,7 +865,8 @@ export const BOTS: Bot[] = [
     phase: "qualite",
     execution: "cron",
     statut: "a-verifier",
-    chemin: "src/lib/rechauffeur/ · src/app/api/rechauffeur/tick/route.ts · docs/lemlist/08-rechauffeur.md",
+    chemin:
+      "src/lib/rechauffeur/ · src/app/api/rechauffeur/tick/route.ts · src/app/api/prospection/rechauffeur/expediteurs/route.ts · sql/20260902_rechauffeur_cron.sql · docs/lemlist/08-rechauffeur.md",
     resume:
       "Envoie chaque jour du courrier ordinaire depuis l'adresse de prospection vers des boîtes témoins, lit ces boîtes en IMAP pour savoir où il a atterri, le sort du spam et fait répondre les témoins.",
     entree: "Les expéditeurs en chauffe et le maillage de témoins",
@@ -873,7 +874,8 @@ export const BOTS: Bot[] = [
     ecrit: true,
     externes: ["Resend", "les serveurs IMAP/SMTP des témoins"],
     cout: "Un envoi Resend par message de chauffe. Zéro crédit Claude : le texte est recombiné, pas rédigé par un modèle.",
-    declencheur: "pg_cron « rechauffeur », toutes les dix minutes — À POSER, il ne tourne pas encore",
+    declencheur:
+      "pg_cron « rechauffeur-tick », toutes les dix minutes (sql/20260902_rechauffeur_cron.sql) — plus le bouton « Lancer un tick maintenant » de l'écran, ouvert à l'admin",
     regles: [
       "IL PART PAR RESEND, JAMAIS D'UNE BOÎTE. Chauffer les boîtes @samadigitalstudio.com chez LWS n'apporte RIEN à contact@samadigitalstudio.fr qui part par SES : ni le domaine signant, ni l'IP ne coïncident. Ce sont deux réputations distinctes.",
       "Il n'écrit pas dans email_logs. Le disjoncteur de rebonds y compte son dénominateur sur channel = 'email' : quarante messages de chauffe par jour y noieraient un vrai rebond de prospection.",
@@ -881,6 +883,11 @@ export const BOTS: Bot[] = [
       "DEUX TRANSPORTS, JAMAIS CONFONDUS. Nous → témoin part par Resend (même d=, même pool que la prospection : c'est la seule façon dont la chauffe lui profite). Témoin → nous part du SMTP PROPRE du témoin — une réponse expédiée par le vrai Gmail est un vrai message Gmail-vers-nous, et la simuler depuis chez nous la viderait de son sens.",
       "Un placement ne se réécrit jamais : sauver un message du spam le ferait basculer en « boîte » au tick suivant, et le taux de placement mesurerait notre propre sauvetage au lieu du verdict du filtre.",
       "On ne lit que ce qui porte l'en-tête X-Sama-Ref. Un témoin est une vraie boîte avec du vrai courrier : rien d'autre n'est jamais ouvert, déplacé ni marqué.",
+      "TROIS INTERRUPTEURS, ET AUCUN NE SIGNALE SON ABSENCE. Le cron doit être posé, l'expéditeur doit être « chauffe », et il doit porter une demarre_le : sans les trois, le réchauffeur rend zéro partout — exactement ce qu'afficherait une panne. Mesuré le 02/09/2026, quatorze jours après la migration : aucun cron, un seul expéditeur en pause et sans date, rechauffe_journal vide. Quatre témoins branchés pour rien.",
+      "L'expéditeur se déclare et se démarre depuis l'écran (/api/prospection/rechauffeur/expediteurs). Il l'a longtemps fallu en SQL — donc personne ne l'a fait.",
+      "⚠️ UNE LIGNE D'EXPÉDITEUR SUFFIT À FERMER LA VANNE DE LA PROSPECTION. plafondProspectionDuJour rend null — « je ne plafonne rien » — quand il n'y a AUCUN expéditeur, et 0 dès qu'il y en a un qui n'est pas en chauffe. Déclarer une adresse sans la démarrer est donc STRICTEMENT PIRE que ne pas en déclarer, dès lors que regulator_settings.plafond_rechauffeur est armé : min(daily_cap, 0) = 0. Le 01/09/2026 à 16 h 34, un même enregistrement a dépausé le régulateur ET confié le plafond à une chauffe jamais démarrée : la vanne s'est rouverte et refermée dans le même geste, 200 inscriptions ont tenu sur hold_reason = 'daily_cap' un jour et demi. Un bandeau rouge le dit désormais sur l'écran du régulateur, avec de quoi reprendre le plafond.",
+      "NE PAS ARMER LE PLAFOND AVANT QUE LA COURBE AIT RATTRAPÉ LE VOLUME RÉEL. palierDuJour n'ouvre du froid qu'à partir du 8e jour (2/j), puis 13 à J15, 34 à J28, la cible ensuite. Armé sur un domaine qui envoyait déjà, il ne protège rien qu'un plafond fixe ne protège — il coupe. Il devient un vrai garde-fou quand un placement est mesuré ET que froid rejoint le volume envoyé.",
+      "Reprendre après une pause GARDE demarre_le : la courbe mesure l'ancienneté de la boîte aux yeux des filtres, pas notre assiduité. La repousser ferait redescendre un domaine chauffé depuis trois semaines au palier du premier jour, et mentir capacite() qui autorise la prospection sur ce nombre.",
       "Statut « à vérifier » jusqu'au premier tick réel : le code est complet et typé, mais aucune session IMAP n'a encore été ouverte contre un vrai fournisseur.",
     ],
   },

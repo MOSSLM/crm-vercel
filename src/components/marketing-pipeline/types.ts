@@ -25,6 +25,25 @@ export interface BoardItem {
    * Optionnel : une réponse d'API antérieure au 20/08/2026 ne le porte pas.
    */
   service_tags?: string[];
+  /**
+   * CE QUE L'ALLOWLIST DIT DE SES MÉTIERS — résolu côté serveur, où
+   * `enrichment_tag_settings` est déjà lu pour écarter les fiches fermées.
+   *
+   * Le tableau ne pouvait pas le calculer : il reçoit des libellés bruts, et
+   * l'allowlist se résout par CLÉ CANONIQUE (« Climatisation » et
+   * « climatisation » sont la même ligne). Refaire ce rapprochement dans le
+   * navigateur aurait fabriqué une seconde lecture de la règle, qui aurait
+   * dérivé au premier import capitalisé autrement.
+   *
+   * `vendus` compte les métiers EXPLICITEMENT déclarés vendables
+   * (`demarchable = true`), pas ceux « pas mis de côté » : un libellé RGE
+   * générique comme « Travaux d'efficacité énergétique » ne prouve aucun
+   * métier. `bloques` compte ceux qu'on interdit à l'enrichissement de poser
+   * (`allowed = false`) — un axe indépendant du premier.
+   *
+   * Optionnel : absent d'une réponse d'API antérieure au 02/09/2026.
+   */
+  metiers?: { total: number; vendus: number; bloques: number };
   /** Fiche Google Business du prospect, quand l'enrichissement Maps l'a trouvée. */
   google_url: string | null;
   google_maps_url: string | null;

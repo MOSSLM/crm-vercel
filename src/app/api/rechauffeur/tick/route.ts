@@ -25,6 +25,8 @@
 
 import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
+import { requireUser } from '@/app/api/_lib/auth'
+import { requireRole } from '@/app/api/_lib/require-role'
 import { tickRechauffeur } from '@/lib/rechauffeur/moteur'
 
 export const runtime = 'nodejs'
@@ -50,8 +52,28 @@ function tickAutorise(req: Request): boolean {
   )
 }
 
+/**
+ * L'ADMIN PEUT LE DÉCLENCHER LUI-MÊME, et c'est un besoin de diagnostic, pas de
+ * confort. Un réchauffeur ne se voit qu'à ses effets : tant que le cron n'a pas
+ * tourné, l'écran affiche exactement la même chose qu'un réchauffeur en panne —
+ * zéro partout — et rien ne dit lequel des deux on regarde. Le bouton rend le
+ * bilan du tick (planifiés, envoyés, alertes) : c'est la seule façon de
+ * distinguer « il n'a pas encore tourné » de « il tourne et n'a rien à faire ».
+ *
+ * Le porteur du secret cron n'est pas dérangé : on ne va lire le rôle que si le
+ * secret n'a pas déjà tranché — un aller-retour Supabase par minute pour un
+ * appel de machine serait payé pour rien.
+ */
+async function appelantAutorise(req: Request): Promise<boolean> {
+  if (tickAutorise(req)) return true
+  const auth = await requireUser(req)
+  if (!auth.ok) return false
+  const role = await requireRole(auth.user, 'admin')
+  return role.ok
+}
+
 async function handle(req: Request): Promise<Response> {
-  if (!tickAutorise(req)) return json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await appelantAutorise(req))) return json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
     const resultat = await tickRechauffeur(getServiceClient())
