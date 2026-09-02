@@ -232,10 +232,15 @@ export function collectServiceTags(opts: {
 }
 
 /**
- * Catalogue des tags qu'on a le droit de poser sur une entreprise : tout ce que
- * `collectServiceTags` connaît, moins ceux explicitement bloqués dans les
- * Paramètres. La comparaison passe par la clé canonique, sinon bloquer
- * « climatisation » laissait passer « Climatisation ».
+ * Catalogue des tags qu'on a explicitement autorisés dans les Paramètres.
+ *
+ * Une ligne absente n'est volontairement PAS une autorisation ici. Le catalogue
+ * sert à la saisie manuelle dans le pipeline : proposer un tag jamais validé
+ * revenait à contourner la décision prise dans Réglages > Enrichissement.
+ * Ainsi, une configuration sans tag autorisé laisse le champ vide et la fiche
+ * reste signalée comme incomplète jusqu'à ce qu'un tag soit autorisé puis posé.
+ * La comparaison passe par la clé canonique, sinon « Climatisation » pourrait
+ * contourner l'autorisation de « climatisation ».
  */
 export function buildServiceTagCatalog(opts: {
   used?: Iterable<string>;
@@ -244,9 +249,37 @@ export function buildServiceTagCatalog(opts: {
   const blocked = new Set(
     (opts.settings ?? [])
       .filter((row) => row.allowed === false && typeof row.tag === 'string')
+      .map((row) => serviceTagKey(row.tag as string)),
+  );
+  const allowed = new Set(
+    (opts.settings ?? [])
+      .filter((row) => row.allowed === true && typeof row.tag === 'string')
       .map((row) => serviceTagKey(row.tag as string))
   );
-  return collectServiceTags(opts).filter((tag) => !blocked.has(serviceTagKey(tag)));
+  return collectServiceTags(opts).filter((tag) => {
+    const key = serviceTagKey(tag);
+    return allowed.has(key) && !blocked.has(key);
+  });
+}
+
+/** Un tag est-il explicitement autorisé pour être posé manuellement ? */
+export function isServiceTagExplicitlyAllowed(
+  tag: string,
+  settings: readonly ServiceTagSetting[] | null | undefined,
+): boolean {
+  const key = serviceTagKey(tag);
+  const rows = settings ?? [];
+  return !rows.some(
+    (setting) =>
+      setting.allowed === false &&
+      typeof setting.tag === 'string' &&
+      serviceTagKey(setting.tag) === key,
+  ) && rows.some(
+    (setting) =>
+      setting.allowed === true &&
+      typeof setting.tag === 'string' &&
+      serviceTagKey(setting.tag) === key,
+  );
 }
 
 /**

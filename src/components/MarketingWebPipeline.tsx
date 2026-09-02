@@ -11,6 +11,7 @@ import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
+import { serviceTagKey } from "@/utils/serviceTags";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +38,7 @@ import {
   siteRequiredFor,
   toArr,
   type RequiredField,
+  type RequiredRule,
 } from "./marketing-pipeline/required-fields";
 import {
   SELF_LABELLED_FIELDS,
@@ -2183,7 +2185,9 @@ const OpportunityEditModal: React.FC<{
    */
   const [missingAtOpen, setMissingAtOpen] = React.useState<RequiredField[]>([]);
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
-  const [tagCatalog, setTagCatalog] = React.useState<string[]>([]);
+  // `null` pendant le chargement : on ne marque pas fugacement une fiche
+  // invalide avant de connaître les autorisations.
+  const [tagCatalog, setTagCatalog] = React.useState<string[] | null>(null);
   const deletedReviewIds = React.useRef<string[]>([]);
   const variablesRef = React.useRef<Record<string, unknown>>({});
 
@@ -2199,10 +2203,10 @@ const OpportunityEditModal: React.FC<{
     authedFetch("/api/site-builder/service-tags")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { tags?: string[] } | null) => {
-        if (!cancelled && Array.isArray(data?.tags)) setTagCatalog(data.tags);
+        if (!cancelled) setTagCatalog(Array.isArray(data?.tags) ? data.tags : []);
       })
       .catch(() => {
-        /* catalogue indisponible : la saisie libre reste possible */
+        if (!cancelled) setTagCatalog([]);
       });
     return () => {
       cancelled = true;
@@ -2338,8 +2342,13 @@ const OpportunityEditModal: React.FC<{
   // champs sont donc toujours exigés, sinon une fiche « complète » sans ville
   // SEO ni chiffres clés resterait bloquée à l'étape suivante.
   const requiredRules = siteRequiredFor(true);
-  const missingRequired = requiredRules.filter((r) => !ruleMet(r, form)).map((r) => r.label);
-  const invalidFields = new Set(requiredRules.filter((r) => !ruleMet(r, form)).map((r) => r.field));
+  const hasAuthorizedServiceTag = tagCatalog === null || toArr(form.service_tags).some((tag) =>
+    tagCatalog.some((allowed) => serviceTagKey(allowed) === serviceTagKey(tag)),
+  );
+  const isRuleMet = (rule: RequiredRule): boolean =>
+    rule.field === "service_tags" ? hasAuthorizedServiceTag : ruleMet(rule, form);
+  const missingRequired = requiredRules.filter((r) => !isRuleMet(r)).map((r) => r.label);
+  const invalidFields = new Set(requiredRules.filter((r) => !isRuleMet(r)).map((r) => r.field));
   // Plus conditionné à `siteRequirement` : un champ requis vide se signale quelle
   // que soit la porte par laquelle on est entré. Ouverte depuis « Fiche », la
   // modale n'affichait AUCUN rouge — c'est pourtant là qu'on vient compléter, et
@@ -2370,7 +2379,7 @@ const OpportunityEditModal: React.FC<{
       values: form,
       onChange: (patch) => setForm((f) => ({ ...f, ...patch })),
       entrepriseId: item?.entreprise_id ?? null,
-      tagCatalog,
+      tagCatalog: tagCatalog ?? [],
       invalid,
       // L'astérisque de la note suit le nombre d'avis : sans avis il n'y a rien
       // à noter, et la marquer obligatoire réclamerait un chiffre que
@@ -2673,9 +2682,8 @@ const OpportunityEditModal: React.FC<{
                       <Field label="Service tags du lead magnet">
                         <ServiceTagsField
                           value={form.lm_service_tags_snapshot}
-                          catalog={tagCatalog}
+                          catalog={tagCatalog ?? []}
                           onChange={(v) => setForm((f) => ({ ...f, lm_service_tags_snapshot: v }))}
-                          placeholder="autre tag…"
                         />
                       </Field>
                     </div>

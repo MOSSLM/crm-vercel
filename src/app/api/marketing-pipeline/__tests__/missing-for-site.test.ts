@@ -63,6 +63,19 @@ const projectSansEstimation = (over: Partial<NonNullable<Proj>> = {}): Proj =>
   });
 
 describe("missingForSite", () => {
+  it("réclame un tag explicitement autorisé lorsque les réglages sont fournis", () => {
+    expect(
+      missingForSite(ent({ service_tags: ["plomberie"] }), project(), [
+        { tag: "climatisation", allowed: true },
+      ]),
+    ).toContain("Service tags");
+    expect(
+      missingForSite(ent({ service_tags: ["Plomberie"] }), project(), [
+        { tag: "plomberie", allowed: true },
+      ]),
+    ).not.toContain("Service tags");
+  });
+
   it("ne réclame rien quand la fiche est complète", () => {
     expect(missingForSite(ent(), project())).toEqual([]);
   });
