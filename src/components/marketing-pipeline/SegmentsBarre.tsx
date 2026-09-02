@@ -28,12 +28,43 @@ import type { CleFiltre } from "./filtres";
  * large sous un nom qui promet un tri.
  */
 
+/**
+ * L'ÉTAT DE LA BARRE D'OUTILS, celui que les segments ignoraient.
+ *
+ * Un segment ne retenait que `q`, `services` et `filtres` — trois dimensions
+ * sur treize. On enregistrait « aucun tag autorisé + étape Site démo », on
+ * rouvrait, et l'étape avait disparu : le tableau rendait une population plus
+ * large sous un nom qui promettait un tri, sans que rien ne le signale. C'est
+ * exactement la faute que ce fichier reproche déjà aux segments de
+ * l'explorateur ; elle était aussi ici.
+ *
+ * Tout est FACULTATIF et rangé sous `vue` : l'explorateur lit `flags` et
+ * `sources`, il ignore cette clé sans rien casser, et un segment écrit avant
+ * aujourd'hui se rejoue comme avant.
+ */
+export interface VueSegment {
+  attribution?: string;
+  owner?: string | null;
+  hideAttributed?: boolean;
+  pipeline?: string;
+  data?: string;
+  canal?: string;
+  sequence?: string;
+  ticket?: string;
+  /** L'étape : `all`, `done`, ou l'index de la colonne. */
+  stage?: string;
+  /** L'ordre fait partie de la vue : « les plus en retard d'abord » se sauve. */
+  sort?: string;
+}
+
 export interface CriteresSegment {
   q?: string | null;
   flags?: string[];
   sources?: string[];
   services?: string[];
   filtres?: string[];
+  /** Les menus de la barre d'outils. Absent des segments d'avant le 02/09/2026. */
+  vue?: VueSegment;
 }
 
 export interface Segment {
@@ -44,7 +75,10 @@ export interface Segment {
 
 /** Ce que CET écran sait rejouer. Le reste est signalé, jamais avalé. */
 const rejouable = (c: CriteresSegment) =>
-  (c.services?.length ?? 0) > 0 || (c.filtres?.length ?? 0) > 0 || !!c.q;
+  (c.services?.length ?? 0) > 0 ||
+  (c.filtres?.length ?? 0) > 0 ||
+  !!c.q ||
+  Object.keys(c.vue ?? {}).length > 0;
 
 /** Ce que cet écran ne sait PAS rejouer — les critères de l'explorateur. */
 const etranger = (c: CriteresSegment) =>
@@ -54,6 +88,7 @@ export function SegmentsBarre({
   q,
   services,
   filtres,
+  vue,
   onRejouer,
 }: {
   /** La recherche courante du tableau. */
@@ -62,6 +97,12 @@ export function SegmentsBarre({
   services: Set<string>;
   /** Les cases cochées du panneau de filtres. */
   filtres: Set<CleFiltre>;
+  /**
+   * Les menus de la barre d'outils, réduits à ce qui S'ÉCARTE du défaut.
+   * Enregistrer « tout » sous chaque menu ferait un segment illisible et,
+   * surtout, figerait des défauts qui peuvent changer.
+   */
+  vue: VueSegment;
   /** Applique les critères d'un segment au tableau. */
   onRejouer: (c: CriteresSegment) => void;
 }) {
@@ -93,7 +134,8 @@ export function SegmentsBarre({
     void relire();
   }, [relire]);
 
-  const aQuoiTrier = services.size > 0 || filtres.size > 0 || q.trim().length > 0;
+  const aQuoiTrier =
+    services.size > 0 || filtres.size > 0 || q.trim().length > 0 || Object.keys(vue).length > 0;
 
   const enregistrer = async () => {
     if (!aQuoiTrier) return;
@@ -110,6 +152,7 @@ export function SegmentsBarre({
             q: q.trim() || null,
             services: [...services],
             filtres: [...filtres],
+            vue,
           },
         }),
       });
@@ -151,7 +194,7 @@ export function SegmentsBarre({
 
       {segments.length === 0 && (
         <span className="vide">
-          Aucun pour l’instant — coche des métiers ou des filtres, puis enregistre.
+          Aucune pour l’instant — filtre le tableau comme tu veux le retrouver, puis enregistre.
         </span>
       )}
 
@@ -196,12 +239,12 @@ export function SegmentsBarre({
         onClick={enregistrer}
         title={
           aQuoiTrier
-            ? "Enregistrer les filtres courants sous un nom"
-            : "Coche au moins un métier ou un filtre : un segment sans critère ne trie rien"
+            ? "Enregistrer sous un nom TOUT l’état de la barre : recherche, métiers, cases, menus, étape et tri"
+            : "Coche au moins un métier, un filtre ou un menu : une vue sans critère ne trie rien"
         }
       >
         <Bookmark className="ico-sm" />
-        Enregistrer ce tri
+        Enregistrer cette vue
       </button>
     </div>
   );

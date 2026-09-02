@@ -2343,6 +2343,37 @@ export function PipelineMatrix({
     setPage(1);
   };
 
+  /**
+   * L'état de la barre d'outils, réduit à ce qui S'ÉCARTE du défaut.
+   *
+   * On n'enregistre pas « tout » sous chaque menu : ce serait un segment
+   * illisible, et surtout ça figerait des défauts qui peuvent changer. Ce qui
+   * est absent se relira comme « le défaut du jour », pas comme « la valeur
+   * d'il y a trois mois ».
+   *
+   * `hidden` n'en fait PAS partie, et c'est délibéré : masquer des lignes à la
+   * main est un geste de séance, pas un critère. Le figer dans une vue
+   * enregistrée cacherait des entreprises pour toujours sans qu'aucun menu ne
+   * l'affiche.
+   */
+  const vueCourante = React.useMemo(() => {
+    const v: Record<string, string | boolean | null> = {};
+    if (attribution !== "all") v.attribution = attribution;
+    if (owner !== "all") v.owner = owner;
+    if (hideAttributed) v.hideAttributed = true;
+    if (pipelineFilter !== "all") v.pipeline = pipelineFilter;
+    if (dataFilter !== "all") v.data = dataFilter;
+    if (canalFilter !== "all") v.canal = canalFilter;
+    if (sequenceFilter !== "all") v.sequence = sequenceFilter;
+    if (ticketFilter !== "all") v.ticket = ticketFilter;
+    if (stageFilter !== "all") v.stage = String(stageFilter);
+    if (sort !== "recent") v.sort = sort;
+    return v;
+  }, [
+    attribution, owner, hideAttributed, pipelineFilter, dataFilter,
+    canalFilter, sequenceFilter, ticketFilter, stageFilter, sort,
+  ]);
+
   /** Y a-t-il quoi que ce soit à réinitialiser ? Sinon le bouton ne sert à rien. */
   const filtreActif =
     nbCoches > 0 ||
@@ -2868,10 +2899,39 @@ export function PipelineMatrix({
         q={q}
         services={services}
         filtres={coches}
+        vue={vueCourante}
         onRejouer={(c: CriteresSegment) => {
           setQ(c.q ?? "");
           setServices(new Set(c.services ?? []));
           setCoches(new Set((c.filtres ?? []) as CleFiltre[]));
+          // ── LA VUE SE REJOUE ENTIÈREMENT, DÉFAUTS COMPRIS ────────────────
+          // Chaque menu absent de la vue est REMIS à son défaut, jamais laissé
+          // tel quel : sinon rejouer un segment par-dessus un tableau déjà
+          // filtré rendrait une population plus étroite que le segment, sous
+          // son nom. Un segment doit décrire un état complet, pas un delta.
+          const v = c.vue ?? {};
+          setAttribution((v.attribution ?? "all") as AttributionFilter);
+          setHideAttributed(v.hideAttributed === true);
+          setPipelineFilter(v.pipeline ?? "all");
+          setDataFilter((v.data ?? "all") as DataFilter);
+          setCanalFilter((v.canal ?? "all") as CanalFilter);
+          setSequenceFilter(v.sequence ?? "all");
+          setTicketFilter((v.ticket ?? "all") as TicketFilter);
+          setStageFilter((v.stage == null || v.stage === "all"
+            ? "all"
+            : v.stage === "done"
+              ? "done"
+              : Number(v.stage)) as StageFilter);
+          setSort((v.sort ?? "recent") as SortMode);
+          // L'AGENT PEUT AVOIR DISPARU depuis l'enregistrement. Rejouer un
+          // propriétaire inconnu viderait le tableau sans rien expliquer :
+          // on le laisse tomber et on le DIT.
+          const proprio = v.owner ?? "all";
+          const connu = proprio === "all" || agents.some((a) => a.id === proprio);
+          setOwner(connu ? proprio : "all");
+          if (!connu) {
+            toast.warning("L’agent de cette vue n’existe plus — le filtre d’attribution est ignoré.");
+          }
           setPage(1);
         }}
       />
