@@ -47,6 +47,7 @@ import {
   Rocket,
   Share2,
   Shuffle,
+  Tags,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -1357,6 +1358,142 @@ function SequenceCell({
   );
 }
 
+/**
+ * Poser des métiers sur tout un lot.
+ *
+ * ── LE CATALOGUE, ET RIEN QUE LUI ───────────────────────────────────────
+ * Aucune saisie libre, comme dans la fiche depuis la #692 : c'est elle qui
+ * créait les tags jumeaux — « climatisation » vs « climatisaton » — qu'aucune
+ * page, section ni image de la médiathèque ne reconnaît, et le site sortait
+ * amputé sans rien signaler. La route revalide de toute façon : un plafond posé
+ * par l'écran n'est pas un plafond.
+ *
+ * ── AJOUTER EST LE DÉFAUT, ET C'EST VOULU ───────────────────────────────
+ * Le cas ordinaire est une fiche qui porte déjà un libellé RGE générique et à
+ * qui il manque le vrai métier : on complète, on n'efface pas. « Remplacer »
+ * existe pour les fiches dont les étiquettes sont fausses, et il annonce ce
+ * qu'il jette.
+ */
+function BulkTagsPop({
+  rows,
+  catalog,
+  busy,
+  onApply,
+}: {
+  rows: BoardItem[];
+  catalog: string[];
+  busy: boolean;
+  onApply: (items: BoardItem[], tags: string[], mode: "ajouter" | "remplacer") => void;
+}) {
+  const [ouvert, setOuvert] = React.useState(false);
+  const [choisis, setChoisis] = React.useState<Set<string>>(new Set());
+  const [mode, setMode] = React.useState<"ajouter" | "remplacer">("ajouter");
+
+  // Un lot ne porte que des ENTREPRISES : une opportunité sans fiche n'a nulle
+  // part où écrire, et la route la compterait « introuvable ».
+  const cibles = rows.filter((r) => r.entreprise_id != null);
+  // Combien deviendraient fabricables : c'est la raison d'être du bouton, donc
+  // elle est dite avant de cliquer plutôt que découverte après.
+  const debloquees = cibles.filter((r) => (r.metiers?.autorises ?? 0) === 0).length;
+
+  const basculer = (tag: string) =>
+    setChoisis((s) => {
+      const n = new Set(s);
+      if (n.has(tag)) n.delete(tag);
+      else n.add(tag);
+      return n;
+    });
+
+  const appliquer = () => {
+    if (choisis.size === 0 || cibles.length === 0) return;
+    onApply(cibles, [...choisis], mode);
+    setOuvert(false);
+    setChoisis(new Set());
+  };
+
+  return (
+    <div className="filtres-pop-hote">
+      <button
+        className={"btn sm" + (choisis.size > 0 ? " on" : "")}
+        disabled={busy || cibles.length === 0}
+        onClick={() => setOuvert((v) => !v)}
+        title={
+          debloquees > 0
+            ? `Poser des métiers sur ${cibles.length} entreprise(s) — dont ${debloquees} qu'aucun tag autorisé ne permet encore de fabriquer.`
+            : `Poser des métiers sur ${cibles.length} entreprise(s).`
+        }
+      >
+        <Tags className="ico-sm" />
+        Métiers
+        <span className="ct">{cibles.length}</span>
+      </button>
+
+      {ouvert && (
+        <>
+          <div className="mp-scope-pop-scrim" onClick={() => setOuvert(false)} />
+          <div className="filtres-pop fp-services" role="group" aria-label="Poser des métiers">
+            <div className="fp-tete">
+              <strong>Poser des métiers</strong>
+              <span className="fp-regle">
+                {debloquees > 0 ? (
+                  <>
+                    <b>{debloquees}</b> deviendraient fabricables
+                  </>
+                ) : (
+                  "toutes ont déjà un tag autorisé"
+                )}
+              </span>
+            </div>
+
+            <div className="fp-liste">
+              {catalog.map((tag) => (
+                <label className="fp-case" key={tag}>
+                  <input type="checkbox" checked={choisis.has(tag)} onChange={() => basculer(tag)} />
+                  <span className="fp-label">{tag}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="fp-modes">
+              <label className="fp-case">
+                <input
+                  type="radio"
+                  name="mode-tags"
+                  checked={mode === "ajouter"}
+                  onChange={() => setMode("ajouter")}
+                />
+                <span className="fp-label">Ajouter — garde les métiers déjà posés</span>
+              </label>
+              <label className="fp-case">
+                <input
+                  type="radio"
+                  name="mode-tags"
+                  checked={mode === "remplacer"}
+                  onChange={() => setMode("remplacer")}
+                />
+                <span className="fp-label">Remplacer — jette les métiers actuels</span>
+              </label>
+            </div>
+
+            <div className="fp-pied">
+              <button
+                className="btn sm accent"
+                disabled={busy || choisis.size === 0}
+                onClick={appliquer}
+              >
+                Appliquer à {cibles.length}
+              </button>
+              <span className="fp-reste">
+                {choisis.size === 0 ? "aucun métier coché" : `${choisis.size} coché(s)`}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Bulk action bar ──────────────────────────────────────────────────────
  * Une sélection peut mélanger des lignes à des étapes différentes : plutôt que
  * d'imposer une étape courante, chaque action n'agit que sur les lignes
@@ -1375,6 +1512,7 @@ function BulkBar({
   bulk,
   templateId,
   templateName,
+  tagCatalog,
 }: {
   rows: BoardItem[];
   agents: AgentRef[];
@@ -1389,6 +1527,8 @@ function BulkBar({
   /** Le modèle choisi en haut de page : cible de « Refaire les sites ». */
   templateId: string;
   templateName: string | null;
+  /** Les métiers autorisés, seuls posables. Absent = pas de bouton. */
+  tagCatalog?: string[];
 }) {
   /**
    * Repliée par défaut : une rangée qui défile, pas quatre qui s'empilent.
@@ -1519,6 +1659,22 @@ function BulkBar({
             Figer en lot
             {ct(aFiger.length)}
           </button>
+          <div className="tb-div" />
+        </>
+      )}
+
+      {/* AVANT « Lisser », et l'ordre est le fond du bouton : le lissage va
+          chercher ce que la fiche n'a pas, mais il ne pose pas de métier. Sans
+          tag autorisé, la fiche reste incomplète et « Créer les sites »
+          refusera — autant le corriger d'abord. */}
+      {bulk.onServiceTags && (tagCatalog?.length ?? 0) > 0 && (
+        <>
+          <BulkTagsPop
+            rows={rows}
+            catalog={tagCatalog!}
+            busy={busy}
+            onApply={bulk.onServiceTags}
+          />
           <div className="tb-div" />
         </>
       )}
@@ -1956,6 +2112,13 @@ interface PipelineMatrixProps {
    * qui redirige un agent sur son dashboard.
    */
   agentMode?: boolean;
+  /**
+   * Les métiers qu'on a le droit de poser (`/api/site-builder/service-tags`,
+   * allowlist déjà appliquée). Sans lui, le bouton « Métiers » de la barre de
+   * sélection ne s'affiche pas : proposer une liste vide ferait cliquer pour
+   * rien, et proposer une liste libre rouvrirait la porte aux tags jumeaux.
+   */
+  tagCatalog?: string[];
   /** Ouvre la boîte de réception des tickets (toutes lignes confondues). */
   onOpenTickets?: () => void;
   /**
@@ -1986,6 +2149,7 @@ export function PipelineMatrix({
   stages = STAGES,
   canAssign = true,
   agentMode = false,
+  tagCatalog,
   onOpenTickets,
   showArchived = false,
   onToggleArchived,
@@ -2726,6 +2890,7 @@ export function PipelineMatrix({
           bulk={bulk}
           templateId={templateId}
           templateName={selectedTemplate?.name ?? null}
+          tagCatalog={tagCatalog}
         />
       )}
 

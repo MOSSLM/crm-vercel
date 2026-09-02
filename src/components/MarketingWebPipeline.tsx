@@ -42,7 +42,6 @@ import {
 } from "./marketing-pipeline/required-fields";
 import {
   SELF_LABELLED_FIELDS,
-  ServiceTagsField,
   requiredFieldControl,
 } from "./marketing-pipeline/RequiredFieldControl";
 import { AUTO_SEQUENCE, inscriptionVivante, sequenceEtatLabel, sequenceLancable } from "./marketing-pipeline/types";
@@ -1700,6 +1699,91 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
    * plafonds et son écran. C'est ce qui permet de lancer cinq cents fiches sans
    * craindre ce qui va partir — puis d'aller le regarder.
    */
+  /**
+   * Le catalogue des métiers autorisés, au niveau du TABLEAU.
+   *
+   * La modale le chargeait déjà, mais pour elle seule et à chaque ouverture de
+   * fiche. La barre de sélection en a besoin sans qu'aucune fiche soit ouverte,
+   * d'où cette lecture-ci — une fois, au montage. Les deux ne divergent pas :
+   * c'est la même route, et c'est elle qui applique l'allowlist.
+   *
+   * `null` tant qu'on ne sait pas : le bouton « Métiers » ne s'affiche pas,
+   * plutôt que de proposer une liste vide où l'on cliquerait pour rien.
+   */
+  const [catalogueMetiers, setCatalogueMetiers] = React.useState<string[] | null>(null);
+  React.useEffect(() => {
+    let annule = false;
+    authedFetch("/api/site-builder/service-tags")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { tags?: string[] } | null) => {
+        if (!annule) setCatalogueMetiers(Array.isArray(data?.tags) ? data.tags : []);
+      })
+      .catch(() => {
+        if (!annule) setCatalogueMetiers([]);
+      });
+    return () => {
+      annule = true;
+    };
+  }, []);
+
+  /**
+   * Poser des métiers sur tout un lot.
+   *
+   * ⚠️ LE COMPTE QUI COMPTE EST `snapshots`, PAS `modifiees`. Le rendu d'un site
+   * lit `projectServiceTags ?? serviceTags` : c'est le SNAPSHOT du dossier lead
+   * magnet qui gagne. Écrire la fiche sans lui laisserait le site inchangé, et
+   * le geste paraîtrait avoir marché. La route écrit les deux ; le toast le dit,
+   * pour qu'on n'aille pas chercher ailleurs une page qui n'a pas bougé.
+   */
+  const poserMetiers = async (
+    items: BoardItem[],
+    tags: string[],
+    mode: "ajouter" | "remplacer",
+  ) => {
+    const ids = [
+      ...new Set(items.map((it) => it.entreprise_id).filter((v): v is number => v != null)),
+    ];
+    if (ids.length === 0) {
+      toast.error("Aucune entreprise dans la sélection");
+      return;
+    }
+    setWorking("service-tags");
+    try {
+      const res = await authedFetch("/api/marketing-pipeline/service-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entreprise_ids: ids, tags, mode }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        modifiees?: number;
+        inchangees?: number;
+        snapshots?: number;
+        introuvables?: number;
+        erreurs?: string[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Échec de la pose des métiers");
+
+      const inchangees = data.inchangees ?? 0;
+      const erreurs = data.erreurs ?? [];
+      toast.success(
+        `${data.modifiees ?? 0} fiche(s) mise(s) à jour — ${tags.join(", ")}`,
+        {
+          description:
+            (inchangees > 0 ? `${inchangees} portaient déjà ces métiers. ` : "") +
+            `${data.snapshots ?? 0} dossier(s) lead magnet réalignés — c'est eux que le site lit.` +
+            (erreurs.length > 0 ? ` ${erreurs.length} erreur(s).` : ""),
+          duration: 9000,
+        },
+      );
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec de la pose des métiers");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   const lisserSelection = async (items: BoardItem[]) => {
     const ids = [
       ...new Set(items.map((it) => it.entreprise_id).filter((v): v is number => v != null)),
@@ -1906,6 +1990,9 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     // Même raison que le lissage : la route est admin, et c'est une écriture de
     // masse sur ce qui s'affichera sur des sites vendus.
     onCompleterChiffres: isAgent ? undefined : (items) => completerChiffres(items),
+    // Le catalogue des métiers est une décision d'admin, et poser un tag change
+    // ce que le site FABRIQUE : pages, sections, tirage des photos.
+    onServiceTags: isAgent ? undefined : (items, tags, mode) => poserMetiers(items, tags, mode),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
     onEnroll: isAgent ? undefined : (items, sId) => enrollInSequence(items, sId),
     onMove: (items, pId) => movePipeline(items, pId),
@@ -1957,6 +2044,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         stages={isAgent ? AGENT_STAGES : STAGES}
         canAssign={!isAgent}
         agentMode={isAgent}
+        tagCatalog={catalogueMetiers ?? undefined}
         onOpenTickets={() => {
           setNotesSubject(undefined);
           setNotesItem(null);
@@ -2063,7 +2151,6 @@ interface EditForm {
   lm_override_email: string;
   lm_override_address: string;
   lm_logo_url: string;
-  lm_service_tags_snapshot: string;
   lm_zones: string;
   lm_stat_years: string;
   lm_stat_clients: string;
@@ -2105,7 +2192,6 @@ const EMPTY_FORM: EditForm = {
   lm_override_email: "",
   lm_override_address: "",
   lm_logo_url: "",
-  lm_service_tags_snapshot: "",
   lm_zones: "",
   lm_stat_years: "",
   lm_stat_clients: "",
@@ -2296,7 +2382,6 @@ const OpportunityEditModal: React.FC<{
         lm_override_email: (p.override_email as string) ?? "",
         lm_override_address: (p.override_address as string) ?? "",
         lm_logo_url: ((p.logo_url as string) || (c.logo_url as string)) ?? "",
-        lm_service_tags_snapshot: fromArr(p.service_tags_snapshot),
         lm_zones: zonesFromVariables(p.variables),
         lm_stat_years: numStr(p.stat_years_experience),
         lm_stat_clients: numStr(p.stat_satisfied_clients),
@@ -2435,7 +2520,19 @@ const OpportunityEditModal: React.FC<{
         override_email: form.lm_override_email || null,
         override_address: form.lm_override_address || null,
         logo_url: form.lm_logo_url || null,
-        service_tags_snapshot: toArr(form.lm_service_tags_snapshot),
+        // ── LE SNAPSHOT SUIT L'ENTREPRISE, IL NE SE SAISIT PLUS ───────────
+        // Il portait son propre menu déroulant, juste sous celui de
+        // l'entreprise — deux champs pour la même question, dont un seul
+        // compte : `resolve-variables` rend `projectServiceTags ?? serviceTags`,
+        // donc le snapshot ÉCRASE l'entreprise au rendu du site.
+        //
+        // Deux champs dont l'un gagne en silence, c'est une divergence qui
+        // attend. Mesuré le 02/09/2026 avant de trancher : 899 dossiers sur
+        // 1023 portent un snapshot, et les 899 sont IDENTIQUES aux tags de leur
+        // entreprise — zéro divergence. Le second champ ne servait donc à rien
+        // qu'à pouvoir se tromper. On l'a retiré, et l'entreprise devient la
+        // seule source : le snapshot se réaligne à chaque enregistrement.
+        service_tags_snapshot: toArr(form.service_tags),
         stat_years_experience: form.lm_stat_years || null,
         stat_satisfied_clients: form.lm_stat_clients || null,
         stat_installations_completed: form.lm_stat_installations || null,
@@ -2677,15 +2774,6 @@ const OpportunityEditModal: React.FC<{
                     </div>
                     <div className="sm:col-span-2">
                       <Field label="Zones desservies (villes autour, séparées par des virgules)"><Input value={form.lm_zones} onChange={set("lm_zones")} placeholder="Annecy, Seynod, Cran-Gevrier" /></Field>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <Field label="Service tags du lead magnet">
-                        <ServiceTagsField
-                          value={form.lm_service_tags_snapshot}
-                          catalog={tagCatalog ?? []}
-                          onChange={(v) => setForm((f) => ({ ...f, lm_service_tags_snapshot: v }))}
-                        />
-                      </Field>
                     </div>
                   </div>
                 </div>
