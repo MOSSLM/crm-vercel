@@ -276,6 +276,30 @@ sortir de la courante** (un prospect sans inscription vivante n'est sur aucun
 écran, et rien ne le signale), et la note est **obligatoire** — un « il a
 rappelé » vide ne vaut pas mieux que le silence qu'il remplace.
 
+**Entre deux étapes, un prospect n'a AUCUNE surface — et ça ne se lit pas comme
+une attente, ça se lit comme une disparition.** Une séquence ne pose de carte
+qu'aux dates qu'elle a prévues ; entre deux, l'inscription est `active` avec un
+`next_run_at` dans le futur, donc pas de tâche, donc pas de carte, donc aucun
+écran. 214 inscriptions étaient dans cet état au 01/09/2026. JM2C, ce jour-là :
+la démo part à 10h50, `waDemo` bascule sur S2 dont la première étape porte
+`day: 2` — prochaine carte le 03/09. Une minute plus tard le gérant répond
+« nous n'avons pas besoin ». Rien de tout ça ne pouvait entrer, pas même le lien
+de la plaquette qu'on était en train de lui annoncer : il ne vivait que dans la
+charge utile de la carte disparue. Le 03/09, la file aurait rendu « Plaquette —
+ce que ça coûte » à un homme qui venait de dire non. D'où
+`/api/agent/demarchage/echange` et `DemEchange`, sur la fiche hors file : où il
+en est et **quand il revient**, les trois liens à jeton préparés à la demande,
+et l'échange consigné avec son issue. **Ce n'est pas « il m'a rappelé »** — pas
+de bascule de scénario, pas d'appel de suite : on consigne, et on décide
+seulement du sort de la séquence en cours (on continue, on repousse, on arrête).
+Trois règles y sont verrouillées par `echange/__tests__/route.test.ts` :
+**`answered` ne pose PAS `replied`** (le piège de `reply.ts` — un accusé de
+réception éteindrait les cellules WhatsApp et Appel, c'est-à-dire les étapes
+qu'on veut jouer), **sans issue la séquence ne bouge pas**, et une pièce sans
+lien n'est pas journalisée. Corollaire côté lecture : le GET ne prépare les
+liens que sur `?pieces=1`, parce que `liensDesPieces` CRÉE les jetons manquants
+et qu'ouvrir une fiche ne doit pas écrire en base.
+
 **La DA lemlist ne se réinvente pas : `lem-skin.css` existe.** Palette relevée
 le 19/08/2026 sur lemlist.com en lisant les styles CALCULÉS, jetons préfixés
 `--lem-` (hors skin, `--accent` est une surface de survol, pas une couleur de

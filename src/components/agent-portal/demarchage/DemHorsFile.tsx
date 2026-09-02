@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon, Pill } from "./DemIcon";
+import { DemEchange } from "./DemEchange";
 import { DemNotes } from "./DemNotes";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
@@ -21,10 +22,20 @@ import type { CompanyBundle } from "./types";
  * n'inscrit personne dans une séquence. Le rendez-vous se prend dans le
  * panneau de droite, qui fonctionne exactement pareil ici et dans la file.
  *
- * UNE SEULE CHOSE S'ÉCRIT ICI : la note. Quelqu'un rappelle, il dit quelque
- * chose — c'est précisément le moment où l'information se perd, parce qu'il n'y
- * a aucune tâche à boucler pour l'emporter. Le bloc de notes est le même que
- * celui des cartes de la file : ce qu'on écrit là se relit partout ailleurs.
+ * DEUX CHOSES S'ÉCRIVENT ICI, et la seconde est arrivée après coup.
+ *
+ * La note d'abord. Quelqu'un dit quelque chose — c'est précisément le moment où
+ * l'information se perd, parce qu'il n'y a aucune tâche à boucler pour
+ * l'emporter. Le bloc de notes est le même que celui des cartes de la file : ce
+ * qu'on écrit là se relit partout ailleurs.
+ *
+ * L'ÉCHANGE ENSUITE (`DemEchange`), et ce n'est pas la même chose. Une note se
+ * relit ; elle n'entre ni dans le fil, ni dans l'entonnoir, elle ne journalise
+ * aucun envoi et ne dit rien à la séquence qui tourne. Or la plupart des fiches
+ * ouvertes ici ne sont pas des inconnues : ce sont des prospects EN ATTENTE
+ * entre deux étapes — 214 au 01/09/2026 — dont la carte suivante est datée de
+ * dans deux jours et qui, eux, répondent maintenant. C'est le cas JM2C, et le
+ * détail est dans l'en-tête de `/api/agent/demarchage/echange`.
  */
 export function DemHorsFile({
   company,
@@ -157,10 +168,13 @@ export function DemHorsFile({
           onEnregistree={onNote}
         />
 
+        <DemEchange entrepriseId={e.id} onConsigne={onNote} />
+
         <div className="dm-hint">
           <Icon name="info" className="ico-sm" />
-          Elle n&apos;a pas de tâche en file : rien ne se ferme ici. Pour caler un rendez-vous, le
-          panneau de droite propose les vrais créneaux ; l&apos;échange se relit juste en dessous.
+          Elle n&apos;a pas de tâche en file : aucune carte ne se ferme ici. Pour caler un
+          rendez-vous, le panneau de droite propose les vrais créneaux ; l&apos;échange se relit
+          juste en dessous.
         </div>
 
         <div className="dm-cta2">
