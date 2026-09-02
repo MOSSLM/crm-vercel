@@ -9,7 +9,7 @@ import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
 import { inscriptionVivante, type BoardItem } from "@/components/marketing-pipeline/types";
 import type { SequenceSettings } from "@/components/automations/types";
 import { noteSummaries } from "./_notes";
-import { estMiseDeCote, type ServiceTagSetting } from "@/utils/serviceTags";
+import { estMiseDeCote, isServiceTagExplicitlyAllowed, type ServiceTagSetting } from "@/utils/serviceTags";
 
 /**
  * Construction du tableau d'avancement Marketing & Web.
@@ -137,7 +137,11 @@ function hasStat(v: unknown): boolean {
  * compare les deux listes de libellés : la synchronisation n'est plus une simple
  * demande en commentaire.
  */
-export function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
+export function missingForSite(
+  ent: EntRow | undefined,
+  project: ProjectRow | null | undefined,
+  tagSettings?: readonly ServiceTagSetting[] | null,
+): string[] {
   const miss: string[] = [];
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "");
   if (!ent) return ["Entreprise"];
@@ -151,7 +155,13 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
     : str(ent.service_tags)
       ? [str(ent.service_tags)]
       : [];
-  if (tags.length === 0) miss.push("Service tags");
+  // `undefined` préserve le contrat des appelants historiques qui ne chargent
+  // pas les réglages. Le board, lui, les passe toujours : une fiche n'est
+  // complète que si elle porte au moins un tag explicitement autorisé.
+  const hasAuthorizedTag = tagSettings === undefined
+    ? tags.length > 0
+    : tags.some((tag) => isServiceTagExplicitlyAllowed(tag, tagSettings));
+  if (!hasAuthorizedTag) miss.push("Service tags");
   // Les avis Google forment une paire FACULTATIVE, et c'est le seul énoncé
   // satisfiable : une entreprise sans fiche Google — 1210 sur 2797 — ou avec
   // zéro avis — 217 — ne pouvait pas les fournir. Les exiger rendait sa fiche
@@ -1011,7 +1021,7 @@ export async function buildBoard(
     // Ce qui manque encore pour générer le site. Calculé une fois : il sert à
     // la fois d'indicateur sur la carte et de preuve qu'un enrichissement fait
     // à la main est terminé.
-    const missing = missingForSite(ent, project);
+    const missing = missingForSite(ent, project, (metiersRes.data ?? []) as ServiceTagSetting[]);
 
     const enriched = isEnrichmentDone(
       project ? { statut: project.statut, validated: isValidated(project) } : null,

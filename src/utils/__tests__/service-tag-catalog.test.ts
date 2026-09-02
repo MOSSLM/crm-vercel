@@ -57,10 +57,16 @@ describe("collectServiceTags", () => {
 });
 
 describe("buildServiceTagCatalog", () => {
-  it("retire les tags bloqués dans les Paramètres", () => {
-    const tags = buildServiceTagCatalog({ settings: [{ tag: "chauffage", allowed: false }] });
+  it("ne propose que les tags explicitement autorisés dans les Paramètres", () => {
+    const tags = buildServiceTagCatalog({
+      settings: [
+        { tag: "chauffage", allowed: false },
+        { tag: "plomberie", allowed: true },
+      ],
+    });
     expect(tags).not.toContain("chauffage");
     expect(tags).toContain("plomberie");
+    expect(tags).not.toContain("climatisation");
   });
 
   it("bloque toutes les graphies d'un tag interdit", () => {
@@ -71,8 +77,8 @@ describe("buildServiceTagCatalog", () => {
     expect(tags.some((t) => t.toLowerCase() === "climatisation")).toBe(false);
   });
 
-  it("laisse passer un tag sans ligne dans l'allowlist", () => {
-    expect(buildServiceTagCatalog({ used: ["Bornes IRVE"], settings: [] })).toContain("Bornes IRVE");
+  it("ne propose aucun tag sans autorisation", () => {
+    expect(buildServiceTagCatalog({ used: ["Bornes IRVE"], settings: [] })).toEqual([]);
   });
 });
 

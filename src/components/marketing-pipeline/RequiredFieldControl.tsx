@@ -13,7 +13,7 @@
 // fiche (adresse, horaires, avis, zones) n'a pas à passer par ici.
 
 import React from "react";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { serviceTagKey } from "@/utils/serviceTags";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -98,7 +98,6 @@ export function requiredFieldControl({
           catalog={tagCatalog}
           compact={compact}
           onChange={(v) => onChange({ service_tags: v })}
-          placeholder="autre tag…"
         />
       );
     // Seul champ à porter son propre libellé : la zone de dépôt en a besoin pour
@@ -127,16 +126,12 @@ export const SELF_LABELLED_FIELDS: ReadonlySet<RequiredField> = new Set<Required
 ]);
 
 /**
- * Saisie des service tags : les tags autorisés se piochent dans une liste
- * déroulante (catalogue global `/api/site-builder/service-tags`, allowlist
- * `enrichment_tag_settings` déjà appliquée) plutôt que d'être retapés. Une
- * faute de frappe créait jusqu'ici un tag jumeau — « climatisation » vs
- * « climatisaton » — qu'aucune page, section ni image de la médiathèque ne
- * reconnaissait, et le site sortait amputé sans rien signaler.
- *
- * La saisie libre reste ouverte à côté : le catalogue est bâti sur les tags
- * DÉJÀ utilisés, il ne peut donc pas contenir celui d'un métier rencontré pour
- * la première fois.
+ * Saisie des service tags : les tags explicitement autorisés se piochent dans
+ * une liste déroulante (catalogue global `/api/site-builder/service-tags`,
+ * allowlist `enrichment_tag_settings` déjà appliquée). La saisie libre est
+ * volontairement absente : elle contournait l'autorisation et créait des tags
+ * jumeaux — « climatisation » vs « climatisaton » — qu'aucune page, section ni
+ * image de la médiathèque ne reconnaissait.
  *
  * La valeur reste la chaîne « a, b, c » du formulaire — le reste de l'écran
  * (et `toArr` à l'enregistrement) n'a pas à savoir d'où viennent les tags.
@@ -145,9 +140,8 @@ export const ServiceTagsField: React.FC<{
   value: string;
   catalog: string[];
   onChange: (next: string) => void;
-  placeholder?: string;
   compact?: boolean;
-}> = ({ value, catalog, onChange, placeholder, compact }) => {
+}> = ({ value, catalog, onChange, compact }) => {
   const selected = React.useMemo(() => toArr(value), [value]);
   // Comparaison par clé canonique (accents, casse, tirets) : « Pompe à chaleur »
   // et « pompe-a-chaleur » sont le même tag, il ne faut pas l'ajouter deux fois.
@@ -159,19 +153,12 @@ export const ServiceTagsField: React.FC<{
     () => catalog.filter((t) => !selectedKeys.has(serviceTagKey(t))),
     [catalog, selectedKeys],
   );
-  const [draft, setDraft] = React.useState("");
-
   const add = (tag: string) => {
     const t = tag.trim();
     if (!t || selectedKeys.has(serviceTagKey(t))) return;
     onChange([...selected, t].join(", "));
   };
   const remove = (tag: string) => onChange(selected.filter((t) => t !== tag).join(", "));
-  const addDraft = () => {
-    add(draft);
-    setDraft("");
-  };
-
   return (
     <div className="flex flex-col gap-2">
       {selected.length > 0 && (
@@ -194,8 +181,8 @@ export const ServiceTagsField: React.FC<{
           ))}
         </div>
       )}
-      {/* Resserré en cellule : le menu et la saisie libre s'empilent au lieu de
-          se partager une largeur qui n'existe pas. */}
+      {/* Resserré en cellule : le sélecteur conserve toute sa lisibilité dans
+          une colonne étroite de la grille de complétion. */}
       <div className={compact ? "flex flex-col gap-1.5" : "flex items-center gap-2"}>
         <div className={compact ? "min-w-0" : "flex-1 min-w-0"}>
           <Select value="" onValueChange={add} disabled={available.length === 0}>
@@ -219,23 +206,11 @@ export const ServiceTagsField: React.FC<{
             </SelectContent>
           </Select>
         </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <Input
-            className={compact ? "h-8 flex-1 min-w-0 text-xs" : "flex-1 min-w-0 h-8"}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addDraft();
-              }
-            }}
-            placeholder={placeholder ?? "autre tag…"}
-          />
-          <button type="button" className="btn ghost sm" onClick={addDraft} disabled={!draft.trim()}>
-            <Plus className="ico-sm" />
-          </button>
-        </div>
+        {catalog.length === 0 && (
+          <p className="text-xs text-destructive">
+            Aucun tag autorisé : autorisez-en un dans les réglages pour compléter cette fiche.
+          </p>
+        )}
       </div>
     </div>
   );
