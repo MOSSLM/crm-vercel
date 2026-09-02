@@ -35,15 +35,20 @@ export interface BoardItem {
    * navigateur aurait fabriqué une seconde lecture de la règle, qui aurait
    * dérivé au premier import capitalisé autrement.
    *
-   * `vendus` compte les métiers EXPLICITEMENT déclarés vendables
-   * (`demarchable = true`), pas ceux « pas mis de côté » : un libellé RGE
-   * générique comme « Travaux d'efficacité énergétique » ne prouve aucun
-   * métier. `bloques` compte ceux qu'on interdit à l'enrichissement de poser
-   * (`allowed = false`) — un axe indépendant du premier.
+   * `autorises` reprend la règle qui décide si une fiche est COMPLÈTE
+   * (`missingForSite`) : explicitement `allowed = true`, et non « faute de
+   * ligne qui l'interdise ». Deux définitions d'« autorisé » sur le même écran
+   * donneraient un filtre qui ne retrouve pas la colonne « Service tags ».
+   *
+   * `vendus` est un axe INDÉPENDANT : `allowed` dit si l'enrichissement peut
+   * POSER le tag, `demarchable` si on veut de ces artisans dans nos files. Et
+   * « explicitement déclaré » plutôt que « pas mis de côté », parce qu'un
+   * libellé RGE générique comme « Travaux d'efficacité énergétique » ne prouve
+   * aucun métier.
    *
    * Optionnel : absent d'une réponse d'API antérieure au 02/09/2026.
    */
-  metiers?: { total: number; vendus: number; bloques: number };
+  metiers?: { total: number; autorises: number; vendus: number };
   /** Fiche Google Business du prospect, quand l'enrichissement Maps l'a trouvée. */
   google_url: string | null;
   google_maps_url: string | null;

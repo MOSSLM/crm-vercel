@@ -20,9 +20,11 @@ export const dynamic = "force-dynamic";
  * déroulant et devait être retapé — au risque du tag jumeau que ni les pages,
  * ni les sections, ni la médiathèque ne reconnaissent.
  *
- * Retirés : les tags explicitement bloqués dans les Paramètres, et les
- * `EXCLUDED_SERVICE_TAGS` (« Artisanat », « Chauffagiste »… — des étiquettes
- * d'annuaire, pas des services).
+ * Retenus : uniquement les tags explicitement autorisés dans les Paramètres.
+ * Une liste vide est volontaire : elle empêche de poser un tag avant que la
+ * décision métier ait été prise. Les `EXCLUDED_SERVICE_TAGS` (« Artisanat »,
+ * « Chauffagiste »… — des étiquettes d'annuaire, pas des services) restent
+ * exclus de l'univers.
  */
 export const GET = withAuth({}, async () => {
   try {

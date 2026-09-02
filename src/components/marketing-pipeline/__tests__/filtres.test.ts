@@ -307,28 +307,41 @@ describe("logo, métiers, plaquette et fiche Google", () => {
   // dont rien n'est déclaré vendable. Les mêler ferait relancer un
   // enrichissement là où il n'y a rien à chercher.
   it("distingue « aucun métier » de « des métiers, aucun autorisé »", () => {
-    const vide = ligne({ service_tags: [], metiers: { total: 0, vendus: 0, bloques: 0 } });
+    const vide = ligne({ service_tags: [], metiers: { total: 0, autorises: 0, vendus: 0 } });
     const rge = ligne({
       service_tags: ["Travaux d'efficacité énergétique"],
-      metiers: { total: 1, vendus: 0, bloques: 0 },
+      metiers: { total: 1, autorises: 0, vendus: 0 },
     });
-    const vendu = ligne({
+    const catalogue = ligne({
       service_tags: ["climatisation"],
-      metiers: { total: 1, vendus: 1, bloques: 0 },
+      metiers: { total: 1, autorises: 1, vendus: 1 },
     });
     expect(passeLesFiltres(vide, set("metier_aucun"))).toBe(true);
     expect(passeLesFiltres(rge, set("metier_aucun"))).toBe(false);
-    expect(passeLesFiltres(rge, set("metier_sans_vendu"))).toBe(true);
-    expect(passeLesFiltres(vide, set("metier_sans_vendu"))).toBe(false);
-    expect(passeLesFiltres(vendu, set("metier_vendu"))).toBe(true);
+    expect(passeLesFiltres(rge, set("metier_sans_autorise"))).toBe(true);
+    expect(passeLesFiltres(vide, set("metier_sans_autorise"))).toBe(false);
+    expect(passeLesFiltres(catalogue, set("metier_autorise"))).toBe(true);
+  });
+
+  // « Autorisé » (allowed) et « démarché » (demarchable) sont deux axes, et le
+  // 02/09/2026 le dépôt en a établi la définition commune côté serveur : un
+  // métier au catalogue peut très bien être mis de côté à la prospection.
+  it("ne confond pas « au catalogue » avec « on le démarche »", () => {
+    const catalogueNonDemarche = ligne({
+      service_tags: ["Isolation des murs par l'extérieur"],
+      metiers: { total: 1, autorises: 1, vendus: 0 },
+    });
+    expect(passeLesFiltres(catalogueNonDemarche, set("metier_autorise"))).toBe(true);
+    expect(passeLesFiltres(catalogueNonDemarche, set("metier_vendu"))).toBe(false);
   });
 
   // Une réponse d'API antérieure au 02/09/2026 ne porte pas `metiers` : le
   // filtre doit alors ne retenir personne plutôt que d'inventer un verdict.
-  it("sans le compte de l’allowlist, aucun métier n’est déclaré vendable", () => {
+  it("sans le compte de l’allowlist, aucun métier n’est déclaré autorisé", () => {
     const ancien = ligne({ service_tags: ["climatisation"] });
+    expect(passeLesFiltres(ancien, set("metier_autorise"))).toBe(false);
     expect(passeLesFiltres(ancien, set("metier_vendu"))).toBe(false);
-    expect(passeLesFiltres(ancien, set("metier_sans_vendu"))).toBe(true);
+    expect(passeLesFiltres(ancien, set("metier_sans_autorise"))).toBe(true);
   });
 
   it("sépare la plaquette préparée de la plaquette ouverte", () => {

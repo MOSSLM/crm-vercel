@@ -50,9 +50,9 @@ export type CleFiltre =
   | "seq_close"
   // Ses métiers, et ce que l'allowlist en dit
   | "metier_aucun"
+  | "metier_autorise"
+  | "metier_sans_autorise"
   | "metier_vendu"
-  | "metier_sans_vendu"
-  | "metier_bloque"
   // Sa plaquette nominative
   | "plaquette_aucune"
   | "plaquette_creee"
@@ -189,21 +189,25 @@ export const GROUPES: GroupeFiltre[] = [
         aide: "L’enrichissement n’est pas passé. Ce n’est pas « elle n’en a pas ».",
       },
       {
-        cle: "metier_vendu",
+        cle: "metier_autorise",
         label: "Au moins un métier autorisé",
-        aide: "Explicitement déclaré vendable dans les Paramètres (`demarchable = true`).",
+        aide:
+          "Explicitement `allowed = true` dans les Paramètres — la MÊME règle que celle qui " +
+          "décide si la fiche est complète. Sans elle, « Service tags » manque.",
       },
       {
-        cle: "metier_sans_vendu",
+        cle: "metier_sans_autorise",
         label: "Des métiers, aucun autorisé",
         aide:
-          "Elle porte des étiquettes, mais aucune n’est déclarée vendable — souvent un " +
-          "libellé RGE générique, qui ne prouve aucun métier.",
+          "Elle porte des étiquettes, mais aucune n’est au catalogue — souvent un libellé " +
+          "RGE générique. C’est ce qui lui vaut « Service tags » en champ manquant.",
       },
       {
-        cle: "metier_bloque",
-        label: "Porte un libellé bloqué",
-        aide: "Un de ses tags est interdit à l’enrichissement (`allowed = false`).",
+        cle: "metier_vendu",
+        label: "Au moins un métier démarché",
+        aide:
+          "Axe INDÉPENDANT du précédent : `allowed` dit si l’enrichissement peut POSER le " +
+          "tag, `demarchable` si on veut de ces artisans dans nos files.",
       },
     ],
   },
@@ -291,12 +295,12 @@ function tient(item: BoardItem, cle: CleFiltre): boolean {
 
     case "metier_aucun":
       return servicesDe(item).length === 0;
+    case "metier_autorise":
+      return (item.metiers?.autorises ?? 0) > 0;
+    case "metier_sans_autorise":
+      return servicesDe(item).length > 0 && (item.metiers?.autorises ?? 0) === 0;
     case "metier_vendu":
       return (item.metiers?.vendus ?? 0) > 0;
-    case "metier_sans_vendu":
-      return servicesDe(item).length > 0 && (item.metiers?.vendus ?? 0) === 0;
-    case "metier_bloque":
-      return (item.metiers?.bloques ?? 0) > 0;
 
     // « Aucun jeton » et « jeton jamais ouvert » ne se corrigent pas pareil :
     // le premier est un geste de masse (« Créer les plaquettes »), le second
