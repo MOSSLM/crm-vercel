@@ -18,7 +18,7 @@
  * faute que `constats_presence` existe précisément pour empêcher.
  */
 
-import type { BoardItem } from "./types";
+import { aDemarcher, inscriptionVivante, rienRecu, type BoardItem } from "./types";
 
 export type CleFiltre =
   // Le site du prospect (v_entreprises_presence_site)
@@ -37,7 +37,29 @@ export type CleFiltre =
   // L'audit
   | "audit_aucun"
   | "audit_redige"
-  | "audit_valide";
+  | "audit_valide"
+  // Le logo du prospect
+  | "logo_present"
+  | "logo_absent"
+  // Lui a-t-on déjà parlé ? (cf. `rienRecu` — trois preuves, aucune ne suffit)
+  | "touche_oui"
+  | "touche_non"
+  // Où en est son inscription en séquence
+  | "seq_jamais"
+  | "seq_vivante"
+  | "seq_close"
+  // Ses métiers, et ce que l'allowlist en dit
+  | "metier_aucun"
+  | "metier_autorise"
+  | "metier_sans_autorise"
+  | "metier_vendu"
+  // Sa plaquette nominative
+  | "plaquette_aucune"
+  | "plaquette_creee"
+  | "plaquette_vue"
+  // Sa fiche Google Business
+  | "google_oui"
+  | "google_non";
 
 export interface GroupeFiltre {
   id: string;
@@ -100,6 +122,113 @@ export const GROUPES: GroupeFiltre[] = [
       { cle: "audit_valide", label: "Validé" },
     ],
   },
+  {
+    id: "contact",
+    titre: "Premier message",
+    aide:
+      "« Reçu » veut dire qu’un geste est RÉELLEMENT parti : un appel bouclé, " +
+      "un WhatsApp ou un e-mail journalisé. Une inscription en séquence ne prouve rien.",
+    options: [
+      {
+        cle: "touche_non",
+        label: "Jamais rien reçu",
+        aide:
+          "Ni appel bouclé, ni message journalisé. Le 30/08/2026, 637 fiches étaient " +
+          "dans ce cas dont 431 portaient pourtant une inscription active.",
+      },
+      { cle: "touche_oui", label: "A déjà reçu quelque chose" },
+    ],
+  },
+  {
+    id: "sequence",
+    titre: "Séquence",
+    aide:
+      "Où en est l’inscription — pas ce qui est parti. Les deux se croisent : " +
+      "une inscription vivante peut n’avoir encore rien envoyé.",
+    options: [
+      {
+        cle: "seq_jamais",
+        label: "Jamais inscrite (le stock)",
+        aide:
+          "Jamais inscrite, ou sortie sans que rien ne parte (canal mort, réattribution). " +
+          "C’est ce qu’on attribue.",
+      },
+      { cle: "seq_vivante", label: "Inscription en cours", aide: "active ou en pause." },
+      {
+        cle: "seq_close",
+        label: "Séquence finie",
+        aide: "Terminée, a répondu, ou sortie après avoir été démarchée. Réinscriptible en lot.",
+      },
+    ],
+  },
+  {
+    id: "logo",
+    titre: "Logo",
+    aide:
+      "Le logo ne conditionne RIEN — `hydrate-logo` compose le nom dans la police du " +
+      "design. Ce qui se travaille est le clivage : à prendre sur un vrai site, ou rien à chercher.",
+    options: [
+      { cle: "logo_present", label: "Logo enregistré" },
+      {
+        cle: "logo_absent",
+        label: "Sans logo",
+        aide: "738 fiches sur 60 445 en ont un : c’est le cas ordinaire, pas un retard.",
+      },
+    ],
+  },
+  {
+    id: "metier",
+    titre: "Métiers du prospect",
+    aide:
+      "`entreprises.service_tags` croisé avec l’allowlist des Paramètres. Les fiches dont " +
+      "un métier est FERMÉ ne sont pas ici : elles sont retirées côté serveur, avant la carte.",
+    options: [
+      {
+        cle: "metier_aucun",
+        label: "Aucun métier connu",
+        aide: "L’enrichissement n’est pas passé. Ce n’est pas « elle n’en a pas ».",
+      },
+      {
+        cle: "metier_autorise",
+        label: "Au moins un métier autorisé",
+        aide:
+          "Explicitement `allowed = true` dans les Paramètres — la MÊME règle que celle qui " +
+          "décide si la fiche est complète. Sans elle, « Service tags » manque.",
+      },
+      {
+        cle: "metier_sans_autorise",
+        label: "Des métiers, aucun autorisé",
+        aide:
+          "Elle porte des étiquettes, mais aucune n’est au catalogue — souvent un libellé " +
+          "RGE générique. C’est ce qui lui vaut « Service tags » en champ manquant.",
+      },
+      {
+        cle: "metier_vendu",
+        label: "Au moins un métier démarché",
+        aide:
+          "Axe INDÉPENDANT du précédent : `allowed` dit si l’enrichissement peut POSER le " +
+          "tag, `demarchable` si on veut de ces artisans dans nos files.",
+      },
+    ],
+  },
+  {
+    id: "plaquette",
+    titre: "Plaquette",
+    aide: "Le lien nominatif — l’étage « document ouvert » de l’entonnoir pour la cohorte sans site.",
+    options: [
+      { cle: "plaquette_aucune", label: "Pas de jeton" },
+      { cle: "plaquette_creee", label: "Préparée, jamais ouverte" },
+      { cle: "plaquette_vue", label: "Ouverte par le prospect", aide: "Le signal qui vaut une relance." },
+    ],
+  },
+  {
+    id: "google",
+    titre: "Fiche Google",
+    options: [
+      { cle: "google_oui", label: "Fiche trouvée" },
+      { cle: "google_non", label: "Aucune fiche", aide: "Rien à lire chez Maps : à envoyer au lissage." },
+    ],
+  },
 ];
 
 /** Le groupe auquel une clé appartient — pour le « OU dans un groupe ». */
@@ -141,6 +270,53 @@ function tient(item: BoardItem, cle: CleFiltre): boolean {
       return !!item.audit && item.audit.prepare && item.audit.statut !== "ready";
     case "audit_valide":
       return item.audit?.statut === "ready";
+
+    case "logo_present":
+      return !!item.logo_url;
+    case "logo_absent":
+      return !item.logo_url;
+
+    // ⚠️ `touche_non` N'EST PAS `seq_jamais`. Le premier demande « lui a-t-on
+    // parlé », le second « où en est la machine » — et les deux ont divergé de
+    // 454 fiches le 30/08/2026, quand 431 inscriptions actives n'avaient
+    // encore rien envoyé. Les fondre en une seule case ferait disparaître de
+    // « à démarcher » des gens à qui personne n'a jamais rien dit.
+    case "touche_non":
+      return rienRecu(item);
+    case "touche_oui":
+      return !rienRecu(item);
+
+    case "seq_jamais":
+      return aDemarcher(item);
+    case "seq_vivante":
+      return inscriptionVivante(item.sequence);
+    case "seq_close":
+      return !aDemarcher(item) && !inscriptionVivante(item.sequence);
+
+    case "metier_aucun":
+      return servicesDe(item).length === 0;
+    case "metier_autorise":
+      return (item.metiers?.autorises ?? 0) > 0;
+    case "metier_sans_autorise":
+      return servicesDe(item).length > 0 && (item.metiers?.autorises ?? 0) === 0;
+    case "metier_vendu":
+      return (item.metiers?.vendus ?? 0) > 0;
+
+    // « Aucun jeton » et « jeton jamais ouvert » ne se corrigent pas pareil :
+    // le premier est un geste de masse (« Créer les plaquettes »), le second
+    // une relance. Les confondre ferait refabriquer ce qui existe déjà.
+    case "plaquette_aucune":
+      return !item.plaquette?.url;
+    case "plaquette_creee":
+      return !!item.plaquette?.url && (item.plaquette?.vues ?? 0) === 0;
+    case "plaquette_vue":
+      return (item.plaquette?.vues ?? 0) > 0;
+
+    case "google_oui":
+      return !!item.google_url || !!item.google_maps_url;
+    case "google_non":
+      return !item.google_url && !item.google_maps_url;
+
     default:
       return true;
   }

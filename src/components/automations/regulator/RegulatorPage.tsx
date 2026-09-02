@@ -187,6 +187,21 @@ export function RegulatorPage() {
   const plafondDuJour = plafondParLaChauffe
     ? Math.min(s.dailyCap, view.plafondChauffe!.plafond)
     : s.dailyCap
+  /**
+   * LA VANNE EST-ELLE FERMÉE PAR UNE CHAUFFE QUI NE TOURNE PAS ?
+   *
+   * `plafondProspectionDuJour` rend `null` — « je ne plafonne rien » — quand il
+   * n'y a AUCUN expéditeur, et `0` dès qu'il y en a un qui n'est pas en chauffe.
+   * Déclarer un expéditeur sans le démarrer est donc strictement pire que ne
+   * pas en déclarer : la ligne suffit à tout arrêter.
+   *
+   * C'est arrivé le 01/09/2026 à 16 h 34 — le même enregistrement a dépausé le
+   * régulateur et confié le plafond à une chauffe jamais démarrée. La vanne
+   * s'est rouverte et refermée dans le même geste, et 200 inscriptions ont
+   * attendu un jour et demi. La case le DISAIT (« la chauffe autorise 0 ») mais
+   * une description sous un interrupteur n'est pas une alarme.
+   */
+  const vanneFermeeParLaChauffe = plafondParLaChauffe && plafondDuJour === 0
   const openNow = view.sequences.filter(
     (seq) => seq.status === 'on' && seq.windows.some(([a, b]) => minutesOfDay(now, tz) >= a && minutesOfDay(now, tz) < b),
   )
@@ -216,6 +231,37 @@ export function RegulatorPage() {
               onClick={() => void patch({ test_mode: false }, 'Phase de test coupée — les envois repartent')}
             >
               Couper la phase de test
+            </button>
+          </div>
+        )}
+
+        {/* Le plafond confié à une chauffe qui n'autorise rien : plus aucun
+            e-mail de prospection ne part. Ce n'est pas un réglage serré, c'est
+            un arrêt — et il doit se lire comme tel, avec de quoi le lever. */}
+        {vanneFermeeParLaChauffe && (
+          <div className="rg-testbar grave">
+            <XI name="warning" className="ico-sm" />
+            <span className="t">La chauffe autorise 0 e-mail — plus rien ne part</span>
+            <span className="d">
+              Le plafond est confié au réchauffeur, et il ne rend aujourd’hui aucun envoi à
+              froid. Soit la chauffe n’a jamais été démarrée (Prospection → Réchauffeur), soit
+              elle est encore avant son 8ᵉ jour, où la courbe n’ouvre rien.
+            </span>
+            {blocked.length > 0 && (
+              <span className="pill warn">{blocked.length} en attente de plafond</span>
+            )}
+            <button
+              type="button"
+              className="btn sm"
+              disabled={saving}
+              onClick={() =>
+                void patch(
+                  { plafond_rechauffeur: false },
+                  'Plafond repris ici — la prospection repart sous le plafond fixe',
+                )
+              }
+            >
+              Reprendre le plafond
             </button>
           </div>
         )}

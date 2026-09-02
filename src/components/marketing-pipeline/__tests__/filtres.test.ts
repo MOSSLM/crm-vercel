@@ -226,3 +226,136 @@ describe("les métiers du prospect", () => {
     expect(servicesDe(inconnuMetier)).toEqual([]);
   });
 });
+
+/**
+ * LES SIX NOUVEAUX BLOCS — et le seul qui puisse mentir.
+ *
+ * ⚠️ « JAMAIS RIEN REÇU » N'EST PAS « JAMAIS INSCRITE ». C'est la confusion la
+ * plus chère du tableau, et elle est mesurée : le 30/08/2026, 431 inscriptions
+ * étaient ACTIVES à l'étape 0, zéro e-mail, zéro message. Les deux blocs
+ * répondent à deux questions — « lui a-t-on parlé » et « où en est la
+ * machine » — et les fondre ferait disparaître de « à démarcher » des gens à
+ * qui personne n'a jamais rien dit.
+ */
+describe("premier message et séquence, deux axes qui ne se déduisent pas", () => {
+  const inscritMuet = ligne({
+    sequence: {
+      enrollmentId: "e",
+      automationId: "a",
+      name: "S1",
+      status: "active",
+      holdReason: null,
+      lastEmailAt: null,
+    },
+  });
+  const inscritParlant = ligne({
+    sequence: {
+      enrollmentId: "e",
+      automationId: "a",
+      name: "S1",
+      status: "active",
+      holdReason: null,
+      lastEmailAt: "2026-08-30T10:00:00Z",
+    },
+  });
+  const jamaisInscrit = ligne({});
+  const appele = ligne({ premiereTouche: "2026-08-30T10:00:00Z" });
+
+  it("une inscription vivante ne prouve RIEN sur ce qui est parti", () => {
+    expect(passeLesFiltres(inscritMuet, set("touche_non"))).toBe(true);
+    expect(passeLesFiltres(inscritMuet, set("seq_vivante"))).toBe(true);
+    // Le même prospect est donc « inscrit » ET « n'a rien reçu ».
+    expect(passeLesFiltres(inscritMuet, set("touche_non", "seq_vivante"))).toBe(true);
+  });
+
+  it("un appel bouclé compte comme reçu, même sans aucun e-mail", () => {
+    expect(passeLesFiltres(appele, set("touche_oui"))).toBe(true);
+    expect(passeLesFiltres(appele, set("touche_non"))).toBe(false);
+  });
+
+  it("le stock, c’est « jamais inscrite » — pas « jamais touchée »", () => {
+    expect(passeLesFiltres(jamaisInscrit, set("seq_jamais"))).toBe(true);
+    expect(passeLesFiltres(inscritMuet, set("seq_jamais"))).toBe(false);
+    expect(passeLesFiltres(inscritParlant, set("seq_jamais"))).toBe(false);
+  });
+
+  it("les trois états de séquence partitionnent la population", () => {
+    const finie = ligne({
+      sequence: {
+        enrollmentId: "e",
+        automationId: "a",
+        name: "S1",
+        status: "finished",
+        holdReason: null,
+      },
+    });
+    const c = compter([jamaisInscrit, inscritMuet, finie]);
+    expect(c.seq_jamais + c.seq_vivante + c.seq_close).toBe(3);
+  });
+});
+
+describe("logo, métiers, plaquette et fiche Google", () => {
+  it("le logo se lit sur l’URL, dans les deux sens", () => {
+    const avec = ligne({ logo_url: "https://x/logo.png" });
+    expect(passeLesFiltres(avec, set("logo_present"))).toBe(true);
+    expect(passeLesFiltres(avec, set("logo_absent"))).toBe(false);
+    expect(passeLesFiltres(ligne({}), set("logo_absent"))).toBe(true);
+  });
+
+  // « Aucun métier connu » n'est PAS « aucun métier autorisé » : la première
+  // est une fiche que l'enrichissement n'a pas vue, la seconde une fiche vue
+  // dont rien n'est déclaré vendable. Les mêler ferait relancer un
+  // enrichissement là où il n'y a rien à chercher.
+  it("distingue « aucun métier » de « des métiers, aucun autorisé »", () => {
+    const vide = ligne({ service_tags: [], metiers: { total: 0, autorises: 0, vendus: 0 } });
+    const rge = ligne({
+      service_tags: ["Travaux d'efficacité énergétique"],
+      metiers: { total: 1, autorises: 0, vendus: 0 },
+    });
+    const catalogue = ligne({
+      service_tags: ["climatisation"],
+      metiers: { total: 1, autorises: 1, vendus: 1 },
+    });
+    expect(passeLesFiltres(vide, set("metier_aucun"))).toBe(true);
+    expect(passeLesFiltres(rge, set("metier_aucun"))).toBe(false);
+    expect(passeLesFiltres(rge, set("metier_sans_autorise"))).toBe(true);
+    expect(passeLesFiltres(vide, set("metier_sans_autorise"))).toBe(false);
+    expect(passeLesFiltres(catalogue, set("metier_autorise"))).toBe(true);
+  });
+
+  // « Autorisé » (allowed) et « démarché » (demarchable) sont deux axes, et le
+  // 02/09/2026 le dépôt en a établi la définition commune côté serveur : un
+  // métier au catalogue peut très bien être mis de côté à la prospection.
+  it("ne confond pas « au catalogue » avec « on le démarche »", () => {
+    const catalogueNonDemarche = ligne({
+      service_tags: ["Isolation des murs par l'extérieur"],
+      metiers: { total: 1, autorises: 1, vendus: 0 },
+    });
+    expect(passeLesFiltres(catalogueNonDemarche, set("metier_autorise"))).toBe(true);
+    expect(passeLesFiltres(catalogueNonDemarche, set("metier_vendu"))).toBe(false);
+  });
+
+  // Une réponse d'API antérieure au 02/09/2026 ne porte pas `metiers` : le
+  // filtre doit alors ne retenir personne plutôt que d'inventer un verdict.
+  it("sans le compte de l’allowlist, aucun métier n’est déclaré autorisé", () => {
+    const ancien = ligne({ service_tags: ["climatisation"] });
+    expect(passeLesFiltres(ancien, set("metier_autorise"))).toBe(false);
+    expect(passeLesFiltres(ancien, set("metier_vendu"))).toBe(false);
+    expect(passeLesFiltres(ancien, set("metier_sans_autorise"))).toBe(true);
+  });
+
+  it("sépare la plaquette préparée de la plaquette ouverte", () => {
+    const preparee = ligne({ plaquette: { url: "https://x/p", cree_le: "2026-08-01", vues: 0, vu_le: null } });
+    const vue = ligne({ plaquette: { url: "https://x/p", cree_le: "2026-08-01", vues: 3, vu_le: "2026-08-02" } });
+    expect(passeLesFiltres(preparee, set("plaquette_creee"))).toBe(true);
+    expect(passeLesFiltres(preparee, set("plaquette_vue"))).toBe(false);
+    expect(passeLesFiltres(vue, set("plaquette_vue"))).toBe(true);
+    expect(passeLesFiltres(ligne({}), set("plaquette_aucune"))).toBe(true);
+  });
+
+  it("la fiche Google compte par l’une OU l’autre de ses deux URLs", () => {
+    expect(passeLesFiltres(ligne({ google_maps_url: "https://maps" }), set("google_oui"))).toBe(true);
+    expect(passeLesFiltres(ligne({ google_url: "https://g" }), set("google_oui"))).toBe(true);
+    expect(passeLesFiltres(ligne({}), set("google_non"))).toBe(true);
+  });
+});

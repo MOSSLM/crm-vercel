@@ -48,15 +48,11 @@ import { preflight } from "@/app/api/_lib/cors";
 import { resolveStageForRole } from "@/app/api/agent/_lib";
 import { processSequenceEnrollment } from "@/lib/automations/engine";
 import type { SequenceEnrollment } from "@/components/automations/types";
-import { assurerJetonsPlaquette } from "@/lib/audit/plaquette";
-import { urlPlaquette } from "@/lib/audit/plaquette-lien";
-import { assurerJetonRapport } from "@/lib/audit-site/rapport";
-import { rapportPublicUrl } from "@/lib/audit-site/rapport-url";
-import { choisirSiteMontrable, urlPubliqueDuSite } from "@/lib/site-builder/demo-share-url";
 import {
   PIECES,
   SEQUENCE_IL_A_RAPPELE,
   basculerVersSequence,
+  liensDesPieces,
   ligneDePiece,
   type Piece,
 } from "@/lib/prospection/hors-scenario";
@@ -95,57 +91,6 @@ type TacheRow = {
   assignee_id: string | null;
   entreprise: { owner_id: string | null } | { owner_id: string | null }[] | null;
 };
-
-/**
- * Les liens des pièces, RECOMPOSÉS CÔTÉ SERVEUR.
- *
- * La carte les connaît déjà — ils sont dans la charge utile de la tâche — et
- * les recevoir aurait été plus court. Mais le bouton doit marcher depuis
- * n'importe quelle fiche, y compris celles qui n'ont aucune tâche ouverte, et
- * une URL journalisée telle qu'un écran l'a envoyée n'est vérifiable par
- * personne. Les trois fonctions appelées ici sont les mêmes que celles du
- * moteur : le lien journalisé est donc, au caractère près, celui qu'une étape
- * aurait envoyé.
- */
-async function liensDesPieces(
-  sb: ReturnType<typeof getServiceClient>,
-  entrepriseId: number,
-  ownerId: string | null,
-  voulues: Piece[],
-): Promise<Partial<Record<Piece, string>>> {
-  const liens: Partial<Record<Piece, string>> = {};
-
-  if (voulues.includes("demo")) {
-    const { data: sites } = await sb
-      .from("sites")
-      .select("id,is_published,published_subdomain,published_domain,build_stage,is_template")
-      .eq("enterprise_id", entrepriseId);
-    const site = choisirSiteMontrable(sites ?? []);
-    if (site) liens.demo = urlPubliqueDuSite(site);
-  }
-
-  if (voulues.includes("plaquette")) {
-    try {
-      const { jetons } = await assurerJetonsPlaquette(sb, [entrepriseId], ownerId);
-      liens.plaquette = urlPlaquette(jetons.find((j) => j.entrepriseId === entrepriseId)?.jeton || null);
-    } catch {
-      // Le lien COLLECTIF plutôt que rien : la plaquette est partie, seul son
-      // compteur de vues manquera. Même arbitrage que dans le moteur.
-      liens.plaquette = urlPlaquette(null);
-    }
-  }
-
-  if (voulues.includes("audit")) {
-    try {
-      const { jeton, erreur } = await assurerJetonRapport(sb, entrepriseId, ownerId);
-      if (!erreur && jeton?.actif && jeton.token) liens.audit = rapportPublicUrl(jeton.token);
-    } catch {
-      /* pas de rapport publiable : la pièce n'est simplement pas journalisée */
-    }
-  }
-
-  return liens;
-}
 
 export const POST = withAuth({ role: "freelance", body: Corps }, async ({ body, user, cors }) => {
   const sc = getServiceClient();

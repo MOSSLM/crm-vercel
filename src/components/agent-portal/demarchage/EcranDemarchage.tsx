@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { useAuth } from "@/components/AuthContext";
 import { one } from "@/components/agent-portal/format";
@@ -129,6 +130,36 @@ export function EcranDemarchage() {
    * chargée.
    */
   const [etatSite, setEtatSite] = useState<EtatSite | null>(null);
+
+  /**
+   * La colonne de droite est-elle ouverte ? REPLIÉE PAR DÉFAUT.
+   *
+   * Elle porte ce dont on se sert PENDANT un échange — la démo, l'audit, la
+   * prise de rendez-vous, le registre — et non ce qu'on lit en travaillant sa
+   * file. Ouverte en permanence, elle prenait 322 px à la colonne du milieu,
+   * celle où se joue l'action.
+   *
+   * LE CHOIX SE MÉMORISE, sans quoi replier serait à refaire à chaque
+   * rechargement — et on renoncerait. Lu APRÈS le premier rendu (le serveur ne
+   * connaît pas `localStorage` : le lire à l'initialisation ferait diverger
+   * l'HTML rendu des deux côtés). Le défaut penche donc vers « repliée », qui
+   * est aussi ce qu'on veut la première fois.
+   */
+  const [sideOuvert, setSideOuvert] = useState(false);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("dem.side") === "1") setSideOuvert(true);
+    } catch {
+      /* mode privé, stockage refusé : la colonne reste repliée, rien ne casse */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("dem.side", sideOuvert ? "1" : "0");
+    } catch {
+      /* idem */
+    }
+  }, [sideOuvert]);
 
   const [company, setCompany] = useState<CompanyBundle | null>(null);
   const [audit, setAudit] = useState<DemAudit>(null);
@@ -583,7 +614,24 @@ export function EcranDemarchage() {
 
   return (
     <div className="dm-skin" style={{ flex: 1, minHeight: 0 }}>
-      <div className="dm">
+      <div className="dm" data-side={sideOuvert ? "1" : "0"}>
+        {/* La poignée de la colonne de droite. Elle vit sur la grille et non
+            dans l'en-tête : `.dm-hd .act` est déjà plein, et sa position ne
+            dépend alors ni de la présence d'une tâche ni de celle d'une fiche
+            — les deux branches du rendu ci-dessous. */}
+        <button
+          className="dm-sidetab"
+          onClick={() => setSideOuvert((v) => !v)}
+          aria-expanded={sideOuvert}
+          aria-label={sideOuvert ? "Replier la colonne de droite" : "Ouvrir la colonne de droite"}
+          title={
+            sideOuvert
+              ? "Replier la colonne de droite — la fiche récupère la place"
+              : "Ouvrir la colonne de droite : démo, audit, rendez-vous, registre"
+          }
+        >
+          {sideOuvert ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
         <DemRail
           file={file}
           setFile={setFile}
@@ -725,17 +773,22 @@ export function EcranDemarchage() {
           )}
         </main>
 
-        {enTete && (task || horsFile != null) ? (
-          <DemSide
-            company={enTete}
-            audit={audit}
-            opportuniteId={
-              horsFile != null ? (enTete.opportunite?.id ?? null) : (task?.opportunite_id ?? null)
-            }
-          />
-        ) : (
-          <aside className="dm-side" />
-        )}
+        {/* REPLIÉE, ELLE N'EST PAS MONTÉE DU TOUT — et pas seulement cachée.
+            `DemSide` ouvre le panneau de rendez-vous et lit la fiche : la
+            rendre invisible en CSS ferait payer ces appels à chaque prospect
+            ouvert, pour un panneau que personne ne regarde. */}
+        {sideOuvert &&
+          (enTete && (task || horsFile != null) ? (
+            <DemSide
+              company={enTete}
+              audit={audit}
+              opportuniteId={
+                horsFile != null ? (enTete.opportunite?.id ?? null) : (task?.opportunite_id ?? null)
+              }
+            />
+          ) : (
+            <aside className="dm-side" />
+          ))}
 
         <DemSearch
           ouvert={recherche}

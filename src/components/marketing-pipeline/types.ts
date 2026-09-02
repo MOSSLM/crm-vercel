@@ -25,6 +25,30 @@ export interface BoardItem {
    * Optionnel : une réponse d'API antérieure au 20/08/2026 ne le porte pas.
    */
   service_tags?: string[];
+  /**
+   * CE QUE L'ALLOWLIST DIT DE SES MÉTIERS — résolu côté serveur, où
+   * `enrichment_tag_settings` est déjà lu pour écarter les fiches fermées.
+   *
+   * Le tableau ne pouvait pas le calculer : il reçoit des libellés bruts, et
+   * l'allowlist se résout par CLÉ CANONIQUE (« Climatisation » et
+   * « climatisation » sont la même ligne). Refaire ce rapprochement dans le
+   * navigateur aurait fabriqué une seconde lecture de la règle, qui aurait
+   * dérivé au premier import capitalisé autrement.
+   *
+   * `autorises` reprend la règle qui décide si une fiche est COMPLÈTE
+   * (`missingForSite`) : explicitement `allowed = true`, et non « faute de
+   * ligne qui l'interdise ». Deux définitions d'« autorisé » sur le même écran
+   * donneraient un filtre qui ne retrouve pas la colonne « Service tags ».
+   *
+   * `vendus` est un axe INDÉPENDANT : `allowed` dit si l'enrichissement peut
+   * POSER le tag, `demarchable` si on veut de ces artisans dans nos files. Et
+   * « explicitement déclaré » plutôt que « pas mis de côté », parce qu'un
+   * libellé RGE générique comme « Travaux d'efficacité énergétique » ne prouve
+   * aucun métier.
+   *
+   * Optionnel : absent d'une réponse d'API antérieure au 02/09/2026.
+   */
+  metiers?: { total: number; autorises: number; vendus: number };
   /** Fiche Google Business du prospect, quand l'enrichissement Maps l'a trouvée. */
   google_url: string | null;
   google_maps_url: string | null;

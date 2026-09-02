@@ -9,7 +9,12 @@ import { chargerAcces, filtrerPourAgent } from "@/lib/automations/acces";
 import { inscriptionVivante, type BoardItem } from "@/components/marketing-pipeline/types";
 import type { SequenceSettings } from "@/components/automations/types";
 import { noteSummaries } from "./_notes";
-import { estMiseDeCote, isServiceTagExplicitlyAllowed, type ServiceTagSetting } from "@/utils/serviceTags";
+import {
+  estMiseDeCote,
+  isServiceTagExplicitlyAllowed,
+  porteUnMetierVendu,
+  type ServiceTagSetting,
+} from "@/utils/serviceTags";
 
 /**
  * Construction du tableau d'avancement Marketing & Web.
@@ -1010,6 +1015,21 @@ export async function buildBoard(
   }));
   const agentById = new Map(agents.map((a) => [a.id, a]));
 
+  /**
+   * L'allowlist, lue une fois pour toutes les lignes.
+   *
+   * Elle est DÉJÀ chargée ici — c'est elle qui retire les fiches dont un métier
+   * est fermé (`retirerMetiersMisDeCote`, plus bas). Ce qu'on ajoute, c'est de
+   * la rendre lisible PAR LIGNE, ce que le tableau ne pouvait pas faire seul :
+   * la résolution passe par `serviceTagKey`, et refaire ce rapprochement dans
+   * le navigateur aurait fabriqué une seconde lecture de la règle.
+   *
+   * Deux axes indépendants, et les confondre casse quelque chose (cf.
+   * `ServiceTagSetting`) : `allowed` dit si l'enrichissement peut POSER le tag,
+   * `demarchable` si on veut de ces artisans dans nos files.
+   */
+  const reglagesTags = (metiersRes.data ?? []) as ServiceTagSetting[];
+
   const items = opps.map((o) => {
     const ent = o.entreprise_id != null ? entById.get(o.entreprise_id) : undefined;
     const project = o.entreprise_id != null ? (projectByEnt.get(o.entreprise_id) ?? null) : null;
@@ -1063,6 +1083,29 @@ export async function buildBoard(
         : typeof ent?.service_tags === "string" && ent.service_tags.trim()
           ? [ent.service_tags.trim()]
           : [],
+      // CE QUE L'ALLOWLIST DIT DE CES MÉTIERS. Compté ici, où la règle vit
+      // déjà, plutôt que déduit à l'écran à partir de libellés bruts.
+      metiers: (() => {
+        const tags = Array.isArray(ent?.service_tags)
+          ? (ent.service_tags as unknown[]).filter(
+              (t): t is string => typeof t === "string" && t.trim().length > 0,
+            )
+          : typeof ent?.service_tags === "string" && ent.service_tags.trim()
+            ? [ent.service_tags.trim()]
+            : [];
+        return {
+          total: tags.length,
+          // `autorises` reprend MOT POUR MOT la règle qui décide si une fiche
+          // est complète (`missingForSite`, plus haut) : explicitement
+          // `allowed = true`, pas « faute de ligne qui l'interdise ». Deux
+          // définitions d'« autorisé » sur le même écran auraient donné un
+          // filtre qui ne retrouve pas la colonne « Service tags ».
+          autorises: tags.filter((t) => isServiceTagExplicitlyAllowed(t, reglagesTags)).length,
+          // Axe INDÉPENDANT : `allowed` dit si l'enrichissement peut POSER le
+          // tag, `demarchable` si on veut de ces artisans dans nos files.
+          vendus: tags.filter((t) => porteUnMetierVendu([t], reglagesTags)).length,
+        };
+      })(),
       google_url: ent?.google_url ?? null,
       google_maps_url: ent?.google_maps_url ?? null,
       priorite: o.priorite ?? null,
@@ -1210,10 +1253,7 @@ export async function buildBoard(
    * qui lit les tâches et non ce tableau — donc rien ne se perd. Coder une
    * exception pour deux lignes aurait fait une règle de plus à retenir.
    */
-  const tri = retirerMetiersMisDeCote(
-    tousLesItems,
-    (metiersRes.data ?? []) as ServiceTagSetting[],
-  );
+  const tri = retirerMetiersMisDeCote(tousLesItems, reglagesTags);
   const dedupedItems = tri.gardees;
   const misDeCote = { masquees: tri.masquees, metiers: tri.metiers };
 

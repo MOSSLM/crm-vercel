@@ -79,9 +79,30 @@ describe("DemHorsFile — la fiche ouverte sans tâche", () => {
     expect(onRetour).toHaveBeenCalled();
   });
 
-  it("ne propose aucune issue à cocher — il n'y a pas de tâche à clore", () => {
+  it("ne ferme aucune carte — il n'y a pas de tâche ici", () => {
     render(<DemHorsFile company={bundle()} onRetour={jest.fn()} />);
     expect(screen.queryByText(/Issue de l'échange/)).toBeNull();
-    expect(screen.getByText(/rien ne se ferme ici/)).toBeInTheDocument();
+    expect(screen.getByText(/aucune carte ne se ferme ici/)).toBeInTheDocument();
+  });
+
+  /**
+   * CE QUI A CHANGÉ LE 01/09/2026, ET CE QUI NE DOIT PAS CHANGER AVEC.
+   *
+   * La fiche sait désormais consigner un échange — sans quoi un prospect en
+   * attente entre deux étapes n'a aucune surface le jour où il répond (cf.
+   * l'en-tête de `DemEchange`). Mais le geste reste REPLIÉ : la carte s'ouvre
+   * sur ce qui sert à tenir la conversation, pas sur un formulaire. Déplier par
+   * défaut ferait de cette fiche un écran de saisie, ce qu'elle n'est pas.
+   */
+  it("offre de consigner un échange, replié tant qu'on ne le demande pas", () => {
+    render(<DemHorsFile company={bundle()} onRetour={jest.fn()} />);
+    const ouvrir = screen.getByRole("button", { name: /Consigner un échange/ });
+    expect(screen.queryByText(/Ce qui s'est passé/)).toBeNull();
+
+    fireEvent.click(ouvrir);
+    expect(screen.getByText(/Ce qui s'est passé/)).toBeInTheDocument();
+    // Aucune pièce n'est cochée d'avance : la preuve d'un envoi ne se coche pas
+    // toute seule.
+    for (const c of screen.getAllByRole("checkbox")) expect(c).not.toBeChecked();
   });
 });

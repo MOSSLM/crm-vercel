@@ -151,12 +151,47 @@
  * La maquette, à l'identique.
  * ───────────────────────────────────────────────────────────────────────── */
 /* dem.css — Démarchage : file du jour (frise) + entreprise en séquence + historique */
-.dm-skin .dm{display:grid;grid-template-columns:286px minmax(0,1fr) 322px;grid-template-rows:auto minmax(0,1fr);height:100%;min-height:0;overflow:hidden;background:var(--bg)}
+.dm-skin .dm{position:relative;display:grid;grid-template-columns:286px minmax(0,1fr) 322px;grid-template-rows:auto minmax(0,1fr);height:100%;min-height:0;overflow:hidden;background:var(--bg)}
 .dm-skin .dm-rail{grid-column:1;grid-row:1/3;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .dm-skin .dm-head{grid-column:2/4;grid-row:1;background:var(--surface);border-bottom:1px solid var(--border)}
-.dm-skin .dm-main{grid-column:2;grid-row:2;min-width:0;min-height:0;overflow:auto;padding:14px 16px 26px;display:flex;flex-direction:column;gap:14px}
+/* ── LES CARTES SONT COLLÉES, ET C'EST LA COLONNE QUI DÉCIDE ──────────────
+   Le padding et le `gap` vivaient ici, les coins et l'ombre sur chaque carte :
+   le résultat était une pile de vignettes flottantes où chaque bloc coûtait
+   ~28 px de vide avant d'afficher quoi que ce soit. Sur un poste de travail
+   qu'on tient ouvert toute la journée, ce vide se paie en défilement.
+
+   On enlève donc les trois d'un coup — marge, gouttière, rayon — et la
+   séparation redevient ce qu'elle doit être : un filet d'un pixel. Les cartes
+   gardent leur `overflow:hidden` (les en-têtes teintés en dépendent) et la
+   carte d'action garde son liseré haut coloré, qui est le seul repère disant
+   de quel geste il s'agit. */
+.dm-skin .dm-main{grid-column:2;grid-row:2;min-width:0;min-height:0;overflow:auto;padding:0 0 22px;display:flex;flex-direction:column;gap:0}
 .dm-skin .dm-main>*{flex:0 0 auto}
 .dm-skin .dm-side{grid-column:3;grid-row:2;background:var(--surface);border-left:1px solid var(--border);min-height:0;overflow:auto}
+
+/* ── LA COLONNE DE DROITE EST REPLIÉE PAR DÉFAUT ──────────────────────────
+   Elle porte ce dont on se sert PENDANT un échange — démo, audit, RDV,
+   registre — pas ce qu'on lit en travaillant sa file. Ouverte en permanence,
+   elle prenait 322 px à la colonne centrale, celle où se joue l'action.
+   Le choix est mémorisé (`localStorage`), sinon replier serait à refaire à
+   chaque page. */
+.dm-skin .dm[data-side="0"]{grid-template-columns:286px minmax(0,1fr) 0}
+.dm-skin .dm[data-side="0"] .dm-side{display:none}
+/* La poignée est une languette au bord droit, jamais un bouton de l'en-tête :
+   `.dm-hd .act` y est déjà plein, et un bouton de plus s'y perdrait. */
+.dm-skin .dm-sidetab{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:35;
+  appearance:none;display:flex;align-items:center;justify-content:center;
+  width:22px;height:64px;padding:0;cursor:pointer;color:var(--text-3);
+  background:var(--surface);border:1px solid var(--border);border-right:0;
+  border-radius:8px 0 0 8px;box-shadow:var(--shadow-1)}
+.dm-skin .dm-sidetab:hover{color:var(--text);background:var(--surface-2)}
+@media (max-width: 1100px){
+  /* Empilée, la colonne n'enlève rien à personne : la languette n'a plus de
+     sens et la poignée irait se coller au milieu du défilement. */
+  .dm-skin .dm-sidetab{display:none}
+  .dm-skin .dm[data-side="0"]{grid-template-columns:minmax(0,1fr)}
+  .dm-skin .dm[data-side="0"] .dm-side{display:block}
+}
 
 /* ───── rail : en-tête, files, objectif ou calendrier ───── */
 .dm-skin .dm-filt{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -238,7 +273,7 @@
 .dm-skin .dm-ct .dec{width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
 /* ───── frise de séquence ───── */
-.dm-skin .dm-seq{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-1);overflow:hidden}
+.dm-skin .dm-seq{background:var(--surface);border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;overflow:hidden}
 .dm-skin .dm-seq-h{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border)}
 .dm-skin .dm-seq-h .sq{width:8px;height:8px;border-radius:2px}
 .dm-skin .dm-seq-h .n{font-size:12.5px;font-weight:600;letter-spacing:-.005em}
@@ -260,7 +295,7 @@
 .dm-skin .dm-step[data-s="todo"]{opacity:.62}
 
 /* ───── carte d'action ───── */
-.dm-skin .dm-card{background:var(--surface);border:1px solid var(--border-2);border-radius:12px;box-shadow:var(--shadow-2);overflow:hidden;border-top:3px solid var(--k,var(--accent))}
+.dm-skin .dm-card{background:var(--surface);border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;overflow:hidden;border-top:3px solid var(--k,var(--accent))}
 .dm-skin .dm-card-h{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--border)}
 .dm-skin .dm-card-h .ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--kt);color:var(--k)}
 .dm-skin .dm-card-h .ti{font-size:14px;font-weight:600;letter-spacing:-.01em}
@@ -319,7 +354,7 @@
 .dm-skin .dm-ob .a{font-size:11.5px;color:var(--text-2);line-height:1.5;margin-top:5px}
 
 /* ───── historique ───── */
-.dm-skin .dm-his{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-1);overflow:hidden}
+.dm-skin .dm-his{background:var(--surface);border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;overflow:hidden}
 .dm-skin .dm-his-h{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border)}
 .dm-skin .dm-his-h .ti{font-size:12.5px;font-weight:600;letter-spacing:-.005em}
 .dm-skin .dm-his-h .fl{margin-left:auto;display:flex;gap:4px}
@@ -526,7 +561,7 @@
   .dm-skin .dm-hd{padding:7px 14px 6px}
   .dm-skin .dm-hd .lg{width:30px;height:30px;font-size:12px}
   .dm-skin .dm-hd .nm{font-size:17px}
-  .dm-skin .dm-main{padding:10px 14px 20px;gap:11px}
+  .dm-skin .dm-main{padding:0 0 16px;gap:0}
   .dm-skin .dm-seq-h{padding:7px 12px}
   .dm-skin .dm-card-b{padding:10px 12px 12px;gap:9px}
 }
@@ -957,7 +992,10 @@
    message, qui est LA raison d'être de l'écran. Il tient maintenant dans un
    bouton aligné à droite qui porte le nombre de gestes annulables ; la liste
    s'ouvre en panneau flottant, donc sans jamais repousser ce qu'on lit. */
-.dm-skin .dm-undo{position:relative;align-self:flex-end;margin-bottom:-6px;z-index:26}
+/* Les deux blocs qui ne sont PAS des cartes gardent leur air : sans gouttière
+   de colonne, ils se colleraient au bord de l'écran. */
+.dm-skin .dm-main > .dm-hint{margin:14px 16px}
+.dm-skin .dm-undo{position:relative;align-self:flex-end;padding:6px 12px 4px;z-index:26}
 .dm-skin .dm-undo-b{appearance:none;display:inline-flex;align-items:center;gap:5px;
   height:24px;padding:0 8px;border-radius:20px;border:1px solid var(--border-2);
   background:var(--surface);color:var(--text-3);cursor:pointer;font-size:11px}

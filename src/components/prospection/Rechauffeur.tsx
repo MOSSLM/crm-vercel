@@ -80,9 +80,31 @@ const TON_VERDICT: Record<string, string> = {
   redescendre: 'attention',
 }
 
-function Expediteur({ e, mesurePossible }: { e: LigneExpediteur; mesurePossible: boolean }) {
+/**
+ * ── LES DEUX INTERRUPTEURS D'UN EXPÉDITEUR, ET POURQUOI ILS N'EN FONT QU'UN ──
+ * Le moteur ne charge que les `statut = 'chauffe'`, et `jourDeChauffe(null)`
+ * rend 0 — ce qui fait sortir `planifierJournee` avant qu'elle ne planifie
+ * quoi que ce soit. Une adresse `chauffe` SANS date, ou datée mais en pause, ne
+ * produit donc rien, en silence, sans la moindre erreur nulle part.
+ *
+ * C'est exactement l'état dans lequel dormait la seule adresse enregistrée. Le
+ * bouton pose donc LES DEUX à la fois : il n'y a qu'une combinaison qui
+ * travaille, et l'écran ne doit pas laisser en composer trois qui ne font rien.
+ */
+function Expediteur({
+  e,
+  mesurePossible,
+  occupe,
+  onRegler,
+}: {
+  e: LigneExpediteur
+  mesurePossible: boolean
+  occupe: boolean
+  onRegler: (corps: Record<string, unknown>) => void
+}) {
   const statut = STATUTS[e.statut] ?? { texte: e.statut, ton: 'neutre' }
   const mesures = e.glissant.enBoite + e.glissant.enSpam
+  const enMarche = e.statut === 'chauffe' && e.jour > 0
 
   return (
     <div className="lem-carte" style={{ padding: 18, marginBottom: 16 }}>
@@ -94,7 +116,49 @@ function Expediteur({ e, mesurePossible }: { e: LigneExpediteur; mesurePossible:
         ) : (
           <span className="lem-pill" data-ton="attention">jamais démarrée</span>
         )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {enMarche ? (
+            <button
+              className="lem-btn"
+              disabled={occupe}
+              title="L’adresse reste enregistrée et garde sa date de démarrage : reprendre ne la fait pas repartir au jour 1."
+              onClick={() => onRegler({ id: e.id, statut: 'en_pause' })}
+            >
+              <Power size={14} /> Mettre en pause
+            </button>
+          ) : (
+            <button
+              className="lem-btn principal"
+              disabled={occupe}
+              title={
+                e.demarreLe
+                  ? `Reprendre la chauffe — la courbe repart du jour ${Math.max(1, e.jour)}, pas du premier.`
+                  : 'Poser la date de départ et lancer la courbe. Rien ne part avant le prochain tick.'
+              }
+              onClick={() => onRegler({ id: e.id, demarrer: true })}
+            >
+              <Flame size={14} /> {e.demarreLe ? 'Reprendre la chauffe' : 'Démarrer la chauffe'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* L'ÉTAT MUET SE NOMME, plutôt que de se lire dans deux pastilles qu'il
+          faut savoir croiser. « en pause » + « jamais démarrée » ne dit pas à
+          quelqu'un qui vient d'ajouter ses boîtes que RIEN ne partira. */}
+      {!enMarche && (
+        <div className="lem-alerte" data-gravite="bloquant" style={{ marginTop: 12 }}>
+          <AlertTriangle size={14} />
+          <span>
+            <strong>Cette adresse n’envoie rien.</strong>{' '}
+            {e.statut !== 'chauffe'
+              ? 'Son statut n’est pas « en chauffe » : le moteur ne la charge même pas.'
+              : 'Elle n’a pas de date de départ : la courbe reste au jour 0, donc aucune journée n’est planifiée.'}{' '}
+            Le bouton ci-dessus pose les deux d’un coup.
+          </span>
+        </div>
+      )}
 
       {/* Les deux nombres qui comptent, et leur justification en clair. Un
           plafond sans son motif est un plafond qu'on contourne. */}
@@ -304,6 +368,113 @@ function Formulaire({ coffrePret, apres }: { coffrePret: boolean; apres: () => v
 }
 
 /**
+ * Déclarer une ADRESSE D'ENVOI — l'autre moitié du réchauffeur, celle qui
+ * n'avait aucune porte.
+ *
+ * L'écran ne savait ajouter que des témoins. L'expéditeur, lui, s'insérait à la
+ * main en SQL — donc jamais : la seule ligne de la table est restée en pause,
+ * sans date de départ, pendant quatorze jours. Ajouter des boîtes témoins sans
+ * pouvoir déclarer d'expéditeur, c'est brancher les destinataires d'un courrier
+ * que personne n'écrit.
+ *
+ * ELLE EST CRÉÉE EN PAUSE, ET C'EST LE POINT. Déclarer une adresse et lancer sa
+ * chauffe sont deux décisions : la première se corrige d'un clic, la seconde
+ * part chez de vraies boîtes et construit un historique qu'on ne réécrit pas.
+ * Le bouton « Démarrer » vit sur la carte, où l'on voit ce qu'il déclenche.
+ */
+function FormulaireExpediteur({ apres }: { apres: () => void }) {
+  const [ouvert, setOuvert] = useState(false)
+  const [envoi, setEnvoi] = useState(false)
+  const [f, setF] = useState({ email: '', nom: '', cibleJour: 40, fenetreDe: 8, fenetreA: 19 })
+
+  const soumettre = async () => {
+    if (!f.email.trim() || !f.nom.trim()) {
+      toast.error('L’adresse et le nom sont requis.')
+      return
+    }
+    setEnvoi(true)
+    try {
+      const res = await authedFetch('/api/prospection/rechauffeur/expediteurs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: f.email.trim(),
+          nom: f.nom.trim(),
+          cibleJour: Number(f.cibleJour),
+          fenetreDe: Number(f.fenetreDe),
+          fenetreA: Number(f.fenetreA),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? 'Enregistrement impossible')
+      toast.success(`${data.email} enregistrée, en pause — reste à démarrer sa chauffe.`)
+      setF({ ...f, email: '', nom: '' })
+      setOuvert(false)
+      apres()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Enregistrement impossible')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  if (!ouvert) {
+    return (
+      <button className="lem-btn" onClick={() => setOuvert(true)} style={{ marginBottom: 16 }}>
+        <Plus size={14} /> Ajouter une adresse d’envoi
+      </button>
+    )
+  }
+
+  return (
+    <div className="lem-carte" style={{ padding: 18, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+        <label>
+          <div className="lem-second" style={{ fontSize: 12 }}>Adresse d’envoi</div>
+          <input className="lem-champ" value={f.email} placeholder="contact@samadigitalstudio.fr"
+            onChange={(e) => setF({ ...f, email: e.target.value })} />
+        </label>
+        <label>
+          <div className="lem-second" style={{ fontSize: 12 }}>Nom affiché</div>
+          <input className="lem-champ" value={f.nom} placeholder="Matteo"
+            onChange={(e) => setF({ ...f, nom: e.target.value })} />
+        </label>
+        <label>
+          <div className="lem-second" style={{ fontSize: 12 }}>Cible/jour à terme</div>
+          <input className="lem-champ" type="number" min={1} max={200} value={f.cibleJour}
+            onChange={(e) => setF({ ...f, cibleJour: Number(e.target.value) })} />
+        </label>
+        <label>
+          <div className="lem-second" style={{ fontSize: 12 }}>Fenêtre — de</div>
+          <input className="lem-champ" type="number" min={0} max={23} value={f.fenetreDe}
+            onChange={(e) => setF({ ...f, fenetreDe: Number(e.target.value) })} />
+        </label>
+        <label>
+          <div className="lem-second" style={{ fontSize: 12 }}>Fenêtre — à</div>
+          <input className="lem-champ" type="number" min={1} max={24} value={f.fenetreA}
+            onChange={(e) => setF({ ...f, fenetreA: Number(e.target.value) })} />
+        </label>
+      </div>
+
+      <div className="lem-second" style={{ fontSize: 12, margin: '12px 0 0' }}>
+        C’est l’adresse de PROSPECTION qu’on chauffe, celle qui part par Resend — pas une
+        boîte de l’hébergeur. Chauffer un autre chemin d’envoi que le vrai n’apporte rien :
+        le filtre indexe le couple (domaine signant, IP émettrice).
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="lem-btn principal" disabled={envoi} onClick={soumettre}>
+          {envoi ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+        <button className="lem-btn discret" onClick={() => setOuvert(false)}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Le mode d'emploi du maillage — ce que Matteo doit faire, fournisseur par
  * fournisseur.
  *
@@ -473,6 +644,7 @@ function ModeEmploi({
 export function Rechauffeur() {
   const [etat, setEtat] = useState<Etat | null>(null)
   const [chargement, setChargement] = useState(true)
+  const [occupe, setOccupe] = useState(false)
 
   const recharger = React.useCallback(async () => {
     try {
@@ -488,6 +660,57 @@ export function Rechauffeur() {
   }, [])
 
   useEffect(() => { void recharger() }, [recharger])
+
+  const regler = async (corps: Record<string, unknown>) => {
+    setOccupe(true)
+    try {
+      const res = await authedFetch('/api/prospection/rechauffeur/expediteurs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corps),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? 'Réglage impossible')
+      toast.success(
+        data.statut === 'chauffe'
+          ? `${data.email} en chauffe depuis le ${data.demarreLe}.`
+          : `${data.email} : ${STATUTS[data.statut]?.texte ?? data.statut}.`,
+      )
+      await recharger()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Réglage impossible')
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  /**
+   * UN TICK À LA DEMANDE, PARCE QU'UN RÉCHAUFFEUR NE SE VOIT QU'À SES EFFETS.
+   *
+   * Tant que rien n'a tourné, l'écran affiche exactement ce qu'afficherait un
+   * réchauffeur en panne : zéro partout. Le bilan du tick — planifiés, envoyés,
+   * alertes — est la seule chose qui distingue « il n'a pas encore tourné » de
+   * « il tourne et n'a rien à faire ». Les alertes sont remontées telles
+   * quelles : ce sont elles qui nomment le maillage trop court ou le témoin
+   * illisible.
+   */
+  const tickMaintenant = async () => {
+    setOccupe(true)
+    try {
+      const res = await authedFetch('/api/rechauffeur/tick', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? 'Tick impossible')
+      toast.success(
+        `Tick : ${data.planifies} planifié(s), ${data.envoyes} envoyé(s), ${data.echecs} échec(s).`,
+      )
+      for (const a of (data.alertes ?? []) as string[]) toast.warning(a)
+      await recharger()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Tick impossible')
+    } finally {
+      setOccupe(false)
+    }
+  }
 
   const basculer = async (t: Temoin) => {
     const res = await authedFetch('/api/prospection/rechauffeur/temoins', {
@@ -526,6 +749,12 @@ export function Rechauffeur() {
               prospection — c’est la seule façon dont la chauffe lui profite.
             </p>
           </div>
+          {/* Le tick à la demande vit dans l'en-tête, pas sur une carte : il ne
+              concerne aucun expéditeur en particulier, c'est le passage entier
+              qu'il rejoue. */}
+          <button className="lem-btn" disabled={occupe || chargement} onClick={tickMaintenant}>
+            <Flame size={14} /> Lancer un tick maintenant
+          </button>
         </header>
 
         {chargement ? (
@@ -548,12 +777,25 @@ export function Rechauffeur() {
             )}
 
             {etat.expediteurs.length === 0 ? (
-              <div className="lem-carte"><div className="lem-vide">Aucun expéditeur enregistré.</div></div>
+              <div className="lem-carte" style={{ marginBottom: 16 }}>
+                <div className="lem-vide">
+                  Aucune adresse d’envoi enregistrée — des témoins branchés sans expéditeur,
+                  c’est le destinataire d’un courrier que personne n’écrit.
+                </div>
+              </div>
             ) : (
               etat.expediteurs.map((e) => (
-                <Expediteur key={e.id} e={e} mesurePossible={etat.mesurePossible} />
+                <Expediteur
+                  key={e.id}
+                  e={e}
+                  mesurePossible={etat.mesurePossible}
+                  occupe={occupe}
+                  onRegler={regler}
+                />
               ))
             )}
+
+            <FormulaireExpediteur apres={recharger} />
 
             {/* ── Le maillage ─────────────────────────────────────────────── */}
             <div className="lem-carte" style={{ padding: 18 }}>

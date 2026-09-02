@@ -49,6 +49,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Automation } from '@/components/automations/types'
 import { enrollInSequence, sortirDeSequence } from '@/lib/automations/engine'
 import { readTransitions } from '@/lib/automations/week'
+import { assurerJetonsPlaquette } from '@/lib/audit/plaquette'
+import { urlPlaquette } from '@/lib/audit/plaquette-lien'
+import { assurerJetonRapport } from '@/lib/audit-site/rapport'
+import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
+import { choisirSiteMontrable, urlPubliqueDuSite } from '@/lib/site-builder/demo-share-url'
 
 /**
  * « S4 — Il a rappelé » — la séquence de repli, posée par
@@ -182,3 +187,58 @@ export const PIECE_LABEL: Record<Piece, string> = {
  */
 export const ligneDePiece = (piece: Piece, url: string): string =>
   `${PIECE_LABEL[piece]} envoyé pendant l’échange :\n${url}`
+
+/**
+ * Les liens des trois pièces, RECOMPOSÉS CÔTÉ SERVEUR.
+ *
+ * L'écran les connaît parfois déjà — ils sont dans la charge utile d'une tâche
+ * de séquence — et les recevoir aurait été plus court. Mais les gestes qui
+ * appellent cette fonction partent de fiches SANS tâche ouverte, où rien n'est
+ * préparé ; et une URL journalisée telle qu'un écran l'a envoyée n'est
+ * vérifiable par personne. Les trois fonctions appelées ici sont celles du
+ * moteur : le lien rendu est donc, au caractère près, celui qu'une étape aurait
+ * envoyé.
+ *
+ * ⚠️ ELLE ÉCRIT. `assurerJetonsPlaquette` et `assurerJetonRapport` CRÉENT le
+ * jeton quand il manque — c'est ce qui rend le lien mesurable. À n'appeler donc
+ * que sur un geste explicite, jamais au fil d'une lecture d'écran.
+ */
+export async function liensDesPieces(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  ownerId: string | null,
+  voulues: readonly Piece[],
+): Promise<Partial<Record<Piece, string>>> {
+  const liens: Partial<Record<Piece, string>> = {}
+
+  if (voulues.includes('demo')) {
+    const { data: sites } = await sb
+      .from('sites')
+      .select('id,is_published,published_subdomain,published_domain,build_stage,is_template')
+      .eq('enterprise_id', entrepriseId)
+    const site = choisirSiteMontrable(sites ?? [])
+    if (site) liens.demo = urlPubliqueDuSite(site)
+  }
+
+  if (voulues.includes('plaquette')) {
+    try {
+      const { jetons } = await assurerJetonsPlaquette(sb, [entrepriseId], ownerId)
+      liens.plaquette = urlPlaquette(jetons.find((j) => j.entrepriseId === entrepriseId)?.jeton || null)
+    } catch {
+      // Le lien COLLECTIF plutôt que rien : la plaquette est partie, seul son
+      // compteur de vues manquera. Même arbitrage que dans le moteur.
+      liens.plaquette = urlPlaquette(null)
+    }
+  }
+
+  if (voulues.includes('audit')) {
+    try {
+      const { jeton, erreur } = await assurerJetonRapport(sb, entrepriseId, ownerId)
+      if (!erreur && jeton?.actif && jeton.token) liens.audit = rapportPublicUrl(jeton.token)
+    } catch {
+      /* pas de rapport publiable : la pièce n'est simplement pas journalisée */
+    }
+  }
+
+  return liens
+}

@@ -30,6 +30,8 @@ import {
   Target,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Layers,
   ScanSearch,
   CalendarClock,
@@ -1388,6 +1390,16 @@ function BulkBar({
   templateId: string;
   templateName: string | null;
 }) {
+  /**
+   * Repliée par défaut : une rangée qui défile, pas quatre qui s'empilent.
+   *
+   * Le grief est de place, et il est mesurable — une vingtaine de boutons en
+   * `flex-wrap` prennent 130 à 150 px au tableau, exactement quand on veut
+   * relire ce qu'on vient de cocher. Rien n'est masqué pour autant : une
+   * action de masse qu'on cache se cherche ailleurs, puis se refait à la main.
+   */
+  const [deploye, setDeploye] = React.useState(false);
+
   const toComplete = rows.filter((r) => missingCount(r) > 0);
   // Une ligne déjà inscrite ne doit pas l'être deux fois : le prospect
   // recevrait tout en double. On la retire du lot AVANT de proposer l'action,
@@ -1461,12 +1473,28 @@ function BulkBar({
   const ct = (n: number) => <span className="ct">{n}</span>;
 
   return (
-    <div className="bulkbar" role="group" aria-label="Actions de masse">
-      <span className="cnt">{rows.length} sélectionnée{rows.length > 1 ? "s" : ""}</span>
-      <button className="btn ghost xs" onClick={onClear} title="Tout désélectionner">
-        <X className="ico-sm" />
-      </button>
-      <div className="tb-div" />
+    <div className={"bulkbar" + (deploye ? " deploye" : "")} role="group" aria-label="Actions de masse">
+      {/* Ce bloc ne défile pas : le compte visé et la bascule sont les deux
+          seules choses dont on a besoin en permanence. */}
+      <div className="bb-tete">
+        <span className="cnt">{rows.length} sélectionnée{rows.length > 1 ? "s" : ""}</span>
+        <button className="btn ghost xs" onClick={onClear} title="Tout désélectionner">
+          <X className="ico-sm" />
+        </button>
+        <button
+          className="btn ghost xs"
+          onClick={() => setDeploye((v) => !v)}
+          aria-expanded={deploye}
+          title={
+            deploye
+              ? "Replier sur une seule rangée — la liste récupère la place"
+              : "Déplier toutes les actions sur plusieurs rangées"
+          }
+        >
+          {deploye ? <ChevronUp className="ico-sm" /> : <ChevronDown className="ico-sm" />}
+        </button>
+        <div className="tb-div" />
+      </div>
 
       {/*
         AVANT « Enrichir », et l'ordre est le fond du bouton : enrichir travaille
@@ -1799,7 +1827,9 @@ type SortMode =
   | "missing-asc"
   | "notes"
   | "name"
-  | "service";
+  | "service"
+  | "sequence"
+  | "etape-seq";
 /** Complétude des variables requises pour créer le site. */
 type DataFilter = "all" | "incomplete" | "complete";
 /**
@@ -1871,6 +1901,14 @@ const SORT_LABELS: Array<[SortMode, string]> = [
   // Regrouper par métier : « montre-moi d'abord tous les isolants ». Sans lui,
   // filtrer sur trois métiers rend une liste où ils sont mêlés.
   ["service", "Trier : métier (A→Z)"],
+  // Regrouper par SÉQUENCE : les lignes d'une même campagne côte à côte, le
+  // stock (jamais inscrit) en fin de liste. C'est ce qui permet de relire une
+  // séquence entière avant de la relancer, sans la filtrer d'abord.
+  ["sequence", "Trier : séquence (A→Z)"],
+  // Et le croisement des deux : à l'intérieur d'une séquence, les plus en
+  // retard d'abord. Trier par étape SEULE mêle des campagnes qui n'ont ni le
+  // même nombre d'étapes ni le même sens.
+  ["etape-seq", "Trier : séquence puis étape"],
 ];
 
 interface PipelineMatrixProps {
@@ -2064,6 +2102,17 @@ export function PipelineMatrix({
     };
     if (sort === "name") {
       return [...rows].sort((a, b) => displayName(a).localeCompare(displayName(b), "fr"));
+    }
+    if (sort === "sequence" || sort === "etape-seq") {
+      // Sans inscription, en FIN de liste : c'est le stock à attribuer, pas une
+      // séquence nommée « » qui passerait en tête.
+      const nom = (it: BoardItem) => it.sequence?.name ?? "\uffff";
+      const etape = (it: BoardItem) => activeStageIndex(it, stages);
+      return [...rows].sort((a, b) => {
+        const parNom = nom(a).localeCompare(nom(b), "fr");
+        if (parNom !== 0 || sort === "sequence") return parNom;
+        return etape(a) - etape(b);
+      });
     }
     if (sort === "service") {
       // Le PREMIER métier de la fiche fait la clé — une entreprise en porte
@@ -2509,7 +2558,7 @@ export function PipelineMatrix({
           <button
             className={"btn subtle sm" + (nbCoches > 0 ? " on" : "")}
             onClick={() => setPanneauFiltres((v) => !v)}
-            title="Filtrer sur le site du prospect, sa note, notre démo et l'audit"
+            title="Filtrer sur le site du prospect, sa note, notre démo, l'audit, le premier message, la séquence, le logo, les métiers, la plaquette et la fiche Google"
           >
             <SlidersHorizontal className="ico-sm" />
             Filtres
@@ -2526,10 +2575,15 @@ export function PipelineMatrix({
                     Plusieurs cases d’un même bloc = <b>ou</b> ; entre les blocs = <b>et</b>
                   </span>
                 </div>
-                {GROUPES.map((g) => (
+                {GROUPES.map((g) => {
+                  // Combien de cases cochées DANS CE BLOC. Avec dix blocs qui
+                  // défilent, le seul compteur global ne dit plus où regarder.
+                  const nDansGroupe = g.options.filter((o) => coches.has(o.cle)).length;
+                  return (
                   <div className="fp-groupe" key={g.id}>
                     <div className="fp-titre" title={g.aide}>
                       {g.titre}
+                      {nDansGroupe > 0 && <span className="fp-ct"> · {nDansGroupe}</span>}
                     </div>
                     {g.options.map((o) => (
                       <label className="fp-case" key={o.cle} title={o.aide}>
@@ -2545,7 +2599,8 @@ export function PipelineMatrix({
                       </label>
                     ))}
                   </div>
-                ))}
+                  );
+                })}
                 <div className="fp-pied">
                   <button
                     className="btn ghost sm"
