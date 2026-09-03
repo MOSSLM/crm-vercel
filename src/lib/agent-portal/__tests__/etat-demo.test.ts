@@ -7,7 +7,14 @@
  * pendant qu'un autre écran dirait « pas prête ». Les cas ci-dessous sont donc
  * écrits sur le CONTRAT, pas sur l'implémentation.
  */
-import { etatDemoDe } from "../etat-demo";
+import {
+  countByEtatDemo,
+  etatDemoDe,
+  ETAT_DEMO_AIDE,
+  ETAT_DEMO_LABEL,
+  ETAT_DEMO_ORDER,
+  ETAT_DEMO_TAG,
+} from "../etat-demo";
 import { compteDuTri, trierLaFile } from "../demarchage-buckets";
 
 const site = (p: Partial<Parameters<typeof etatDemoDe>[0] extends readonly (infer S)[] ? S : never> = {}) => ({
@@ -103,5 +110,41 @@ describe("trierLaFile — remonter sans défaire l'ordre du jour", () => {
     expect(compteDuTri(l, "demo")).toBe(2);
     // « passage » ne remonte rien en particulier : il les porte toutes.
     expect(compteDuTri(l, "passage")).toBe(3);
+  });
+});
+
+/**
+ * CE QUE LA FILE MONTRE de ces trois états — et la règle qui fait qu'elle n'en
+ * montre pas trois.
+ */
+describe("les trois états, tels que la ligne les rend", () => {
+  it("nomme et explique CHAQUE état, sans en oublier un", () => {
+    // Le jour où un quatrième état apparaît, c'est ici que ça casse — pas à
+    // l'écran, où un état sans libellé se rend en blanc et ne se voit pas.
+    for (const e of ETAT_DEMO_ORDER) {
+      expect(ETAT_DEMO_LABEL[e]).toBeTruthy();
+      expect(ETAT_DEMO_AIDE[e]).toBeTruthy();
+    }
+    expect([...ETAT_DEMO_ORDER].sort()).toEqual(["aucune", "chantier", "prete"]);
+  });
+
+  it("n'écrit d'étiquette que là où il y a quelque chose à faire", () => {
+    // 49 % de la file n'a pas de démo (03/09/2026) : une étiquette portée par
+    // une ligne sur deux ne partage plus rien, elle décore. Son absence se lit,
+    // et le liseré gris reste là pour l'infobulle.
+    expect(ETAT_DEMO_TAG.prete).toBeTruthy();
+    expect(ETAT_DEMO_TAG.chantier).toBeTruthy();
+    expect(ETAT_DEMO_TAG.aucune).toBeNull();
+  });
+
+  it("compte chaque état — c'est ce que les pastilles annoncent", () => {
+    const par = countByEtatDemo([
+      { demo_etat: "prete" },
+      { demo_etat: "prete" },
+      { demo_etat: "chantier" },
+      { demo_etat: null },
+      {},
+    ]);
+    expect(par).toEqual({ prete: 2, chantier: 1, aucune: 0 });
   });
 });

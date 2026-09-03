@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
 import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
-import { ETAT_DEMO_AIDE } from "@/lib/agent-portal/etat-demo";
+import { DemLegende, TagDemo } from "./DemLegende";
+import { useFermetureAuClicDehors } from "./fermeture";
+import {
+  countByEtatDemo,
+  ETAT_DEMO_AIDE,
+  ETAT_DEMO_LABEL,
+  ETAT_DEMO_ORDER,
+  ETAT_DEMO_TAG,
+  type EtatDemo,
+} from "@/lib/agent-portal/etat-demo";
 import {
   countByEtatSite,
   ETAT_SITE_AIDE,
@@ -132,27 +141,6 @@ const nomDe = (t: DemarchageTask): string => {
   );
 };
 
-/** Ferme un panneau dès qu'on clique ailleurs — sinon il reste sur la liste. */
-function useFermetureAuClicDehors(ouvert: boolean, fermer: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ouvert) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) fermer();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") fermer();
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [ouvert, fermer]);
-  return ref;
-}
-
 /**
  * L'OBJECTIF DU JOUR, sur une seule ligne.
  *
@@ -213,6 +201,8 @@ export function DemRail({
   setCohorte,
   etatSite,
   setEtatSite,
+  etatDemo,
+  setEtatDemo,
   tri,
   setTri,
   tasks,
@@ -254,6 +244,18 @@ export function DemRail({
    */
   etatSite: EtatSite | null;
   setEtatSite: (e: EtatSite | null) => void;
+  /**
+   * État de NOTRE démo filtré, `null` = les trois. Filtre EN MÉMOIRE comme
+   * celui du site — la file est chargée entière, donc les trois comptes sont
+   * exacts.
+   *
+   * Il double le TRI « Démo prête », et c'est voulu : le tri remonte sans rien
+   * perdre (on garde sa journée), le filtre ne garde que ceux-là (on décide de
+   * ne travailler qu'eux). Les deux gestes existent vraiment — l'un se fait le
+   * matin, l'autre quand on n'a qu'une heure devant soi.
+   */
+  etatDemo: EtatDemo | null;
+  setEtatDemo: (e: EtatDemo | null) => void;
   /**
    * Sur quoi la file est remontée. `passage` = l'ordre du jour, le défaut.
    *
@@ -359,6 +361,17 @@ export function DemRail({
   );
 
   /**
+   * Les états de démo présents, et leur compte. Même règle que ci-dessus : à
+   * partir de DEUX, sinon la pastille rendrait la liste inchangée en ayant
+   * l'air d'agir.
+   */
+  const parEtatDemo = useMemo(() => countByEtatDemo(duJour), [duJour]);
+  const etatsDemo = useMemo(
+    () => ETAT_DEMO_ORDER.filter((e) => parEtatDemo[e] > 0),
+    [parEtatDemo],
+  );
+
+  /**
    * Les tris qui trient VRAIMENT cette file. Un tri qui remonte zéro ligne
    * n'ordonne rien, et un tri qui les remonte toutes non plus : dans les deux
    * cas la pastille rendrait la liste inchangée en ayant l'air d'agir. Même
@@ -376,10 +389,28 @@ export function DemRail({
 
   /** Combien de filtres « repliés » sont actifs — c'est ce que le bouton annonce. */
   const filtresCaches =
-    (signal ? 1 : 0) + (cohorte ? 1 : 0) + (step != null ? 1 : 0) + (etatSite ? 1 : 0);
+    (signal ? 1 : 0) +
+    (cohorte ? 1 : 0) +
+    (step != null ? 1 : 0) +
+    (etatSite ? 1 : 0) +
+    (etatDemo ? 1 : 0);
+  /**
+   * Reste-t-il quelque chose à FILTRER, une fois le tri mis à part ? Le menu
+   * mélangeait les deux gestes sans le dire : « Trier — en premier » et
+   * « Signal » se ressemblaient comme deux rangées de pastilles, alors que
+   * l'une garde toute la file et l'autre en retire des lignes. Ce drapeau
+   * décide de l'intertitre qui les sépare.
+   */
+  const filtresDispo =
+    SIGNAL_ORDER.some((s) => parSignal[s] > 0) ||
+    cohortes.length > 0 ||
+    etatsDemo.length > 1 ||
+    etatsSite.length > 1 ||
+    etapes.length > 1;
   const filtrables =
     SIGNAL_ORDER.some((s) => parSignal[s] > 0) ||
     cohortes.length > 0 ||
+    etatsDemo.length > 1 ||
     etatsSite.length > 1 ||
     etapes.length > 1 ||
     tris.length > 1;
@@ -449,8 +480,11 @@ export function DemRail({
         )}
       </div>
 
-      {/* ── LA BARRE DE FILTRES : le canal en clair, le reste replié ── */}
-      {(canaux.length > 1 || filtrables) && (
+      {/* ── LA BARRE DE FILTRES : le canal en clair, le reste replié ──
+          Elle apparaît aussi quand il n'y a RIEN à filtrer, dès que la liste
+          n'est pas vide : elle porte la légende, et une légende qui disparaît
+          selon la file ne s'apprend jamais. */}
+      {(canaux.length > 1 || filtrables || duJour.length > 0) && (
         <div className="dm-fbar">
           {canaux.length > 1 && (
             <>
@@ -487,152 +521,186 @@ export function DemRail({
             </button>
           )}
 
-          {filtrables && (
-            <div className="dm-fpop" ref={refFiltres}>
-              <button
-                type="button"
-                className="dm-chip more"
-                aria-pressed={filtresCaches > 0}
-                aria-expanded={filtresOuverts}
-                onClick={() => setFiltresOuverts(!filtresOuverts)}
-              >
-                <Icon name="layers" className="ico-xs" />
-                {filtresCaches > 0 ? filtresCaches : "Filtrer"}
-              </button>
+          <div className="dm-fbar-r">
+            {filtrables && (
+              <div className="dm-fpop" ref={refFiltres}>
+                <button
+                  type="button"
+                  className="dm-chip more"
+                  aria-pressed={filtresCaches > 0}
+                  aria-expanded={filtresOuverts}
+                  onClick={() => setFiltresOuverts(!filtresOuverts)}
+                >
+                  <Icon name="layers" className="ico-xs" />
+                  {filtresCaches > 0 ? filtresCaches : "Filtrer"}
+                </button>
 
-              {filtresOuverts && (
-                <div className="dm-fmenu" role="dialog" aria-label="Filtres">
-                  {/* TRIER — en tête, parce que c'est ce qui décide par quoi on
-                      commence. Les trois critères sont ceux que la ligne
-                      MONTRE déjà : le liseré de démo, le badge 06/07,
-                      l'étiquette de site. Trier sur un critère invisible
-                      rendrait un ordre invérifiable à l'œil. */}
-                  {tris.length > 1 && (
-                    <div className="g">
-                      <span className="lb">Trier — en premier</span>
-                      <div className="ch">
-                        {tris.map((t) => (
-                          <button
-                            key={t}
-                            className="dm-chip"
-                            data-tri={t}
-                            aria-pressed={tri === t}
-                            title={TRI_AIDE[t]}
-                            onClick={() => setTri(t)}
-                          >
-                            {TRI_LABEL[t]}
-                            {t !== "passage" && <span className="n">{compteDuTri(duJour, t)}</span>}
-                          </button>
-                        ))}
+                {filtresOuverts && (
+                  <div className="dm-fmenu" role="dialog" aria-label="Filtres">
+                    {/* TRIER — en tête, parce que c'est ce qui décide par quoi on
+                        commence. Les trois critères sont ceux que la ligne
+                        MONTRE déjà : le liseré de démo, le badge 06/07,
+                        l'étiquette de site. Trier sur un critère invisible
+                        rendrait un ordre invérifiable à l'œil. */}
+                    {tris.length > 1 && (
+                      <div className="g">
+                        <span className="lb">Trier — en premier</span>
+                        <div className="ch">
+                          {tris.map((t) => (
+                            <button
+                              key={t}
+                              className="dm-chip"
+                              data-tri={t}
+                              aria-pressed={tri === t}
+                              title={TRI_AIDE[t]}
+                              onClick={() => setTri(t)}
+                            >
+                              {TRI_LABEL[t]}
+                              {t !== "passage" && <span className="n">{compteDuTri(duJour, t)}</span>}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {SIGNAL_ORDER.some((s) => parSignal[s] > 0) && (
-                    <div className="g">
-                      <span className="lb">Signal</span>
-                      <div className="ch">
-                        {SIGNAL_ORDER.filter((s) => parSignal[s] > 0).map((s) => (
-                          <button
-                            key={s}
-                            className="dm-chip"
-                            data-tone={toneOf(s)}
-                            aria-pressed={signal === s}
-                            onClick={() => setSignal(signal === s ? null : s)}
-                          >
-                            {SIGNAL_LABEL[s]}
-                            <span className="n">{parSignal[s]}</span>
-                          </button>
-                        ))}
+                    {filtresDispo && <div className="dm-fsec">Ne garder que</div>}
+
+                    {/* DÉMO — la première question de l'appel : ai-je quelque
+                        chose à lui montrer ? Le TRI juste au-dessus remonte les
+                        mêmes lignes sans rien perdre ; ce filtre-ci ne garde
+                        qu'elles. Deux gestes différents, et c'est pour ça que
+                        l'intertitre existe. */}
+                    {etatsDemo.length > 1 && (
+                      <div className="g">
+                        <span className="lb">Notre démo</span>
+                        <div className="ch">
+                          {etatsDemo.map((e) => (
+                            <button
+                              key={e}
+                              className="dm-chip"
+                              data-demo={e}
+                              aria-pressed={etatDemo === e}
+                              title={ETAT_DEMO_AIDE[e]}
+                              onClick={() => setEtatDemo(etatDemo === e ? null : e)}
+                            >
+                              {ETAT_DEMO_LABEL[e]}
+                              <span className="n">{parEtatDemo[e]}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* SITE — la question qu'on se pose en composant le numéro :
-                      est-ce que je lui vends son premier site, ou est-ce que je
-                      lui montre ce que le sien lui coûte ? Deux façons de ne pas
-                      en avoir, et elles ne se disent pas pareil : « vérifié »
-                      s'annonce, « à vérifier » se vérifie d'abord. */}
-                  {etatsSite.length > 1 && (
-                    <div className="g">
-                      <span className="lb">Site</span>
-                      <div className="ch">
-                        {etatsSite.map((e) => (
-                          <button
-                            key={e}
-                            className="dm-chip"
-                            data-site={e}
-                            aria-pressed={etatSite === e}
-                            title={ETAT_SITE_AIDE[e]}
-                            onClick={() => setEtatSite(etatSite === e ? null : e)}
-                          >
-                            {ETAT_SITE_LABEL[e]}
-                            <span className="n">{parEtatSite[e]}</span>
-                          </button>
-                        ))}
+                    {SIGNAL_ORDER.some((s) => parSignal[s] > 0) && (
+                      <div className="g">
+                        <span className="lb">Signal</span>
+                        <div className="ch">
+                          {SIGNAL_ORDER.filter((s) => parSignal[s] > 0).map((s) => (
+                            <button
+                              key={s}
+                              className="dm-chip"
+                              data-tone={toneOf(s)}
+                              aria-pressed={signal === s}
+                              onClick={() => setSignal(signal === s ? null : s)}
+                            >
+                              {SIGNAL_LABEL[s]}
+                              <span className="n">{parSignal[s]}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {cohortes.length > 0 && (
-                    <div className="g">
-                      <span className="lb">Cohorte</span>
-                      <div className="ch">
-                        {cohortes.map((c) => (
-                          <button
-                            key={c.id}
-                            className="dm-chip"
-                            data-coh={c.id}
-                            aria-pressed={cohorte === c.id}
-                            title={`${COHORTE_INFO[c.id].long} — ${COHORTE_INFO[c.id].argument}`}
-                            onClick={() => setCohorte(cohorte === c.id ? null : c.id)}
-                          >
-                            {COHORTE_INFO[c.id].court}
-                            {c.n != null && <span className="n">{c.n}</span>}
-                          </button>
-                        ))}
+                    {/* SITE — la question qu'on se pose en composant le numéro :
+                        est-ce que je lui vends son premier site, ou est-ce que je
+                        lui montre ce que le sien lui coûte ? Deux façons de ne pas
+                        en avoir, et elles ne se disent pas pareil : « vérifié »
+                        s'annonce, « à vérifier » se vérifie d'abord. */}
+                    {etatsSite.length > 1 && (
+                      <div className="g">
+                        <span className="lb">Son site à lui</span>
+                        <div className="ch">
+                          {etatsSite.map((e) => (
+                            <button
+                              key={e}
+                              className="dm-chip"
+                              data-site={e}
+                              aria-pressed={etatSite === e}
+                              title={ETAT_SITE_AIDE[e]}
+                              onClick={() => setEtatSite(etatSite === e ? null : e)}
+                            >
+                              {ETAT_SITE_LABEL[e]}
+                              <span className="n">{parEtatSite[e]}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {etapes.length > 1 && (
-                    <div className="g">
-                      <span className="lb">Étape</span>
-                      <div className="ch">
-                        {etapes.map((e) => (
-                          <button
-                            key={e}
-                            className="dm-chip"
-                            aria-pressed={step === e}
-                            onClick={() => setStep(step === e ? null : e)}
-                            title={`Étape ${e} de séquence`}
-                          >
-                            {e}
-                          </button>
-                        ))}
+                    {cohortes.length > 0 && (
+                      <div className="g">
+                        <span className="lb">Cohorte</span>
+                        <div className="ch">
+                          {cohortes.map((c) => (
+                            <button
+                              key={c.id}
+                              className="dm-chip"
+                              data-coh={c.id}
+                              aria-pressed={cohorte === c.id}
+                              title={`${COHORTE_INFO[c.id].long} — ${COHORTE_INFO[c.id].argument}`}
+                              onClick={() => setCohorte(cohorte === c.id ? null : c.id)}
+                            >
+                              {COHORTE_INFO[c.id].court}
+                              {c.n != null && <span className="n">{c.n}</span>}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {filtresCaches > 0 && (
-                    <button
-                      type="button"
-                      className="dm-fclear"
-                      onClick={() => {
-                        setSignal(null);
-                        setCohorte(null);
-                        setStep(null);
-                        setEtatSite(null);
-                      }}
-                    >
-                      <Icon name="x" className="ico-xs" />
-                      Tout relâcher
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                    {etapes.length > 1 && (
+                      <div className="g">
+                        <span className="lb">Étape</span>
+                        <div className="ch">
+                          {etapes.map((e) => (
+                            <button
+                              key={e}
+                              className="dm-chip"
+                              aria-pressed={step === e}
+                              onClick={() => setStep(step === e ? null : e)}
+                              title={`Étape ${e} de séquence`}
+                            >
+                              {e}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {filtresCaches > 0 && (
+                      <button
+                        type="button"
+                        className="dm-fclear"
+                        onClick={() => {
+                          setSignal(null);
+                          setCohorte(null);
+                          setStep(null);
+                          setEtatSite(null);
+                          setEtatDemo(null);
+                        }}
+                      >
+                        <Icon name="x" className="ico-xs" />
+                        Tout relâcher
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CE QUI MANQUAIT : où lire ce que veulent dire les couleurs. */}
+            <DemLegende />
+          </div>
         </div>
       )}
 
@@ -664,6 +732,11 @@ export function DemRail({
           // Une relance dépliée depuis « à venir » n'est pas du travail du jour :
           // sa date est le seul moyen de ne pas la confondre avec le reste.
           const plusTard = file === "relances" && rep.aVenir.includes(t);
+          // L'étiquette de démo — `null` sur `aucune`, qui est la moitié de la
+          // file. C'est elle qui décide si le liseré a encore quelque chose à
+          // dire à un lecteur d'écran : quand le mot est écrit sur la ligne, la
+          // couleur n'a plus à le répéter.
+          const tagDemo = t.demo_etat ? ETAT_DEMO_TAG[t.demo_etat] : null;
           return (
             <div
               key={t.id}
@@ -693,6 +766,14 @@ export function DemRail({
                     <Icon name={ch.ic} className="ico-xs" />
                     {ch.lb}
                   </span>
+                  {/* NOTRE DÉMO, EN TOUTES LETTRES — et en PREMIER.
+                      Le liseré du bord droit dit la même chose sur la colonne
+                      entière, mais une couleur ne se lit qu'une fois apprise :
+                      le grief est arrivé mot pour mot. L'étiquette ne sort que
+                      sur les deux états où il y a quelque chose à faire ;
+                      `aucune` (la moitié de la file) reste muet, sinon
+                      l'étiquette ne partage plus rien. */}
+                  {t.demo_etat && <TagDemo etat={t.demo_etat} />}
                   {t.sequence?.stepIndex != null && (
                     <span className="st stp">
                       étape {t.sequence.stepIndex}
@@ -782,17 +863,22 @@ export function DemRail({
                   Le bord GAUCHE est déjà pris trois fois — sélection, chaleur,
                   discussion — et un prospect chaud doit continuer de dominer la
                   ligne : y écrire la démo écraserait le signal le plus urgent.
-                  Élément réel et non `::after` : une couleur seule ne s'apprend
-                  pas, il lui faut son infobulle et son nom pour un lecteur
-                  d'écran. Dernier enfant et `position:absolute` — la ligne est
-                  une grille `26px 1fr`, un enfant de plus la décalerait. */}
+                  Élément réel et non `::after` : il lui faut son infobulle, et
+                  son nom quand aucune étiquette ne le dit. Dernier enfant et
+                  `position:absolute` — la ligne est une grille `26px 1fr`, un
+                  enfant de plus la décalerait.
+                  IL RESTE APRÈS L'ÉTIQUETTE, et ne fait pas doublon : le trait
+                  se lit sur la COLONNE (« combien, et où sont-ils »), le mot se
+                  lit sur la LIGNE. Et c'est le seul des trois états à dire
+                  quelque chose de `aucune`, qui n'écrit rien. */}
               {t.demo_etat && (
                 <span
                   className="dmo"
                   data-demo={t.demo_etat}
-                  role="img"
-                  aria-label={ETAT_DEMO_AIDE[t.demo_etat]}
                   title={ETAT_DEMO_AIDE[t.demo_etat]}
+                  role={tagDemo ? undefined : "img"}
+                  aria-label={tagDemo ? undefined : ETAT_DEMO_AIDE[t.demo_etat]}
+                  aria-hidden={tagDemo ? true : undefined}
                 />
               )}
             </div>

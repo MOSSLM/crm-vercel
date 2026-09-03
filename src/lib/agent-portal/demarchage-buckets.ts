@@ -95,6 +95,23 @@ export const SIGNAL_TAG: Record<DemarchageSignal, string> = {
 };
 
 /**
+ * CE QUE CHAQUE SIGNAL VEUT DIRE, en une phrase — la matière de la légende.
+ *
+ * Trois mots sur une ligne de file ne s'expliquent pas eux-mêmes : « chaud » ne
+ * dit pas d'où vient la chaleur, et « jamais rappelé » se lit comme un reproche
+ * alors que c'est une occasion. Ces phrases vivent ICI, à côté des libellés
+ * qu'elles expliquent, pour qu'un signal ajouté sans son explication se voie —
+ * le `Record` ne compile pas sans.
+ */
+export const SIGNAL_AIDE: Record<DemarchageSignal, string> = {
+  missed:
+    "Il est venu voir sa démo et personne ne l'a rappelé depuis. C'est le meilleur moment d'un fichier, et il se périme.",
+  conversation:
+    "Il a répondu au moins une fois : la discussion est ouverte, on ne repart pas d'une accroche.",
+  hot: "Sa visite sur la démo est mesurée (GA4) : plusieurs sessions, du temps passé, une intention.",
+};
+
+/**
  * L'OBJECTIF quotidien par canal, à défaut de réglage propre à l'agent.
  *
  * Ce n'est plus un plafond et ça ne l'a jamais vraiment été : c'est un rythme
