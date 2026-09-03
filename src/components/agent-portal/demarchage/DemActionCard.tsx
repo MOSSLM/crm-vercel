@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Icon, Pill } from "./DemIcon";
 import { DemNotes } from "./DemNotes";
 import { demCh, isMessageKind } from "./channels";
-import { COHORTE_INFO } from "./cohortes";
+import { argumentDeCohorte } from "./cohortes";
 import { DEM_OBJECTIONS } from "./DemObjections";
 import { SCRIPT_STEPS } from "@/lib/telephony/call-script";
 import { VARIANT_LABELS, versionsPreparees, type MessageVariant } from "@/lib/automations/variables";
@@ -189,6 +189,15 @@ export function DemActionCard({
    */
   const froid = task.hors_sequence === true;
   const cohorte = task.cohorte ?? null;
+  /**
+   * L'accroche de la cohorte, CORRIGÉE par l'état du site du jour.
+   *
+   * Le classement est figé au démarchage, l'enrichissement continue : au
+   * 03/09/2026, 70 des 74 lignes classées « sans site » portent une URL. Lire
+   * l'argument brut à voix haute revient à affirmer « vous n'avez rien en
+   * ligne » à quelqu'un qui a un site — et à le découvrir au téléphone.
+   */
+  const accroche = argumentDeCohorte(cohorte, task.etat_site);
 
   const dec = company?.contacts.find((c) => c.is_decision_maker) ?? company?.contacts[0] ?? null;
   const ctName = dec
@@ -894,7 +903,7 @@ export function DemActionCard({
               <div className="dm-hint">
                 <Icon name="info" className="ico-sm" />
                 Message à froid : aucun modèle préparé.{" "}
-                {cohorte ? COHORTE_INFO[cohorte].argument : "Écris le message, il partira tel quel."}
+                {accroche ?? "Écris le message, il partira tel quel."}
               </div>
             )}
 
@@ -1177,7 +1186,7 @@ export function DemActionCard({
                   <div className="dm-hint">
                     <Icon name="info" className="ico-sm" />
                     Appel à froid : aucun texte préparé, c&apos;est normal.{" "}
-                    {cohorte ? `${COHORTE_INFO[cohorte].argument} ` : ""}La trame générique et les
+                    {accroche ? `${accroche} ` : ""}La trame générique et les
                     objections sont dans l&apos;onglet à côté.
                   </div>
                 ) : (

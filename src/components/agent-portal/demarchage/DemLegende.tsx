@@ -153,6 +153,28 @@ export function DemLegende() {
                 {COHORTE_INFO[c].argument}
               </L>
             ))}
+            {/* LE CAS QUI FAISAIT DIRE « JE COMPRENDS PAS » : deux étiquettes
+                voisines qui s'opposent. Elle a sa propre entrée parce que c'est
+                la combinaison la plus fréquente de la file, pas une curiosité —
+                70 lignes sur 74 au 03/09/2026. */}
+            <L
+              vu={
+                <span className="st coh" data-coh="B_sans_site" data-perime="1">
+                  {COHORTE_INFO.B_sans_site.court}
+                </span>
+              }
+            >
+              Contour au lieu d&apos;un fond : le classement est DÉMENTI par la fiche du jour.
+              C&apos;est pour ça qu&apos;on voit parfois « a un site » et « classé sans site » sur la
+              même ligne — l&apos;un est d&apos;aujourd&apos;hui, l&apos;autre du jour du
+              démarchage. C&apos;est l&apos;état du jour qui fait foi.
+            </L>
+            <p className="nb">
+              Le classement est figé le jour du démarchage et jamais repris ; l&apos;enrichissement,
+              lui, continue de tourner et finit par trouver le site. Il sert encore à savoir quel
+              document part — l&apos;audit ou le site démo — mais il ne dit plus l&apos;état du
+              site.
+            </p>
           </Bloc>
 
           <Bloc titre="Le reste des étiquettes">

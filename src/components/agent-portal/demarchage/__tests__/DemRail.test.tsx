@@ -488,6 +488,16 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
     const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.site"));
     expect(tags).toHaveLength(1);
     expect(tags[0].textContent).toBe("a un site");
+
+    // ET LA COHORTE DÉMENTIE SE VOIT COMME TELLE. Les deux étiquettes disent
+    // le contraire l'une de l'autre — c'est exactement ce qui faisait dire
+    // « pourquoi j'ai les deux ? ». Celle qui a tort perd son fond ; le fait du
+    // jour garde son aplat, et l'infobulle donne la chronologie.
+    const cohortes = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.coh"));
+    expect(cohortes[0].getAttribute("data-perime")).toBe("1");
+    expect(cohortes[0].getAttribute("title")).toContain("DÉMENTI");
+    // La cohorte A sur une fiche qui a bien un site n'est démentie par rien.
+    expect(cohortes[1].getAttribute("data-perime")).toBeNull();
   });
 
   /** Deux étiquettes voisines écrivant les mêmes mots ne se lisent plus. */
@@ -499,8 +509,10 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
     const ligne = container.querySelector<HTMLElement>(".dm-tk")!;
     const cohorte = ligne.querySelector<HTMLElement>(".st.coh")!.textContent;
     const site = ligne.querySelector<HTMLElement>(".st.site")!.textContent;
-    expect(cohorte).toBe("sans site");
+    expect(cohorte).toBe("classé sans site");
     expect(site).not.toBe(cohorte);
+    // Une absence CONSTATÉE confirme le classement : rien à démentir.
+    expect(ligne.querySelector<HTMLElement>(".st.coh")!.getAttribute("data-perime")).toBeNull();
   });
 });
 

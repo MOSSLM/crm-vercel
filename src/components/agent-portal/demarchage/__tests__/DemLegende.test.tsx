@@ -67,8 +67,12 @@ describe("DemLegende — la bulle qui explique la file", () => {
       expect(within(bulle).getByText(SIGNAL_TAG[s])).toBeInTheDocument();
     }
     for (const c of COHORTE_ORDER) {
-      expect(within(bulle).getByText(COHORTE_INFO[c].court)).toBeInTheDocument();
+      // « classé sans site » apparaît DEUX fois : le classement, et sa version
+      // démentie par la fiche du jour. C'est la combinaison la plus fréquente
+      // de la file, elle a droit à sa propre entrée.
+      expect(within(bulle).getAllByText(COHORTE_INFO[c].court).length).toBeGreaterThan(0);
     }
+    expect(bulle.querySelector('.st.coh[data-perime="1"]')).not.toBeNull();
   });
 
   it("montre les VRAIES étiquettes, pas une recopie de leurs couleurs", () => {

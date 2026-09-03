@@ -6,7 +6,7 @@ import { stageTint } from "@/components/agent-portal/format";
 import { trancheEffectifLabel } from "@/lib/donnees-publiques/effectif";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { lienWhatsApp } from "@/lib/prospects/canal";
-import { COHORTE_INFO } from "./cohortes";
+import { argumentDeCohorte, COHORTE_INFO } from "./cohortes";
 import { DemSiteWeb } from "./DemSiteWeb";
 import type { CompanyBundle, DemCohorte, DemarchageSequenceInfo, DemAudit } from "./types";
 
@@ -204,8 +204,13 @@ export function DemHead({
                 appel à froid — premier contact
               </span>
             )}
+            {/* Le survol porte l'accroche CORRIGÉE par l'état du site du jour :
+                le classement date du démarchage, la fiche non. */}
             {cohorte && (
-              <span className="it" title={COHORTE_INFO[cohorte].argument}>
+              <span
+                className="it"
+                title={argumentDeCohorte(cohorte, company.presenceSite?.etat_site) ?? undefined}
+              >
                 <Icon name="target" className="ico-xs" style={{ color: "var(--accent)" }} />
                 {COHORTE_INFO[cohorte].long}
               </span>

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
-import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
+import { COHORTE_INFO, COHORTE_ORDER, cohorteContredite, countByCohorte } from "./cohortes";
 import { DemLegende, TagDemo } from "./DemLegende";
 import { useFermetureAuClicDehors } from "./fermeture";
 import {
@@ -131,6 +131,21 @@ const titreSite = (t: DemarchageTask): string => {
   const d = new Date(t.site_constate_le);
   if (Number.isNaN(d.getTime())) return aide;
   return `${aide} Constaté le ${new Intl.DateTimeFormat("fr-FR").format(d)}.`;
+};
+
+/**
+ * Ce que dit l'étiquette de cohorte au survol — et surtout QUAND elle a été
+ * posée. La cohorte est figée au jour du démarchage et jamais reprise : sur 70
+ * des 74 lignes classées « sans site » au 03/09/2026, la fiche porte une URL.
+ * Le survol doit donc rendre la chronologie, pas répéter le classement.
+ */
+const titreCohorte = (t: DemarchageTask): string => {
+  const c = t.cohorte;
+  if (!c) return "";
+  const info = COHORTE_INFO[c];
+  const etat = t.etat_site;
+  if (!etat || !cohorteContredite(c, etat)) return `${info.long}. ${info.argument}`;
+  return `${info.long} — DÉMENTI par sa fiche d'aujourd'hui (${ETAT_SITE_TAG[etat]}). C'est l'état du jour qui fait foi, pas le classement d'août.`;
 };
 
 const nomDe = (t: DemarchageTask): string => {
@@ -647,7 +662,7 @@ export function DemRail({
                               className="dm-chip"
                               data-coh={c.id}
                               aria-pressed={cohorte === c.id}
-                              title={`${COHORTE_INFO[c.id].long} — ${COHORTE_INFO[c.id].argument}`}
+                              title={`${COHORTE_INFO[c.id].long}. ${COHORTE_INFO[c.id].argument}`}
                               onClick={() => setCohorte(cohorte === c.id ? null : c.id)}
                             >
                               {COHORTE_INFO[c.id].court}
@@ -797,13 +812,25 @@ export function DemRail({
                       115 lignes étaient dans ce cas au 01/09/2026, et laisser
                       seule la version périmée est le seul cas où se taire ment. */}
                   {t.etat_site &&
-                    (t.etat_site !== "present" || t.cohorte === "B_sans_site") && (
+                    (t.etat_site !== "present" || cohorteContredite(t.cohorte, t.etat_site)) && (
                       <span className="st site" data-site={t.etat_site} title={titreSite(t)}>
                         {ETAT_SITE_TAG[t.etat_site]}
                       </span>
                     )}
+                  {/* LA COHORTE EST UN CLASSEMENT, PAS UN CONSTAT — d'où le
+                      « classé » de son libellé. Elle nomme le site du prospect
+                      (« sans site ») juste à côté de l'étiquette qui dit son
+                      site AUJOURD'HUI : les deux se lisaient comme deux
+                      affirmations concurrentes, et sur 70 lignes sur 74 c'est
+                      le classement qui a tort. `data-perime` le dit à l'œil,
+                      l'infobulle le dit en toutes lettres. */}
                   {t.cohorte && (
-                    <span className="st coh" data-coh={t.cohorte} title={COHORTE_INFO[t.cohorte].long}>
+                    <span
+                      className="st coh"
+                      data-coh={t.cohorte}
+                      data-perime={cohorteContredite(t.cohorte, t.etat_site) ? "1" : undefined}
+                      title={titreCohorte(t)}
+                    >
                       {COHORTE_INFO[t.cohorte].court}
                     </span>
                   )}

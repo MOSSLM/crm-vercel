@@ -318,6 +318,21 @@ suite. Et l'intensité du liseré suit CE QU'ON A (vert > bleu > gris) : la
 première version peignait « aucune démo » en bleu plein, donc la moitié de la
 file criait plus fort que ce qui était prêt à partir.
 
+**La cohorte est un CLASSEMENT figé, pas un constat — et elle a tort 19 fois
+sur 20.** `cohorte_demarchage` est posée le jour du démarchage et jamais
+reprise ; l'enrichissement, lui, continue de tourner. Mesuré le 03/09/2026 sur
+la file vivante : **70 des 74 lignes classées « sans site » portent une URL**
+(63 sur un domaine propre, 7 sur une page gratuite). D'où le grief « pourquoi
+j'ai *sans site* et *a un site* en même temps ? » — deux étiquettes voisines,
+l'une d'aujourd'hui, l'autre d'août, et rien qui le disait. Trois règles en
+découlent : le libellé de ligne commence par **« classé »** (`COHORTE_INFO.court`
+— le retirer réinstalle la contradiction), l'étiquette démentie perd son fond au
+profit d'un contour (`data-perime`), et surtout **l'argument ne se lit plus
+brut** : `argumentDeCohorte()` le REMPLACE quand la fiche le dément, il ne le
+nuance pas — un script qu'on lit à voix haute en composant le numéro n'a pas de
+« mais ». Il ne devine pas l'autre script pour autant : une URL ne dit pas que
+le site est faible, et l'audit de la cohorte A n'existe pas forcément.
+
 **Une bulle du rail ne peut pas dépasser 286 px.** `.dm-rail` est en
 `overflow:hidden` — c'est lui qui empêche la colonne de défiler — donc un
 panneau plus large se fait rogner **en silence**, et par la gauche. Les deux
