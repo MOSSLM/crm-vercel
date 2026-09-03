@@ -9,6 +9,7 @@ import {
   type FileDeTravail,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { DemarchageQueueMeta, DemarchageTask } from "../types";
+import type { EtatDemo } from "@/lib/agent-portal/etat-demo";
 import type { EtatSite } from "@/lib/agent-portal/etat-site";
 
 /**
@@ -93,6 +94,7 @@ function renderRail(
     signal = null as DemarchageSignal | null,
     step = null as number | null,
     etatSite = null as EtatSite | null,
+    etatDemo = null as EtatDemo | null,
     sel = null as string | null,
     doneToday = {} as Record<string, number>,
     quotas,
@@ -101,6 +103,7 @@ function renderRail(
     setSignal = jest.fn(),
     setStep = jest.fn(),
     setEtatSite = jest.fn(),
+    setEtatDemo = jest.fn(),
     setAVenirOuvert = jest.fn(),
     onPick = jest.fn(),
     onBasculerEnAppel = jest.fn(),
@@ -113,7 +116,8 @@ function renderRail(
       (canal == null || t.kind === canal) &&
       (signal == null || hasSignal(t, signal)) &&
       (step == null || t.sequence?.stepIndex === step) &&
-      (etatSite == null || t.etat_site === etatSite),
+      (etatSite == null || t.etat_site === etatSite) &&
+      (etatDemo == null || t.demo_etat === etatDemo),
   );
 
   const meta: DemarchageQueueMeta = {
@@ -140,6 +144,8 @@ function renderRail(
       setCohorte={jest.fn()}
       etatSite={etatSite}
       setEtatSite={setEtatSite}
+      etatDemo={etatDemo}
+      setEtatDemo={setEtatDemo}
       tasks={shown}
       meta={meta}
       agentName="Bilal"
@@ -167,6 +173,7 @@ function renderRail(
     setSignal,
     setStep,
     setEtatSite,
+    setEtatDemo,
     setAVenirOuvert,
     onPick,
     onBasculerEnAppel,
@@ -423,7 +430,7 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
   it("propose les trois états, chacun avec son compte", () => {
     const { ouvrirFiltres, groupe } = renderRail(parc, { file: "relances" });
     ouvrirFiltres();
-    const g = groupe("Site")!;
+    const g = groupe("Son site")!;
     expect(within(g).getByText("avec site").textContent).toContain("1");
     expect(within(g).getByText("sans site · vérifié").textContent).toContain("2");
     expect(within(g).getByText("sans site · à vérifier").textContent).toContain("1");
@@ -432,7 +439,7 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
   it("filtre sur l'absence CONSTATÉE sans emporter celles qu'on n'a pas vérifiées", () => {
     const { ouvrirFiltres, groupe, setEtatSite } = renderRail(parc, { file: "relances" });
     ouvrirFiltres();
-    fireEvent.click(within(groupe("Site")!).getByText("sans site · vérifié"));
+    fireEvent.click(within(groupe("Son site")!).getByText("sans site · vérifié"));
     expect(setEtatSite).toHaveBeenCalledWith("absent");
 
     // Et la file, une fois le filtre posé, ne rend QUE les deux constatées.
@@ -454,7 +461,7 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
     ouvrirFiltres();
     expect(groupe("Signal")).toBeDefined();
     // Une pastille unique qui rend la même liste est un bouton qui ment.
-    expect(groupe("Site")).toBeUndefined();
+    expect(groupe("Son site")).toBeUndefined();
   });
 
   it("marque les deux absences sur la ligne, et laisse la présence muette", () => {
@@ -481,6 +488,16 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
     const tags = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.site"));
     expect(tags).toHaveLength(1);
     expect(tags[0].textContent).toBe("a un site");
+
+    // ET LA COHORTE DÉMENTIE SE VOIT COMME TELLE. Les deux étiquettes disent
+    // le contraire l'une de l'autre — c'est exactement ce qui faisait dire
+    // « pourquoi j'ai les deux ? ». Celle qui a tort perd son fond ; le fait du
+    // jour garde son aplat, et l'infobulle donne la chronologie.
+    const cohortes = Array.from(container.querySelectorAll<HTMLElement>(".dm-tk .st.coh"));
+    expect(cohortes[0].getAttribute("data-perime")).toBe("1");
+    expect(cohortes[0].getAttribute("title")).toContain("DÉMENTI");
+    // La cohorte A sur une fiche qui a bien un site n'est démentie par rien.
+    expect(cohortes[1].getAttribute("data-perime")).toBeNull();
   });
 
   /** Deux étiquettes voisines écrivant les mêmes mots ne se lisent plus. */
@@ -492,8 +509,91 @@ describe("DemRail — avec site, sans site, pas encore regardé", () => {
     const ligne = container.querySelector<HTMLElement>(".dm-tk")!;
     const cohorte = ligne.querySelector<HTMLElement>(".st.coh")!.textContent;
     const site = ligne.querySelector<HTMLElement>(".st.site")!.textContent;
-    expect(cohorte).toBe("sans site");
+    expect(cohorte).toBe("classé sans site");
     expect(site).not.toBe(cohorte);
+    // Une absence CONSTATÉE confirme le classement : rien à démentir.
+    expect(ligne.querySelector<HTMLElement>(".st.coh")!.getAttribute("data-perime")).toBeNull();
+  });
+});
+
+/**
+ * NOTRE DÉMO SUR LA LIGNE — le liseré ne suffisait pas.
+ *
+ * Le trait de couleur au bord droit disait déjà les trois états, et le grief
+ * est arrivé mot pour mot : « je comprends pas ». Ce qui est tenu ici, c'est
+ * que la ligne l'écrit maintenant EN TOUTES LETTRES, et qu'elle se tait sur
+ * l'état qui n'a rien à dire — sans quoi la moitié de la file porterait une
+ * étiquette de plus pour rien.
+ */
+describe("DemRail — notre démo, dite en toutes lettres", () => {
+  const parc = [
+    relance({ id: "prete1", demo_etat: "prete" }),
+    relance({ id: "prete2", demo_etat: "prete" }),
+    relance({ id: "chantier", demo_etat: "chantier" }),
+    relance({ id: "rien", demo_etat: "aucune" }),
+  ];
+
+  it("écrit « démo prête » sur la ligne, et laisse muettes celles qui n'ont rien", () => {
+    const { lignes } = renderRail(parc, { file: "relances" });
+    const [p1, p2, ch, rien] = lignes();
+    expect(within(p1).getByText("démo prête")).toBeInTheDocument();
+    expect(within(p2).getByText("démo prête")).toBeInTheDocument();
+    expect(within(ch).getByText("démo à valider")).toBeInTheDocument();
+    // 49 % de la file au 03/09/2026 : une étiquette portée par une ligne sur
+    // deux ne partage plus rien. Son absence se lit, le liseré gris reste.
+    expect(rien.querySelector(".st.demo")).toBeNull();
+    expect(rien.querySelector('.dmo[data-demo="aucune"]')).not.toBeNull();
+  });
+
+  it("garde le liseré mais ne le fait pas répéter ce que le mot dit déjà", () => {
+    // Un lecteur d'écran lirait sinon « démo prête » puis « Démo prête — le
+    // lien peut partir » sur chaque ligne. Le trait ne se nomme que là où
+    // aucune étiquette ne parle pour lui.
+    const { lignes } = renderRail(parc, { file: "relances" });
+    const [prete, , , rien] = lignes();
+    expect(prete.querySelector(".dmo")!.getAttribute("aria-hidden")).toBe("true");
+    expect(rien.querySelector(".dmo")!.getAttribute("aria-label")).toContain("Aucune démo");
+  });
+
+  it("propose le filtre, chaque état avec son compte exact", () => {
+    const { ouvrirFiltres, groupe } = renderRail(parc, { file: "relances" });
+    ouvrirFiltres();
+    const g = groupe("Notre démo")!;
+    expect(within(g).getByText("démo prête").textContent).toContain("2");
+    expect(within(g).getByText("démo à valider").textContent).toContain("1");
+    expect(within(g).getByText("pas de démo").textContent).toContain("1");
+  });
+
+  it("ne garde que les démos prêtes une fois le filtre posé", () => {
+    const { ouvrirFiltres, groupe, setEtatDemo } = renderRail(parc, { file: "relances" });
+    ouvrirFiltres();
+    fireEvent.click(within(groupe("Notre démo")!).getByText("démo prête"));
+    expect(setEtatDemo).toHaveBeenCalledWith("prete");
+
+    const { lignes } = renderRail(parc, { file: "relances", etatDemo: "prete" });
+    expect(lignes()).toHaveLength(2);
+  });
+
+  it("ne propose aucun filtre quand toute la file est au même état", () => {
+    // Une pastille unique qui rend la même liste est un bouton qui ment.
+    const { ouvrirFiltres, groupe } = renderRail(
+      [relance({ id: "a", demo_etat: "prete" }), enDiscussion({ id: "b", demo_etat: "prete" })],
+      { file: "relances" },
+    );
+    ouvrirFiltres();
+    expect(groupe("Signal")).toBeDefined();
+    expect(groupe("Notre démo")).toBeUndefined();
+  });
+
+  it("sépare le TRI du FILTRE par un intertitre — ce sont deux gestes", () => {
+    // « Trier — en premier » garde toute la file, « Ne garder que » en retire
+    // des lignes. Deux rangées de pastilles identiques sans rien entre elles :
+    // c'est ce qui faisait chercher dans une file « vide » des lignes qui
+    // étaient simplement plus bas.
+    const { ouvrirFiltres } = renderRail(parc, { file: "relances" });
+    const menu = ouvrirFiltres();
+    expect(within(menu).getByText(/Trier/)).toBeInTheDocument();
+    expect(within(menu).getByText("Ne garder que")).toBeInTheDocument();
   });
 });
 
@@ -557,6 +657,14 @@ describe("DemRail — ce que la ligne dit", () => {
   });
 
   it("marque une mise de côté au lieu de la faire passer pour un oubli", () => {
+    // ⚠️ L'HORLOGE EST FIGÉE ICI, ET C'EST LA SEULE FAÇON DE TENIR CE CAS.
+    // `repartirLaJournee` reçoit `NOW` en paramètre, mais `isSetAside` — appelé
+    // par la ligne elle-même — lit `new Date()` par défaut. Le fixture était
+    // donc daté d'août pendant que le composant lisait le vrai calendrier :
+    // passé le 25/08/2026, la mise de côté devenait une échéance dépassée et le
+    // test rougissait tout seul, sans qu'une ligne de code ait bougé (c'est le
+    // point ouvert « DemRail.test.tsx échoue depuis avant le 26/08 »).
+    jest.useFakeTimers().setSystemTime(NOW);
     const { container } = renderRail(
       [
         relance({ id: "auj" }),
@@ -573,6 +681,7 @@ describe("DemRail — ce que la ligne dit", () => {
     // exprès — sinon on la relit comme un oubli et on la rappelle.
     expect(container.querySelectorAll(".dm-tk")).toHaveLength(2);
     expect(container.querySelector(".dm-tk .st.cote")).not.toBeNull();
+    jest.useRealTimers();
   });
 
   it("écrit l'étape de séquence et permet de trier dessus", () => {

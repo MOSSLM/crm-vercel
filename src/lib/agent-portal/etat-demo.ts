@@ -47,3 +47,50 @@ export const ETAT_DEMO_AIDE: Record<EtatDemo, string> = {
   chantier: "Démo fabriquée mais pas validée : rien à envoyer tant qu'elle n'est pas marquée prête.",
   aucune: "Aucune démo : il n'y a rien à montrer à ce prospect.",
 };
+
+/**
+ * L'ordre de présentation : ce qu'on peut envoyer, ce qu'il reste à valider,
+ * ce qu'il faut fabriquer. C'est aussi l'ordre du travail — la pastille du
+ * haut est celle qui rapporte tout de suite.
+ */
+export const ETAT_DEMO_ORDER: readonly EtatDemo[] = ["prete", "chantier", "aucune"] as const;
+
+/** Le libellé d'une pastille de filtre — deux mots, la place est comptée. */
+export const ETAT_DEMO_LABEL: Record<EtatDemo, string> = {
+  prete: "démo prête",
+  chantier: "démo à valider",
+  aucune: "pas de démo",
+};
+
+/**
+ * CE QUE LA LIGNE ÉCRIT — et pourquoi `aucune` n'écrit RIEN.
+ *
+ * Le liseré du bord droit se voit d'un coup d'œil sur la colonne entière, mais
+ * une couleur ne se lit qu'après l'avoir apprise : le grief est arrivé mot pour
+ * mot (« je comprends pas »). L'étiquette dit donc en toutes lettres ce que le
+ * trait dit en couleur, sur les deux états où il y a quelque chose À FAIRE.
+ *
+ * `aucune` reste muet parce que c'est 49 % de la file au 03/09/2026, et qu'une
+ * étiquette portée par une ligne sur deux ne partage plus rien — c'est la même
+ * règle que « a un site », qui ne s'affiche que face à une cohorte qui prétend
+ * l'inverse. Son absence se lit, et le liseré gris reste là pour l'infobulle.
+ */
+export const ETAT_DEMO_TAG: Record<EtatDemo, string | null> = {
+  prete: "démo prête",
+  chantier: "démo à valider",
+  aucune: null,
+};
+
+export const estEtatDemo = (v: unknown): v is EtatDemo =>
+  typeof v === "string" && (ETAT_DEMO_ORDER as readonly string[]).includes(v);
+
+/** Combien de lignes portent chaque état — ce que les pastilles annoncent. */
+export function countByEtatDemo(
+  taches: readonly { demo_etat?: EtatDemo | null }[],
+): Record<EtatDemo, number> {
+  const par: Record<EtatDemo, number> = { prete: 0, chantier: 0, aucune: 0 };
+  for (const t of taches) {
+    if (t.demo_etat) par[t.demo_etat] += 1;
+  }
+  return par;
+}

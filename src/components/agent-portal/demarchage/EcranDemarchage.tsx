@@ -26,6 +26,7 @@ import {
   type FileDeTravail,
   type TriFile,
 } from "@/lib/agent-portal/demarchage-buckets";
+import type { EtatDemo } from "@/lib/agent-portal/etat-demo";
 import type { EtatSite } from "@/lib/agent-portal/etat-site";
 import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
 import type {
@@ -132,6 +133,17 @@ export function EcranDemarchage() {
    * chargée.
    */
   const [etatSite, setEtatSite] = useState<EtatSite | null>(null);
+
+  /**
+   * OÙ EN EST NOTRE DÉMO — `null` = les trois états mêlés.
+   *
+   * L'autre moitié de la question du site, et sa jumelle sur tous les plans :
+   * elle filtre EN MÉMOIRE, ses trois comptes sont donc exacts. Elle DOUBLE le
+   * tri « Démo prête », et c'est délibéré — le tri remonte sans rien perdre
+   * (on garde sa journée), le filtre ne garde que celles-là (on décide de ne
+   * travailler qu'elles pendant une heure). Le menu dit lequel est lequel.
+   */
+  const [etatDemo, setEtatDemo] = useState<EtatDemo | null>(null);
 
   /**
    * SUR QUOI ON REMONTE LA FILE — `passage` (l'ordre du jour) par défaut.
@@ -304,6 +316,7 @@ export function EcranDemarchage() {
     setSignal((s) => (s == null || duJour.some((t) => hasSignal(t, s)) ? s : null));
     setStep((s) => (s == null || duJour.some((t) => t.sequence?.stepIndex === s) ? s : null));
     setEtatSite((e) => (e == null || duJour.some((t) => t.etat_site === e) ? e : null));
+    setEtatDemo((e) => (e == null || duJour.some((t) => t.demo_etat === e) ? e : null));
   }, [duJour]);
 
   // Le même filet, pour la cohorte. Il regarde la file ENTIÈRE et non l'onglet :
@@ -326,11 +339,12 @@ export function EcranDemarchage() {
             (canal == null || t.kind === canal) &&
             (signal == null || hasSignal(t, signal)) &&
             (step == null || t.sequence?.stepIndex === step) &&
-            (etatSite == null || t.etat_site === etatSite),
+            (etatSite == null || t.etat_site === etatSite) &&
+            (etatDemo == null || t.demo_etat === etatDemo),
         ),
         tri,
       ),
-    [duJour, canal, signal, step, etatSite, tri],
+    [duJour, canal, signal, step, etatSite, etatDemo, tri],
   );
 
   // Fiche entreprise + audit à chaque changement de prospect. La fiche ouverte
@@ -667,9 +681,11 @@ export function EcranDemarchage() {
           cohorte={cohorte}
           setCohorte={setCohorte}
           etatSite={etatSite}
+          setEtatSite={setEtatSite}
+          etatDemo={etatDemo}
+          setEtatDemo={setEtatDemo}
           tri={tri}
           setTri={setTri}
-          setEtatSite={setEtatSite}
           tasks={shown}
           meta={meta}
           agentName={user?.name ?? null}

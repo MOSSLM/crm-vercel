@@ -347,6 +347,48 @@ lien n'est pas journalisée. Corollaire côté lecture : le GET ne prépare les
 liens que sur `?pieces=1`, parce que `liensDesPieces` CRÉE les jetons manquants
 et qu'ouvrir une fiche ne doit pas écrire en base.
 
+**Une couleur seule ne s'apprend jamais, et la légende ne se recopie pas.** Une
+ligne de « Ma journée » porte jusqu'à neuf marques — liseré droit (notre démo),
+bord et fond gauches (sélection, « il a répondu »), flamme, cinq ou six
+étiquettes. Le grief est arrivé mot pour mot : « je comprends pas ». Deux règles
+en découlent, et elles se défont facilement sans le vouloir. D'abord **les états
+qui décident d'un appel s'écrivent en TOUTES LETTRES** : `démo prête` et `démo à
+valider` sont des étiquettes, le trait ne fait que les répéter sur la colonne —
+seul `aucune` reste muet (la moitié de la file : une étiquette portée par une
+ligne sur deux ne partage plus rien). Ensuite **`DemLegende` MONTRE les vraies
+marques** : mêmes classes, mêmes `data-*`, mêmes `Record` de libellés que la
+ligne, donc la même règle CSS les peint. C'est pour ça que les règles `.st` de
+`dem-skin.css` ne sont plus qualifiées par `.dm-tk` — les requalifier viderait la
+bulle de ses couleurs sans casser un seul test de rendu. `DemLegende.test.tsx`
+parcourt les constantes : un état ajouté sans son explication fait tomber la
+suite. Et l'intensité du liseré suit CE QU'ON A (vert > bleu > gris) : la
+première version peignait « aucune démo » en bleu plein, donc la moitié de la
+file criait plus fort que ce qui était prêt à partir.
+
+**La cohorte est un CLASSEMENT figé, pas un constat — et elle a tort 19 fois
+sur 20.** `cohorte_demarchage` est posée le jour du démarchage et jamais
+reprise ; l'enrichissement, lui, continue de tourner. Mesuré le 03/09/2026 sur
+la file vivante : **70 des 74 lignes classées « sans site » portent une URL**
+(63 sur un domaine propre, 7 sur une page gratuite). D'où le grief « pourquoi
+j'ai *sans site* et *a un site* en même temps ? » — deux étiquettes voisines,
+l'une d'aujourd'hui, l'autre d'août, et rien qui le disait. Trois règles en
+découlent : le libellé de ligne commence par **« classé »** (`COHORTE_INFO.court`
+— le retirer réinstalle la contradiction), l'étiquette démentie perd son fond au
+profit d'un contour (`data-perime`), et surtout **l'argument ne se lit plus
+brut** : `argumentDeCohorte()` le REMPLACE quand la fiche le dément, il ne le
+nuance pas — un script qu'on lit à voix haute en composant le numéro n'a pas de
+« mais ». Il ne devine pas l'autre script pour autant : une URL ne dit pas que
+le site est faible, et l'audit de la cohorte A n'existe pas forcément.
+
+**Une bulle du rail ne peut pas dépasser 286 px.** `.dm-rail` est en
+`overflow:hidden` — c'est lui qui empêche la colonne de défiler — donc un
+panneau plus large se fait rogner **en silence**, et par la gauche. Les deux
+bulles (`.dm-fmenu`, `.dm-leg`) s'ancrent pour cette raison sur le groupe
+`.dm-fbar-r` et non sur leur propre bouton : ancré au bouton « Filtrer », le
+menu se décalait de la largeur de « Légende » posée à sa droite. Rien de tout
+ça ne se voit dans jsdom — `dem-rail-dump.manual.tsx` sort le rail en HTML avec
+sa vraie feuille de style, en clair et en sombre, pour le mesurer au navigateur.
+
 **La DA lemlist ne se réinvente pas : `lem-skin.css` existe.** Palette relevée
 le 19/08/2026 sur lemlist.com en lisant les styles CALCULÉS, jetons préfixés
 `--lem-` (hors skin, `--accent` est une surface de survol, pas une couleur de
@@ -387,9 +429,12 @@ serait un skin de plus à faire converger le jour du re-skin global.
   tourner.
 - `edge function enrich/enrich-lead-magnet(1).zip` ressemble à un export
   ponctuel oublié — à confirmer avant suppression.
-- `DemRail.test.tsx` échoue sur `main` depuis avant le 26/08 (la mise de côté
-  ne pose plus `.st.cote`). Un seul test sur 4 257 ; à reprendre avec le
-  contexte du démarchage.
+- ~~`DemRail.test.tsx` échoue depuis avant le 26/08~~ — corrigé le 03/09 : rien
+  n'avait bougé dans le code, c'est le test qui lisait DEUX horloges.
+  `repartirLaJournee` recevait un `NOW` d'août quand `isSetAside`, appelé par la
+  ligne, lit `new Date()` par défaut ; passé le 25/08 la mise de côté devenait
+  une échéance dépassée. Le cas fige donc l'horloge (`jest.useFakeTimers`). À
+  retenir : un test de file qui ne fige pas le temps rougira tout seul.
 - Les notifications poussées ne partent que si `VAPID_*` est posé en
   production (`node scripts/pwa/vapid.mjs` fabrique la paire). Sans les clés,
   tout fonctionne à l'identique, sans push et sans erreur.

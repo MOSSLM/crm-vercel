@@ -131,10 +131,14 @@ function renderRail(
 }
 
 describe("DemRail — la cohorte se lit sur la ligne", () => {
-  it("écrit la cohorte de chaque ligne, en deux mots", () => {
+  it("écrit la cohorte de chaque ligne, et dit que c'est un CLASSEMENT", () => {
+    // « classé » n'est pas du style : la cohorte nomme le site du prospect et
+    // se retrouve collée à l'étiquette qui dit son site AUJOURD'HUI. Sans ce
+    // mot, la ligne portait « a un site » et « sans site » côte à côte, et
+    // c'était illisible — le grief est arrivé tel quel.
     const { frise } = renderRail([froide("a", "A_site_faible"), froide("b", "B_sans_site")]);
-    expect(within(frise).getByText("site faible")).toBeInTheDocument();
-    expect(within(frise).getByText("sans site")).toBeInTheDocument();
+    expect(within(frise).getByText("classé site faible")).toBeInTheDocument();
+    expect(within(frise).getByText("classé sans site")).toBeInTheDocument();
   });
 
   it("ne met rien sur une ligne hors campagne", () => {
@@ -163,8 +167,8 @@ describe("DemRail — la cohorte est une dimension à part", () => {
     // Plus de pastille « toutes » : le panneau a un « tout relâcher » commun,
     // et une pastille cochée se décoche en la recliquant.
     expect(Array.from(barre.querySelectorAll(".dm-chip")).map((c) => c.textContent)).toEqual([
-      "site faible2",
-      "sans site1",
+      "classé site faible2",
+      "classé sans site1",
     ]);
   });
 

@@ -234,9 +234,16 @@
 .dm-skin .dm-tk .wy{font-size:11px;color:var(--text-3);margin-top:1px;line-height:1.35}
 .dm-skin .dm-tk .mt{display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap}
 .dm-skin .dm-tk .kc{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:5px;font-size:10px;font-weight:600;letter-spacing:-.005em}
-.dm-skin .dm-tk .st{font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);background:var(--bg-2);border-radius:4px;padding:2px 5px}
-.dm-skin .dm-tk .st.new{background:var(--magic-tint);color:var(--magic)}
-.dm-skin .dm-tk .st.plus-tard{background:var(--bg-2);color:var(--text-4)}
+/* ── LES ÉTIQUETTES DE LIGNE, ET LA LÉGENDE QUI LES MONTRE ────────────────
+   Ces règles ne sont plus qualifiées par `.dm-tk` : la bulle « Légende »
+   affiche les MÊMES étiquettes pour les expliquer, et une légende qui
+   recopierait les couleurs en dur mentirait au premier changement de teinte.
+   Une seule règle peint donc les deux endroits — c'est la seule chose qui
+   garantit qu'ils ne divergent pas. `.st` n'existe nulle part ailleurs dans
+   ce skin. */
+.dm-skin .st{font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);background:var(--bg-2);border-radius:4px;padding:2px 5px}
+.dm-skin .st.new{background:var(--magic-tint);color:var(--magic)}
+.dm-skin .st.plus-tard{background:var(--bg-2);color:var(--text-4)}
 .dm-skin .dm-tk[aria-selected="true"]{background:var(--accent-tint);border-left-color:var(--accent)}
 .dm-skin .dm-tk[aria-selected="true"] .bd::before{border-color:var(--accent);background:var(--accent)}
 .dm-skin .dm-tk[data-s="done"]{opacity:.5}
@@ -463,7 +470,7 @@
    pour l'état de l'échange, et le bord droit pour l'état de la démo. */
 /* La sélection reste lisible par-dessus la teinte : un anneau, pas un fond. */
 
-.dm-skin .dm-tk .nm .fl{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+.dm-skin .dm-tk .nm .fl,.dm-skin .dm-leg .fl{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
   min-width:20px;height:19px;padding:0 4px;border-radius:6px;
   border:1px solid var(--border-2);background:var(--bg-2);
   font-size:10.5px;line-height:1;letter-spacing:-.08em}
@@ -482,7 +489,7 @@
 
 /* Le rang dans la journée remplace l'heure : une tâche manuelle se fait « en
    troisième », jamais « à 9 h 04 ». */
-.dm-skin .dm-tk .st.late{background:var(--danger-tint);color:var(--danger);font-weight:600}
+.dm-skin .st.late{background:var(--danger-tint);color:var(--danger);font-weight:600}
 
 /* ── Onglets de la carte d'action ─────────────────────────────────────────
    L'appel s'ouvre sur le texte de la séquence, seul. La trame générique et les
@@ -660,14 +667,14 @@
    rappelé (rouge). */
 .dm-skin .dm-tk[data-conv="1"]{border-left-color:var(--ok);background:rgba(31,138,91,.07)}
 .dm-skin .dm-tk[data-conv="1"]:hover{background:rgba(31,138,91,.12)}
-.dm-skin .dm-tk .st.conv{background:var(--ok-tint);color:var(--ok);font-weight:600}
+.dm-skin .st.conv{background:var(--ok-tint);color:var(--ok);font-weight:600}
 
 /* ── L'étape de séquence, lisible sans ouvrir la fiche ────────────────────
    « WhatsApp » tout seul ne distingue pas un premier contact d'une quatrième
    relance : deux lignes identiques à l'œil pour deux situations opposées. Le
    numéro d'étape est donc traité comme une information de premier plan, pas
    comme la mention grise qu'il était. */
-.dm-skin .dm-tk .st.stp{background:var(--accent-tint);color:var(--accent-2);font-weight:600}
+.dm-skin .st.stp{background:var(--accent-tint);color:var(--accent-2);font-weight:600}
 
 /* ── « Une entreprise rappelle… » ─────────────────────────────────────────
    Le bouton ouvre la recherche, et il est le PREMIER élément du rail : quand
@@ -729,8 +736,20 @@
 .dm-skin .dm-chip[data-coh="A_site_faible"][aria-pressed="true"]{background:var(--info);border-color:var(--info);color:#fff}
 .dm-skin .dm-chip[data-coh="B_sans_site"]{border-color:rgba(122,90,224,.45);color:var(--magic)}
 .dm-skin .dm-chip[data-coh="B_sans_site"][aria-pressed="true"]{background:var(--magic);border-color:var(--magic);color:#fff}
-.dm-skin .dm-tk .st.coh[data-coh="A_site_faible"]{background:var(--info-tint);color:var(--info);font-weight:600}
-.dm-skin .dm-tk .st.coh[data-coh="B_sans_site"]{background:var(--magic-tint);color:var(--magic);font-weight:600}
+.dm-skin .st.coh[data-coh="A_site_faible"]{background:var(--info-tint);color:var(--info);font-weight:600}
+.dm-skin .st.coh[data-coh="B_sans_site"]{background:var(--magic-tint);color:var(--magic);font-weight:600}
+/* ── UN CLASSEMENT DÉMENTI PAR LA FICHE DU JOUR ───────────────────────────
+   La cohorte nomme le site du prospect (« sans site ») et se retrouve collée à
+   l'étiquette qui dit son site AUJOURD'HUI : deux affirmations concurrentes sur
+   la même ligne, dont l'une date d'août. Mesuré le 03/09/2026 : 70 des 74
+   lignes classées « sans site » portent une URL — le classement a tort 19 fois
+   sur 20.
+   Vidée de son fond et posée sur un simple contour, l'étiquette cesse de
+   concourir : elle se lit comme le décor qu'elle est devenue, pendant que le
+   fait du jour garde son aplat. La teinte reste celle de la cohorte — c'est
+   toujours d'elle qu'on parle. */
+.dm-skin .st.coh[data-perime="1"]{background:transparent;opacity:.6;
+  box-shadow:inset 0 0 0 1px currentColor}
 
 /* ── LA LIGNE « SITE » DE L'EN-TÊTE ───────────────────────────────────────
    Hors du dossier repliable, exprès : c'est un geste qu'on fait pendant que ça
@@ -781,20 +800,20 @@
 .dm-skin .dm-chip[data-site="inconnu"][aria-pressed="true"]{background:var(--text-3);border-color:var(--text-3);color:#fff}
 .dm-skin .dm-chip[data-site="present"]{border-color:rgba(14,147,166,.45);color:var(--info)}
 .dm-skin .dm-chip[data-site="present"][aria-pressed="true"]{background:var(--info);border-color:var(--info);color:#fff}
-.dm-skin .dm-tk .st.site[data-site="absent"]{background:var(--ok-tint);color:var(--ok);font-weight:600}
-.dm-skin .dm-tk .st.site[data-site="inconnu"]{background:var(--bg-2);color:var(--text-3);font-weight:600}
+.dm-skin .st.site[data-site="absent"]{background:var(--ok-tint);color:var(--ok);font-weight:600}
+.dm-skin .st.site[data-site="inconnu"]{background:var(--bg-2);color:var(--text-3);font-weight:600}
 /* « a un site » ne sort QUE contre une cohorte qui prétend l'inverse : c'est un
    démenti, il doit se lire comme tel — même teinte que la cohorte A, celle des
    entreprises qui en ont un. */
-.dm-skin .dm-tk .st.site[data-site="present"]{background:var(--info-tint);color:var(--info);font-weight:600}
+.dm-skin .st.site[data-site="present"]{background:var(--info-tint);color:var(--info);font-weight:600}
 
 /* ── L'appel à froid ──────────────────────────────────────────────────────
    Cent par jour pendant la campagne : ce n'est pas le cas dégradé d'une
    séquence, c'est le cas ordinaire. La ligne le dit (« à froid »), et la bande
    qui remplace la frise dit l'accroche de la cohorte — la seule chose qu'on
    ait besoin de relire en composant le numéro. */
-.dm-skin .dm-tk .st.froid{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
-.dark .dm-skin .dm-tk .st.froid{color:var(--warn)}
+.dm-skin .st.froid{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
+.dark .dm-skin .st.froid{color:var(--warn)}
 .dm-skin .dm-seq.froid{border-color:var(--border-2)}
 .dm-skin .dm-froid-arg{display:flex;align-items:flex-start;gap:8px;padding:10px 13px;
   font-size:12px;line-height:1.5;color:var(--text-2)}
@@ -839,7 +858,7 @@
 
 /* Une ligne de file rangée volontairement. Sans cette mention, elle se relit
    comme un oubli — et on la rappelle, ce qui défait exactement le geste. */
-.dm-skin .dm-tk .st.cote{background:var(--bg-2);color:var(--text-3);font-weight:600}
+.dm-skin .st.cote{background:var(--bg-2);color:var(--text-3);font-weight:600}
 
 /* ── S'attribuer des entreprises ──────────────────────────────────────────
    Le bouton reprend la forme de « une entreprise rappelle… », juste en
@@ -936,10 +955,70 @@
 .dm-skin .dm-fmenu .lb{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;
   letter-spacing:.1em;color:var(--text-3)}
 .dm-skin .dm-fmenu .ch{display:flex;flex-wrap:wrap;gap:4px}
+/* L'INTERTITRE QUI SÉPARE LES DEUX GESTES. Trier et filtrer se ressemblaient
+   comme deux rangées de pastilles dans le même menu, alors que l'un garde toute
+   la file et l'autre en retire des lignes — d'où des files « vides » qui ne
+   l'étaient pas. Un trait et trois mots suffisent à ne plus les confondre. */
+.dm-skin .dm-fmenu .dm-fsec{margin-top:2px;padding-top:9px;border-top:1px solid var(--border);
+  font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--text-2)}
 .dm-skin .dm-fclear{appearance:none;border:0;background:transparent;cursor:pointer;
   display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3);
   padding:2px 0}
 .dm-skin .dm-fclear:hover{color:var(--danger)}
+
+/* ── LA BULLE « LÉGENDE » ─────────────────────────────────────────────────
+   Une ligne de file porte jusqu'à neuf marques : un liseré à droite, un bord et
+   un fond à gauche, une flamme, cinq ou six étiquettes. Chacune se défend
+   seule ; ensemble elles font un alphabet que personne n'a appris, et le grief
+   est arrivé mot pour mot — « je comprends pas ». Les infobulles ne répondent
+   qu'à qui sait déjà quoi survoler : il fallait un endroit qui montre TOUT.
+
+   Elle vit au bout de la barre de filtres et non dans l'en-tête de liste : la
+   liste défile (`.dm-fr{overflow:auto}`), une bulle ancrée dedans serait
+   rognée et partirait avec le défilement. */
+/* LES DEUX BULLES S'ANCRENT SUR LE GROUPE, PAS SUR LEUR BOUTON. `right:0` sur
+   le bouton « Filtrer » décalait le menu de la largeur de « Légende » posée à
+   sa droite — donc hors du rail par la gauche, et rogné sans que rien ne le
+   dise (constaté au navigateur). Le contexte de positionnement est donc le
+   groupe : son bord droit est celui de la barre, et les deux bulles s'y calent. */
+.dm-skin .dm-fbar-r{position:relative;margin-left:auto;display:flex;align-items:center;gap:4px}
+.dm-skin .dm-fbar-r .dm-fpop{margin-left:0;position:static}
+.dm-skin .dm-leg-w{position:relative}
+.dm-skin .dm-fbar-r .dm-leg-w{position:static}
+/* LA LARGEUR EST CELLE DU RAIL, PAS CELLE QU'ON VOUDRAIT. `.dm-rail` est en
+   `overflow:hidden` — c'est lui qui empêche la colonne entière de défiler — donc
+   une bulle plus large que 286 px moins les gouttières se fait ROGNER, et
+   personne ne voit qu'il manque quelque chose. Mesuré au navigateur avant de le
+   croire (`dem-rail-dump.manual.tsx`) : à 324 px, la moitié gauche passait sous
+   le bord. D'où 264 px, et des entrées EMPILÉES plutôt qu'en deux colonnes —
+   une colonne de texte de 130 px se lit trois mots par ligne. */
+.dm-skin .dm-leg{position:absolute;z-index:31;top:calc(100% + 5px);right:0;
+  width:min(264px,calc(100vw - 28px));max-height:min(64vh,470px);overflow:auto;
+  display:flex;flex-direction:column;gap:12px;padding:12px;border-radius:12px;
+  border:1px solid var(--border);background:var(--surface);
+  box-shadow:0 10px 30px rgba(18,40,68,.14)}
+.dark .dm-skin .dm-leg{box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.dm-skin .dm-leg .hd{margin:0;font-size:11px;line-height:1.45;color:var(--text-3)}
+.dm-skin .dm-leg .g{display:flex;flex-direction:column;gap:6px}
+.dm-skin .dm-leg .lb{margin:0;font-family:var(--font-mono);font-size:9.5px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--text-3)}
+.dm-skin .dm-leg .r{display:flex;flex-direction:column;gap:3px}
+.dm-skin .dm-leg .r .v{display:flex;align-items:center;gap:5px}
+/* Le texte est décalé sous son échantillon : c'est ce qui fait qu'une entrée se
+   lit comme un bloc et non comme deux lignes voisines sans rapport. */
+.dm-skin .dm-leg .r .d{padding-left:9px;font-size:11px;line-height:1.4;color:var(--text-2)}
+.dm-skin .dm-leg .nb{margin:0;padding-left:7px;border-left:2px solid var(--border);
+  font-size:10.5px;line-height:1.4;color:var(--text-4)}
+/* L'échantillon du liseré : le MÊME trait que la ligne, sorti de sa ligne. La
+   couleur, elle, vient de la règle partagée avec `.dmo` — voir plus bas. */
+.dm-skin .dm-leg .sw{flex:0 0 auto;width:3px;height:16px;border-radius:3px}
+/* Le fond de ligne « il a répondu » : un bord vert et sa teinte, en miniature. */
+.dm-skin .dm-leg .sw.fond{width:18px;border-radius:0 3px 3px 0;
+  border-left:2px solid var(--ok);background:rgba(31,138,91,.10)}
+.dm-skin .dm-leg .fl{margin-left:0}
+/* L'état qui n'écrit rien : sa case doit quand même se lire comme une entrée. */
+.dm-skin .dm-leg .muet{font-family:var(--font-mono);font-size:9.5px;font-style:normal;color:var(--text-4)}
 
 /* Le vide d'une liste, et le pied qui déplie ce qui est prévu plus tard. */
 .dm-skin .dm-fr-vide{padding:18px 14px;font-size:12px;color:var(--text-3);line-height:1.5}
@@ -979,15 +1058,51 @@
    valeur négative sortait le liseré de douze pixels hors du rail — mesuré au
    banc avant de le croire. */
 .dm-skin .dm-tk .dmo{position:absolute;right:0;top:6px;bottom:6px;width:3px;
-  border-radius:3px 0 0 3px;background:var(--accent);pointer-events:auto}
-.dm-skin .dm-tk .dmo[data-demo="prete"]{background:var(--ok)}
-.dm-skin .dm-tk .dmo[data-demo="chantier"]{background:var(--accent);opacity:.42}
-.dm-skin .dm-tk .dmo[data-demo="aucune"]{background:var(--accent)}
+  border-radius:3px 0 0 3px;pointer-events:auto}
+
+/* LA CHARTE, CORRIGÉE : l'intensité suit CE QU'ON A, pas l'inverse.
+   La première version peignait `aucune` en accent PLEIN et `chantier` en accent
+   à 42 % — donc la moitié de la file (49 % au 03/09/2026, « rien à montrer »)
+   portait le trait le plus fort de la colonne, et l'état le plus avancé le plus
+   pâle. Un œil qui balaie la liste voyait donc du bleu vif là où il n'y avait
+   rien à faire. Vert = on peut envoyer, bleu = il reste un clic, gris = à
+   fabriquer : trois intensités décroissantes, dans l'ordre du travail.
+
+   Les mêmes trois couleurs peignent l'échantillon `.sw` de la légende — une
+   seule règle pour les deux, sinon la légende ment le jour où la teinte change. */
+.dm-skin .dm-tk .dmo[data-demo="prete"],.dm-skin .dm-leg .sw[data-demo="prete"]{background:var(--ok)}
+.dm-skin .dm-tk .dmo[data-demo="chantier"],.dm-skin .dm-leg .sw[data-demo="chantier"]{background:var(--accent)}
+.dm-skin .dm-tk .dmo[data-demo="aucune"],.dm-skin .dm-leg .sw[data-demo="aucune"]{background:var(--border-strong)}
+
+/* ── L'ÉTIQUETTE DE DÉMO : le trait, mais en toutes lettres ───────────────
+   Le liseré seul ne s'apprend pas — le grief est arrivé mot pour mot. Elle ne
+   s'écrit que sur les deux états où il y a quelque chose à FAIRE (28 % + 23 %
+   de la file) ; `aucune` reste muet, parce qu'une étiquette portée par une
+   ligne sur deux ne partage plus rien.
+
+   L'ICÔNE FAIT LE TRAVAIL QUE LA COULEUR NE PEUT PLUS FAIRE. « absence
+   vérifiée » est déjà en `--ok` : deux pastilles vertes voisines pour deux
+   questions différentes se relisent une fois de trop (c'est l'objection écrite
+   dans `demarchage-buckets.ts`). Le crochet et l'outil les séparent d'un coup
+   d'œil, sans inventer une douzième teinte. */
+.dm-skin .st.demo{display:inline-flex;align-items:center;gap:3px;font-weight:600}
+.dm-skin .st.demo[data-demo="prete"]{background:var(--ok-tint);color:var(--ok)}
+.dm-skin .st.demo[data-demo="chantier"]{background:var(--accent-tint);color:var(--accent-2)}
+
+/* Les pastilles du filtre Démo reprennent ces mêmes couleurs : une pastille
+   d'une teinte absente de la liste obligerait à retenir une correspondance de
+   plus. Même règle que les cohortes et les états de site. */
+.dm-skin .dm-chip[data-demo="prete"]{border-color:rgba(31,138,91,.45);color:var(--ok)}
+.dm-skin .dm-chip[data-demo="prete"][aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.dm-skin .dm-chip[data-demo="chantier"]{border-color:rgba(47,122,224,.45);color:var(--accent-2)}
+.dm-skin .dm-chip[data-demo="chantier"][aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.dm-skin .dm-chip[data-demo="aucune"]{border-color:var(--border-2);color:var(--text-3)}
+.dm-skin .dm-chip[data-demo="aucune"][aria-pressed="true"]{background:var(--text-3);border-color:var(--text-3);color:#fff}
 
 /* Le mobile (06/07) : la condition d'entrée de WhatsApp. Traité comme une
    CAPACITÉ et non comme une alerte — d'où le bleu d'accent et non le vert, qui
    est déjà celui de « le prospect a répondu ». */
-.dm-skin .dm-tk .st.mob{background:var(--accent-tint);color:var(--accent-2);font-weight:600;letter-spacing:0}
+.dm-skin .st.mob{background:var(--accent-tint);color:var(--accent-2);font-weight:600;letter-spacing:0}
 
 .dm-skin .dm-tk-tel{appearance:none;flex-shrink:0;align-self:center;width:26px;height:26px;
   border-radius:7px;border:1px solid var(--border-2);background:var(--surface);
@@ -1000,10 +1115,10 @@
 /* TOUS les signaux sur la ligne, pas seulement le dominant : un prospect chaud
    qui a répondu est les deux, et l'ancienne ligne n'en montrait qu'un — celui
    qui gagnait la priorité, donc jamais « chaud » dès qu'il répondait. */
-.dm-skin .dm-tk .st.sig[data-sig="hot"]{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
-.dark .dm-skin .dm-tk .st.sig[data-sig="hot"]{color:#E3A94A}
-.dm-skin .dm-tk .st.sig[data-sig="conversation"]{background:var(--ok-tint);color:var(--ok);font-weight:600}
-.dm-skin .dm-tk .st.sig[data-sig="missed"]{background:var(--danger-tint);color:var(--danger);font-weight:600}
+.dm-skin .st.sig[data-sig="hot"]{background:var(--warn-tint);color:#8A5A0E;font-weight:600}
+.dark .dm-skin .st.sig[data-sig="hot"]{color:#E3A94A}
+.dm-skin .st.sig[data-sig="conversation"]{background:var(--ok-tint);color:var(--ok);font-weight:600}
+.dm-skin .st.sig[data-sig="missed"]{background:var(--danger-tint);color:var(--danger);font-weight:600}
 
 /* Les barres de filtres perdent leur bordure basse quand elles s'enchaînent :
    quatre traits pleins d'affilée hachaient le rail en tranches. */
