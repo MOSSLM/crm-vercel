@@ -22,6 +22,7 @@ import { serializeImageSet, type ImageSetCandidate } from "@/lib/site-builder/cl
 import { clearImageKeys } from "@/lib/site-builder/claude-design/image-override-keys";
 import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
 import { enregistrerTirage } from "@/lib/site-builder/claude-design/tirage-entreprise";
+import { tirerImagesPourSite } from "@/lib/site-builder/claude-design/tirer-images";
 import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 import { serviceTagKey } from "@/utils/serviceTags";
 
@@ -176,6 +177,31 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params, user }
   const seed = Number.isFinite(body.seed) ? Number(body.seed) : Math.floor(Math.random() * 2 ** 31);
 
   const supabase = getServiceClient();
+
+  // `slot` (1-based) → swap that photo only, keeping the rest of the band.
+  const slotDemande = Number.isFinite(body.slot) ? Math.floor(Number(body.slot)) : null;
+  // `url` → the operator picked it himself; without a slot there is nothing to
+  // put it on, and silently redrawing the whole band would throw the pick away.
+  const urlChoisie = typeof body.url === "string" ? body.url.trim() : "";
+  if (urlChoisie && slotDemande === null) return jsonError("Choisir une photo demande aussi son emplacement.", 400);
+
+  // ── LA BANDE ENTIÈRE EST LE MÊME GESTE QU'ON LE FASSE UNE FOIS OU MILLE.
+  // Elle vit donc dans `tirer-images.ts`, appelable depuis un lot ; la route
+  // garde ce qui lui appartient — l'authentification, et les deux gestes
+  // d'opérateur ci-dessous, qui n'ont de sens que devant un panneau.
+  if (slotDemande === null && !urlChoisie) {
+    const r = await tirerImagesPourSite(supabase, siteId, {
+      entrepriseId: Number.isFinite(body.entrepriseId) ? Number(body.entrepriseId) : undefined,
+      zones: body.zones,
+      seed,
+      dryRun,
+      tirePar: user.id,
+    });
+    if (!r.ok) return jsonError(r.erreur, r.status);
+    const { ok: _ok, ...corps } = r;
+    return json(corps);
+  }
+
   const loaded = await loadDesignPages(supabase, siteId);
   if ("error" in loaded) return jsonError(loaded.error, loaded.status);
 
@@ -222,12 +248,9 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params, user }
   /** Cards the band gave up on: stock exhausted. */
   let hiddenSlots = 0;
 
-  // `slot` (1-based) → swap that photo only, keeping the rest of the band.
-  const oneSlot = Number.isFinite(body.slot) ? Math.floor(Number(body.slot)) : null;
-  // `url` → the operator picked it himself; without a slot there is nothing to
-  // put it on, and silently redrawing the whole band would throw the pick away.
-  const pickedUrl = typeof body.url === "string" ? body.url.trim() : "";
-  if (pickedUrl && oneSlot === null) return jsonError("Choisir une photo demande aussi son emplacement.", 400);
+  // Lus plus haut : à partir d'ici, l'un des deux est forcément posé.
+  const oneSlot = slotDemande;
+  const pickedUrl = urlChoisie;
 
   for (const target of targets) {
     const zone = findZone(target.zoneId)!;

@@ -97,6 +97,52 @@ async function etape1DonneesPubliques(ids: number[]) {
   console.log(`[1] ${ok} hydratées, ${vide} inconnues du registre`);
 }
 
+/**
+ * La commune et le code postal, quand la fiche n'en a pas.
+ *
+ * ⚠️ CE N'EST PAS UN DÉTAIL DE CONFORT : sans eux, `create-demo` refuse — le
+ * gabarit met la ville dans ses titres et son SEO local. Sept fiches de la file
+ * étaient dans ce cas le 03/09, et la cause est toujours la même : la colonne
+ * `adresse` a reçu la NOTE Google (« 5,0(11) ») au lieu d'une adresse.
+ *
+ * Le registre les rend, et lui ne se trompe pas de colonne.
+ */
+async function etape1bisLieu(ids: number[]) {
+  const manquants: number[] = [];
+  for (const t of tranches(ids, 500)) {
+    const { data } = await sb.from("entreprises").select("id, ville, code_postal").in("id", t);
+    for (const e of (data ?? []) as Array<{ id: number; ville: string | null; code_postal: string | null }>) {
+      if ((e.ville ?? "").trim() === "" || (e.code_postal ?? "").trim() === "") manquants.push(e.id);
+    }
+  }
+  if (manquants.length === 0) { console.log("[1b] lieu : rien à compléter"); return; }
+
+  const dp = new Map<number, { ville: string | null; cp: string | null }>();
+  for (const t of tranches(manquants, 500)) {
+    const { data } = await sb
+      .from("entreprises_donnees_publiques")
+      .select("entreprise_id, ville_siege, code_postal_siege")
+      .in("entreprise_id", t);
+    for (const l of (data ?? []) as Array<{ entreprise_id: number; ville_siege: string | null; code_postal_siege: string | null }>) {
+      dp.set(l.entreprise_id, { ville: l.ville_siege, cp: l.code_postal_siege });
+    }
+  }
+
+  let poses = 0;
+  for (const id of manquants) {
+    const r = dp.get(id);
+    if (!r?.ville || !r?.cp) continue;
+    poses += 1;
+    if (ECRIRE) {
+      // `initcap` côté client : le registre écrit en capitales, et un titre de
+      // page « SAINT-PRIEST » crie sur le site du prospect.
+      const ville = r.ville.toLowerCase().replace(/(^|[\s'-])([a-zàâäéèêëîïôöùûüç])/g, (_, s, c) => s + c.toUpperCase());
+      await sb.from("entreprises").update({ ville, code_postal: r.cp }).eq("id", id);
+    }
+  }
+  console.log(`[1b] lieu : ${manquants.length} fiches sans commune ou code postal, ${poses} ${ECRIRE ? "complétées" : "complétables"} par le registre`);
+}
+
 async function etape2ChiffresCles(ids: number[]) {
   const matiere = new Map<number, { dateCreation: string | null; nombreAvis: number | null }>();
   for (const t of tranches(ids, 500)) {
@@ -227,6 +273,7 @@ async function main() {
   const ids = await idsDuPortefeuille();
   console.log(`portefeuille : ${ids.length} fiches vivantes`);
   await etape1DonneesPubliques(ids);
+  await etape1bisLieu(ids);
   await etape2ChiffresCles(ids);
   await etape3Demos(ids);
 }

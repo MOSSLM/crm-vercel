@@ -783,6 +783,60 @@ export const BOTS: Bot[] = [
     ],
   },
   {
+    id: "finir-demos",
+    nom: "Finir les démos de la file",
+    phase: "fabrication",
+    execution: "script-local",
+    statut: "actif",
+    chemin: "scripts/lissage/finir-demos.ts",
+    resume:
+      "Reprend les démos de la file de démarchage là où le clonage les laisse : tire leurs photos, fabrique leur vignette, et ne les marque prêtes que si la vignette a pu sortir.",
+    entree:
+      "La file de « Ma journée » des deux agents — le filtre EXACT de GET /api/agent/tasks (owner_id, pending|snoozed, call|whatsapp|linkedin, enrollment_id non nul)",
+    sortie:
+      "entreprise_tirages_photos · sites.og_image_url / og_shot_url · sites.build_stage = 'pret'",
+    ecrit: true,
+    externes: ["thum.io (captures, via renderViewportShot)"],
+    cout: "Deux captures par démo. Gratuit sans clé de rendu, ~13 s par carte à concurrence 4.",
+    commande:
+      "TS_NODE_BASEURL=. npx ts-node -r ./scripts/_shim-server-only.js -r tsconfig-paths/register -O '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"jsx\":\"react-jsx\",\"isolatedModules\":false,\"baseUrl\":\".\"}' scripts/lissage/finir-demos.ts --ecrire",
+    regles: [
+      "IL EXISTE PARCE QUE `cloneTemplateSite` REND UN SITE EN `a_faire`, et que `choisirSiteMontrable` refuse exactement cet état. Les 110 démos fabriquées le 03/09/2026 étaient invisibles pour tout ce qui envoie un lien : le travail était fait et ne servait à rien.",
+      "LA VIGNETTE EST LE GARDE-FOU DE LA VALIDATION, et c'est le seul contrôle de rendu du dépôt : `ensureDemoScreenshot` refuse une capture quasi vide (`imageQuasiVide`), donc une carte qui sort prouve que la page s'est affichée. Aucun site ne passe à `pret` sans sa carte ; un échec de capture le laisse en chantier et se compte.",
+      "SANS TIRAGE, LA BANDE SE RE-RÉSOUT À CHAQUE RENDU et retombe sur la même photo. Mesuré le 03/09/2026 : la démo d'ENEOLE (3 métiers) rendait 3 photos distinctes dans une bande de 6, deux affichées deux fois ; après tirage, 6 distinctes, zéro doublon. Ce n'est pas un réglage fin.",
+      "LE TIRAGE NE PÉRIME AUCUNE VIGNETTE : `AUTO_IMAGE_ZONES` ne contient que `realisations`, et la capture est cadrée `position: \"top\"` sur le premier écran. On ne recapture donc PAS les démos déjà vignettées — c'eût été 102 captures pour un pixel inchangé.",
+      "LA POPULATION EST RECOPIÉE DE LA ROUTE, pas réinventée. En particulier ce n'est pas `assignee_id` : la file se cadre sur le PROPRIÉTAIRE de la fiche, et les deux diffèrent (271 fiches par assignee contre 265 par owner au 03/09).",
+      "⚠️ `revalidateTag` ÉCHOUE DEPUIS UN SCRIPT (« static generation store missing ») : la fraîcheur ne tient qu'au `revalidate` de 30 s de `SITE_CACHE_REVALIDATE_SECONDS`. Conséquence payée : une capture prise dans la minute qui suit une écriture photographie la page D'AVANT. Attendre 30 s, ou vérifier la page avant de capturer.",
+      "⚠️ THUM.IO MET SES CAPTURES EN CACHE PAR URL. `buildDemoCard(force)` recapture bien et reçoit l'image d'avant : le nom du fichier étant un hash du contenu, l'URL de la carte ne bouge pas et on croit que rien n'a marché. Pour une vraie recapture, passer une URL différente à `ensureDemoScreenshot` (un paramètre que la page ignore), puis vider `og_image_url` et rappeler `buildDemoCard` SANS `force` — il réutilise alors la capture fraîche au lieu d'en redemander une cachée.",
+      "`--etape 1|2|3` et `--limite N` servent à reprendre une passe coupée : les trois étapes sont idempotentes, et l'étape 3 relit l'état en base plutôt que la lecture du début.",
+    ],
+  },
+  {
+    id: "siret-mentions-legales",
+    nom: "SIRET dans les mentions légales",
+    phase: "identite-legale",
+    execution: "script-local",
+    statut: "actif",
+    chemin: "scripts/lissage/siret-mentions-legales.ts",
+    resume:
+      "Dernier recours quand l'annuaire ne rend rien sur le nom ni sur l'adresse : lire le SIREN ou le SIRET que la loi oblige à publier sur le site du prospect.",
+    entree: "Les fiches du portefeuille sans SIRET qui portent une URL de site",
+    sortie: "entreprises.siret (via validerCandidat, source 'recherche_web')",
+    ecrit: true,
+    externes: ["Les sites des prospects (lecture HTML)", "Annuaire des entreprises (vérification)"],
+    cout: "Gratuit. Au plus quatre pages lues par fiche, aucun script exécuté.",
+    commande:
+      "TS_NODE_BASEURL=. npx ts-node -r ./scripts/_shim-server-only.js -r tsconfig-paths/register -O '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"jsx\":\"react-jsx\",\"isolatedModules\":false,\"baseUrl\":\".\"}' scripts/lissage/siret-mentions-legales.ts --ecrire",
+    regles: [
+      "LE CHEMIN DES MENTIONS NE SE DEVINE PAS. Cinq chemins probables (`/mentions-legales`, `/mentions`, `/legal`…) ont rendu ZÉRO sur les 49 fiches du 03/09/2026 : COLDEX les met en `/home/mentionslegales/`, e-Novelec en `/cms/2-mentions-legales-e-novelec`. On lit l'accueil et on SUIT ses liens ; les chemins devinés ne restent qu'au cas où l'accueil soit illisible.",
+      "UN SIREN VAUT AUTANT QU'UN SIRET et il est plus courant (« RCS SAINT-MALO 425 110 376 ») : `chercherCandidats` sait le déplier. Mais neuf chiffres ressemblent aussi à un téléphone — deux gardes obligatoires, l'ancre « SIREN »/« RCS » ET la clé de Luhn.",
+      "⚠️ CE QUI EST LU N'EST PAS VÉRIFIÉ. C'est `validerCandidat` qui tranche en réinterrogeant l'annuaire. Et SES AVERTISSEMENTS SE LISENT : sur trois écritures du 03/09, une était fausse — SIREN glané sur une page devinée, registre à Perpignan quand la fiche est à Toulouse, entreprise cessée depuis avril. Retirée à la main. Un mauvais rapprochement contamine ensuite le RGE et les finances.",
+      "⚠️ UN SIRET VENU DU WEB NE LAISSE AUCUNE LIGNE DE CANDIDAT : `validerCandidat` met à jour `entreprise_siret_candidats` et le numéro n'y figure pas, donc les écrans de relecture ne le montrent pas. La seule trace est `entreprises.siret_source = 'recherche_web'` + `siret_confirme_le`.",
+      "CE QU'IL RÉVÈLE EN PASSANT : 29 des 49 sites étaient injoignables (17 domaines qui ne résolvent plus, 2 certificats expirés, 6 pages 404/403). Ces fiches portent un `site_web_canonique` et passent pour « avec site » par la COLONNE — un constat explicite l'emporterait. C'est `verifier-sites` qui doit trancher, pas ce script.",
+      "⚠️ NE PAS SONDER SANS BORNER LA CONCURRENCE. Une première mesure des logos, lancée à 118 requêtes simultanées, a rendu `UND_ERR_CONNECT_TIMEOUT` jusque sur des URLs Supabase qui marchent : le verdict était un artefact de la sonde. Six à la fois, et une seconde tentative avant de conclure.",
+    ],
+  },
+  {
     id: "regenerate-site",
     nom: "Régénération de site démo",
     phase: "fabrication",
