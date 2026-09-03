@@ -5,6 +5,7 @@ import { Icon } from "./DemIcon";
 import { one } from "@/components/agent-portal/format";
 import { demCh } from "./channels";
 import { COHORTE_INFO, COHORTE_ORDER, countByCohorte } from "./cohortes";
+import { ETAT_DEMO_AIDE } from "@/lib/agent-portal/etat-demo";
 import {
   countByEtatSite,
   ETAT_SITE_AIDE,
@@ -23,12 +24,17 @@ import {
   quotaOf,
   signalOf,
   signalsOf,
+  compteDuTri,
   SIGNAL_LABEL,
   SIGNAL_ORDER,
   SIGNAL_TAG,
+  TRI_AIDE,
+  TRI_LABEL,
+  TRI_ORDER,
   type DemarchageSignal,
   type FileDeTravail,
   type RepartitionJournee,
+  type TriFile,
 } from "@/lib/agent-portal/demarchage-buckets";
 
 /**
@@ -207,6 +213,8 @@ export function DemRail({
   setCohorte,
   etatSite,
   setEtatSite,
+  tri,
+  setTri,
   tasks,
   meta,
   agentName,
@@ -246,7 +254,16 @@ export function DemRail({
    */
   etatSite: EtatSite | null;
   setEtatSite: (e: EtatSite | null) => void;
-  /** La liste RÉELLEMENT affichée : la file courante, passée aux filtres. */
+  /**
+   * Sur quoi la file est remontée. `passage` = l'ordre du jour, le défaut.
+   *
+   * Ce n'est PAS un filtre : rien ne disparaît, seul le point de départ change.
+   * D'où une pastille à part, toujours visible tant qu'un tri est actif —
+   * un ordre qu'on ne voit pas est un ordre qu'on croit être celui du jour.
+   */
+  tri: TriFile;
+  setTri: (t: TriFile) => void;
+  /** La liste RÉELLEMENT affichée : la file courante, filtrée PUIS triée. */
   tasks: DemarchageTask[];
   meta: DemarchageQueueMeta;
   agentName: string | null;
@@ -341,6 +358,22 @@ export function DemRail({
     [parEtatSite],
   );
 
+  /**
+   * Les tris qui trient VRAIMENT cette file. Un tri qui remonte zéro ligne
+   * n'ordonne rien, et un tri qui les remonte toutes non plus : dans les deux
+   * cas la pastille rendrait la liste inchangée en ayant l'air d'agir. Même
+   * règle que les pastilles d'état de site, deux valeurs minimum.
+   */
+  const tris = useMemo(
+    () =>
+      TRI_ORDER.filter((t) => {
+        if (t === "passage") return true;
+        const n = compteDuTri(duJour, t);
+        return n > 0 && n < duJour.length;
+      }),
+    [duJour],
+  );
+
   /** Combien de filtres « repliés » sont actifs — c'est ce que le bouton annonce. */
   const filtresCaches =
     (signal ? 1 : 0) + (cohorte ? 1 : 0) + (step != null ? 1 : 0) + (etatSite ? 1 : 0);
@@ -348,7 +381,8 @@ export function DemRail({
     SIGNAL_ORDER.some((s) => parSignal[s] > 0) ||
     cohortes.length > 0 ||
     etatsSite.length > 1 ||
-    etapes.length > 1;
+    etapes.length > 1 ||
+    tris.length > 1;
 
   const compteFile: Record<FileDeTravail, number> = {
     premiers: rep.premiers.length,
@@ -439,6 +473,20 @@ export function DemRail({
             </>
           )}
 
+          {tri !== "passage" && (
+            <button
+              type="button"
+              className="dm-chip tri"
+              data-tri={tri}
+              aria-pressed
+              title={`${TRI_AIDE[tri]} — cliquer pour revenir à l'ordre du jour.`}
+              onClick={() => setTri("passage")}
+            >
+              <Icon name="trending" className="ico-xs" />
+              {TRI_LABEL[tri]}
+            </button>
+          )}
+
           {filtrables && (
             <div className="dm-fpop" ref={refFiltres}>
               <button
@@ -454,6 +502,32 @@ export function DemRail({
 
               {filtresOuverts && (
                 <div className="dm-fmenu" role="dialog" aria-label="Filtres">
+                  {/* TRIER — en tête, parce que c'est ce qui décide par quoi on
+                      commence. Les trois critères sont ceux que la ligne
+                      MONTRE déjà : le liseré de démo, le badge 06/07,
+                      l'étiquette de site. Trier sur un critère invisible
+                      rendrait un ordre invérifiable à l'œil. */}
+                  {tris.length > 1 && (
+                    <div className="g">
+                      <span className="lb">Trier — en premier</span>
+                      <div className="ch">
+                        {tris.map((t) => (
+                          <button
+                            key={t}
+                            className="dm-chip"
+                            data-tri={t}
+                            aria-pressed={tri === t}
+                            title={TRI_AIDE[t]}
+                            onClick={() => setTri(t)}
+                          >
+                            {TRI_LABEL[t]}
+                            {t !== "passage" && <span className="n">{compteDuTri(duJour, t)}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {SIGNAL_ORDER.some((s) => parSignal[s] > 0) && (
                     <div className="g">
                       <span className="lb">Signal</span>
@@ -595,7 +669,6 @@ export function DemRail({
               key={t.id}
               className="dm-tk"
               data-s={t.id === sel ? "now" : "next"}
-              data-heat={heat}
               data-conv={dominant === "conversation" ? "1" : undefined}
               aria-selected={t.id === sel}
               onClick={() => onPick(t.id)}
@@ -624,6 +697,15 @@ export function DemRail({
                     <span className="st stp">
                       étape {t.sequence.stepIndex}
                       {t.sequence.totalSteps > 0 ? `/${t.sequence.totalSteps}` : ""}
+                    </span>
+                  )}
+                  {/* 06/07 — la condition d'entrée de WhatsApp. Affiché en
+                      POSITIF et seulement quand il existe : 56 % de la file au
+                      03/09/2026, donc l'étiquette partage la liste en deux au
+                      lieu de la décorer entièrement. Son absence se lit. */}
+                  {t.a_mobile && (
+                    <span className="st mob" title="Mobile (06/07) — WhatsApp possible">
+                      06/07
                     </span>
                   )}
                   {t.hors_sequence && <span className="st froid">à froid</span>}
@@ -695,6 +777,23 @@ export function DemRail({
                 >
                   <Icon name="phone" className="ico-xs" />
                 </button>
+              )}
+              {/* OÙ EN EST SA DÉMO, en un liseré au bord droit.
+                  Le bord GAUCHE est déjà pris trois fois — sélection, chaleur,
+                  discussion — et un prospect chaud doit continuer de dominer la
+                  ligne : y écrire la démo écraserait le signal le plus urgent.
+                  Élément réel et non `::after` : une couleur seule ne s'apprend
+                  pas, il lui faut son infobulle et son nom pour un lecteur
+                  d'écran. Dernier enfant et `position:absolute` — la ligne est
+                  une grille `26px 1fr`, un enfant de plus la décalerait. */}
+              {t.demo_etat && (
+                <span
+                  className="dmo"
+                  data-demo={t.demo_etat}
+                  role="img"
+                  aria-label={ETAT_DEMO_AIDE[t.demo_etat]}
+                  title={ETAT_DEMO_AIDE[t.demo_etat]}
+                />
               )}
             </div>
           );

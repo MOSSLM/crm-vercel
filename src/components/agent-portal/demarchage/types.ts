@@ -6,6 +6,7 @@
 import type { ProspectionTaskPayload } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 import type { EtatSite } from "@/lib/agent-portal/etat-site";
+import type { EtatDemo } from "@/lib/agent-portal/etat-demo";
 
 /** Les canaux réellement possibles dans notre file (`wait` = attente-réponse). */
 export type DemKind = "call" | "whatsapp" | "sms" | "linkedin" | "wait";
@@ -118,6 +119,19 @@ export type DemarchageTask = {
    * date ne se vérifie pas elle-même.
    */
   site_constate_le?: string | null;
+  /**
+   * Où en est NOTRE démo — `prete`, `chantier`, `aucune`. À ne pas confondre
+   * avec `etat_site`, qui parle du site DU PROSPECT : un prospect sans site
+   * dont la démo est prête est le meilleur cas de la file, pas le pire.
+   * Définition de « prête » : `choisirSiteMontrable` (cf. `etat-demo.ts`).
+   */
+  demo_etat?: EtatDemo | null;
+  /**
+   * Joignable sur un mobile français (06/07), tous numéros confondus : la fiche
+   * entreprise, son tableau `telephones`, et le contact. C'est la condition
+   * d'entrée de WhatsApp — 56 % de la file au 03/09/2026.
+   */
+  a_mobile?: boolean;
   /**
    * Quand l'entreprise a été touchée pour la PREMIÈRE fois, `null` si jamais.
    * C'est ce qui sépare les deux files du poste de travail : sans date, la ligne

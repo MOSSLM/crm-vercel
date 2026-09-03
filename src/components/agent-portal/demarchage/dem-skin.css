@@ -450,12 +450,18 @@
    L'emoji, lui, a QUITTÉ la ligne du nom : collé au texte il se lisait comme
    une partie de la raison sociale (« Toiture Martin 🔥🔥 »), donc il ne
    signalait plus rien. Il vit maintenant dans sa propre case, calée à droite. */
-.dm-skin .dm-tk[data-heat="hot"]{border-left-color:#E08A2F;background:rgba(224,138,47,.10);box-shadow:inset 2px 0 0 rgba(224,138,47,.6)}
-.dm-skin .dm-tk[data-heat="hot"]:hover{background:rgba(224,138,47,.16)}
-.dm-skin .dm-tk[data-heat="missed"]{border-left-color:#B5322F;background:rgba(181,50,47,.10);box-shadow:inset 2px 0 0 rgba(181,50,47,.6)}
-.dm-skin .dm-tk[data-heat="missed"]:hover{background:rgba(181,50,47,.16)}
+/* ── LA LIGNE NE SE TEINTE PLUS POUR LA CHALEUR ───────────────────────────────
+   Retiré le 03/09/2026, à la demande du propriétaire : « juste les
+   badges/emojis suffisent ». Le fond orange et le fond rouge lavaient la ligne
+   entière pour dire ce que la flamme et l'étiquette disaient déjà — et ils
+   entraient en concurrence avec les deux seules teintes qui ont besoin de la
+   ligne entière : la sélection, et « il a répondu ».
+
+   Ce qui reste dit la chaleur, et suffit : la flamme `.fl` en haut à droite,
+   l'étiquette `.st.sig`, et la ligne `.vu` (« Démo vue 3× »), toutes trois
+   colorées par leur PROPRE `data-heat`. Le fond de ligne est désormais libre
+   pour l'état de l'échange, et le bord droit pour l'état de la démo. */
 /* La sélection reste lisible par-dessus la teinte : un anneau, pas un fond. */
-.dm-skin .dm-tk[data-heat][aria-selected="true"]{box-shadow:inset 2px 0 0 var(--accent), inset 0 0 0 1px var(--accent-tint-2)}
 
 .dm-skin .dm-tk .nm .fl{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
   min-width:20px;height:19px;padding:0 4px;border-radius:6px;
@@ -943,6 +949,46 @@
 .dm-skin .dm-fr-plus:hover{background:var(--hover);color:var(--text-2)}
 
 /* Basculer en appel depuis la ligne, sans l'ouvrir. */
+/* ── LES PASTILLES DE TRI ─────────────────────────────────────────────────────
+   Chacune reprend la couleur de ce qu'elle remonte, pour que le contrôle et la
+   liste parlent la même langue : vert comme le liseré « démo prête », bleu
+   comme le badge 06/07. Une pastille
+   d'une couleur qui n'existe nulle part dans la liste obligerait à retenir une
+   correspondance de plus. */
+.dm-skin .dm-chip[data-tri="demo"]{border-color:rgba(31,138,91,.45);color:var(--ok)}
+.dm-skin .dm-chip[data-tri="demo"][aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.dm-skin .dm-chip[data-tri="mobile"]{border-color:rgba(47,122,224,.45);color:var(--accent-2)}
+.dm-skin .dm-chip[data-tri="mobile"][aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+/* La pastille du tri ACTIF, dans la barre en clair : elle porte l'icône et le
+   mot, et se clique pour revenir à l'ordre du jour. */
+.dm-skin .dm-chip.tri{gap:4px;font-weight:600}
+
+/* ── OÙ EN EST NOTRE DÉMO : le liseré du bord DROIT ───────────────────────────
+   Le bord gauche porte déjà trois choses (sélection, chaleur, discussion) et
+   celles-là doivent continuer de gagner : un prospect chaud passe avant l'état
+   de sa maquette. D'où un second canal, à droite, qui ne dispute rien.
+
+   TROIS ÉTATS ET NON DEUX, mesuré le 03/09/2026 sur la file de Bilal et Matteo
+   (332 tâches) : 28 % prête, 23 % en chantier, 49 % rien. Le vert dit « le lien
+   peut partir ». Les deux autres sont BLEUES parce que ce sont deux façons de
+   ne pas être prêt — mais le demi-ton distingue « il reste un clic » de « il
+   n'y a rien à montrer », et c'est 77 lignes de la file.
+
+   `right:0` et non `-12px` : un absolu se cale sur la PADDING BOX de son
+   conteneur, et celle-ci inclut déjà le `padding-right:12px` de la ligne. La
+   valeur négative sortait le liseré de douze pixels hors du rail — mesuré au
+   banc avant de le croire. */
+.dm-skin .dm-tk .dmo{position:absolute;right:0;top:6px;bottom:6px;width:3px;
+  border-radius:3px 0 0 3px;background:var(--accent);pointer-events:auto}
+.dm-skin .dm-tk .dmo[data-demo="prete"]{background:var(--ok)}
+.dm-skin .dm-tk .dmo[data-demo="chantier"]{background:var(--accent);opacity:.42}
+.dm-skin .dm-tk .dmo[data-demo="aucune"]{background:var(--accent)}
+
+/* Le mobile (06/07) : la condition d'entrée de WhatsApp. Traité comme une
+   CAPACITÉ et non comme une alerte — d'où le bleu d'accent et non le vert, qui
+   est déjà celui de « le prospect a répondu ». */
+.dm-skin .dm-tk .st.mob{background:var(--accent-tint);color:var(--accent-2);font-weight:600;letter-spacing:0}
+
 .dm-skin .dm-tk-tel{appearance:none;flex-shrink:0;align-self:center;width:26px;height:26px;
   border-radius:7px;border:1px solid var(--border-2);background:var(--surface);
   color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;

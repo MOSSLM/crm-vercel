@@ -13,6 +13,8 @@ import { readReplies } from "@/lib/automations/week";
 import { stepIsInConversation } from "@/lib/agent-portal/conversation";
 import { DAILY_QUOTA, normaliseQuotas } from "@/lib/agent-portal/demarchage-buckets";
 import { etatSiteDe } from "@/lib/agent-portal/etat-site";
+import { etatDemoDe } from "@/lib/agent-portal/etat-demo";
+import { estMobileFr } from "@/lib/prospects/canal";
 import type { SequenceDefinition, SequenceStep } from "@/components/automations/types";
 import type { StageRole } from "@/lib/opportunites/stage-roles";
 
@@ -96,6 +98,17 @@ const stepViews = (steps: SequenceStep[]): StepView[] =>
     day: Number(s.day) || 0,
     label: s.label?.trim() || channelOf(s.kind).label,
   }));
+
+/** Une ligne `sites` — le strict nécessaire pour `choisirSiteMontrable`. */
+type SiteDemoRow = {
+  id: string;
+  enterprise_id: number | null;
+  is_published: boolean | null;
+  published_subdomain: string | null;
+  published_domain: string | null;
+  build_stage: string | null;
+  is_template: boolean | null;
+};
 
 /**
  * Les deux cohortes de la campagne d'août 2026 (`entreprises.cohorte_demarchage`).
@@ -200,7 +213,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       "id, kind, status, title, due_at, contact_id, entreprise_id, opportunite_id, payload, " +
         "enrollment_id, automation_id, step_id, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, telephones, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
     )
     .eq("entreprise.owner_id", user.id)
     // `snoozed` reste dans la file : c'est une tâche « pas le bon moment »
@@ -234,7 +247,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     .select(
       "id, automation_id, current_step, contact_id, entreprise_id, opportunite_id, updated_at, entered_at, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, telephones, owner_id, cohorte_demarchage, premiere_touche_le, site_web_canonique, canonical_url)",
     )
     .eq("entreprise.owner_id", user.id)
     .eq("status", "active")
@@ -409,6 +422,54 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
     }
   }
 
+  // ── Notre démo : prête, en chantier, ou inexistante ────────────────────
+  //
+  // C'est l'AUTRE question, et elle n'a rien à voir avec `etat_site` : celui-ci
+  // dit si LE PROSPECT a un site, celle-ci si NOUS avons quelque chose à lui
+  // montrer. Mesuré le 03/09/2026 sur la file de Bilal et Matteo : 28 % ont une
+  // démo prête, 23 % une démo en chantier, 49 % rien — trois populations
+  // comparables, d'où trois états et non un booléen (cf. `etat-demo.ts`).
+  //
+  // Une seule requête pour la file entière, sur les mêmes identifiants que la
+  // présence. `is_template` est filtré ICI plutôt qu'en SQL parce que c'est
+  // `etatDemoDe` qui porte la règle, et qu'elle doit rester vraie quel que soit
+  // l'appelant.
+  const sitesParEntreprise = new Map<number, SiteDemoRow[]>();
+  if (idsPresence.length) {
+    const { data: sitesRows } = await sc
+      .from("sites")
+      .select("id, enterprise_id, is_published, published_subdomain, published_domain, build_stage, is_template")
+      .in("enterprise_id", idsPresence);
+    for (const row of (sitesRows ?? []) as SiteDemoRow[]) {
+      const id = Number(row.enterprise_id);
+      if (!Number.isFinite(id)) continue;
+      const liste = sitesParEntreprise.get(id);
+      if (liste) liste.push(row);
+      else sitesParEntreprise.set(id, [row]);
+    }
+  }
+
+  /**
+   * Joignable par mobile ? La règle est celle de `estMobileFr` (ARCEP : 06 et
+   * 07), et on regarde LES TROIS sources — `entreprises.telephone`, le tableau
+   * `telephones`, et le numéro du contact. Se limiter à la première manquerait
+   * les fiches dont le portable n'est que dans le tableau, et le badge dirait
+   * « pas de mobile » d'une entreprise qu'on peut joindre sur WhatsApp.
+   */
+  const aMobileDe = (entreprise: unknown, contact: unknown): boolean => {
+    const e = (Array.isArray(entreprise) ? entreprise[0] : entreprise) as
+      | { telephone?: unknown; telephones?: unknown }
+      | null;
+    const c = (Array.isArray(contact) ? contact[0] : contact) as { tel?: unknown } | null;
+    const numeros: unknown[] = [e?.telephone, c?.tel];
+    if (Array.isArray(e?.telephones)) numeros.push(...(e.telephones as unknown[]));
+    return numeros.some((n) => typeof n === "string" && estMobileFr(n));
+  };
+
+  /** L'état de NOTRE démo pour cette entreprise. */
+  const demoDe = (entrepriseId: number | null): "prete" | "chantier" | "aucune" =>
+    etatDemoDe(entrepriseId != null ? sitesParEntreprise.get(entrepriseId) : null);
+
   /** L'état du site d'une ligne de file, et la date qui le date. */
   const presenceDe = (entrepriseId: number | null, entreprise: unknown) => {
     const constat = entrepriseId != null ? constatSite.get(entrepriseId) : undefined;
@@ -436,6 +497,8 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       hors_sequence: t.enrollment_id == null,
       cohorte: cohorteDe(t.entreprise),
       ...presenceDe(t.entreprise_id, t.entreprise),
+      demo_etat: demoDe(t.entreprise_id),
+      a_mobile: aMobileDe(t.entreprise, t.contact),
       premiere_touche_le: premiereToucheDe(t.entreprise),
       sequence: auto
         ? {
@@ -503,6 +566,8 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, req, cors }) =
       hors_sequence: false,
       cohorte: cohorteDe(e.entreprise),
       ...presenceDe(e.entreprise_id, e.entreprise),
+      demo_etat: demoDe(e.entreprise_id),
+      a_mobile: aMobileDe(e.entreprise, e.contact),
       premiere_touche_le: premiereToucheDe(e.entreprise),
       sequence: auto
         ? {

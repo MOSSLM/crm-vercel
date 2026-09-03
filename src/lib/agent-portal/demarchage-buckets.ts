@@ -36,6 +36,8 @@
  */
 
 import { AGENT_TIMEZONE, dayStartIso } from "@/lib/agent-progress";
+import type { EtatDemo } from "@/lib/agent-portal/etat-demo";
+import type { EtatSite } from "@/lib/agent-portal/etat-site";
 
 export type DemarchageTaskLike = {
   /** Canal de la tâche — c'est lui qui porte l'objectif quotidien. */
@@ -62,6 +64,12 @@ export type DemarchageTaskLike = {
   premiere_touche_le?: string | null;
   /** Signal d'intention mesuré (GA4). Absent = aucun site démo ou aucune visite. */
   intent?: { callWhen: string; score: number; missed?: boolean } | null;
+  /** Où en est NOTRE démo (cf. `etat-demo.ts`). */
+  demo_etat?: EtatDemo | null;
+  /** Joignable sur un mobile français (06/07), toutes sources confondues. */
+  a_mobile?: boolean;
+  /** A-t-il un site, LUI (cf. `etat-site.ts`) — à ne pas confondre avec `demo_etat`. */
+  etat_site?: EtatSite | null;
 };
 
 /**
@@ -281,6 +289,86 @@ export function ordreDePassage<T extends DemarchageTaskLike>(tasks: readonly T[]
     return s ? SIGNAL_ORDER.indexOf(s) : SIGNAL_ORDER.length;
   };
   return [...tasks].sort((a, b) => rang(a) - rang(b) || dueMs(a) - dueMs(b));
+}
+
+/* ── Le TRI : remonter une catégorie en tête ─────────────────────────────── */
+
+/**
+ * Sur quoi on remonte la file. `passage` est l'ordre du jour — signaux d'abord,
+ * puis échéance — et c'est le défaut : il ne se choisit pas, il se retrouve.
+ *
+ * Les trois autres reprennent EXACTEMENT ce que la ligne montre déjà : le
+ * liseré de démo, le badge 06/07, l'étiquette de site. Un tri sur un critère
+ * qu'on ne voit pas sur la ligne rendrait une liste dont on ne peut pas
+ * vérifier l'ordre à l'œil.
+ */
+export type TriFile = "passage" | "demo" | "mobile";
+
+export const TRI_ORDER: readonly TriFile[] = ["passage", "demo", "mobile"] as const;
+
+export const TRI_LABEL: Record<TriFile, string> = {
+  passage: "Ordre du jour",
+  demo: "Démo prête",
+  mobile: "Mobile",
+};
+
+export const TRI_AIDE: Record<TriFile, string> = {
+  passage: "L'ordre de travail : les signaux d'abord, puis l'échéance la plus ancienne.",
+  demo: "Ceux dont la démo est prête en tête — il y a quelque chose à leur montrer.",
+  mobile: "Ceux joignables sur un 06/07 en tête — WhatsApp possible.",
+};
+
+/**
+ * ⚠️ PAS DE TRI « SANS SITE », ET C'EST DÉLIBÉRÉ.
+ *
+ * Le filtre Site fait déjà ce travail, et mieux : il RETIRE le bruit au lieu de
+ * le repousser plus bas. Doubler un filtre par un tri sur le même axe ajoute une
+ * pastille qui ne décide de rien.
+ *
+ * Et il n'aurait pas eu de couleur à lui : l'étiquette « absence vérifiée » est
+ * déjà en `--ok`, comme le liseré « démo prête ». Deux pastilles vertes côte à
+ * côte pour deux questions différentes se relisent une fois de trop.
+ */
+
+/** Le rang d'une tâche pour un tri donné. Plus petit = plus haut. */
+function rangDuTri(tri: TriFile): (t: DemarchageTaskLike) => number {
+  switch (tri) {
+    case "demo":
+      return (t) => (t.demo_etat === "prete" ? 0 : t.demo_etat === "chantier" ? 1 : 2);
+    case "mobile":
+      return (t) => (t.a_mobile ? 0 : 1);
+    default:
+      return () => 0;
+  }
+}
+
+/**
+ * Remonte une catégorie en tête, SANS défaire l'ordre du jour à l'intérieur.
+ *
+ * ⚠️ LA STABILITÉ DU TRI EST LA RÈGLE, PAS UN DÉTAIL D'IMPLÉMENTATION.
+ * `Array.prototype.sort` est stable depuis ES2019, et c'est ce qui fait que
+ * « démo prête en tête » ne mélange pas les prospects chauds avec les tièdes à
+ * l'intérieur du groupe : la liste reçue est DÉJÀ dans `ordreDePassage` (posé
+ * par `repartirLaJournee`), et un tri stable la préserve. Trier sur deux clés
+ * ici recopierait cet ordre — donc le ferait diverger le jour où l'un des deux
+ * change.
+ *
+ * Ne retire rien : c'est un tri, pas un filtre.
+ */
+export function trierLaFile<T extends DemarchageTaskLike>(
+  tasks: readonly T[],
+  tri: TriFile,
+): T[] {
+  if (tri === "passage") return [...tasks];
+  const rang = rangDuTri(tri);
+  return [...tasks].sort((a, b) => rang(a) - rang(b));
+}
+
+/** Combien de lignes ce tri remonterait en tête — le compte de la pastille. */
+export function compteDuTri(tasks: readonly DemarchageTaskLike[], tri: TriFile): number {
+  if (tri === "passage") return tasks.length;
+  const rang = rangDuTri(tri);
+  return tasks.reduce((n, t) => n + (rang(t) === 0 ? 1 : 0), 0);
 }
 
 /* ── La journée, en TROIS files ─────────────────────────────────────────── */

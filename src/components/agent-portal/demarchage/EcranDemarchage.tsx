@@ -21,8 +21,10 @@ import {
   fileDeLaJournee,
   hasSignal,
   repartirLaJournee,
+  trierLaFile,
   type DemarchageSignal,
   type FileDeTravail,
+  type TriFile,
 } from "@/lib/agent-portal/demarchage-buckets";
 import type { EtatSite } from "@/lib/agent-portal/etat-site";
 import type { CompanySearchResult } from "@/lib/entreprises/colonnes";
@@ -130,6 +132,17 @@ export function EcranDemarchage() {
    * chargée.
    */
   const [etatSite, setEtatSite] = useState<EtatSite | null>(null);
+
+  /**
+   * SUR QUOI ON REMONTE LA FILE — `passage` (l'ordre du jour) par défaut.
+   *
+   * Un tri n'est PAS un filtre, et c'est la raison pour laquelle il a sa propre
+   * variable plutôt qu'une entrée de plus dans la barre : un filtre retire des
+   * lignes, un tri les garde toutes et change seulement par où on commence.
+   * Confondre les deux ferait chercher dans une file « vide » des lignes qui
+   * sont simplement plus bas.
+   */
+  const [tri, setTri] = useState<TriFile>("passage");
 
   /**
    * La colonne de droite est-elle ouverte ? REPLIÉE PAR DÉFAUT.
@@ -303,14 +316,21 @@ export function EcranDemarchage() {
 
   const shown = useMemo(
     () =>
-      duJour.filter(
-        (t) =>
-          (canal == null || t.kind === canal) &&
-          (signal == null || hasSignal(t, signal)) &&
-          (step == null || t.sequence?.stepIndex === step) &&
-          (etatSite == null || t.etat_site === etatSite),
+      // Le TRI vient APRÈS les filtres, et il s'applique sur une liste déjà
+      // dans l'ordre du jour (`repartirLaJournee` a posé `ordreDePassage`).
+      // C'est ce qui permet à `trierLaFile` d'être un tri STABLE à une seule
+      // clé : l'ordre de travail survit à l'intérieur de chaque groupe.
+      trierLaFile(
+        duJour.filter(
+          (t) =>
+            (canal == null || t.kind === canal) &&
+            (signal == null || hasSignal(t, signal)) &&
+            (step == null || t.sequence?.stepIndex === step) &&
+            (etatSite == null || t.etat_site === etatSite),
+        ),
+        tri,
       ),
-    [duJour, canal, signal, step, etatSite],
+    [duJour, canal, signal, step, etatSite, tri],
   );
 
   // Fiche entreprise + audit à chaque changement de prospect. La fiche ouverte
@@ -647,6 +667,8 @@ export function EcranDemarchage() {
           cohorte={cohorte}
           setCohorte={setCohorte}
           etatSite={etatSite}
+          tri={tri}
+          setTri={setTri}
           setEtatSite={setEtatSite}
           tasks={shown}
           meta={meta}
