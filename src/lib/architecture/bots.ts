@@ -404,7 +404,8 @@ export const BOTS: Bot[] = [
       "src/lib/donnees-publiques/resolution.ts · src/lib/donnees-publiques/score.ts · POST /api/donnees-publiques/resolution",
     resume:
       "Cherche l'identité légale d'une fiche par son nom et son adresse, note chaque candidat sur cinq composantes, et les range sans jamais en choisir un.",
-    entree: "Une fiche sans SIRET : nom, commune, code postal — et le SIREN d'une note s'il y en a un",
+    entree:
+      "Une fiche sans SIRET : nom, ADRESSE, commune, code postal, le TEXTE de ses avis Google — et le SIREN d'une note s'il y en a un",
     sortie: "entreprise_siret_candidats, au statut « propose »",
     // Il écrit, mais des PROPOSITIONS. Relançable sans conséquence : l'upsert
     // porte sur (entreprise_id, siret), et les candidats déjà tranchés sont
@@ -417,6 +418,9 @@ export const BOTS: Bot[] = [
       "Il n'écrit JAMAIS entreprises.siret. La seule porte est choix-siret, et elle réinterroge le registre avant d'écrire.",
       "Le nom de la fiche vient de Google Maps : c'est un titre COMMERCIAL, pas une raison sociale. « CLIMIZ » rend 0 résultat — elle est immatriculée TOP CLIMATISATION. D'où les variantes de recherche, qui ne sont pas une politesse mais la condition pour trouver quoi que ce soit.",
       "Le code postal filtre AVANT d'élargir : sans lui, un nom courant ramène des homonymes nationaux qui noient le bon résultat.",
+      "IL CHERCHE AUSSI PAR L'ADRESSE, et toujours — pas seulement quand le nom échoue (03/09/2026). « CÉRÉLEC » avait trois candidats au-dessus du seuil, aucun n'était le bon, et son siège est au même numéro de la même rue. La requête part du NUMÉRO et s'arrête avant la commune : « 30 RUE DE CRACOVIE » trouve, « ZAE CAP NORD 30 RUE DE CRACOVIE » et « 30 RUE DE CRACOVIE SAINT-APOLLINAIRE » rendent zéro — l'annuaire fait du ET implicite, et le registre déclare souvent une autre commune que la fiche.",
+      "UNE ADRESSE PARTAGÉE N'IDENTIFIE PERSONNE. Au-delà de trois entreprises distinctes au même numéro (locaux OUVERTS seulement), l'adresse est retirée du barème : c'est une domiciliation. Compter les fermés faisait passer pour un centre d'affaires le cas le plus banal du parc — l'artisan, sa holding et son EI cessée à la même adresse.",
+      "LES AVIS NOMMENT L'ARTISAN QUE LE REGISTRE N'IMMATRICULE QUE SOUS SON ÉTAT CIVIL. « AR CLIM » est ADRIEN RODRIGUEZ : les initiales valent 0,8 (le seuil du critère, jamais plus — deux lettres se partagent), un avis qui NOMME la personne les porte à 1. Le TEXTE des avis seulement : leur auteur est le client.",
     ],
   },
   {
@@ -425,7 +429,7 @@ export const BOTS: Bot[] = [
     phase: "identite-legale",
     execution: "route-api",
     statut: "actif",
-    chemin: "src/lib/lissage/choix-siret.ts (identiteEvidente) · src/lib/lissage/outils-serveur.ts",
+    chemin: "src/lib/lissage/choix-siret.ts (identiteEvidente, identiteProbable) · src/lib/lissage/outils-serveur.ts",
     resume:
       "Écrit le SIRET tout seul quand un seul SIREN est candidat et que les quatre critères du registre concordent. Sinon il passe la main à l'écran, sans rien écrire.",
     entree: "Les candidats au statut « propose » d'une fiche sans SIRET",
@@ -982,6 +986,9 @@ export const BOTS: Bot[] = [
       "Un constat explicite l'emporte sur une colonne. Mesuré le 20/08 : 67 fiches ont une URL en colonne ET un constat « absent » — NXDOMAIN, ou le site de quelqu'un d'autre. Le constat avait raison à chaque fois.",
       "Elle ne se substitue pas au poste local : une étape Playwright est posée puis relâchée, et attend `scripts/lissage/runner.mjs`.",
       "DEUX PORTES ÉCRIVENT LE SIRET SANS ŒIL, et elles ne se relisent pas pareil. `identiteEvidente` : un seul SIREN + les QUATRE critères, source `resolution_auto`. `identiteProbable` (03/09/2026) : trois critères sur un seul SIREN, ou nom + adresse seuls, ou un écart de score net entre SIREN — source `resolution_elargie`, confiance `moyenne`. Elle REFUSE l'écart serré à critères égaux (le piège « KM Dépannage » : deux SIREN, même adresse, même patronyme, l'un chauffagiste l'autre taxi) et tout candidat cessé.",
+      "IL FAUT CE QUI DISTINGUE, PAS CE QUI SITUE (03/09/2026). Code postal + commune + métier est satisfait par TOUS les artisans du même métier de la même ville : trois écritures fausses en une passe — le Planning familial sur « Climatisation Paris 2 », l'Agence locale de l'énergie sur « GTR LOC », SURCOF sur « Axima Equans ». Il faut désormais le NOM, ou la VOIE avec son numéro. Et la voie ne remplace le nom que pour une ENTREPRISE INDIVIDUELLE : une société porte une raison sociale, si elle ne concorde pas c'est qu'on regarde le voisin de palier.",
+      "`etat_administratif` VAUT `C` SUR UNE UNITÉ LÉGALE ET `F` SUR UN ÉTABLISSEMENT. Ne refuser que `C` faisait écrire l'adresse d'un local vidé — fiche 628 « JP Climatisation », dont l'établissement fermé du 5 bis impasse Victor Hugo gagnait contre l'ouvert du numéro 8.",
+      "LES PROPOSITIONS D'UNE FICHE SONT CELLES DE LA DERNIÈRE RECHERCHE. `enregistrerCandidats` purge les `propose` qu'elle ne vient pas de réécrire : sans ça elles s'empilent avec le score du barème de l'époque, et la porte automatique les rejuge. Une décision HUMAINE (`valide`/`rejete`) n'est jamais touchée.",
       "LE REGISTRE TRANCHE EN DERNIER, toujours : `validerCandidat` le réinterroge avant d'écrire. Sur les 59 fiches tranchées le 03/09 il a rendu HUIT « entreprise cessée » que la ligne candidate disait actives — elle avait été notée avant la cessation. Sans lui, huit démos seraient parties à des sociétés mortes.",
       "Deux portes d'entrée, et une seule file : des filtres (écran Lissage) ou des cases cochées (bouton « Lisser » du pipeline marketing). Une passe née d'une sélection porte `criteres.origine` et NE SE REJOUE PAS — sa population est une liste figée, pas une requête.",
       "TROISIÈME PORTE depuis le 26/08 : un LOT (`lotId`, écran Atelier). C'est la seule des trois qui soit pleinement rejouable — la composition d'un lot est écrite ligne par ligne, là où des filtres désignent une population qui a pu bouger. Aucun identifiant ne circule : la route lit `lots_entreprises` elle-même, ce qui rend le geste possible en 4G quelle que soit la taille du lot.",
