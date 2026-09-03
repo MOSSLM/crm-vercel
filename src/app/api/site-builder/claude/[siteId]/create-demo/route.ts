@@ -3,7 +3,11 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { cloneTemplateSite } from "@/lib/site-builder/clone-template-site";
 import { resolveLeadMagnetProjectId } from "@/lib/site-builder/resolve-project-id";
-import { isServiceTagExplicitlyAllowed, type ServiceTagSetting } from "@/utils/serviceTags";
+import {
+  isServiceTagExplicitlyAllowed,
+  isServiceTagKnownToTemplate,
+  type ServiceTagSetting,
+} from "@/utils/serviceTags";
 
 export const dynamic = "force-dynamic";
 
@@ -63,11 +67,29 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       ))
     : [];
   const reglages = (tagSettings ?? []) as ServiceTagSetting[];
-  if (!tags.some((t) => isServiceTagExplicitlyAllowed(t, reglages))) {
+  const autorises = tags.filter((t) => isServiceTagExplicitlyAllowed(t, reglages));
+  // ⚠️ « AUTORISÉ » NE VEUT PAS DIRE « LE GABARIT SAIT LE SERVIR ».
+  //
+  // Ce sont les DEUX PREMIERS des trois axes de `enrichment_tag_settings`, et
+  // ce garde n'en lisait qu'un. `allowed` dit si l'enrichissement a le droit de
+  // poser le tag ; c'est `isServiceTagKnownToTemplate` — la taxonomie des neuf
+  // pages — qui dit si une page existe pour lui. Les libellés ADEME
+  // (« Pompe à chaleur : chauffage », « Chauffe-Eau Thermodynamique ») sont
+  // `allowed` parce qu'ils sont VRAIS, et ne correspondent à AUCUNE page.
+  //
+  // Mesuré le 03/09/2026 : 45 054 fiches sur 60 433 franchissaient ce garde et
+  // sortaient avec un menu « Nos services » VIDE — constaté à l'écran sur
+  // COLOMBET JEROME et FRANCE CONSEILS ECOLOGIE. Seules 529 fiches portaient un
+  // tag de la taxonomie. Le refus ne servait donc à rien là où il servait le
+  // plus, et rien ne le signalait avant d'ouvrir le site.
+  const servables = autorises.filter((t) => isServiceTagKnownToTemplate(t));
+  if (servables.length === 0) {
     return jsonError(
       tags.length === 0
         ? "Aucun métier sur cette fiche : le design n’aurait ni pages ni sections à filtrer. Pose un tag autorisé avant de fabriquer la démo."
-        : `Aucun métier AUTORISÉ sur cette fiche (${tags.join(", ")}). Le design filtre ses pages sur le catalogue : la démo sortirait amputée. Pose un tag autorisé, ou autorise celui-ci dans Réglages → Tags.`,
+        : autorises.length === 0
+          ? `Aucun métier AUTORISÉ sur cette fiche (${tags.join(", ")}). Le design filtre ses pages sur le catalogue : la démo sortirait amputée. Pose un tag autorisé, ou autorise celui-ci dans Réglages → Tags.`
+          : `Les métiers de cette fiche sont autorisés mais AUCUNE PAGE du gabarit ne les sert (${autorises.join(", ")}). La démo sortirait avec un menu « Nos services » vide. Pose un métier de la taxonomie — climatisation, pompe à chaleur, chauffage, ventilation, plomberie, électricité, photovoltaïque, rénovation générale, bornes IRVE.`,
       422,
     );
   }
