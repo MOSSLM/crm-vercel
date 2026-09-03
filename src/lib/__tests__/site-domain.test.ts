@@ -260,3 +260,38 @@ describe("deciderDestination — chemins SEO", () => {
     }
   });
 });
+
+describe("deciderDestination — le désabonnement, servi sur tout hôte", () => {
+  // Le lien de désinscription doit porter le domaine d'ENVOI, jamais celui qui
+  // porte les démos : Spamhaus liste un domaine vu dans le CORPS d'un message,
+  // et le listage couvre le domaine racine ET tous ses sous-domaines. Le
+  // corollaire de routage est ici — un 404 sur ce chemin est un lien de
+  // désinscription mort.
+  const CHEMINS = ["/desabonnement", "/desabonnement/abc.def", "/desabonnement/x/y"];
+
+  it("sert le chemin depuis un domaine d'envoi qui n'est pas le nôtre", () => {
+    for (const p of CHEMINS) {
+      expect(deciderDestination("getsama.fr", p, DOMAIN)).toEqual({ kind: "next" });
+    }
+  });
+
+  it("le sert aussi depuis un sous-domaine de site publié", () => {
+    for (const p of CHEMINS) {
+      expect(deciderDestination(`plomberie-dupont.${DOMAIN}`, p, DOMAIN)).toEqual({ kind: "next" });
+    }
+  });
+
+  it("le sert depuis le CRM et depuis l'apex", () => {
+    expect(deciderDestination(`app.${DOMAIN}`, "/desabonnement/j", DOMAIN)).toEqual({ kind: "next" });
+    expect(deciderDestination(DOMAIN, "/desabonnement/j", DOMAIN)).toEqual({ kind: "next" });
+  });
+
+  it("ne débloque pas un chemin qui lui ressemble", () => {
+    // L'exception doit rester une liste : sans le préfixe exact, l'hôte de site
+    // reprend la main.
+    expect(deciderDestination("getsama.fr", "/desabonne", DOMAIN)).toEqual({
+      kind: "site",
+      segment: "getsama.fr",
+    });
+  });
+});

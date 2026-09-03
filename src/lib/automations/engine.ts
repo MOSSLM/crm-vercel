@@ -819,8 +819,30 @@ export async function sendEngineEmail(
     enrollmentId?: string | null
     /** Pièces jointes récupérées par URL (ex : PDF d'audit). */
     attachmentUrls?: { filename: string; url: string }[]
+    /**
+     * Par où l'envoi part. Voir `SequenceStep.transport` — c'est une ligne de
+     * partage juridique : `resend` pour le sollicité, `smtp` pour le froid, que
+     * la politique d'usage de Resend interdit nommément depuis le 27/08/2026.
+     */
+    transport?: 'resend' | 'smtp'
   },
 ): Promise<{ ok: boolean; error?: string; blocked?: boolean }> {
+  // ── LE FROID NE RETOMBE JAMAIS SUR RESEND ────────────────────────────────
+  //
+  // Contrôlé AVANT la clé d'API, avant la pause, avant tout : c'est le seul
+  // blocage qui ne protège pas le prospect mais NOUS. Un repli silencieux sur
+  // Resend ferait passer par le compte transactionnel exactement le trafic qui
+  // peut le faire fermer sans préavis — et ce compte porte aussi les démos, les
+  // plaquettes et le portail client.
+  //
+  // La flotte SMTP n'est pas encore branchée : l'étape attend, elle ne
+  // s'abandonne pas. Le motif s'écrit dans `email_logs.blocked_reason`, donc on
+  // voit exactement ce qui serait parti et combien.
+  if (opts.transport === 'smtp') {
+    await journaliserBlocage(sb, opts, 'transport_indisponible')
+    return { ok: false, blocked: true, error: 'transport_indisponible' }
+  }
+
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY non configuré' }
 
@@ -1615,6 +1637,7 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           type: 'sequence',
           automationId: automation.id,
           enrollmentId: enrollment.id,
+          transport: step.transport ?? 'resend',
           attachmentUrls:
             // `auditPdfUrl`, jamais `auditUrl` : depuis que ce dernier peut
             // porter le rapport web, les confondre attacherait une page HTML

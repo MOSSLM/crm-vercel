@@ -72,6 +72,53 @@ Deux documents voisins portent ce qui a été **mesuré** autour de ces sites :
 `docs/site-builder/performance-des-sites-publies.md` (d'où viennent les 5 à 8 s
 d'affichage, et ce qui se gagne sans toucher au rendu).
 
+**Resend interdit le cold outreach, nommément — et tout ESP transactionnel
+aussi.** Sa politique d'usage (`resend.com/legal/acceptable-use`, mise à jour le
+27/08/2026) proscrit « *unsolicited messages of any kind, including cold
+outreach, purchased lists, or scraped contact data* », plafonne les plaintes à
+**0,08 %** (quatre fois plus sévère que Gmail) et se réserve de fermer le compte
+« *without warning* ». Nos 57 744 adresses viennent d'un enrichissement de
+sites : elles cochent deux de ces trois mots. Postmark, Mailgun, Brevo et
+**Amazon SES — la couche sous Resend** — l'interdisent pareillement ; passer en
+direct ne change que qui applique la règle. Ce qui rend la sanction chère n'est
+pas la prospection perdue : **le même compte porte les démos, les plaquettes,
+les confirmations de RDV et le portail client**. D'où la ligne de partage posée
+sur l'étape (`SequenceStep.transport`) : `resend` pour le SOLLICITÉ — une
+plaquette demandée au téléphone n'est pas du courrier non sollicité —, `smtp`
+pour le FROID, qui part de nos propres boîtes sur un domaine consommable. Une
+étape marquée `smtp` est **retenue** (`transport_indisponible`) tant que la
+flotte n'existe pas : elle ne retombe JAMAIS sur Resend « en attendant », et
+c'est ce repli silencieux que `transport-froid.test.ts` verrouille.
+
+**Le domaine qui envoie et le domaine des liens ne doivent pas être le même.**
+La Domain Blocklist de Spamhaus est interrogée sur « les domaines apparaissant
+dans les en-têtes **et le corps** », et elle liste « au niveau du domaine
+principal, **tous ses sous-domaines** rendant également un résultat listé ». Or
+`samadigitalstudio.fr` envoie ET porte toutes les démos
+(`{label}.samadigitalstudio.fr`) : s'il se dégrade en prospectant, ses liens
+sont pénalisés **y compris dans les emails partis d'un autre domaine**, et
+Gmail comme Outlook peuvent désactiver les liens d'un message par ailleurs
+délivré — aucune métrique d'envoi ne bouge, et plus personne n'ouvre sa démo.
+Un sous-domaine n'isole rien. Les démos sont un actif durable, les domaines de
+prospection des consommables : on ne loge pas l'un sur l'autre. Corollaire de
+routage : `/desabonnement` est servi sur **tout** hôte
+(`deciderDestination`), pour que le lien de désinscription porte le domaine
+d'envoi et non celui des démos.
+
+**Le GET d'un lien de désinscription ne doit rien écrire.** Les passerelles
+antispam et les aperçus de lien SUIVENT les URL d'un message : un GET qui
+désabonne désinscrirait un lot entier sans qu'un prospect ait cliqué, et on
+chercherait la cause dans le contenu. C'est la raison d'être de la RFC 8058 —
+`List-Unsubscribe-Post` impose un POST, qu'un scanner n'émet pas. Deux portes,
+donc, partageant une seule écriture : `POST /api/desabonnement/{jeton}` (le
+bouton natif de Gmail) et `GET /desabonnement/{jeton}` (une page, un bouton).
+Le jeton est **signé, pas stocké** — la leçon de `liensDesPieces` : fabriquer un
+jeton au rendu transforme une lecture en écriture. Il porte l'INSCRIPTION et
+jamais l'adresse, pour qu'aucune donnée personnelle ne circule dans une URL. Et
+la route rend `fait: false` quand elle n'a rien pu écrire : un 200 ne prouve pas
+la suppression, et annoncer « c'est fait » à tort laisserait le prospect se
+croire tranquille pendant qu'une autre séquence lui écrit.
+
 **Les images d'un artisan sont à lui seul.** Jamais versées dans le fonds
 commun — `entreprise_id` est un mur, pas un tri.
 

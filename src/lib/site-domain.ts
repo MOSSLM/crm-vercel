@@ -230,9 +230,22 @@ export function deciderDestination(
   // Chemins servis à l'identique quel que soit l'hôte. `/api` reste ouvert :
   // les formulaires de contact des sites publiés en dépendent, et la carte
   // OpenGraph pose `og:image` sur `{origine}/api/og/...`.
+  //
+  // `/desabonnement` s'y ajoute, et pour une raison qui n'a rien à voir avec
+  // les deux autres : le lien de désinscription part dans le CORPS des emails
+  // froids, donc il doit porter le domaine d'ENVOI — un consommable qu'on
+  // remplace — et surtout PAS `app.{siteDomain}`, qui porte toutes les démos.
+  // La Domain Blocklist de Spamhaus est interrogée sur les domaines apparaissant
+  // dans le corps, et elle liste le domaine racine AVEC tous ses sous-domaines :
+  // mettre le domaine des démos dans chaque email froid l'expose entier. Sans
+  // cette ligne, un domaine d'envoi ajouté au projet verrait
+  // `/desabonnement/...` réécrit en `/site/{domaine}` et rendrait un 404 — un
+  // lien de désinscription mort, ce que la CNIL relève comme motif fréquent de
+  // réclamation.
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
+    pathname.startsWith("/desabonnement") ||
     (pathname.includes(".") && !estSeo && !estPageHeritee)
   ) {
     return { kind: "next" };

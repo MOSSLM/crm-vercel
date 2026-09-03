@@ -61,6 +61,20 @@ export type BlockReason =
    * l'envoi directement, sans séquence et sans aiguillage.
    */
   | 'canal_email_suspendu'
+  /**
+   * L'étape demande un transport que le CRM ne sait pas encore servir.
+   *
+   * CE MOTIF EXISTE POUR UNE RAISON JURIDIQUE, PAS TECHNIQUE. La politique
+   * d'usage de Resend, mise à jour le 27/08/2026, interdit nommément
+   * « cold outreach, purchased lists, or scraped contact data » — nos 57 744
+   * adresses viennent d'un enrichissement de sites web. Le compte qui serait
+   * coupé est celui qui porte AUSSI les démos, les plaquettes et le portail
+   * client.
+   *
+   * Une étape marquée `transport: 'smtp'` ne doit donc JAMAIS retomber sur
+   * Resend faute de mieux. Elle attend, et le motif le dit.
+   */
+  | 'transport_indisponible'
 
 export interface GuardVerdict {
   allowed: boolean
@@ -81,6 +95,8 @@ export const BLOCK_LABEL: Record<BlockReason, string> = {
   suppression_illisible: 'Liste des désabonnés illisible — envoi retenu par précaution',
   regulateur_en_pause: 'Régulateur en pause — aucun email de prospection ne part',
   canal_email_suspendu: 'Canal e-mail suspendu — les boîtes d’envoi ne sont pas encore chaudes',
+  transport_indisponible:
+    'Envoi froid — il attend la flotte SMTP. Resend interdit la prospection non sollicitée.',
 }
 
 /* ── Réglage : le garde est-il actif ? ───────────────────────────────────── */

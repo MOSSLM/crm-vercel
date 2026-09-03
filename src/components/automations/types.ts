@@ -74,6 +74,27 @@ export interface SequenceStep {
   /** @deprecated Voir `trackOpens`. */
   trackClicks?: boolean
   skipIfReplied?: boolean
+  /**
+   * PAR OÙ CET E-MAIL PART — et c'est une ligne de partage juridique, pas un
+   * réglage technique.
+   *
+   * `resend` (défaut) — le SOLLICITÉ. La plaquette qu'un prospect vient de
+   * demander au téléphone, la reprise après un échange, le transactionnel.
+   * Conforme à la politique d'usage de Resend, qui exige des destinataires
+   * « who have explicitly opted in ».
+   *
+   * `smtp` — le FROID. Le premier contact, la relance d'audit. Resend
+   * l'interdit nommément depuis le 27/08/2026 : « unsolicited messages of any
+   * kind, including cold outreach, purchased lists, or scraped contact data ».
+   * Ces envois passent par nos propres boîtes, sur un domaine consommable.
+   *
+   * ⚠️ Le défaut est `resend` pour que rien de ce qui tourne ne bouge. Mais une
+   * étape marquée `smtp` ne retombe JAMAIS sur Resend faute de flotte : elle
+   * est retenue avec le motif `transport_indisponible`. Un repli silencieux
+   * ferait passer par le compte transactionnel exactement ce qui peut le faire
+   * fermer.
+   */
+  transport?: 'resend' | 'smtp'
   /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
   attachAudit?: boolean
   /**

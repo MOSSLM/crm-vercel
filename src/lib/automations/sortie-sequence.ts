@@ -48,6 +48,17 @@ export type MotifSortie =
    * perdrait 42 fiches neuves (relevé du 30/08/2026).
    */
   | 'test'
+  /**
+   * Le prospect s'est désinscrit lui-même, en un clic.
+   *
+   * NE RETOURNE JAMAIS AU STOCK, et c'est la plus ferme des sorties : c'est une
+   * OPPOSITION au sens de l'article 21 du RGPD, pas un incident de parcours.
+   * Le filet ne dépend d'ailleurs pas de ce motif — `email_suppressions` porte
+   * l'adresse et `send-guard` la consulte en priorité absolue —, mais le motif
+   * dit POURQUOI la ligne est fermée, et c'est ce qu'un tableau doit montrer
+   * plutôt que « sortie » tout court.
+   */
+  | 'desabonnement'
 
 /**
  * Cette sortie laisse-t-elle le prospect à démarcher ?
@@ -84,6 +95,8 @@ export const motifSortieLabel = (motif: string | null | undefined): string | nul
       return 'métier mis de côté'
     case 'test':
       return 'retenue par la phase de test — rien n’est parti'
+    case 'desabonnement':
+      return 'le prospect s’est désinscrit'
     default:
       return null
   }
