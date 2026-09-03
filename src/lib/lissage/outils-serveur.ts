@@ -177,6 +177,8 @@ const candidatsParNom: ExecuteurServeur = async (sb, faits) => {
       name: faits.nom,
       ville: faits.ville,
       code_postal: faits.codePostal,
+      adresse: faits.adresse,
+      avis: faits.avis,
     })
     const enregistres = await enregistrerCandidats(sb, faits.entrepriseId, candidats)
     return {

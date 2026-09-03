@@ -86,6 +86,12 @@ export interface DetailScoreLu {
   alertes?: string[]
   /** `score.ts` : la commune, 0 → 15. */
   ville?: number
+  /**
+   * `score.ts` : la voie, 0 → 20. Ajoutée le 03/09/2026, donc ABSENTE des lignes
+   * antérieures — c'est pour ça qu'elle se lit en `?? 0` partout : le barème
+   * s'est enrichi sans qu'aucun candidat déjà noté change de verdict.
+   */
+  rue?: number
   nomCompareA?: string | null
   /** `proeco` : l'adresse, 0 / 20 / 45. */
   adresse?: number
@@ -105,7 +111,15 @@ export function baremeDe(detail: DetailScoreLu | null | undefined): Bareme {
 
 /** À quoi l'adresse a été comparée — l'écran doit le dire, pas le supposer. */
 export function libelleAdresse(detail: DetailScoreLu | null | undefined): string {
-  if (baremeDe(detail) !== 'proeco') return 'commune'
+  if (baremeDe(detail) !== 'proeco') {
+    // `score.ts` sait maintenant comparer la voie, et il faut le DIRE : afficher
+    // « commune » sur un candidat retenu pour son numéro de rue ferait passer le
+    // critère le plus fort du dossier pour le plus faible.
+    const rue = detail?.rue ?? 0
+    if (rue >= SEUILS['score-ts'].rue) return 'adresse exacte'
+    if (rue > 0) return 'même voie'
+    return 'commune'
+  }
   const n = detail?.niveau_adresse
   if (n === 'exacte') return 'adresse exacte'
   if (n === 'voie') return 'même voie'
@@ -156,9 +170,16 @@ export interface CandidatSiret {
  *
  * Le métier est binaire dans les deux : le NAF est dans les codes attendus, ou non.
  */
-export const SEUILS: Readonly<Record<Bareme, { nom: number; codePostal: number; adresse: number; metier: number }>> = {
-  'score-ts': { nom: 36, codePostal: 25, adresse: 12, metier: 10 },
-  proeco: { nom: 20, codePostal: 20, adresse: 45, metier: 10 },
+export const SEUILS: Readonly<
+  Record<Bareme, { nom: number; codePostal: number; adresse: number; rue: number; metier: number }>
+> = {
+  // `rue` à 20, c'est-à-dire LE MAXIMUM de la composante : même voie ET même
+  // numéro. `similariteVoie` rend 0,5 pour un autre numéro de la même voie et
+  // 0,7 quand un numéro manque — dans une zone artisanale, l'autre numéro est
+  // le voisin, et un voisin n'est pas une concordance. C'est le même arbitrage
+  // que `proeco`, dont le critère se tient à `niveau_adresse: 'exacte'`.
+  'score-ts': { nom: 36, codePostal: 25, adresse: 12, rue: 20, metier: 10 },
+  proeco: { nom: 20, codePostal: 20, adresse: 45, rue: 45, metier: 10 },
 }
 
 export interface Concordance {
@@ -166,6 +187,14 @@ export interface Concordance {
   codePostal: boolean
   /** La commune ou la voie, selon le barème — voir `libelleAdresse`. */
   adresse: boolean
+  /**
+   * L'adresse tenue AU NIVEAU DE LA VOIE, numéro compris. C'est un sous-cas
+   * strict d'`adresse`, et il ne sert qu'à une chose : autoriser l'écriture
+   * automatique quand le NOM ne concorde pas. Une commune et un métier ne
+   * distinguent pas un artisan de son concurrent d'en face ; un numéro de rue,
+   * si.
+   */
+  adresseExacte: boolean
   metier: boolean
   /** Sur quatre. Le registre dit que trois ne suffisent pas. */
   compte: number
@@ -187,13 +216,21 @@ export function concordance(detail: DetailScoreLu | null | undefined): Concordan
 
   const nom = (d.nom ?? 0) >= seuils.nom
   const codePostal = (d.codePostal ?? 0) >= seuils.codePostal
-  const adresse = pointsAdresse >= seuils.adresse
+  // DEUX FAÇONS DE TENIR LE CRITÈRE D'ADRESSE chez `score.ts`, et la seconde
+  // est la bonne : la commune (12/15) le tenait faute de mieux, la voie exacte
+  // (20/20) le tient vraiment. L'union ne relâche rien — une ligne notée avant
+  // le 03/09 n'a pas de `rue`, donc elle est jugée exactement comme avant.
+  const adresse =
+    pointsAdresse >= seuils.adresse || (bareme === 'score-ts' && (d.rue ?? 0) >= seuils.rue)
+  const adresseExacte =
+    bareme === 'proeco' ? d.niveau_adresse === 'exacte' : (d.rue ?? 0) >= seuils.rue
   const metier = (d.activite ?? 0) >= seuils.metier
   const compte = [nom, codePostal, adresse, metier].filter(Boolean).length
   return {
     nom,
     codePostal,
     adresse,
+    adresseExacte,
     metier,
     compte,
     lesQuatre: compte === 4,
@@ -210,6 +247,11 @@ export function alertes(c: CandidatSiret): string[] {
   // par plusieurs générations du module, et une alerte perdue est une alerte.
   if (c.etatAdministratif === 'C' && !liste.some((a) => /cess/i.test(a))) {
     liste.push('Entreprise CESSÉE au registre')
+  }
+  // `F` est l'établissement FERMÉ — l'entreprise peut vivre ailleurs, mais pas
+  // ici, et c'est « ici » que la fiche désigne.
+  if (c.etatAdministratif === 'F' && !liste.some((a) => /ferm|cess/i.test(a))) {
+    liste.push('Établissement FERMÉ au registre')
   }
   return liste
 }
@@ -480,6 +522,15 @@ export function identiteEvidente(fiche: FicheAChoisir): CandidatJuge | null {
  *   · MOINS DE DEUX CRITÈRES, ou deux qui ne sont pas nom + adresse.
  *   · UN CANDIDAT DE TÊTE CESSÉ au registre. Une société morte n'est pas un
  *     prospect, et lui fabriquer une démo est du travail perdu.
+ *   · **TROIS CRITÈRES SANS LE NOM NI LA VOIE.** Resserré le 03/09/2026, et
+ *     c'est le refus le plus important du lot. « Code postal + commune +
+ *     métier » est satisfait par TOUS les artisans du même métier de la même
+ *     ville : ce n'est pas une identité, c'est un voisinage. Trois écritures
+ *     fausses l'ont montré dans la même passe — la fiche 452 « GTR LOC »
+ *     recevait le SIRET de l'Agence locale de l'énergie, la 515 « COLDEX »
+ *     celui d'ATLAS THERMIQUE, la 21 « Climatisation Paris 2 » celui du
+ *     Planning familial. Il faut donc le NOM, ou la VOIE avec son numéro —
+ *     quelque chose qui distingue cette entreprise de celle d'en face.
  *
  * ⚠️ COMME `identiteEvidente`, CE N'EST PAS LA DERNIÈRE VÉRIFICATION.
  * `validerCandidat` réinterroge le registre avant d'écrire. Ce garde-fou n'est
@@ -493,16 +544,41 @@ export function identiteProbable(
   const premier = fiche.entreprises[0];
   if (!premier) return null;
   const retenu = premier.retenu;
-  // Une cessée ne se tranche jamais toute seule, quel que soit son score.
-  if (retenu.etatAdministratif === 'C') return null;
+  // Ni une entreprise cessée, ni un ÉTABLISSEMENT FERMÉ — et le second n'est
+  // pas le premier. L'annuaire code l'unité légale en `C` et l'établissement en
+  // `F` ; ne refuser que `C` laissait écrire le SIRET d'un local vidé, où la
+  // fiche Google montre pourtant une activité. Vu sur la fiche 628
+  // « JP Climatisation » : deux établissements du même SIREN, le fermé du 5 bis
+  // impasse Victor Hugo gagnait contre l'ouvert du numéro 8.
+  if (estCesse(retenu)) return null;
 
   const compte = retenu.concordance.compte;
   const c = retenu.concordance;
 
+  // ── CE QUI DISTINGUE, par opposition à ce qui situe. Le code postal, la
+  // commune et le métier se partagent entre voisins ; le nom et le numéro de
+  // rue, non. Sans l'un des deux, on ne tranche pas — quel que soit le compte.
+  //
+  // ⚠️ ET LA VOIE NE REMPLACE LE NOM QUE POUR UNE PERSONNE PHYSIQUE. Une
+  // société porte une raison sociale : si elle ne concorde pas, c'est qu'on
+  // regarde une AUTRE société — le voisin de palier, pas l'artisan. Mesuré le
+  // 03/09 : « Axima Equans » recevait le SIRET de SURCOF et « MACLEM » celui de
+  // GAIA L'ÉNERGIE DE DEMAIN, deux sociétés bien réelles à la bonne adresse et
+  // du bon métier. Une entreprise individuelle, elle, n'a QUE l'état civil de
+  // son patron au registre : le nom ne peut alors pas concorder, et l'adresse
+  // est le seul lien qui existe — c'est le cas d'AR CLIM, immatriculée ADRIEN
+  // RODRIGUEZ, et de GARAGE P.J MOTORS, immatriculé JUSTIN PAGE.
+  const distingue = c.nom || (c.adresseExacte && retenu.denomination === null);
+  if (!distingue) return null;
+
   if (fiche.entreprises.length === 1) {
     if (compte >= 3) {
       const manquant = !c.metier ? 'métier' : !c.nom ? 'nom' : !c.adresse ? 'adresse' : 'code postal';
-      return { candidat: retenu, regle: `un seul SIREN, 3 critères sur 4 (manque : ${manquant})` };
+      const appui = c.nom ? 'nom' : 'voie exacte, entreprise individuelle';
+      return {
+        candidat: retenu,
+        regle: `un seul SIREN, 3 critères sur 4 (manque : ${manquant}, tenu par le ${appui})`,
+      };
     }
     if (compte === 2 && c.nom && c.adresse) {
       return { candidat: retenu, regle: `un seul SIREN, nom + ${c.libelleAdresse} concordants` };
@@ -522,8 +598,27 @@ export function identiteProbable(
       regle: `${fiche.entreprises.length} SIREN à écart serré, mais ${compte} critères contre ${second.concordance.compte}`,
     };
   }
+  // ── E. ÉCART SERRÉ, CRITÈRES ÉGAUX, MAIS L'AUTRE EST MORT.
+  // Le score ne les sépare pas et les critères non plus — sauf que l'un des
+  // deux a fermé. Ce qui exerce aujourd'hui à cette adresse ne peut pas être
+  // l'établissement clos. Vu sur la fiche 441 « Liftasud » : SRA LIFTASUD,
+  // cessée en décembre 2022, et LIFTASUD, ouverte, au MÊME 200 rue Léon Blum.
+  if (estCesse(second)) {
+    return {
+      candidat: retenu,
+      regle: `${fiche.entreprises.length} SIREN à écart serré, mais le suivant a fermé`,
+    };
+  }
   return null;
 }
+
+/**
+ * Cessée ou fermée. DEUX CODES POUR UNE MÊME NOUVELLE : l'annuaire écrit `C`
+ * sur une unité légale qui a cessé et `F` sur un établissement qui a fermé.
+ * `alertes()` ne regardait que `C` — un établissement fermé passait sans un mot.
+ */
+const estCesse = (c: CandidatJuge): boolean =>
+  c.etatAdministratif === 'C' || c.etatAdministratif === 'F'
 
 /**
  * Ce que la file dit d'elle-même, en une phrase.

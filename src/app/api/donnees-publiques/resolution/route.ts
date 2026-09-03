@@ -52,6 +52,7 @@ type FicheRow = {
   name: string | null;
   ville: string | null;
   code_postal: string | null;
+  adresse: string | null;
   siret: string | null;
 };
 
@@ -69,7 +70,7 @@ export const POST = withAuth(
 
     const { data, error } = await sb
       .from("entreprises")
-      .select("id, name, ville, code_postal, siret")
+      .select("id, name, ville, code_postal, adresse, siret")
       .in("id", body.entreprise_ids)
       .is("merged_into_id", null);
     if (error) return jsonError("lecture_entreprises", 500, { detail: error.message }, cors);
@@ -115,6 +116,7 @@ export const POST = withAuth(
           name: fiche.name,
           ville: fiche.ville,
           code_postal: fiche.code_postal,
+          adresse: fiche.adresse,
           siren_connu: connus?.siren ?? null,
           siret_connu: connus?.siret ?? null,
         });

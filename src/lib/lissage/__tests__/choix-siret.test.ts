@@ -358,9 +358,25 @@ describe('identiteProbable — la seconde porte, et surtout ce qu\'elle refuse',
     expect(r?.regle).toContain('métier')
   })
 
-  it('prend quand seul le NOM manque — l\'adresse prime sur le nom', () => {
+  // ── RESSERRÉ LE 03/09/2026, et c'est le refus le plus important du module.
+  // « L'adresse prime sur le nom » restait vrai — mais seulement quand le nom NE
+  // PEUT PAS concorder, c'est-à-dire quand le registre n'a que l'état civil du
+  // patron. Une SOCIÉTÉ, elle, porte une raison sociale : si elle ne concorde
+  // pas, c'est qu'on regarde une autre société à la même adresse. Trois
+  // écritures fausses l'ont montré le même jour — SURCOF sur « Axima Equans »,
+  // GAIA L'ÉNERGIE DE DEMAIN sur « MACLEM ».
+  it('REFUSE une SOCIÉTÉ dont la raison sociale ne concorde pas, même à l\'adresse exacte', () => {
     const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: sansNom, score: 72 }))
-    expect(identiteProbable(f)?.regle).toContain('nom')
+    expect(identiteProbable(f)).toBeNull()
+  })
+
+  it('prend quand seul le NOM manque SI le registre n\'a que l\'état civil du patron', () => {
+    // `denomination` nulle EST le signal de l'entreprise individuelle : « AR
+    // CLIM » est immatriculée ADRIEN RODRIGUEZ, le nom ne concordera jamais.
+    const f = filePour(
+      candidat({ siret: `${SIREN_A}00037`, denomination: null, detail: sansNom, score: 72 }),
+    )
+    expect(identiteProbable(f)?.regle).toContain('entreprise individuelle')
   })
 
   it('prend un seul SIREN sur nom + adresse seuls', () => {

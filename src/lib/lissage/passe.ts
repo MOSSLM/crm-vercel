@@ -295,6 +295,19 @@ export interface FaitsDuProspect {
    * fiches sans SIRET en portent un.
    */
   codePostal: string | null
+  /**
+   * La voie. AJOUTÉE LE 03/09/2026 parce qu'elle cherche mieux que le nom :
+   * l'enseigne d'un panneau (« AR CLIM ») n'est presque jamais la raison
+   * sociale (« ADRIEN RODRIGUEZ »), alors que l'atelier est bien à l'adresse
+   * où Google l'a photographié. Voir le chemin 4 de `chercherCandidats`.
+   */
+  adresse: string | null
+  /**
+   * Le texte des avis Google, quand la fiche en porte. Sert au rapprochement
+   * d'identité : c'est là qu'un client nomme l'artisan que le registre
+   * n'immatricule que sous son état civil.
+   */
+  avis: string[] | null
   siret: string | null
   placeId: string | null
   url: string | null

@@ -59,6 +59,8 @@ interface LigneEntreprise {
   name: string | null
   ville: string | null
   code_postal: string | null
+  adresse: string | null
+  google_reviews_5star: unknown
   siret: string | null
   google_place_id: string | null
   site_web_canonique: string | null
@@ -83,6 +85,21 @@ interface LigneConstat {
 const rempli = (v: string | null | undefined): string | null => {
   const t = (v ?? '').trim()
   return t.length > 0 ? t : null
+}
+
+/**
+ * Le TEXTE des avis Google, et rien d'autre.
+ *
+ * `google_reviews_5star` est un tableau d'objets `{ text, author_name }`.
+ * `author_name` est le CLIENT : le verser ici ferait rapprocher chaque fiche du
+ * patronyme de son client le plus bavard. Seul `text` sort.
+ */
+const textesDesAvis = (brut: unknown): string[] | null => {
+  if (!Array.isArray(brut)) return null
+  const textes = brut
+    .map((a) => (a && typeof a === 'object' ? (a as Record<string, unknown>).text : null))
+    .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+  return textes.length > 0 ? textes : null
 }
 
 /** Le constat courant d'un sujet, tel que le module pur le consomme. */
@@ -116,7 +133,7 @@ export async function chargerFaits(
   const [entreprises, publiques, constats, candidatsIdentite] = await Promise.all([
     sb
       .from('entreprises')
-      .select('id, name, ville, code_postal, siret, google_place_id, site_web_canonique, canonical_url')
+      .select('id, name, ville, code_postal, adresse, google_reviews_5star, siret, google_place_id, site_web_canonique, canonical_url')
       .in('id', ids),
     sb
       .from('entreprises_donnees_publiques')
@@ -176,6 +193,8 @@ export async function chargerFaits(
       nom: rempli(e.name),
       ville: rempli(e.ville),
       codePostal: rempli(e.code_postal),
+      adresse: rempli(e.adresse),
+      avis: textesDesAvis(e.google_reviews_5star),
       siret: rempli(e.siret),
       placeId: rempli(e.google_place_id),
       url,
