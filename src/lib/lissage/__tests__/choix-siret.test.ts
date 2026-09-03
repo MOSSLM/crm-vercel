@@ -12,6 +12,7 @@ import {
   concordance,
   fichesAChoisir,
   identiteEvidente,
+  identiteProbable,
   libelleAdresse,
   nomCompareA,
   resumeDeLaFile,
@@ -333,5 +334,81 @@ describe('resumeDeLaFile', () => {
       evidentes: 1,
       serrees: 0,
     })
+  })
+})
+
+describe('identiteProbable — la seconde porte, et surtout ce qu\'elle refuse', () => {
+  // Le barème `proeco` se reconnaît à `niveau_adresse` ; sans lui on retombe
+  // sur `score-ts`, dont les seuils sont différents. Les cas ci-dessous
+  // fabriquent donc leurs détails explicitement plutôt que d'ajuster un score.
+  const SIREN_A = '508616026'
+  const SIREN_B = '900111222'
+  const parfait = { nom: 25, codePostal: 20, adresse: 45, activite: 10, niveau_adresse: 'exacte' }
+  const sansMetier = { ...parfait, activite: 0 }
+  const sansNom = { ...parfait, nom: 0 }
+  const nomEtAdresse = { nom: 25, codePostal: 0, adresse: 45, activite: 0, niveau_adresse: 'exacte' }
+  const faible = { nom: 25, codePostal: 0, adresse: 0, activite: 0 }
+
+  const filePour = (...cands: CandidatSiret[]) => fichesAChoisir(cands, [fiche()])[0]
+
+  it('prend un seul SIREN à trois critères, et NOMME celui qui manque', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: sansMetier, score: 90 }))
+    const r = identiteProbable(f)
+    expect(r?.candidat.siret).toBe(`${SIREN_A}00037`)
+    expect(r?.regle).toContain('métier')
+  })
+
+  it('prend quand seul le NOM manque — l\'adresse prime sur le nom', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: sansNom, score: 72 }))
+    expect(identiteProbable(f)?.regle).toContain('nom')
+  })
+
+  it('prend un seul SIREN sur nom + adresse seuls', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: nomEtAdresse, score: 70 }))
+    expect(identiteProbable(f)?.regle).toContain('nom +')
+  })
+
+  it('REFUSE un seul SIREN à deux critères qui ne sont pas nom + adresse', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: { nom: 25, codePostal: 20, adresse: 0, activite: 0 }, score: 60 }))
+    expect(identiteProbable(f)).toBeNull()
+  })
+
+  it('REFUSE un candidat de tête CESSÉ, quel que soit son score', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: parfait, score: 100, etatAdministratif: 'C' }))
+    expect(identiteProbable(f)).toBeNull()
+  })
+
+  it('tranche entre deux SIREN quand le score les sépare nettement', () => {
+    const f = filePour(
+      candidat({ id: 'a', siret: `${SIREN_A}00037`, detail: sansMetier, score: 90 }),
+      candidat({ id: 'b', siret: `${SIREN_B}00011`, detail: faible, score: 40 }),
+    )
+    const r = identiteProbable(f)
+    expect(r?.candidat.siret).toBe(`${SIREN_A}00037`)
+    expect(r?.regle).toContain('écart de score net')
+  })
+
+  it('tranche un écart SERRÉ quand les critères, eux, séparent', () => {
+    const f = filePour(
+      candidat({ id: 'a', siret: `${SIREN_A}00037`, detail: sansMetier, score: 90 }),
+      candidat({ id: 'b', siret: `${SIREN_B}00011`, detail: { nom: 25, codePostal: 20, adresse: 0, activite: 0 }, score: 85 }),
+    )
+    expect(identiteProbable(f)?.regle).toContain('critères')
+  })
+
+  it('REFUSE l\'écart serré à critères ÉGAUX — le piège « KM Dépannage »', () => {
+    // Deux SIREN, même adresse, même patronyme, l\'un chauffagiste l\'autre
+    // taxi. Aucun chiffre ne les sépare : seul un œil le peut, et c\'est
+    // exactement le cas où une écriture automatique contamine la base.
+    const f = filePour(
+      candidat({ id: 'a', siret: `${SIREN_A}00037`, detail: sansMetier, score: 90 }),
+      candidat({ id: 'b', siret: `${SIREN_B}00011`, detail: sansMetier, score: 86 }),
+    )
+    expect(identiteProbable(f)).toBeNull()
+  })
+
+  it('ne double PAS identiteEvidente : sur un cas parfait, les deux tranchent pareil', () => {
+    const f = filePour(candidat({ siret: `${SIREN_A}00037`, detail: parfait, score: 100 }))
+    expect(identiteProbable(f)?.candidat.siret).toBe(identiteEvidente(f)?.siret)
   })
 })

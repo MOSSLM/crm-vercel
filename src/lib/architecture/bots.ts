@@ -974,12 +974,15 @@ export const BOTS: Bot[] = [
     externes: [],
     cout: "Le coût des outils qu'elle appelle, et rien de plus : elle-même ne fait aucun appel externe.",
     commande: "POST /api/lissage/tick — ou le bouton « Avancer la file »",
-    declencheur: "Le bouton de l'écran ; un cron `lissage` peut appeler GET /api/lissage/tick",
+    declencheur:
+      "Le bouton de l'écran, et le cron `lissage-tick` (toutes les 15 min, GET /api/lissage/tick) posé le 03/09/2026 — sql/20260903_identite_elargie_et_cron_lissage.sql",
     regles: [
       "Elle ne relance JAMAIS un outil déjà tenté sur le même prospect dans la même passe. Sans ça, un outil qui rend « inconnu » — un CAPTCHA, une API muette — tournerait en rond en ayant l'air de travailler.",
       "Le RGE se lit dans `est_rge_indicatif`, jamais dans `rge_rafraichi_le` : 54 878 fiches portent la même estampille à la microseconde, posée sans jamais appeler l'ADEME.",
       "Un constat explicite l'emporte sur une colonne. Mesuré le 20/08 : 67 fiches ont une URL en colonne ET un constat « absent » — NXDOMAIN, ou le site de quelqu'un d'autre. Le constat avait raison à chaque fois.",
       "Elle ne se substitue pas au poste local : une étape Playwright est posée puis relâchée, et attend `scripts/lissage/runner.mjs`.",
+      "DEUX PORTES ÉCRIVENT LE SIRET SANS ŒIL, et elles ne se relisent pas pareil. `identiteEvidente` : un seul SIREN + les QUATRE critères, source `resolution_auto`. `identiteProbable` (03/09/2026) : trois critères sur un seul SIREN, ou nom + adresse seuls, ou un écart de score net entre SIREN — source `resolution_elargie`, confiance `moyenne`. Elle REFUSE l'écart serré à critères égaux (le piège « KM Dépannage » : deux SIREN, même adresse, même patronyme, l'un chauffagiste l'autre taxi) et tout candidat cessé.",
+      "LE REGISTRE TRANCHE EN DERNIER, toujours : `validerCandidat` le réinterroge avant d'écrire. Sur les 59 fiches tranchées le 03/09 il a rendu HUIT « entreprise cessée » que la ligne candidate disait actives — elle avait été notée avant la cessation. Sans lui, huit démos seraient parties à des sociétés mortes.",
       "Deux portes d'entrée, et une seule file : des filtres (écran Lissage) ou des cases cochées (bouton « Lisser » du pipeline marketing). Une passe née d'une sélection porte `criteres.origine` et NE SE REJOUE PAS — sa population est une liste figée, pas une requête.",
       "TROISIÈME PORTE depuis le 26/08 : un LOT (`lotId`, écran Atelier). C'est la seule des trois qui soit pleinement rejouable — la composition d'un lot est écrite ligne par ligne, là où des filtres désignent une population qui a pu bouger. Aucun identifiant ne circule : la route lit `lots_entreprises` elle-même, ce qui rend le geste possible en 4G quelle que soit la taille du lot.",
       "LE COÛT DE CRÉATION ÉTAIT UN INDEX ABSENT, pas une limite de nature. `populationDesCriteres` pagine par 200 (plafond de la RPC), donc une passe de 2 000 faisait DIX appels — et chacun refaisait le balayage complet des 60 726 fiches : ~1,7 s pièce, une vingtaine de secondes en tout. `entreprises_sans_site_idx` (26/08) ramène chaque appel à ~350 ms. Si le prédicat de `chercher_entreprises` change de forme, vérifier au EXPLAIN que l'index est encore reconnu — il décroche en silence.",

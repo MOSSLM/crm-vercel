@@ -34,6 +34,7 @@ import {
 import {
   fichesAChoisir,
   identiteEvidente,
+  identiteProbable,
   type CandidatSiret,
 } from '@/lib/lissage/choix-siret'
 import type { Constat, FaitsDuProspect } from '@/lib/lissage/passe'
@@ -257,19 +258,39 @@ const identiteSansRelecture: ExecuteurServeur = async (sb, faits) => {
       codePostal: faits.codePostal,
     },
   ])
+  // DEUX PORTES, DANS CET ORDRE. `identiteEvidente` prend le cas parfait —
+  // un seul SIREN, les quatre critères. `identiteProbable` prend ce que le
+  // registre laissait à un humain alors qu'il n'y avait rien à juger : un
+  // artisan immatriculé sous un NAF voisin, une enseigne qui diffère de la
+  // raison sociale, deux SIREN que le score sépare nettement. Elle refuse
+  // toujours l'écart serré à critères égaux — le piège « KM Dépannage ».
+  //
+  // L'ordre compte pour la TRAÇABILITÉ, pas pour le résultat : les deux
+  // écriraient le même SIRET sur un cas parfait, mais le commentaire ne dirait
+  // pas la même chose, et c'est lui qu'on relira dans six mois.
   const evident = fiche ? identiteEvidente(fiche) : null
-  // Pas évident : on passe la main SANS bruit. Ce n'est pas une panne, c'est le
-  // cas normal — 138 fiches sur 210 demandent un jugement, et c'est très bien.
-  if (!evident) return { constats: [] }
+  const probable = evident ? null : fiche ? identiteProbable(fiche) : null
+  const retenu = evident ?? probable?.candidat ?? null
+  // Ni l'un ni l'autre : on passe la main SANS bruit. Ce n'est pas une panne,
+  // c'est le cas normal — il reste des fiches qui demandent un jugement, et
+  // c'est très bien.
+  if (!retenu) return { constats: [] }
+
+  const raison = evident
+    ? `quatre critères concordants (${evident.concordance.libelleAdresse}), un seul SIREN candidat`
+    : `règle élargie — ${probable!.regle}`
 
   const res = await validerCandidat(sb, {
     entreprise_id: faits.entrepriseId,
-    siret: evident.siret,
+    siret: retenu.siret,
     // Personne n'a regardé, et on le DIT. Mettre un uuid d'utilisateur ferait
     // croire dans six mois que quelqu'un a validé cette fiche à la main.
     decide_par: null,
-    source: 'resolution_auto',
-    commentaire: `quatre critères concordants (${evident.concordance.libelleAdresse}), un seul SIREN candidat`,
+    // `resolution_auto` pour la règle stricte, `resolution_elargie` pour
+    // l'autre : les deux ne se relisent pas avec la même confiance, et un seul
+    // libellé les confondrait dans les comptes.
+    source: evident ? 'resolution_auto' : 'resolution_elargie',
+    commentaire: raison,
   })
   if (!res.ok) return { constats: [], erreur: `identite-evidente: ${res.erreur}` }
 
@@ -278,17 +299,21 @@ const identiteSansRelecture: ExecuteurServeur = async (sb, faits) => {
       {
         sujet: 'identite',
         etat: 'present',
-        confiance: 'haute',
-        valeur: evident.siret,
+        // La confiance SUIT LA RÈGLE qui a tranché. « haute » sur les quatre
+        // critères, « moyenne » sur la règle élargie : un constat qui se dirait
+        // aussi sûr dans les deux cas rendrait le tri impossible plus tard.
+        confiance: evident ? 'haute' : 'moyenne',
+        valeur: retenu.siret,
         source: 'identite-evidente',
         preuve: {
-          score: evident.score,
-          concordance: evident.concordance,
+          score: retenu.score,
+          concordance: retenu.concordance,
+          regle: raison,
           avertissements: res.avertissements,
         },
       },
     ],
-    dossier: { identite_auto: evident.siret },
+    dossier: { identite_auto: retenu.siret },
     // Les divergences ne bloquent pas mais REMONTENT — un siège ailleurs, une
     // entreprise cessée. Les taire sur une décision prise sans témoin serait
     // exactement l'inverse de ce qu'on veut. Mais ce ne sont PAS des pannes :

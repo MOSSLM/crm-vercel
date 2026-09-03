@@ -439,6 +439,93 @@ export function identiteEvidente(fiche: FicheAChoisir): CandidatJuge | null {
 }
 
 /**
+ * Le SIRET à écrire QUAND LES QUATRE CRITÈRES NE SONT PAS RÉUNIS, ou `null`.
+ *
+ * ── POURQUOI CETTE SECONDE PORTE ──────────────────────────────────────────
+ * `identiteEvidente` ne prend que le cas parfait, et elle a raison de rester
+ * ainsi. Mais le reste n'est pas pour autant du travail humain : mesuré le
+ * 03/09/2026 sur les 159 fiches en attente du portefeuille Bilal + Matteo,
+ * 74 n'avaient qu'UN SEUL SIREN candidat — dont 43 à trois critères sur quatre,
+ * et le critère manquant était le MÉTIER dans 33 cas. Faire trancher un humain
+ * « est-ce le même artisan ? » quand le nom, la commune et le code postal
+ * concordent et que seul le code NAF diffère, c'est dépenser la ressource la
+ * plus rare de la chaîne pour un choix qui n'en est pas un.
+ *
+ * Règle du propriétaire, mot pour mot (03/09/2026) : « quand il y a un seul
+ * choix avec un siret inattendu ça peut être une erreur lors de la création si
+ * c'est le même nom la même adresse et tout […] quand y en a 2 dont un qui est
+ * plus probable on choisit le plus probable, en général c'est le premier
+ * présenté ».
+ *
+ * ── LES QUATRE CAS, ET CE QUI LES JUSTIFIE ────────────────────────────────
+ *   A. UN SEUL SIREN, TROIS CRITÈRES. Le quatrième qui manque est presque
+ *      toujours le métier : un artisan immatriculé en négoce (46.74B), en
+ *      électricité (43.21A) ou en réparation (33.12Z) reste le même artisan.
+ *      Quand c'est le NOM qui manque, l'ADRESSE PRIME SUR LE NOM — une enseigne
+ *      diffère couramment de la raison sociale (« JP Climatisation » immatriculé
+ *      au patronyme du gérant).
+ *   B. UN SEUL SIREN, NOM + ADRESSE. Les deux critères qui IDENTIFIENT, même
+ *      sans le code postal ni le métier. C'est le « même nom même adresse » de
+ *      la règle ci-dessus.
+ *   C. PLUSIEURS SIREN, ÉCART DE SCORE NET (>= `ECART_SERRE`) et trois
+ *      critères. C'est « le plus probable, en général le premier présenté » —
+ *      la liste est triée par score décroissant.
+ *   D. PLUSIEURS SIREN À ÉCART SERRÉ, MAIS DONT LES CRITÈRES TRANCHENT. Le
+ *      score ne les sépare pas ; le nombre de critères concordants, si.
+ *
+ * ── CE QU'ELLE REFUSE, ET C'EST LÀ QU'EST LA SÛRETÉ ───────────────────────
+ *   · ÉCART SERRÉ ET CRITÈRES ÉGAUX. C'est le piège « KM Dépannage » que
+ *     `resolution.ts` nomme : deux SIREN, même adresse, même patronyme, l'un
+ *     chauffagiste l'autre taxi. Aucun chiffre ne les sépare — seul un œil.
+ *   · MOINS DE DEUX CRITÈRES, ou deux qui ne sont pas nom + adresse.
+ *   · UN CANDIDAT DE TÊTE CESSÉ au registre. Une société morte n'est pas un
+ *     prospect, et lui fabriquer une démo est du travail perdu.
+ *
+ * ⚠️ COMME `identiteEvidente`, CE N'EST PAS LA DERNIÈRE VÉRIFICATION.
+ * `validerCandidat` réinterroge le registre avant d'écrire. Ce garde-fou n'est
+ * pas décoratif : sur les 59 fiches tranchées le 03/09, il a rendu HUIT
+ * « entreprise cessée » que la ligne candidate disait actives — elle avait été
+ * notée avant la cessation.
+ */
+export function identiteProbable(
+  fiche: FicheAChoisir,
+): { candidat: CandidatJuge; regle: string } | null {
+  const premier = fiche.entreprises[0];
+  if (!premier) return null;
+  const retenu = premier.retenu;
+  // Une cessée ne se tranche jamais toute seule, quel que soit son score.
+  if (retenu.etatAdministratif === 'C') return null;
+
+  const compte = retenu.concordance.compte;
+  const c = retenu.concordance;
+
+  if (fiche.entreprises.length === 1) {
+    if (compte >= 3) {
+      const manquant = !c.metier ? 'métier' : !c.nom ? 'nom' : !c.adresse ? 'adresse' : 'code postal';
+      return { candidat: retenu, regle: `un seul SIREN, 3 critères sur 4 (manque : ${manquant})` };
+    }
+    if (compte === 2 && c.nom && c.adresse) {
+      return { candidat: retenu, regle: `un seul SIREN, nom + ${c.libelleAdresse} concordants` };
+    }
+    return null;
+  }
+
+  if (compte < 3) return null;
+  const second = fiche.entreprises[1].retenu;
+  const ecart = retenu.score - second.score;
+  if (ecart >= ECART_SERRE) {
+    return { candidat: retenu, regle: `${fiche.entreprises.length} SIREN, écart de score net (${ecart})` };
+  }
+  if (compte > second.concordance.compte) {
+    return {
+      candidat: retenu,
+      regle: `${fiche.entreprises.length} SIREN à écart serré, mais ${compte} critères contre ${second.concordance.compte}`,
+    };
+  }
+  return null;
+}
+
+/**
  * Ce que la file dit d'elle-même, en une phrase.
  *
  * Un compteur nu (« 186 ») ne dit pas s'il reste une heure de travail ou dix
