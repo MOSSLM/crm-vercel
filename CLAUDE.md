@@ -347,6 +347,39 @@ lien n'est pas journalisée. Corollaire côté lecture : le GET ne prépare les
 liens que sur `?pieces=1`, parce que `liensDesPieces` CRÉE les jetons manquants
 et qu'ouvrir une fiche ne doit pas écrire en base.
 
+**Un gel permanent affame la file, et rien ne le dit.** `loadDueEnrollments`
+lisait les inscriptions dues en UNE requête triée par échéance et plafonnée à
+200. Or beaucoup de gels ne repoussent PAS `next_run_at` — `test_hold`,
+`canal_suspendu`, `email_pending`, `sequence_paused`, `tache_annulee`, et les
+six motifs que `planQueue` rend au tick (`global_pause`, `daily_cap`,
+`one_per_day`, `risky_cap`, `domain_probe`) — exprès, pour rester visibles et
+repartir seuls dès que le motif tombe. Ils sont donc dus, éternellement, et les
+plus vieux. Au 04/09/2026 : **277 dues, dont 200 `test_hold` bloquées depuis le
+30/08 — la fenêtre était pleine à 100 % de gel**, et les 77 autres (dont des
+attentes échues depuis la veille) n'étaient JAMAIS servies. Le tick tournait
+toutes les minutes et rendait fidèlement « 200 traitées ». D'où deux lectures
+bornées séparément : le travail vivant a sa propre fenêtre, le gel ne peut plus
+prendre la place de personne. **La liste est POSITIVE — les motifs qui se
+libèrent seuls — et jamais l'inverse** : énumérer les gels permanents, c'est en
+oublier six, et le motif oublié est toujours le prochain (couper le mode test
+sans dépauser produit `global_pause` sur chaque ligne servie). Un motif inconnu
+tombe donc du côté du gel, où il n'affame personne. `file-affamee.test.ts` le
+tient. **Le symptôme à surveiller n'est pas une erreur, c'est une file qui
+n'avance plus alors que tout est vert.**
+
+**Dans S1, l'e-mail est la voie « pas de mobile », jamais un repli après un
+silence WhatsApp.** `mlQ` était sur le tronc : un silencieux WhatsApp qui avait
+une adresse partait dans le bras e-mail — `transport: smtp`, donc une impasse —
+au lieu d'arriver à `ap1`, l'appel qui l'attendait au bout de la même liste.
+`sql/20260904_s1_le_silence_whatsapp_va_a_lappel.sql` lui pose
+`branch: {waitId: "waQ", on: "timeout"}`, et la récursion d'`etapeAtteignable`
+fait le reste : une fourche inatteignable rend toutes ses voies inatteignables,
+donc `ml1`…`mlGo2` se sautent d'un coup. S2 et S3 n'ont jamais eu le défaut —
+leur étape e-mail est déjà la voie « pas de mobile » d'une condition
+`a_mobile` ; S4 ne porte aucune étape e-mail. `s1-silence-whatsapp.test.ts` tient les DEUX sens : retirer la
+branche renvoie les silencieux dans l'impasse, la poser sur `reply` coupe
+l'e-mail à ceux qui n'ont que ça.
+
 **Une couleur seule ne s'apprend jamais, et la légende ne se recopie pas.** Une
 ligne de « Ma journée » porte jusqu'à neuf marques — liseré droit (notre démo),
 bord et fond gauches (sélection, « il a répondu »), flamme, cinq ou six
