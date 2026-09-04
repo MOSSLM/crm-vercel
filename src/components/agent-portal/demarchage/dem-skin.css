@@ -332,6 +332,30 @@
 .dm-skin .dm-tel{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border)}
 .dm-skin .dm-tel .num{font-family:var(--font-mono);font-size:19px;letter-spacing:-.01em;font-weight:500}
 .dm-skin .dm-tel .who{font-size:11.5px;color:var(--text-3);margin-top:1px}
+
+/* Le cockpit d'appel : ce qu'on ouvre pendant que ça sonne (cf. DemCockpit).
+   Une grille qui se replie toute seule — trois tuiles sur un 13 pouces, deux
+   sur un téléphone, jamais de débordement latéral. Une tuile éteinte
+   (`data-off`) reste LISIBLE : elle porte l'état du site, qui est justement
+   l'information qu'on veut avant de parler. */
+.dm-skin .dm-eyes{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:6px}
+.dm-skin .dm-eye{display:flex;align-items:center;gap:8px;min-width:0;
+  border:1px solid var(--border-2);border-radius:9px;background:var(--surface);
+  padding:7px 9px;text-decoration:none;color:var(--text-2)}
+.dm-skin a.dm-eye:hover{border-color:var(--text);color:var(--text)}
+.dm-skin .dm-eye .ic{width:26px;height:26px;flex-shrink:0;border-radius:7px;display:flex;
+  align-items:center;justify-content:center;background:var(--bg-2);color:var(--text-3)}
+.dm-skin a.dm-eye:hover .ic{background:var(--kt,var(--accent-tint));color:var(--k,var(--accent))}
+.dm-skin .dm-eye .tx{min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.dm-skin .dm-eye .tx b{font-size:11.5px;font-weight:600;color:var(--text);letter-spacing:-.005em}
+.dm-skin .dm-eye .tx i{font-style:normal;font-size:10px;color:var(--text-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-skin .dm-eye .op{margin-left:auto;flex-shrink:0;color:var(--text-3);opacity:.6}
+/* Éteinte : le pointillé porte l'état à lui seul. `--bg-2` vaut `--surface` en
+   sombre, donc un fond ne distinguerait rien — la bordure, si. */
+.dm-skin .dm-eye[data-off]{background:var(--bg-2);border-style:dashed;border-color:var(--border);cursor:default}
+.dm-skin .dm-eye[data-off] .ic{background:transparent;border:1px dashed var(--border)}
+.dm-skin .dm-eye[data-off] .tx b{color:var(--text-2)}
 .dm-skin .dm-scr{border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .dm-skin .dm-scr .r{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 11px;font-size:12px;border-bottom:1px solid var(--border);align-items:baseline}
 .dm-skin .dm-scr .r:last-child{border-bottom:0}

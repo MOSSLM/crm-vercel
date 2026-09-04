@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Icon, Pill } from "./DemIcon";
 import { DemNotes } from "./DemNotes";
+import { DemCockpit } from "./DemCockpit";
 import { demCh, isMessageKind } from "./channels";
 import { argumentDeCohorte } from "./cohortes";
 import { DEM_OBJECTIONS } from "./DemObjections";
@@ -1123,6 +1124,18 @@ export function DemActionCard({
               <Icon name="phone" className="ico-sm" />
               Appeler{firstName ? ` ${firstName}` : ""}
             </button>
+
+            {/* CE QU'ON OUVRE PENDANT QUE ÇA SONNE. Entre le bouton et le
+                script, parce que c'est l'ordre du geste : on compose, on ouvre
+                ses onglets, puis on parle. Plus bas, il faudrait scroller au
+                moment exact où l'artisan décroche. */}
+            <DemCockpit
+              nom={company?.entreprise.name ?? ent?.name ?? null}
+              ville={company?.entreprise.ville ?? ent?.ville ?? null}
+              siteUrl={company?.entreprise.site_web_canonique ?? null}
+              etatSite={task.etat_site ?? company?.presenceSite?.etat_site ?? "inconnu"}
+              site={company?.site ?? null}
+            />
 
             <div className="dm-tabs" role="tablist" aria-label="Contenu de l'appel">
               <button

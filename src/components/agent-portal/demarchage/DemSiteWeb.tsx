@@ -10,6 +10,7 @@ import {
   normaliserUrlSite,
   type EtatSite,
 } from "@/lib/agent-portal/etat-site";
+import { requeteGoogle, urlRechercheGoogle } from "./recherche";
 
 /**
  * LA LIGNE « SITE » DE L'EN-TÊTE — la seule du CRM où un humain tranche.
@@ -110,14 +111,20 @@ export function DemSiteWeb({
     void envoyer({ aucun_site: true }, "Noté : aucun site, vérifié par vous.");
   };
 
-  /** La recherche que fait un humain — nom + ville, rien de plus malin. */
+  /**
+   * La recherche que fait un humain — nom + ville, rien de plus malin.
+   *
+   * L'adresse vient de `recherche.ts`, partagée avec le cockpit de la carte
+   * d'appel : les deux boutons « Google » du même écran doivent rendre la même
+   * page, sinon on constate « pas de site » sur l'une et l'inverse sur l'autre.
+   */
+  /** L'adresse en base, rendue ouvrable — `null` si elle ne l'est pas. */
+  const lienSite = normaliserUrlSite(url);
+
   const chercherSurGoogle = () => {
-    const q = [nom, ville].filter(Boolean).join(" ").trim();
-    window.open(
-      `https://www.google.com/search?q=${encodeURIComponent(q)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const cible = urlRechercheGoogle(nom, ville);
+    if (!cible) return;
+    window.open(cible, "_blank", "noopener,noreferrer");
   };
 
   const quand = constateLe
@@ -144,17 +151,21 @@ export function DemSiteWeb({
       <button
         type="button"
         className="btn outline xs"
-        title={`Chercher « ${[nom, ville].filter(Boolean).join(" ")} » sur Google (nouvel onglet)`}
+        title={`Chercher « ${requeteGoogle(nom, ville)} » sur Google (nouvel onglet)`}
         onClick={chercherSurGoogle}
       >
         Google
       </button>
 
-      {url && !modifie && (
+      {/* NORMALISÉ, JAMAIS BRUT. Trois fiches portent une adresse sans schéma
+          (`artisan.fr`) : posée telle quelle dans un `href`, le navigateur la
+          lit comme un chemin RELATIF et emmène l'agent sur `/artisan.fr` du
+          CRM. Le lien ne s'affiche donc que si l'adresse est valide. */}
+      {lienSite && !modifie && (
         <a
           className="btn ghost xs icon"
           title="Ouvrir le site dans un nouvel onglet"
-          href={url}
+          href={lienSite}
           target="_blank"
           rel="noreferrer"
         >
