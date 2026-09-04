@@ -315,22 +315,82 @@ export async function loadRecipientEmails(
 }
 
 /**
- * Inscriptions actives dont l'étape courante est due (`next_run_at` passé), avec
- * leur automation résolue. C'est l'entrée de la file.
+ * Les motifs qui REPOUSSENT `next_run_at` — les seuls qui se libèrent seuls.
+ *
+ * ⚠️ LISTE POSITIVE, ET C'EST DÉLIBÉRÉ. La première version énumérait l'inverse
+ * — les gels « permanents » — et cette liste-là est intenable : elle en oubliait
+ * SIX. `planQueue` rend `global_pause`, `sequence_paused`, `daily_cap`,
+ * `one_per_day`, `risky_cap` et `domain_probe`, que le tick écrit sans toucher
+ * `next_run_at` (`tick/route.ts`, branche `slot.at == null`) ; `engine.ts` pose
+ * `sequence_paused` de la même façon, en disant lui-même que la ligne « repasse
+ * ici À CHAQUE MINUTE, indéfiniment » ; `tache_annulee` fait pareil. Et
+ * `email_invalid` est écrit à DEUX endroits — le moteur repousse l'échéance, le
+ * webhook Resend non.
+ *
+ * Énumérer les gels permanents, c'est donc promettre une exhaustivité qu'on ne
+ * tient pas, et le motif oublié est toujours le prochain : couper le mode test
+ * sans dépauser produit `global_pause` sur chaque étape servie, avec l'échéance
+ * d'origine — la famine reviendrait à l'identique sous un autre nom.
+ *
+ * Retourner la liste renverse le sens de l'erreur : un motif INCONNU tombe dans
+ * la fenêtre du gel, où il ne prend la place de personne. Ne sont ici que les
+ * motifs dont on a vérifié, ligne par ligne, qu'ils réarment leur échéance.
  */
+const GELS_QUI_SE_LIBERENT = [
+  // Repoussé à l'échéance de l'attente (`processWaitStep`). Sans délai,
+  // `next_run_at` est nul et la ligne n'est plus due du tout.
+  'awaiting_reply',
+  // Repoussés de deux heures par leur `holdFor*` respectif.
+  'no_email',
+  'lien_manquant',
+  'demo_manquante',
+  'message_vide',
+] as const
+
+/** « Rien, ou un gel qui se libère seul » — la fenêtre du travail vivant. */
+const FENETRE_VIVANTE = `hold_reason.is.null,hold_reason.in.(${GELS_QUI_SE_LIBERENT.join(',')})`
+
 export async function loadDueEnrollments(
   sb: SupabaseClient,
   now: number,
   limit = 200,
 ): Promise<QueueBuild> {
-  const { data } = await sb
-    .from('sequence_enrollments')
-    .select('*')
-    .eq('status', 'active')
-    .not('next_run_at', 'is', null)
-    .lte('next_run_at', new Date(now).toISOString())
-    .order('next_run_at', { ascending: true })
-    .limit(limit)
+  // Le tronc commun des deux lectures. Le filtre de gel s'applique AVANT le tri
+  // et le plafond : c'est ce qui donne à chaque moitié sa propre fenêtre.
+  type Filtre = (q: ReturnType<ReturnType<SupabaseClient['from']>['select']>) => typeof q
+  const dues = (filtrer: Filtre) =>
+    filtrer(
+      sb
+        .from('sequence_enrollments')
+        .select('*')
+        .eq('status', 'active')
+        .not('next_run_at', 'is', null)
+        .lte('next_run_at', new Date(now).toISOString()),
+    )
+      .order('next_run_at', { ascending: true })
+      .limit(limit)
+
+  const [vivantes, gelees] = await Promise.all([
+    dues((q) => q.or(FENETRE_VIVANTE)),
+    // Les gelées restent lues — les oublier ferait exactement l'inverse du
+    // dégel automatique voulu (`tick/route.ts` : « dès qu'on coupe la phase de
+    // test […] le tick suivant envoie sans qu'on ait à réveiller quoi que ce
+    // soit ») : couper la phase de test, dépauser le régulateur ou relancer une
+    // séquence ne redémarrerait plus rien.
+    dues((q) =>
+      q.not('hold_reason', 'is', null).not('hold_reason', 'in', `(${GELS_QUI_SE_LIBERENT.join(',')})`),
+    ),
+  ])
+
+  // UNE LECTURE MUETTE NE DOIT PAS PASSER POUR UNE FILE VIDE. `data ?? []`
+  // avale une erreur PostgREST — filtre mal formé, table absente, panne — et
+  // rend un tick parfaitement silencieux qui ne traite rien. C'est exactement
+  // la panne que ce fichier vient de corriger : elle ne se voit dans aucun
+  // compteur, seulement dans une file qui n'avance plus.
+  if (vivantes.error) console.error('[regulator] fenêtre vivante illisible :', vivantes.error.message)
+  if (gelees.error) console.error('[regulator] fenêtre du gel illisible :', gelees.error.message)
+
+  const data = [...((vivantes.data ?? []) as SequenceEnrollment[]), ...((gelees.data ?? []) as SequenceEnrollment[])]
 
   const empty = (): QueueBuild => ({
     emails: [],

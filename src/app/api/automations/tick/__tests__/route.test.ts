@@ -65,13 +65,48 @@ const buildSelectChain = (result: { data: unknown; error?: unknown }) => ({
   select: jest.fn().mockReturnThis(),
   eq: jest.fn().mockReturnThis(),
   gte: jest.fn().mockReturnThis(),
-  in: jest.fn().mockResolvedValue(result),
+  // `in` est TERMINAL pour `automations` (`.in('id', ids)`) et MÉDIAN pour les
+  // inscriptions (`.in('hold_reason', …)` suivi de `.order().limit()`). Il rend
+  // donc la chaîne, et c'est `then` qui la fait se résoudre quand on l'attend.
+  in: jest.fn().mockReturnThis(),
   not: jest.fn().mockReturnThis(),
   lte: jest.fn().mockReturnThis(),
+  // `loadDueEnrollments` filtre les gels permanents hors de la fenêtre vivante.
+  or: jest.fn().mockReturnThis(),
   order: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue(result),
   maybeSingle: jest.fn().mockResolvedValue(result),
+  then: (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve),
 });
+
+/**
+ * La chaîne des INSCRIPTIONS, qui se lisent en deux fenêtres — le travail
+ * vivant, puis les gels permanents (cf. `loadDueEnrollments`).
+ *
+ * Les deux chaînes se construisent AVANT le moindre `await` : un drapeau lu au
+ * moment du `then` verrait donc la seconde lecture écraser la première, et les
+ * mêmes inscriptions reviendraient en double. C'est `limit()` — le dernier
+ * maillon de chaque lecture — qui fige le résultat, à l'instant où la fenêtre
+ * de CETTE lecture est encore la bonne.
+ *
+ * Les inscriptions de ces cas ne portent aucun gel : la fenêtre du gel est vide.
+ */
+const buildEnrollmentsChain = (result: { data: unknown; error?: unknown }) => {
+  const c = buildSelectChain(result) as Record<string, unknown>;
+  let fenetreDuGel = false;
+  // La fenêtre du gel se reconnaît à son filtre : `not('hold_reason', …)`.
+  // La fenêtre vivante, elle, passe par `or(...)`.
+  c.not = jest.fn((colonne: string) => {
+    if (colonne === "hold_reason") fenetreDuGel = true;
+    return c;
+  });
+  c.limit = jest.fn(() => {
+    const rendu = fenetreDuGel ? { ...result, data: [] } : result;
+    fenetreDuGel = false;
+    return Promise.resolve(rendu);
+  });
+  return c;
+};
 
 const buildUpdateChain = () => {
   const captured: { updates: unknown[]; ids: unknown[] } = {
@@ -368,7 +403,7 @@ describe("GET /api/automations/tick", () => {
     /** Chaîne qui sait à la fois lire et capturer les update() d'une table. */
     const rwChain = (result: { data: unknown; error?: unknown }) => {
       const captured: Record<string, unknown>[] = [];
-      const chain = buildSelectChain(result) as Record<string, unknown> & {
+      const chain = buildEnrollmentsChain(result) as Record<string, unknown> & {
         captured: Record<string, unknown>[];
       };
       chain.captured = captured;

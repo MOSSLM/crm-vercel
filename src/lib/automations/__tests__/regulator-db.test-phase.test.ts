@@ -18,14 +18,44 @@ import { resetTestGuardCache } from '@/lib/email/test-guard'
 
 type ChainResult = { data: unknown; error?: unknown }
 
-/** Chaîne Supabase minimale : les lectures se terminent sur limit / in / maybeSingle. */
+/**
+ * Chaîne Supabase minimale — CHAÎNABLE DE BOUT EN BOUT, et thenable.
+ *
+ * `in` et `limit` rendaient une promesse, ce qui les condamnait à terminer la
+ * chaîne. `loadDueEnrollments` filtre désormais AVANT de trier (`.in(...)`
+ * suivi de `.order().limit()`, cf. les deux fenêtres de lecture) : un `in`
+ * terminal cassait la lecture au milieu. Tous les maillons rendent donc `c`, et
+ * `c.then` fait le reste — `await` sur n'importe quel maillon résout pareil.
+ */
 const chain = (result: ChainResult) => {
   const c: Record<string, unknown> = {}
-  for (const m of ['select', 'eq', 'not', 'lte', 'gte', 'order']) c[m] = jest.fn(() => c)
-  c.limit = jest.fn(() => Promise.resolve(result))
-  c.in = jest.fn(() => Promise.resolve(result))
+  for (const m of ['select', 'eq', 'not', 'lte', 'gte', 'order', 'or', 'in', 'limit']) c[m] = jest.fn(() => c)
   c.maybeSingle = jest.fn().mockResolvedValue(result)
   c.then = (resolve: (v: ChainResult) => unknown) => Promise.resolve(result).then(resolve)
+  return c
+}
+
+/**
+ * Les inscriptions se lisent en DEUX fenêtres — le travail vivant d'un côté,
+ * les gels permanents de l'autre (cf. `loadDueEnrollments`). Le faux client
+ * doit les distinguer : rendre les mêmes lignes aux deux ferait compter chaque
+ * inscription en double, et le test verrait un doublon là où le moteur n'en
+ * produit aucun. Ici toutes les inscriptions ont `hold_reason: null` : elles
+ * appartiennent à la fenêtre vivante, et la fenêtre du gel est vide.
+ */
+const chainInscriptions = (rows: unknown[]) => {
+  // La fenêtre se reconnaît au filtre : `or(...)` sur `hold_reason` pour le
+  // vivant, `not('hold_reason', …)` pour le gel. C'est la seule différence
+  // entre les deux lectures.
+  let fenetreDuGel = false
+  const c: Record<string, unknown> = {}
+  for (const m of ['select', 'eq', 'lte', 'gte', 'order', 'or', 'in', 'limit']) c[m] = jest.fn(() => c)
+  c.not = jest.fn((colonne: string) => {
+    if (colonne === 'hold_reason') fenetreDuGel = true
+    return c
+  })
+  c.then = (resolve: (v: ChainResult) => unknown) =>
+    Promise.resolve({ data: fenetreDuGel ? [] : rows, error: null }).then(resolve)
   return c
 }
 
@@ -60,7 +90,7 @@ const wire = (opts: { testMode: boolean; allowlist: string[]; contacts: { id: st
   mockFrom.mockImplementation((table: string) => {
     switch (table) {
       case 'sequence_enrollments':
-        return chain({ data: opts.contacts.map((c, i) => enrollment(`enr-${i}`, c.id)), error: null })
+        return chainInscriptions(opts.contacts.map((c, i) => enrollment(`enr-${i}`, c.id)))
       case 'automations':
         return chain({ data: [SEQUENCE], error: null })
       case 'contacts':
