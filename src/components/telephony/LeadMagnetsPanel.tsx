@@ -293,11 +293,11 @@ export function LeadMagnetsPanel({
 
             {rapport.disponible && rapport.url ? (
               <>
-                <a href={rapport.url} target="_blank" rel="noopener noreferrer" className="lm-url">
+                <a href={lienNonMesure(rapport.url)} target="_blank" rel="noopener noreferrer" className="lm-url">
                   {rapport.url.replace(/^https:\/\//, "")}
                 </a>
                 <div className="lm-actions">
-                  <Action titre="Ouvrir le rapport" href={rapport.url}>
+                  <Action titre="Ouvrir le rapport" href={lienNonMesure(rapport.url)}>
                     <ExternalLink className="ico-xs" />
                   </Action>
                   <Action titre="Copier le lien" onClick={() => void copier(rapport.url!, "du rapport")}>

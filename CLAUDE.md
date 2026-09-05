@@ -380,6 +380,31 @@ leur étape e-mail est déjà la voie « pas de mobile » d'une condition
 branche renvoie les silencieux dans l'impasse, la poser sur `reply` coupe
 l'e-mail à ceux qui n'ont que ça.
 
+**Un compteur à jeton ne mesure que ce qu'on ENVOIE en lien.** La plaquette part
+en PDF joint, jamais en URL — « c'est plus pro », et ça ne changera pas. Relevé
+le 05/09/2026 : sur 806 messages sortants, **UN SEUL** portait une URL de
+plaquette, **AUCUN** une URL de rapport. `plaquette_vues` et `vues` ne pouvaient
+donc être bougés que par NOUS : 897 fiches ont un jeton, 11 portent une vue, et
+ces 11 étaient exactement la liste des « chauds » remise au commercial — vues à
+5, 25, 68, puis 92 à 194 secondes du geste de l'agent. S2 aiguillait sur
+`plaquette_vue` et faisait ouvrir l'appel par « vous avez regardé ce que je vous
+ai envoyé » à des gens qui n'avaient rien ouvert. `vueQ` teste désormais
+**`demo_visitee`** (GA4, `intentByEnterprise` sur 30 jours) : la démo est la
+seule pièce dont l'URL part vraiment. Corollaire à ne pas réapprendre — **un
+compteur à 100 % d'ouverture est un capteur branché sur soi-même**, pas un
+succès : le commentaire d'origine lisait « 2 plaquettes générées, 2 ouvertes »
+comme un manque de volume.
+
+**`lienNonMesure()` n'éteint que GA4 et Clarity, jamais une écriture serveur.**
+Il pose `?sama_interne=1`, lu par le seul `PublicAnalytics` du layout public.
+Les pages à jeton, elles, incrémentent leur compteur en base — et deux des trois
+écrans qui ouvraient le rapport étaient habillés de cette fonction, ce qui les
+rendait PIRES qu'un lien nu : un relecteur voyait la garde et passait. La page
+`/rapport/{jeton}` lit maintenant le paramètre (`compteur-interne.test.tsx`),
+comme `/plaquette/{jeton}` le faisait déjà pour `?a4` et `?imprimer`. Avant de
+poser un lien du CRM vers une de nos pages publiques, la question n'est pas
+« est-ce habillé » mais **« cette page écrit-elle quelque chose ? »**.
+
 **Une couleur seule ne s'apprend jamais, et la légende ne se recopie pas.** Une
 ligne de « Ma journée » porte jusqu'à neuf marques — liseré droit (notre démo),
 bord et fond gauches (sélection, « il a répondu »), flamme, cinq ou six

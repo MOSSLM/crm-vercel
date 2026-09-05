@@ -65,6 +65,22 @@ export const CHAMPS_CONDITION = [
   // jour où la séquence tourne, pas avant.
   'rapport_vu',
   'plaquette_vue',
+  // ── LE SEUL LIEN QU'ON ENVOIE VRAIMENT ───────────────────────────────────
+  //
+  // ⚠️ À PRÉFÉRER À `plaquette_vue` ET `rapport_vu`, QUI NE PEUVENT PAS MARCHER.
+  // La plaquette part en PDF JOINT, jamais en lien — c'est une règle de fond,
+  // pas un état de fait : « c'est plus pro ». Relevé le 05/09/2026 : sur 806
+  // messages sortants, UN SEUL porte une URL de plaquette et AUCUN une URL de
+  // rapport. Les deux compteurs à jeton ne peuvent donc être bougés que par
+  // NOUS — 897 fiches ont un jeton, 11 portent une vue, et ces 11 sont
+  // exactement les fiches qu'un agent a ouvertes pour fabriquer le PDF, la vue
+  // tombant 5 à 194 secondes après le geste. Un compteur branché sur soi-même.
+  //
+  // La démo, elle, part en URL nue dans le message : c'est la seule pièce que
+  // le prospect peut ouvrir, et GA4 la mesure par nom d'hôte. C'est donc le
+  // seul signal d'intention honnête que ce CRM possède, et celui que la file
+  // affiche déjà sous forme de flamme.
+  'demo_visitee',
 ] as const
 export type ChampCondition = (typeof CHAMPS_CONDITION)[number]
 
@@ -85,6 +101,7 @@ export const CHAMP_LABEL: Record<ChampCondition, string> = {
   rdv_pris: 'Rendez-vous pris',
   rapport_vu: 'A ouvert son rapport d’audit',
   plaquette_vue: 'A ouvert la plaquette',
+  demo_visitee: 'A visité sa démo',
 }
 
 export const OPERATEURS_CONDITION = ['vrai', 'faux', 'est', 'nest_pas', 'au_moins', 'au_plus'] as const
@@ -114,6 +131,7 @@ const NATURE: Record<ChampCondition, Nature> = {
   rdv_pris: 'booleen',
   rapport_vu: 'booleen',
   plaquette_vue: 'booleen',
+  demo_visitee: 'booleen',
   cohorte: 'liste',
   presence_web: 'liste',
   issue_dernier_appel: 'liste',
@@ -209,6 +227,13 @@ export interface FaitsProspect {
   /** Le lien à jeton du rapport a été ouvert au moins une fois (compté côté serveur). */
   rapportVu?: boolean
   plaquetteVue?: boolean
+  /**
+   * Le prospect est venu sur SA démo, mesuré par GA4 sur le nom d'hôte.
+   *
+   * `undefined` quand on n'a pas pu regarder (GA4 non configuré, lecture en
+   * échec) — surtout pas `false`, qui dirait « personne n'est venu ».
+   */
+  demoVisitee?: boolean
   rgeExpireSous90j?: boolean
   cohorte?: string | null
   presenceWeb?: 'present' | 'absent' | 'inconnu' | null
@@ -230,6 +255,7 @@ const LECTURE: Record<ChampCondition, keyof FaitsProspect> = {
   rdv_pris: 'rdvPris',
   rapport_vu: 'rapportVu',
   plaquette_vue: 'plaquetteVue',
+  demo_visitee: 'demoVisitee',
   cohorte: 'cohorte',
   presence_web: 'presenceWeb',
   issue_dernier_appel: 'issueDernierAppel',

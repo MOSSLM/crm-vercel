@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getAppUrl } from "@/lib/app-url";
 import { marquerVu, resoudreRapport } from "@/lib/audit-site/rapport";
+import { PARAM_TRAFIC_INTERNE } from "@/lib/analytics/trafic-interne";
 import { renderAuditMobile } from "@/utils/audit/htmlMobile";
 import { AUDIT_MOBILE_CSS } from "@/utils/audit/mobileCss";
 
@@ -73,7 +74,9 @@ export default async function RapportPublicPage({ params, searchParams }: Rappor
   // Le lien qu'on ENVOIE est court : trois constats et un nombre. La version
   // complète se demande explicitement — c'est le document du rendez-vous, pas
   // celui du premier contact. Même jeton, même contenu, deux profondeurs.
-  const variante = (await searchParams)?.complet !== undefined ? "complet" : "court";
+  // Lus UNE fois : la variante et la garde de comptage s'y servent tous les deux.
+  const sp = await searchParams;
+  const variante = sp?.complet !== undefined ? "complet" : "court";
   const sb = getServiceClient();
   const res = await resoudreRapport(sb, token);
 
@@ -81,7 +84,25 @@ export default async function RapportPublicPage({ params, searchParams }: Rappor
 
   // Best-effort et non attendu : le compteur de vues est un signal commercial,
   // pas une raison de retarder l'affichage.
-  void marquerVu(sb, token);
+  // ── NOS PROPRES OUVERTURES NE COMPTENT PAS ────────────────────────────────
+  //
+  // La page de la plaquette a déjà cette garde (sur `?a4` et `?imprimer`) et son
+  // commentaire dit pourquoi : l'agent ouvre le document à chaque envoi, et
+  // `vueQ` aiguillait sur « a vu ». Le rapport n'en avait aucune — alors que
+  // trois écrans du CRM l'ouvrent : la file des séquences, le panneau lead
+  // magnets (qui affiche le compteur juste à côté), et la fiche.
+  //
+  // Deux de ces trois liens passaient déjà par `lienNonMesure()`, ce qui donnait
+  // l'illusion d'être couvert : ce paramètre n'éteint que les tags GA4 et
+  // Clarity du layout, il n'a jamais rien pu contre une écriture serveur, et
+  // personne ne le lisait ici. Le lire referme les trois d'un coup, et rend à
+  // `lienNonMesure` le sens que tout le monde lui prêtait déjà.
+  //
+  // Ce qui reste compté est ce qu'on n'a jamais demandé nous-mêmes : l'URL nue,
+  // celle qui part chez le prospect.
+  if (sp?.[PARAM_TRAFIC_INTERNE] === undefined) {
+    void marquerVu(sb, token);
+  }
 
   const d = res.donnees;
   const html = renderAuditMobile(d.content, {

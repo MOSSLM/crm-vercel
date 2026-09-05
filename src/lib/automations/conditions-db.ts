@@ -16,6 +16,7 @@
 // table absente coûte un champ à `undefined`, jamais le tick.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { collecterCanaux } from '@/lib/prospects/canal'
+import { intentByEnterprise } from '@/lib/analytics-radar/site-intent'
 import { effectifPlancher, type FaitsProspect } from '@/lib/automations/conditions'
 
 /** L'identité du prospect, telle que l'inscription la porte. */
@@ -159,7 +160,53 @@ export async function releverLesFaits(
   const derniere = premier<{ outcome: string | null }>(appel.data)
   faits.issueDernierAppel = derniere?.outcome ?? null
 
+  faits.demoVisitee = await lireLaVisiteDeLaDemo(sb, id)
+
   return faits
+}
+
+/**
+ * Le prospect est-il venu voir SA démo ?
+ *
+ * POURQUOI CE CHAMP EXISTE, ET POURQUOI IL REMPLACE `plaquette_vue`.
+ * La démo est la seule pièce dont l'URL part réellement chez le prospect — la
+ * plaquette est jointe en PDF, le rapport n'est jamais lié. Les compteurs à
+ * jeton ne mesurent donc que nos propres ouvertures ; celui-ci mesure la
+ * sienne.
+ *
+ * LES TROIS RÉPONSES, ET LA DIFFÉRENCE ENTRE DEUX D'ENTRE ELLES EST TOUT
+ * L'INTÉRÊT DU FICHIER :
+ *   · `undefined` — on n'a PAS PU regarder (GA4 non configuré, lecture en
+ *     échec). Rendra `non_mesure`, jamais « non ».
+ *   · `false`     — on a regardé, et personne n'est venu sur la fenêtre lue.
+ *     C'est une mesure, et elle vaut : la démo a été envoyée, elle n'a pas été
+ *     ouverte.
+ *   · `true`      — au moins une session sur son nom d'hôte.
+ *
+ * FENÊTRE DE 30 JOURS, et pas les 7 par défaut : une condition de séquence se
+ * pose des jours après l'envoi (S2 appelle au J+2 ou J+4, S3 à 30 jours). Sur
+ * 7 jours, une visite du lendemain serait déjà sortie de la fenêtre au moment
+ * où l'on décide — on lirait « il n'est jamais venu » d'un prospect qui est
+ * venu. `intentBySite` met sa lecture en cache, donc les 200 inscriptions d'un
+ * même tick partagent un seul appel à GA4.
+ *
+ * UNE PANNE DE GA4 NE DOIT PAS COÛTER LE TICK : comme les sept autres lectures
+ * de ce fichier, celle-ci a le droit d'échouer et rend alors `undefined`.
+ */
+async function lireLaVisiteDeLaDemo(
+  sb: SupabaseClient,
+  entrepriseId: number,
+): Promise<boolean | undefined> {
+  try {
+    const parEntreprise = await intentByEnterprise(sb, 30)
+    // Une carte vide ne se lit pas comme « personne n'est venu » : sans GA4,
+    // `intentBySite` rend une liste vide exactement comme un parc sans visite.
+    // On ne peut pas distinguer les deux ici, et on ne le prétend pas.
+    if (parEntreprise.size === 0) return undefined
+    return (parEntreprise.get(entrepriseId)?.sessions ?? 0) > 0
+  } catch {
+    return undefined
+  }
 }
 
 /**
